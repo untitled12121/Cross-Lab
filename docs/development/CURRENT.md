@@ -8,72 +8,71 @@ This file is the resume guide for active Cross-Lab development. Git history, rep
 
 ## Current milestone
 
-**P0.1 — Project Foundation**
+**P0.2 — Threat Model and Trust Boundaries**
 
-Status: complete on the feature branch and ready for integration through Pull Request #1.
+Status: architectural design written and committed; awaiting design/spec review before implementation planning.
 
 ## Active branch
 
-`phase-0/project-foundation`
+`phase-0/threat-model`
 
-## Pull request
+## Base state
 
-`#1 — P0.1: establish project foundation`
+P0.1 was merged to `main` through Pull Request #1 on 2026-09-10.
 
-Base: `main`  
-Head: `phase-0/project-foundation`
+Merge commit:
+
+`dba24fb77a8b3b478d1be7b48f8bfc8260911ece`
 
 ## Last verified content checkpoint
 
-`a6227e8abf60ec4d640bd3a2864178e439dec44e` — P0.1 implementation plan marked complete after repository review and PR creation.
+`b8d19b10095cb169209494a46d0a8185ef0a071d` — P0.2 threat-model and trust-boundary design committed for review.
 
-The authoritative architecture file's Git blob SHA is `069f0014e06af8ccabfc9d06d4bf46241b3f8e82`, exactly matching the approved Cross-Lab Master Architecture & Development Plan Revision 2.0 source.
+The authoritative architecture remains `docs/architecture/MASTER-ARCHITECTURE.md`, Revision 2.0.
 
 ## Completed
 
-- Added the P0.1 implementation plan and completed its checklist.
-- Created the project README and focused repository ignore rules.
-- Added contributor and security baseline documentation.
-- Added the Git-first development continuity and interruption-recovery workflow.
-- Added a concise roadmap that points back to the Master Architecture.
-- Established ADR naming, lifecycle, and required-content rules.
-- Mirrored the approved Cross-Lab Master Architecture & Development Plan Revision 2.0 into Git without content drift.
-- Reviewed the branch against `main` and confirmed the P0.1 scope contains documentation/governance only.
-- Opened Pull Request #1 to integrate P0.1 into `main`.
-- Kept production source code, Rust workspace scaffolding, platform code, transport dependencies, and research-source adaptations out of P0.1.
+- Verified that Pull Request #1 is merged into `main`.
+- Created the clean `phase-0/threat-model` branch from the merged `main` baseline.
+- Reconciled the P0.2 scope against the Master Architecture and P0.1 handoff.
+- Selected a foundation-first threat-model scope rather than an exhaustive future-feature model or a simulator-only model.
+- Defined P0.2 deliverables, protected assets, actors, attacker classes, trust zones, authority boundaries, mandatory security invariants, threat categories, authorization flow, compromised-device assumptions, reconnect/revocation requirements, privileged-service boundary, recovery boundary, relay/hub assumptions, audit/privacy requirements, resource-safety requirements, and threat-to-test traceability.
+- Kept cryptographic formats, pairing transcripts, wire serialization, platform-specific privilege APIs, production Rust, and dependency selection out of P0.2 design scope.
 
 ## In progress
 
-No P0.1 implementation work remains. Integration of Pull Request #1 is pending the repository integration decision.
+- User review of `docs/plans/phase-0/P0.2-threat-model-design.md`.
 
 ## Exact next task
 
-After P0.1 is integrated, start **P0.2 — Threat Model and Trust Boundaries** on a new feature branch.
+After the P0.2 design is approved, create the detailed P0.2 implementation plan and then produce:
 
-P0.2 must derive the initial threat model from Sections 4, 6, 8, 12, 20, 32, 33, and 42 of `docs/architecture/MASTER-ARCHITECTURE.md` before cryptographic or protocol implementation begins.
+- `security/THREAT-MODEL.md`
+- `docs/architecture/SECURITY-BOUNDARIES.md`
 
-The P0.2 deliverable should define protected assets, trust assumptions, attacker classes, trust boundaries, privileged boundaries, recovery/update boundaries, major abuse cases, required mitigations, and security invariants without prematurely selecting unresolved cryptographic or wire-format details.
+The implementation plan must preserve the approved design and verify both documents against the Master Architecture without silently choosing deferred cryptographic or wire-format details.
 
 ## Known issues / open decisions
 
 - The Cross-Lab repository license is not yet selected. No third-party research source code may be adapted while this remains unresolved.
-- Remote NAT/relay architecture remains intentionally unresolved until the M9 networking evaluation checkpoint.
-- Final wire serialization and canonical signing interaction remain Phase 0 decisions.
+- Exact cryptographic algorithms, credential formats, pairing transcript, key schedule, and protocol serialization remain later Phase 0 decisions.
+- Remote NAT/relay architecture remains intentionally unresolved until the later networking evaluation checkpoint.
+- Platform-specific privileged IPC mechanisms remain deferred to platform milestones.
 
 ## Verification
 
-P0.1 is documentation-only; no Rust build/test suite exists yet.
+P0.2 remains documentation/specification-only; no Rust build/test suite exists yet.
 
 Completed checks:
 
-- Architecture source mirror: **PASS** — Git blob SHA matches the approved Revision 2.0 source exactly.
-- Repository structure review: **PASS** — required P0.1 files exist on the feature branch.
-- Production implementation claims review: **PASS** — documentation states that production implementation has not started.
-- Dependency/source introduction review: **PASS** — no production dependencies or research-source adaptations introduced.
-- Continuity review: **PASS** — branch, PR, milestone, completed work, open decisions, verification state, and exact next task are documented.
-- Branch comparison before final handoff: **PASS** — feature branch was ahead of `main` with no behind commits.
+- P0.1 integration state: **PASS** — Pull Request #1 is merged to `main`.
+- P0.2 branch origin: **PASS** — `phase-0/threat-model` was created from merged `main`.
+- Scope review: **PASS** — design is limited to foundational security boundaries and explicitly defers feature-specific/platform-specific details.
+- Architecture alignment review: **PASS** — transport-independent identity, capability/permission separation, control/data-plane authorization, privilege isolation, recovery separation, route-security precedence, third-party boundary isolation, and fail-closed behavior are represented.
+- Placeholder scan: **PASS** — no TBD/TODO placeholders or unstated implementation requirements remain in the design.
+- Premature-decision review: **PASS** — no exact cryptographic primitive, pairing transcript, wire format, or platform IPC mechanism is selected.
 
-Not applicable in P0.1:
+Not applicable in P0.2 design stage:
 
 - `cargo fmt --check`
 - `cargo clippy`
@@ -81,13 +80,13 @@ Not applicable in P0.1:
 
 These become mandatory when the Rust workspace is introduced.
 
-## Active plan
+## Active design
 
-`docs/plans/phase-0/P0.1-project-foundation.md`
+`docs/plans/phase-0/P0.2-threat-model-design.md`
 
 ## Relevant ADRs
 
-None accepted yet. ADR governance is defined in `docs/adr/README.md`.
+None accepted yet for P0.2. The design remains within the approved Master Architecture and does not change an architectural invariant.
 
 ## Resume procedure
 
@@ -95,9 +94,8 @@ Before continuing in any new session:
 
 1. Read `docs/architecture/MASTER-ARCHITECTURE.md`.
 2. Read this file.
-3. Read the active plan.
-4. Read relevant ADRs.
-5. Inspect the active branch, Pull Request #1, and recent commits.
+3. Read `docs/plans/phase-0/P0.2-threat-model-design.md`.
+4. Read relevant ADRs if any have been added.
+5. Inspect `phase-0/threat-model`, recent commits, and repository state.
 6. Reconcile this document with actual repository state.
-7. Integrate P0.1 or document why integration is deferred.
-8. Start P0.2 only after the P0.1 integration state is clear.
+7. Continue only after the P0.2 design review state is clear.
