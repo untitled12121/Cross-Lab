@@ -1,101 +1,95 @@
 # Current Development State
 
-This file is the resume guide for active Cross-Lab development. Git history, repository contents, and tests are the factual implementation state when they conflict with this document.
+This file is the resume guide for Cross-Lab. Git history, repository contents, and verification results remain the factual implementation state if this document becomes stale.
 
-## Current phase
+## Current Phase
 
-**Phase 0 — Architecture and Security Specification**
+**Phase 0 — Architecture and Security Specification: Complete**
 
-## Current milestone
+## Current Milestone
 
-**P0.2 — Threat Model and Trust Boundaries**
+**Phase 0 closeout and integration**
 
-Status: architectural design written and committed; awaiting design/spec review before implementation planning.
+The Phase 0 architecture/security baseline is complete and ready to integrate into `main`.
 
-## Active branch
+## Active Branch
 
-`phase-0/threat-model`
+`planning`
 
-## Base state
+`planning` is the sole active Phase 0 work branch. Historical branch refs are not part of the active workflow.
 
-P0.1 was merged to `main` through Pull Request #1 on 2026-09-10.
+## Last Verified Checkpoint
 
-Merge commit:
-
-`dba24fb77a8b3b478d1be7b48f8bfc8260911ece`
-
-## Last verified content checkpoint
-
-`b8d19b10095cb169209494a46d0a8185ef0a071d` — P0.2 threat-model and trust-boundary design committed for review.
-
-The authoritative architecture remains `docs/architecture/MASTER-ARCHITECTURE.md`, Revision 2.0.
+The Phase 0 closeout commit containing this file is the current verified planning checkpoint. Its preserved Phase 0 specification ancestry includes `6b5b26e0324ad586db88afa68f744bf7f50984fd`.
 
 ## Completed
 
-- Verified that Pull Request #1 is merged into `main`.
-- Created the clean `phase-0/threat-model` branch from the merged `main` baseline.
-- Reconciled the P0.2 scope against the Master Architecture and P0.1 handoff.
-- Selected a foundation-first threat-model scope rather than an exhaustive future-feature model or a simulator-only model.
-- Defined P0.2 deliverables, protected assets, actors, attacker classes, trust zones, authority boundaries, mandatory security invariants, threat categories, authorization flow, compromised-device assumptions, reconnect/revocation requirements, privileged-service boundary, recovery boundary, relay/hub assumptions, audit/privacy requirements, resource-safety requirements, and threat-to-test traceability.
-- Kept cryptographic formats, pairing transcripts, wire serialization, platform-specific privilege APIs, production Rust, and dependency selection out of P0.2 design scope.
+- P0.1-P0.9 foundational planning/specification milestones.
+- Threat model and security-boundary specification.
+- Owner/device identity and key hierarchy.
+- Pairing, trust establishment, and revocation model.
+- Default-deny policy and operation-bound authorization model.
+- Protocol v1 compatibility, framing, lifecycle, replay/retry/cancellation, and canonical signing transcript.
+- Secure logical-session and transport-neutral contract.
+- Recovery/update security model, audit/privacy rules, and reserved plugin authority boundary.
+- Core Simulator workspace/scenario specification.
+- Phase 0 ADR decisions and repository licensing.
+- Professionalized milestone records and formal Phase 0 closeout review.
+- Purpose-based branch workflow for future development.
 
-## In progress
+## Accepted Phase 0 ADRs
 
-- User review of `docs/plans/phase-0/P0.2-threat-model-design.md`.
+- ADR-0001 — `MIT OR Apache-2.0` repository license
+- ADR-0002 — identity cryptographic profile v1
+- ADR-0003 — pairing bootstrap profile v1
+- ADR-0004 — Protocol Buffers + canonical signing transcript v1
+- ADR-0005 — TUF-style update trust model v1
+- ADR-0006 — focused `crosslab-crypto` Phase 1 foundation crate
 
-## Exact next task
+## Known Deferred Decisions
 
-After the P0.2 design is approved, create the detailed P0.2 implementation plan and then produce:
+These are intentionally deferred and are not blockers for Phase 1:
 
-- `security/THREAT-MODEL.md`
-- `docs/architecture/SECURITY-BOUNDARIES.md`
-
-The implementation plan must preserve the approved design and verify both documents against the Master Architecture without silently choosing deferred cryptographic or wire-format details.
-
-## Known issues / open decisions
-
-- The Cross-Lab repository license is not yet selected. No third-party research source code may be adapted while this remains unresolved.
-- Exact cryptographic algorithms, credential formats, pairing transcript, key schedule, and protocol serialization remain later Phase 0 decisions.
-- Remote NAT/relay architecture remains intentionally unresolved until the later networking evaluation checkpoint.
-- Platform-specific privileged IPC mechanisms remain deferred to platform milestones.
+- remote NAT/relay implementation beyond the Quinn baseline;
+- persistent metadata database;
+- dedicated transport-abstraction crate;
+- plugin runtime;
+- CRDT use;
+- TCP/TLS fallback and WireGuard integration;
+- platform-specific privileged IPC and driver/kernel components;
+- updater implementation details;
+- platform-native credential profiles beyond v1;
+- low-entropy numeric pairing profile.
 
 ## Verification
 
-P0.2 remains documentation/specification-only; no Rust build/test suite exists yet.
+Phase 0 is documentation/specification-only. No Rust workspace exists yet, so `cargo fmt`, Clippy, and Rust tests are not applicable to this checkpoint.
 
-Completed checks:
+Closeout verification requires:
 
-- P0.1 integration state: **PASS** — Pull Request #1 is merged to `main`.
-- P0.2 branch origin: **PASS** — `phase-0/threat-model` was created from merged `main`.
-- Scope review: **PASS** — design is limited to foundational security boundaries and explicitly defers feature-specific/platform-specific details.
-- Architecture alignment review: **PASS** — transport-independent identity, capability/permission separation, control/data-plane authorization, privilege isolation, recovery separation, route-security precedence, third-party boundary isolation, and fail-closed behavior are represented.
-- Placeholder scan: **PASS** — no TBD/TODO placeholders or unstated implementation requirements remain in the design.
-- Premature-decision review: **PASS** — no exact cryptographic primitive, pairing transcript, wire format, or platform IPC mechanism is selected.
+- all former `foundation/phase-0-to-1` work preserved on `planning`;
+- P0.1-P0.9 plans contain no internal agent/sub-skill instructions;
+- P0.2 duplicate planning files consolidated;
+- accepted ADRs and architecture baseline aligned;
+- license files present;
+- `WORKFLOW.md`, `ROADMAP.md`, this file, and the closeout review agree on the next milestone;
+- no production code, secrets, or third-party source adaptation introduced during Phase 0.
 
-Not applicable in P0.2 design stage:
+## Exact Next Task
 
-- `cargo fmt --check`
-- `cargo clippy`
-- `cargo test`
+1. Integrate the verified `planning` closeout into `main`.
+2. Create a clean `foundation` branch from the integrated `main` commit.
+3. Begin **Phase 1 / M1 — Repository Foundation** by creating the minimal Rust workspace and simulator shell defined by `docs/architecture/CORE-SIMULATOR.md`.
+4. Verify current stable dependency versions before adding dependencies.
+5. Establish formatting, linting, build, and test checks in the first implementation milestone.
 
-These become mandatory when the Rust workspace is introduced.
+## Resume Procedure
 
-## Active design
-
-`docs/plans/phase-0/P0.2-threat-model-design.md`
-
-## Relevant ADRs
-
-None accepted yet for P0.2. The design remains within the approved Master Architecture and does not change an architectural invariant.
-
-## Resume procedure
-
-Before continuing in any new session:
+In a new session:
 
 1. Read `docs/architecture/MASTER-ARCHITECTURE.md`.
 2. Read this file.
-3. Read `docs/plans/phase-0/P0.2-threat-model-design.md`.
-4. Read relevant ADRs if any have been added.
-5. Inspect `phase-0/threat-model`, recent commits, and repository state.
-6. Reconcile this document with actual repository state.
-7. Continue only after the P0.2 design review state is clear.
+3. Read `docs/plans/phase-0/PHASE-0-CLOSEOUT.md` for the frozen Phase 0 baseline.
+4. Read the ADRs relevant to the first implementation slice.
+5. Inspect `main` and the active implementation branch before modifying code.
+6. Continue from the exact next task above unless repository state shows it has already been completed.

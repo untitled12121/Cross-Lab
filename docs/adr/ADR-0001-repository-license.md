@@ -1,7 +1,8 @@
 # ADR-0001: Repository license
 
-**Status:** Proposed  
-**Date:** 2026-09-11
+**Status:** Accepted  
+**Date:** 2026-09-11  
+**Accepted:** 2026-09-11
 
 ## Context
 
@@ -15,9 +16,9 @@ Adopt the common Rust ecosystem dual-license model:
 MIT OR Apache-2.0
 ```
 
-Repository contributions would be accepted under either license at the recipient's option. Individual third-party components retain their own licenses and must still pass compatibility review before source adaptation.
+Repository contributions are accepted under either license at the recipient's option. Individual third-party components retain their own licenses and must still pass compatibility review before source adaptation.
 
-This proposal does not permit copying GPL/AGPL/noncommercial research code into Cross-Lab. Those repositories remain study-only unless a later, explicit compatibility/legal decision permits otherwise.
+This decision does not permit copying GPL/AGPL/noncommercial research code into Cross-Lab. Those repositories remain study-only unless a later, explicit compatibility/legal decision permits otherwise.
 
 ## Alternatives considered
 
@@ -39,15 +40,15 @@ No direct runtime security impact. Clear licensing improves dependency/source pr
 
 ## Compatibility impact
 
-MIT OR Apache-2.0 is broadly compatible with the Rust ecosystem and the permissively licensed libraries currently selected/candidate for the foundation. Copyleft or otherwise restrictive source still requires separate review.
+MIT OR Apache-2.0 is broadly compatible with the Rust ecosystem and the permissively licensed libraries currently selected or under evaluation for the foundation. Copyleft or otherwise restrictive source still requires separate review.
 
 ## Operational impact
 
-If accepted, the repository must add both license texts and use `license = "MIT OR Apache-2.0"` in publishable Cargo packages unless a package has an explicitly documented exception.
+The repository carries both license texts. Publishable Cargo packages use `license = "MIT OR Apache-2.0"` unless a package has an explicitly documented exception.
 
 ## Consequences
 
 - Contributors and downstream users receive a permissive dual-license choice.
-- Cross-Lab must maintain third-party license review rather than assuming the project license makes all source reusable.
+- Cross-Lab maintains third-party license review rather than assuming the project license makes all source reusable.
 - GPL/AGPL/noncommercial research repositories remain reference material by default.
-- This ADR requires explicit owner approval before its status changes to Accepted.
+- This ADR is part of the accepted Phase 0 architecture baseline.

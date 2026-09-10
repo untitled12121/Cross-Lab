@@ -1,7 +1,7 @@
 # Cross-Lab Master Architecture & Development Plan
 
 **Document status:** Architecture Baseline — Source of Truth  
-**Revision:** 2.0  
+**Revision:** 2.1  
 **Date:** 2026-09-11  
 **Project:** Cross-Lab  
 **Scope:** Architecture, security boundaries, repository structure, protocol foundations, platform strategy, development phases, and technology evaluation rules
@@ -10,7 +10,7 @@
 
 ## 1. Document Authority and Change Control
 
-This document defines the authoritative architecture baseline for Cross-Lab. It supersedes the previous master architecture plan and incorporates the approved project naming, desktop stack, repository model, security model, and Phase 0/Phase 1 foundation decisions.
+This document defines the authoritative architecture baseline for Cross-Lab. It supersedes the previous master architecture plan and incorporates the approved project naming, desktop stack, repository model, security model, Phase 0 specifications, and Phase 1 foundation decisions.
 
 The purpose of this document is to prevent architectural drift as implementation expands across platforms and capabilities.
 
@@ -25,6 +25,8 @@ The following rules apply:
 - Research repositories are reference material. Their code, protocols, and architecture must not be copied blindly.
 - License compatibility, security implications, platform support, maintenance status, and performance impact must be reviewed before code is reused or adapted.
 - The smallest architecture that cleanly satisfies the current milestone is preferred over speculative extensibility.
+
+Revision 2.1 incorporates accepted Phase 0 ADRs 0001-0006. Detailed protocol/security mechanics live in their focused specifications; this document records the governing architecture and dependency boundaries.
 
 ---
 
@@ -187,11 +189,11 @@ Owner Root Identity
         └── Recovery Authority
 ```
 
-The exact key hierarchy and delegation format are finalized during Phase 0 security specification work.
+The Phase 0 identity/key hierarchy and delegation rules are defined in `docs/architecture/IDENTITY-AND-KEYS.md` and ADR-0002.
 
 ### 6.2 Device Identity
 
-Each device has its own device key material and a stable Cross-Lab device identifier derived from or bound to authenticated credentials.
+Each device has its own device key material and a stable Cross-Lab device identifier bound to authenticated credentials while remaining independent from ordinary key rotation.
 
 A device record may include:
 
@@ -329,9 +331,9 @@ Possible bootstrap mechanisms include:
 - hardware security key,
 - recovery credential for recovery-specific flows.
 
-A short numeric pairing code must not be treated as a high-entropy secret. If numeric codes are supported, the protocol must use an appropriate password-authenticated or equivalent design with replay and online-guessing protections.
+Phase 1 pairing profile v1 uses the high-entropy single-use bootstrap model defined by `docs/architecture/PAIRING-TRUST-REVOCATION.md` and ADR-0003. A short numeric pairing code must not be treated as a high-entropy secret; any future numeric-code profile requires an appropriate PAKE or equivalent design with replay and online-guessing protections.
 
-The Phase 0 pairing specification must define:
+The pairing specification defines:
 
 - transcript contents,
 - cryptographic domain separation,
@@ -482,6 +484,8 @@ A Cross-Lab secure session must provide or bind to:
 
 Cross-Lab authorization must not assume that transport encryption alone proves owner trust.
 
+The normative Phase 1 session and transport-neutral contract is defined in `docs/architecture/SESSION-TRANSPORT.md`.
+
 ---
 
 ## 13. Protocol Architecture
@@ -510,6 +514,8 @@ Not every protocol is implemented in Phase 1.
 ### 13.1 Protocol Rules
 
 - Wire contracts are versioned.
+- Protocol Buffers is the selected v1 ordinary control-plane wire encoding under ADR-0004.
+- Security-sensitive signatures/MACs use the independent canonical transcript defined by `docs/protocol/PROTOCOL-V1.md`; protobuf bytes are not the canonical signature representation.
 - Unknown optional fields must be handled according to explicit compatibility rules.
 - Security-sensitive parsing must be bounded.
 - Message lengths and collection sizes must have limits.
@@ -1311,6 +1317,8 @@ Recovery commands must be:
 - platform-compliant,
 - unusable as covert surveillance functionality.
 
+The normative recovery authority and command model is defined in `docs/architecture/RECOVERY-UPDATE-SECURITY.md`.
+
 ---
 
 ## 33. Secure Updates
@@ -1330,9 +1338,9 @@ The update model must support:
 - platform driver/signing requirements,
 - protocol compatibility awareness.
 
-A TUF-style architecture is the selected design direction.
+A TUF-style architecture with separated root/targets/snapshot/timestamp roles is selected under ADR-0005. Production root trust uses the threshold policy defined there.
 
-`tough` is a candidate implementation dependency when the updater is implemented. It is not required for Phase 1.
+`tough` remains a candidate implementation dependency when the updater is implemented. It is not required for Phase 1.
 
 ---
 
@@ -1412,6 +1420,8 @@ Audit logs must never contain:
 - sensitive payloads by default,
 - plaintext file/media contents unless a capability explicitly requires user-requested recording.
 
+The detailed audit, privacy, and redaction contract is defined in `docs/architecture/AUDIT-PRIVACY.md`.
+
 ---
 
 ## 36. Repository Architecture
@@ -1420,22 +1430,24 @@ Cross-Lab uses a monorepo and Rust workspace.
 
 The repository grows according to actual boundaries rather than pre-creating every future crate.
 
-### 36.1 Initial Phase 0 / Phase 1 Workspace
+### 36.1 Initial Phase 1 Workspace
 
 ```text
 crosslab/
 ├── Cargo.toml
 ├── rust-toolchain.toml
 ├── README.md
-├── LICENSE
+├── LICENSE-MIT
+├── LICENSE-APACHE
 ├── SECURITY.md
 ├── CONTRIBUTING.md
 │
 ├── crates/
-│   ├── core/
+│   ├── crypto/
 │   ├── identity/
 │   ├── policy/
-│   └── protocol/
+│   ├── protocol/
+│   └── core/
 │
 ├── apps/
 │   └── sim/
@@ -1468,6 +1480,7 @@ crosslab/
 │   └── ios/
 │
 ├── crates/
+│   ├── crypto/
 │   ├── core/
 │   ├── identity/
 │   ├── policy/
@@ -1495,25 +1508,37 @@ Empty directories and speculative crates are not required merely to match this f
 
 ## 37. Initial Crate Responsibilities
 
-### 37.1 `crosslab-identity`
+### 37.1 `crosslab-crypto`
 
-Owns security-domain identity primitives such as:
+Owns only narrow implementation-neutral cryptographic mechanics shared by multiple domain crates:
+
+- secure random helpers/interfaces;
+- cryptographic profile/algorithm identifiers;
+- Ed25519 v1 sign/verify wrappers;
+- BLAKE3 domain-separated digest/fingerprint helpers;
+- canonical transcript v1 builder/encoding/digest primitives;
+- constant-time verification helpers where required;
+- sensitive wrappers needed to prevent accidental secret logging/exposure.
+
+It does not own owner/device credentials, trust records, policy, protocol messages, sessions, sockets, persistence, platform key stores, or recovery/update business semantics. This boundary is governed by ADR-0006.
+
+### 37.2 `crosslab-identity`
+
+Owns security-domain identity semantics such as:
 
 - `OwnerId`,
 - `DeviceId`,
-- key and credential types,
+- key and credential domain types,
 - owner-authorized device credentials,
-- signature verification,
 - key roles,
 - credential epochs,
-- fingerprints,
-- revocation identifiers.
+- fingerprints/identifiers as domain values,
+- revocation identifiers,
+- identity-specific signed-object construction/verification.
 
-Private-key representations should remain encapsulated.
+Private-key representations remain encapsulated. Generic cryptographic mechanics live in `crosslab-crypto`; identity business semantics remain here.
 
-A standalone `crosslab-crypto` crate is not required initially. Cryptographic implementation details should remain private until multiple independent consumers require a stable cryptographic API.
-
-### 37.2 `crosslab-policy`
+### 37.3 `crosslab-policy`
 
 Initially owns:
 
@@ -1528,7 +1553,7 @@ Initially owns:
 
 If trust and capability domains grow independently, they may later be extracted into dedicated crates through an ADR.
 
-### 37.3 `crosslab-protocol`
+### 37.4 `crosslab-protocol`
 
 Owns wire-contract concerns only:
 
@@ -1540,12 +1565,12 @@ Owns wire-contract concerns only:
 - stream-open negotiation,
 - protocol error codes,
 - compatibility rules,
-- canonical signing transcripts,
+- object-specific canonical transcript mappings where protocol/session-owned,
 - wire/domain conversion.
 
 It does not own sockets, platform APIs, UI, policy evaluation, or privileged actions.
 
-### 37.4 `crosslab-core`
+### 37.5 `crosslab-core`
 
 Owns the unprivileged coordination engine:
 
@@ -1564,7 +1589,7 @@ Owns the unprivileged coordination engine:
 
 It must remain platform-independent and must not implement privileged OS operations.
 
-### 37.5 Transport Abstraction
+### 37.6 Transport Abstraction
 
 The transport contract begins as a narrow API seam used by the core rather than an empty crate created for theoretical purity.
 
@@ -1579,27 +1604,33 @@ Dependency flow must point inward toward stable domain semantics.
 Conceptually:
 
 ```text
+crosslab-crypto
+      │
+      ▼
 crosslab-identity
-        │
-        ▼
+      │
+      ▼
 crosslab-policy
-        │
-        ├──────────┐
-        ▼          ▼
-crosslab-protocol  │
-        │          │
-        └────┬─────┘
-             ▼
-        crosslab-core
-             │
-       ┌─────┴────────┐
-       ▼              ▼
-  simulator      concrete adapters
+      │
+      ├──────────┐
+      ▼          ▼
+crosslab-protocol│
+      │          │
+      └────┬─────┘
+           ▼
+      crosslab-core
+           │
+     ┌─────┴────────┐
+     ▼              ▼
+simulator      concrete adapters
 ```
+
+`crosslab-protocol` may depend directly on `crosslab-crypto` for shared canonical/digest helpers and on domain crates for validated domain values. `crosslab-core` may depend on `crosslab-crypto` only for session/security orchestration mechanics not owned by another domain.
 
 Forbidden examples include:
 
 ```text
+crypto   -> policy business rules
 identity -> GPUI
 identity -> Quinn
 policy   -> platform APIs
@@ -1665,6 +1696,8 @@ tough
 
 Quinn is introduced at the first real network milestone.
 
+Exact versions for Phase 1 dependencies are verified immediately before implementation rather than frozen in this architecture document.
+
 ---
 
 ## 40. Research Repository Reuse Policy
@@ -1692,14 +1725,14 @@ Before any code is adapted rather than merely studied, verify:
 
 - repository license,
 - dependency licenses,
-- compatibility with Cross-Lab's chosen project license,
+- compatibility with Cross-Lab's `MIT OR Apache-2.0` license,
 - upstream maintenance,
 - platform support,
 - security history,
 - API stability,
 - performance characteristics.
 
-The Cross-Lab repository license must be selected before source code is adapted from copyleft or otherwise restrictive research projects.
+Cross-Lab's project license does not make incompatible third-party source reusable. Copyleft, noncommercial, or otherwise restrictive research source remains study-only unless a specific compatibility/legal review permits adaptation.
 
 ---
 
@@ -1813,7 +1846,7 @@ Required specifications:
 18. Plugin security boundary as a reserved future design.
 19. Repository license and third-party reuse policy.
 
-Phase 0 does not implement desktop/mobile features.
+Phase 0 does not implement desktop/mobile features. The completed coverage and accepted ADR register are recorded in `docs/plans/phase-0/PHASE-0-CLOSEOUT.md`.
 
 ---
 
@@ -1873,6 +1906,8 @@ The first simulator transport is deterministic and in-memory. It validates Cross
 
 The simulator must not implement toy cryptography and call it secure. Production cryptographic primitives are used where security semantics are being tested.
 
+The detailed workspace, scenario, and test obligations are defined in `docs/architecture/CORE-SIMULATOR.md`.
+
 ---
 
 ## 46. First Network Milestone — Quinn
@@ -1924,7 +1959,7 @@ Cross-Lab logical sessions remain independent from whichever implementation wins
 
 ### Phase 0 — Specification
 
-Freeze the architecture and security contracts defined above.
+Complete. The frozen baseline is recorded by the Phase 0 specifications, accepted ADRs, and closeout review.
 
 ### Phase 1 — Core Simulator
 
@@ -2056,11 +2091,11 @@ The initial implementation sequence is deliberately small and verifiable.
 
 ### M0 — Phase 0 Specifications
 
-Deliver the architecture, threat model, protocol/security specs, ADR structure, license decision, and dependency policy.
+**Complete.** Deliver the architecture, threat model, protocol/security specs, ADR structure, license decision, and dependency policy.
 
 ### M1 — Repository Foundation
 
-Create the minimal Rust workspace, contributor/security documents, formatting/lint/test configuration, and simulator application shell.
+Create the minimal Rust workspace, formatting/lint/test configuration, and simulator application shell.
 
 ### M2 — Identity
 
@@ -2163,15 +2198,14 @@ Introduce `cargo xtask` or equivalent when the project has real cross-platform a
 
 ## 51. Open Architecture Decisions
 
+Phase 0 resolved the repository license, v1 identity cryptographic profile, v1 pairing bootstrap, v1 wire/canonical-signing model, v1 update trust model, and the focused Phase 1 `crosslab-crypto` boundary through ADR-0001 through ADR-0006.
+
 The following items remain intentionally unresolved until evidence is available.
 
 | Decision | Current status | Resolution point |
 |---|---|---|
-| Cross-Lab repository license | Open | Before adapting copyleft/restrictive research code and before public repository baseline |
 | Remote NAT/relay implementation | Quinn baseline + Iroh candidate + libp2p alternative | M9 networking ADR |
-| Final wire serialization details | Protocol Buffers remains a strong candidate; exact canonical/signing interaction must be specified | Phase 0 protocol spec |
 | Persistent metadata database | Deferred | First feature requiring durable structured state |
-| Dedicated `crosslab-crypto` crate | Deferred | When multiple independent crates need stable crypto API |
 | Dedicated transport-abstraction crate | Deferred | When multiple transports justify extraction |
 | Plugin runtime | Deferred | After capability ABI/security model stabilizes |
 | CRDT use | Deferred | First structured state with genuine merge semantics |
@@ -2223,10 +2257,10 @@ The repository should maintain:
 
 ```text
 README.md
-ARCHITECTURE.md or this master plan
+MASTER-ARCHITECTURE.md
 SECURITY.md
 THREAT-MODEL.md
-PROTOCOL.md / protocol specifications
+protocol specifications
 CONTRIBUTING.md
 CODEOWNERS
 ADRs

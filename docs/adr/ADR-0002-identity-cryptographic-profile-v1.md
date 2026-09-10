@@ -1,7 +1,8 @@
 # ADR-0002: Identity cryptographic profile v1
 
-**Status:** Proposed  
-**Date:** 2026-09-11
+**Status:** Accepted  
+**Date:** 2026-09-11  
+**Accepted:** 2026-09-11
 
 ## Context
 
@@ -17,7 +18,7 @@ For Cross-Lab identity profile v1:
 - `KeyId` is a 256-bit BLAKE3 domain-separated digest of the algorithm identifier and canonical public-key bytes;
 - security transcripts include explicit Cross-Lab domain/version labels before signing;
 - credential structures carry an algorithm/profile identifier and schema version to permit future migration;
-- key agreement, session KDF, AEAD, and transport TLS choices are not decided by this ADR and are specified in P0.7/Quinn milestones.
+- key agreement, session KDF, AEAD, and transport TLS choices are not decided by this ADR and are specified in the secure-session/transport milestones.
 
 The logical domain model must not expose a specific Rust cryptography crate in public Cross-Lab types.
 
@@ -49,7 +50,7 @@ All v1 credentials identify their profile/version explicitly. Future signature a
 
 ## Operational impact
 
-Phase 1 will need a maintained Ed25519 implementation, BLAKE3, and an OS-backed secure random source. Exact crate versions are verified immediately before workspace implementation rather than fixed in this ADR.
+Phase 1 requires a maintained Ed25519 implementation, BLAKE3, and an OS-backed secure random source. Exact crate versions are verified immediately before workspace implementation rather than fixed in this ADR.
 
 ## Consequences
 
@@ -57,4 +58,4 @@ Phase 1 will need a maintained Ed25519 implementation, BLAKE3, and an OS-backed 
 - Trust always requires a credential/key relationship in addition to an identifier.
 - Public domain types remain crypto-library-neutral.
 - Hardware-backed/non-exportable platform keys may require additional algorithm profiles later.
-- This ADR requires owner approval during the Phase 0 architecture review before status changes to Accepted.
+- This ADR is part of the accepted Phase 0 architecture baseline.

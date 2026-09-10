@@ -1,7 +1,8 @@
 # ADR-0005: Update trust model v1
 
-**Status:** Proposed  
-**Date:** 2026-09-11
+**Status:** Accepted  
+**Date:** 2026-09-11  
+**Accepted:** 2026-09-11
 
 ## Context
 
@@ -72,5 +73,5 @@ Before production release the project must provision independent root keys, defi
 
 - Owner hubs/mirrors may distribute artifacts without becoming signing authorities.
 - A rollback is performed as a new signed higher version rather than lowering version state.
-- Production release operations are more disciplined and require multiple root key holders/copies.
-- This ADR requires owner approval during the Phase 0 architecture review before status changes to Accepted.
+- Production release operations require disciplined multi-key root custody.
+- This ADR is part of the accepted Phase 0 architecture baseline.

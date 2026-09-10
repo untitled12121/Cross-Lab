@@ -1,20 +1,20 @@
 # Contributing to Cross-Lab
 
-Cross-Lab is in early architecture and foundation development. Contributions should preserve the project's local-first, owner-controlled, least-privilege design rather than optimize for short-term feature delivery.
+Cross-Lab is an architecture-first, Rust-first cross-device project. Contributions should preserve the project's local-first, owner-controlled, least-privilege design rather than optimize for short-term feature delivery.
 
-## Before making changes
+## Before Making Changes
 
 Read, in order:
 
 1. `docs/architecture/MASTER-ARCHITECTURE.md`
 2. `docs/development/CURRENT.md`
-3. the active plan under `docs/plans/`
+3. the milestone/implementation document relevant to the task
 4. relevant ADRs under `docs/adr/`
 5. `docs/development/WORKFLOW.md`
 
-Inspect the current branch, recent commits, and repository state before modifying files. Repository state and tests take precedence over stale progress notes.
+Inspect the active branch, recent commits, and repository state before modifying files. Git, code, and verification results take precedence over stale progress notes.
 
-## Development rules
+## Development Rules
 
 - Work in small, independently reviewable changes.
 - Prefer feature-first organization and focused files.
@@ -28,7 +28,7 @@ Inspect the current branch, recent commits, and repository state before modifyin
 
 ## Verification
 
-Run the checks relevant to the current milestone before claiming completion. Once the Rust workspace exists, the normal baseline is expected to include:
+Run the checks relevant to the current milestone before claiming completion. Once the Rust workspace exists, the normal baseline is:
 
 ```text
 cargo fmt --check
@@ -36,12 +36,14 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace
 ```
 
-Security, protocol, integration, fuzz, or platform checks are added when the active milestone requires them. Record failed or unrun verification honestly in `docs/development/CURRENT.md`.
+Security, protocol, integration, fuzz, networking, privilege-boundary, or platform checks are added when the active milestone requires them. Record failed or unrun verification honestly in `docs/development/CURRENT.md`.
 
-## Architecture decisions
+## Architecture Decisions
 
-ADRs live in `docs/adr/`. The ADR policy is defined in the Master Architecture and summarized in `docs/adr/README.md`. Superseded decisions remain in Git history and in the ADR directory.
+ADRs live in `docs/adr/`. The ADR policy is defined in the Master Architecture and summarized in `docs/adr/README.md`. Accepted architectural changes that affect the baseline must update the Master Architecture in the same reviewed change. Superseded ADRs remain in the repository for historical context.
 
-## Licensing status
+## Licensing
 
-The repository license is currently unresolved. Until it is selected and contribution terms are documented, do not submit third-party source adaptations or assume that public repository visibility grants a reusable source license.
+Cross-Lab is licensed under **MIT OR Apache-2.0**, at your option. Contributions are submitted under the same dual-license terms unless explicitly agreed otherwise.
+
+Third-party source remains subject to its own license. Do not adapt source from research repositories merely because Cross-Lab is permissively licensed; verify compatibility and project policy first.

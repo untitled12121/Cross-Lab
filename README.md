@@ -2,7 +2,7 @@
 
 Cross-Lab is an open-source, local-first, owner-controlled cross-device ecosystem for Linux, Windows, macOS, Android, and iOS/iPadOS.
 
-The project is currently in **Phase 0 — Architecture and Security Specification**. Production feature implementation has not started.
+**Phase 0 — Architecture and Security Specification is complete.** The project is ready to begin Phase 1 implementation with the deterministic Core Simulator foundation.
 
 ## Architecture
 
@@ -18,14 +18,20 @@ Core principles include:
 - control-plane authorization before data-plane operations;
 - isolated privileged helpers and independent recovery authority.
 
-## Development state
+## Development State
 
-The current milestone, branch, verification state, and exact resume task are recorded in `docs/development/CURRENT.md`.
+The current milestone, active branch, verification state, and exact resume task are recorded in `docs/development/CURRENT.md`.
 
-Development workflow and continuity rules are defined in `docs/development/WORKFLOW.md`. The roadmap is summarized in `docs/development/ROADMAP.md`.
+Development workflow and branch rules are defined in `docs/development/WORKFLOW.md`. The roadmap is summarized in `docs/development/ROADMAP.md`.
 
-## Contributing and security
+The completed Phase 0 gate is recorded in `docs/plans/phase-0/PHASE-0-CLOSEOUT.md`.
+
+## Contributing and Security
 
 Read `CONTRIBUTING.md` before proposing code or architectural changes. Security handling is documented in `SECURITY.md`.
 
-The Cross-Lab repository license has not yet been selected. Do not infer a license from repository visibility, and do not adapt third-party research source code until the license and reuse requirements are resolved through the architecture process.
+Research repositories are references, not automatic dependencies or source donors. Reuse requires license, maintenance, security, platform, and architectural review.
+
+## License
+
+Cross-Lab is licensed under **MIT OR Apache-2.0**, at your option. See `LICENSE-MIT` and `LICENSE-APACHE`.

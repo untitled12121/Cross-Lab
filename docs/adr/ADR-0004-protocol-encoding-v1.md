@@ -1,7 +1,8 @@
 # ADR-0004: Protocol encoding and canonical signing profile v1
 
-**Status:** Proposed  
-**Date:** 2026-09-11
+**Status:** Accepted  
+**Date:** 2026-09-11  
+**Accepted:** 2026-09-11
 
 ## Context
 
@@ -43,11 +44,11 @@ Separating wire serialization from canonical signing prevents serializer behavio
 
 ## Operational impact
 
-Phase 1 will need maintained protobuf/prost tooling. Exact crates/tooling and versions are verified at implementation time. Build tooling must remain reproducible and must not require untracked generated files as the only source of protocol truth.
+Phase 1 requires maintained protobuf/prost tooling. Exact crates/tooling and versions are verified at implementation time. Build tooling must remain reproducible and must not require untracked generated files as the only source of protocol truth.
 
 ## Consequences
 
 - Cross-language protocol evolution has a standard schema format.
 - Security signatures remain independent of protobuf byte serialization.
-- The repository must maintain golden vectors for canonical transcripts and protocol compatibility.
-- This ADR requires owner approval during the Phase 0 architecture review before status changes to Accepted.
+- The repository maintains golden vectors for canonical transcripts and protocol compatibility.
+- This ADR is part of the accepted Phase 0 architecture baseline.

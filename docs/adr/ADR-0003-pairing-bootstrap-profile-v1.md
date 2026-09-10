@@ -1,7 +1,8 @@
 # ADR-0003: Pairing bootstrap profile v1
 
-**Status:** Proposed  
-**Date:** 2026-09-11
+**Status:** Accepted  
+**Date:** 2026-09-11  
+**Accepted:** 2026-09-11
 
 ## Context
 
@@ -55,4 +56,4 @@ Phase 1 requires a maintained HMAC/SHA-256 implementation and secure random gene
 - QR/bootstrap implementations can carry the full one-time secret later.
 - Numeric pairing codes remain safely deferred.
 - Pairing confidentiality is not promised by the bootstrap protocol; non-public application payloads must not be sent before a secure authorized session exists.
-- This ADR requires owner approval during the Phase 0 architecture review before status changes to Accepted.
+- This ADR is part of the accepted Phase 0 architecture baseline.
