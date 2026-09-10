@@ -1,0 +1,17 @@
+# Rust
+/target/
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS metadata
+.DS_Store
+Thumbs.db
