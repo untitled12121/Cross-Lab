@@ -4,51 +4,46 @@ This file is the resume guide for Cross-Lab. Git history, repository contents, a
 
 ## Current Phase
 
-**Phase 0 — Architecture and Security Specification: Complete**
+**Phase 1 — Core Simulator: Ready to Start**
+
+Phase 0 — Architecture and Security Specification is complete and integrated into `main`.
 
 ## Current Milestone
 
-**Phase 0 closeout and integration**
+**M1 — Repository Foundation**
 
-The Phase 0 architecture/security baseline is complete and ready to integrate into `main`.
+No Phase 1 production code has been written yet.
 
 ## Active Branch
 
-`planning`
+`main`
 
-`planning` is the sole active Phase 0 work branch. Historical branch refs are not part of the active workflow.
+The completed `planning` branch is retained as the Phase 0 planning ref. Create `foundation` from the integrated `main` baseline before beginning M1 implementation.
 
-## Last Verified Checkpoint
+## Last Verified Phase 0 Checkpoint
 
-The Phase 0 closeout commit containing this file is the current verified planning checkpoint. Its preserved Phase 0 specification ancestry includes `6b5b26e0324ad586db88afa68f744bf7f50984fd`.
+`11b19b9a7cdb135207f1fc78896d74a9ef7dc108` — completed Phase 0 architecture planning and closeout baseline, fast-forward integrated into `main`.
 
 ## Completed
 
-- P0.1-P0.9 foundational planning/specification milestones.
+- P0.1-P0.9 foundational architecture/security milestones.
 - Threat model and security-boundary specification.
 - Owner/device identity and key hierarchy.
 - Pairing, trust establishment, and revocation model.
 - Default-deny policy and operation-bound authorization model.
-- Protocol v1 compatibility, framing, lifecycle, replay/retry/cancellation, and canonical signing transcript.
+- Protocol v1 compatibility, bounded framing, lifecycle, replay/retry/cancellation, and canonical signing transcript.
 - Secure logical-session and transport-neutral contract.
 - Recovery/update security model, audit/privacy rules, and reserved plugin authority boundary.
 - Core Simulator workspace/scenario specification.
-- Phase 0 ADR decisions and repository licensing.
-- Professionalized milestone records and formal Phase 0 closeout review.
-- Purpose-based branch workflow for future development.
+- ADR-0001 through ADR-0006 accepted and reconciled with Master Architecture Revision 2.1.
+- Repository license fixed as `MIT OR Apache-2.0`.
+- Phase 0 milestone records professionalized and duplicate P0.2 planning documents consolidated.
+- Phase 0 closeout review completed.
+- Purpose-based branch workflow established.
 
-## Accepted Phase 0 ADRs
+## Deferred Decisions
 
-- ADR-0001 — `MIT OR Apache-2.0` repository license
-- ADR-0002 — identity cryptographic profile v1
-- ADR-0003 — pairing bootstrap profile v1
-- ADR-0004 — Protocol Buffers + canonical signing transcript v1
-- ADR-0005 — TUF-style update trust model v1
-- ADR-0006 — focused `crosslab-crypto` Phase 1 foundation crate
-
-## Known Deferred Decisions
-
-These are intentionally deferred and are not blockers for Phase 1:
+These are intentional later-milestone choices and are not blockers for M1:
 
 - remote NAT/relay implementation beyond the Quinn baseline;
 - persistent metadata database;
@@ -63,33 +58,34 @@ These are intentionally deferred and are not blockers for Phase 1:
 
 ## Verification
 
-Phase 0 is documentation/specification-only. No Rust workspace exists yet, so `cargo fmt`, Clippy, and Rust tests are not applicable to this checkpoint.
+Phase 0 was documentation/specification-only; no Rust workspace existed, so Rust format/lint/test commands were not applicable.
 
-Closeout verification requires:
+Verified at closeout:
 
-- all former `foundation/phase-0-to-1` work preserved on `planning`;
-- P0.1-P0.9 plans contain no internal agent/sub-skill instructions;
-- P0.2 duplicate planning files consolidated;
-- accepted ADRs and architecture baseline aligned;
-- license files present;
-- `WORKFLOW.md`, `ROADMAP.md`, this file, and the closeout review agree on the next milestone;
-- no production code, secrets, or third-party source adaptation introduced during Phase 0.
+- `planning` preserved all commits formerly unique to `foundation/phase-0-to-1` and added one clean closeout commit before integration;
+- P0.1-P0.9 milestone records no longer contain internal agent/sub-skill execution instructions;
+- P0.2 duplicate planning files were consolidated;
+- Master Architecture Revision 2.1 reflects the accepted Phase 0 ADR decisions;
+- license files are present;
+- `README.md`, `CONTRIBUTING.md`, `WORKFLOW.md`, `ROADMAP.md`, and the Phase 0 closeout record agree on the implementation handoff;
+- no production source code or third-party research source adaptation was introduced by Phase 0.
 
 ## Exact Next Task
 
-1. Integrate the verified `planning` closeout into `main`.
-2. Create a clean `foundation` branch from the integrated `main` commit.
-3. Begin **Phase 1 / M1 — Repository Foundation** by creating the minimal Rust workspace and simulator shell defined by `docs/architecture/CORE-SIMULATOR.md`.
-4. Verify current stable dependency versions before adding dependencies.
-5. Establish formatting, linting, build, and test checks in the first implementation milestone.
+1. Create `foundation` from the current `main` commit.
+2. Re-read `docs/architecture/CORE-SIMULATOR.md`, Master Architecture Sections 36-45 and 49, and ADR-0006.
+3. Inspect the uploaded research repositories relevant to the initial Rust foundation only where they can inform dependency/API choices; do not copy architecture blindly.
+4. Verify current stable Rust/dependency versions required for M1 instead of guessing them.
+5. Create the minimal Rust workspace with `crosslab-crypto`, `crosslab-identity`, `crosslab-policy`, `crosslab-protocol`, `crosslab-core`, and `crosslab-sim` shells, plus formatting/lint/test configuration.
+6. Run formatting, Clippy, build, and workspace tests before the M1 checkpoint.
 
 ## Resume Procedure
 
 In a new session:
 
-1. Read `docs/architecture/MASTER-ARCHITECTURE.md`.
-2. Read this file.
-3. Read `docs/plans/phase-0/PHASE-0-CLOSEOUT.md` for the frozen Phase 0 baseline.
-4. Read the ADRs relevant to the first implementation slice.
-5. Inspect `main` and the active implementation branch before modifying code.
-6. Continue from the exact next task above unless repository state shows it has already been completed.
+1. Inspect `main`, branch refs, and recent commits.
+2. Read `docs/architecture/MASTER-ARCHITECTURE.md`.
+3. Read this file.
+4. Read `docs/architecture/CORE-SIMULATOR.md` and relevant ADRs.
+5. Create or inspect the `foundation` branch.
+6. Continue from the exact next task above, reconciling the file with actual repository state first.
