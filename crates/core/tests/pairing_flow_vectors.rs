@@ -78,12 +78,7 @@ fn credential_acceptance_proof_matches_golden_vector() {
         accepted.signature().to_bytes(),
     );
     let expected = (
-        [0_u8; 16],
-        [0_u8; 32],
-        [0_u8; 32],
-        [0_u8; 32],
-        [0_u8; 32],
-        [0_u8; 64],
+        [0_u8; 16], [0_u8; 32], [0_u8; 32], [0_u8; 32], [0_u8; 32], [0_u8; 64],
     );
 
     assert_eq!(actual, expected);
