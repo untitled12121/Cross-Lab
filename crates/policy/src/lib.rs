@@ -2,6 +2,7 @@
 
 mod authorization;
 mod capability;
+mod operation;
 mod trust;
 
 pub use authorization::{
@@ -12,5 +13,8 @@ pub use authorization::{
 pub use capability::{
     CapabilityId, CapabilityVersion, CapabilityVersionRange, IdentifierError, LocalCapability,
     OperationName, VersionRangeError,
+};
+pub use operation::{
+    AuthorizedOperation, OperationError, OperationId, OperationState, OperationUseContext, UsePolicy,
 };
 pub use trust::{TransitionId, TrustError, TrustRecord, TrustState};
