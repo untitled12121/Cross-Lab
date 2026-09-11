@@ -99,6 +99,7 @@ impl Fixture {
         FeatureSet::new(&[2, 3, 4], &[3]).unwrap()
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn transcript(
         &self,
         initiator_nonce: [u8; 32],
