@@ -1,9 +1,9 @@
 use crosslab_identity::DeviceId;
 use crosslab_policy::{
-    AuthorizationGrant, AuthorizedOperation, CapabilityId, CapabilityVersion, CapabilityVersionRange,
-    LocalCapability, NetworkClass, OperationError, OperationName, OperationState,
-    OperationUseContext, PolicyRule, PolicyState, RuleEffect, RuleId, SessionId, TrustState,
-    UsePolicy,
+    AuthorizationGrant, AuthorizedOperation, CapabilityId, CapabilityVersion,
+    CapabilityVersionRange, LocalCapability, NetworkClass, OperationError, OperationName,
+    OperationState, OperationUseContext, PolicyRule, PolicyState, RuleEffect, RuleId, SessionId,
+    TrustState, UsePolicy,
 };
 
 struct Fixture {
@@ -83,9 +83,10 @@ impl Fixture {
 #[test]
 fn allow_grant_creates_active_operation_with_nonreused_random_id() {
     let fixture = Fixture::new();
-    let first = AuthorizedOperation::issue(fixture.grant.clone(), 10, 20, UsePolicy::SingleStream)
-        .unwrap();
-    let second = AuthorizedOperation::issue(fixture.grant, 10, 20, UsePolicy::SingleStream).unwrap();
+    let first =
+        AuthorizedOperation::issue(fixture.grant.clone(), 10, 20, UsePolicy::SingleStream).unwrap();
+    let second =
+        AuthorizedOperation::issue(fixture.grant, 10, 20, UsePolicy::SingleStream).unwrap();
 
     assert_eq!(first.state(), OperationState::Active);
     assert_eq!(first.id().as_bytes().len(), 32);
