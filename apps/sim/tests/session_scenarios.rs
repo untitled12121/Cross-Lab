@@ -587,7 +587,7 @@ fn malformed_frame_invalid_session_and_registered_close_fail_closed() {
     let fixture = Fixture::new();
 
     let pair = transport_pair();
-    let (session_a, session_b) = fixture.sessions(&pair, true);
+    let (_session_a, session_b) = fixture.sessions(&pair, true);
     let (endpoint_a, endpoint_b) = pair.endpoints();
     endpoint_a.try_send_control(vec![0, 0, 0, 1, 0xff]).unwrap();
     let mut node_b = SimNode::new(
