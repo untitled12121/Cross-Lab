@@ -6,6 +6,7 @@ mod data_stream;
 mod feature;
 mod framing;
 mod version;
+pub mod wire;
 
 pub use capability::{
     CapabilityAdvertisement, CapabilityAdvertisementEntry, CapabilityAdvertisementError,
@@ -25,3 +26,4 @@ pub use version::{
     MAX_PROTOCOL_RANGES, ProtocolRange, ProtocolVersion, VersionNegotiationError,
     negotiate_protocol_version,
 };
+pub use wire::{ProtocolWireError, decode_data_stream_open, encode_data_stream_open};

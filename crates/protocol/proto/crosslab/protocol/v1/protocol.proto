@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package crosslab.protocol.v1;
+
+message CapabilityVersionV1 {
+  uint32 major = 1;
+  uint32 minor = 2;
+}
+
+enum StreamDirectionV1 {
+  STREAM_DIRECTION_UNSPECIFIED = 0;
+  STREAM_DIRECTION_SOURCE_TO_DESTINATION = 1;
+  STREAM_DIRECTION_DESTINATION_TO_SOURCE = 2;
+}
+
+message DataStreamOpenV1 {
+  bytes session_id = 1;
+  bytes stream_id = 2;
+  bytes operation_id = 3;
+  string capability_id = 4;
+  CapabilityVersionV1 capability_version = 5;
+  string operation_name = 6;
+  StreamDirectionV1 direction = 7;
+  uint32 stream_index = 8;
+}

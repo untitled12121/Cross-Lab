@@ -14,3 +14,4 @@ workspace = true
 crosslab-crypto = { path = "../crypto" }
 crosslab-identity = { path = "../identity" }
 crosslab-policy = { path = "../policy" }
+prost.workspace = true
