@@ -10,7 +10,7 @@ This file is the durable resume guide for active Cross-Lab development. Git hist
 
 **M5 — Pairing + Authenticated Logical Session Simulator: in progress.**
 
-Verified M1–M4 and M5 Tasks 1–6 are integrated into canonical `main`. The next implementation slice is M5 Task 7 after this integration-record commit is verified on `main`.
+Verified M1–M4 and M5 Tasks 1–6 are integrated into canonical `main`. M5 Task 7 is implemented and exact-head verified on `m5-session-state`; integration into `main` is the current handoff step.
 
 ## Branch State
 
@@ -18,8 +18,8 @@ Verified M1–M4 and M5 Tasks 1–6 are integrated into canonical `main`. The ne
 - `m5-session` — historical M5 Tasks 1–4 branch; PR #10 merged.
 - `m5-session-auth` — historical M5 Task 5 branch; PR #11 merged.
 - `m5-memory-transport` — historical M5 Task 6 branch; PR #12 merged.
+- `m5-session-state` — active M5 Task 7 branch; PR #13 open pending documentation-inclusive exact-head verification and integration.
 - `planning` — planning/documentation branch; no active implementation belongs here.
-- Start Task 7 from a fresh short-lived branch based on the verified current `main` head.
 - No temporary `*-red` branches are required for TDD; failing contract-test checkpoints remain ordinary commits on the active implementation branch.
 
 The connected GitHub workflow writes directly to committed branches, so there is no separate uncommitted remote working-tree state. Repository history is the durable implementation state.
@@ -165,22 +165,53 @@ TDD and verification evidence:
 
 No protocol parser or wire schema changed in Task 6, so the protocol-parser fuzz target surface was unchanged; Task 6's relevant verification gate was the complete workspace CI baseline.
 
+### Task 7 — logical session activation and capability exchange
+
+Complete and exact-head verified; integration pending.
+
+Implemented:
+
+- explicit logical-session states `Created`, `Authenticating`, `Active`, `Closing`, `Closed`, and `Revoked`;
+- activation fails closed and transitions to `Closed` if credential-chain verification, trust validation, protocol negotiation, required-feature negotiation, channel-bound transcript proof verification, or deterministic `SessionId` derivation fails;
+- session authentication reuses the existing `DeviceCredential`, `AuthorityDelegation`, `TrustRecord`, protocol-version negotiator, feature negotiator, `SessionAuthTranscriptV1`, role-separated proofs, and deterministic `SessionId` derivation rather than creating parallel trust/security models;
+- local/peer identity is selected by the local session-auth role while the canonical transcript remains initiator/responder ordered;
+- authenticated `SessionContext` records owner, local/peer device IDs, peer accepted credential epoch/trust revision, negotiated protocol/features, transport security class, and fresh directional control sequence counters initialized to zero;
+- peer trust must be `Trusted`, match the authenticated owner/device identity, and pin the exact accepted credential epoch;
+- replayed proofs under fresh nonces and proofs bound to a different channel binding fail closed;
+- capability exchange is allowed only after `Active` and computes a deterministic highest compatible runtime-available `(CapabilityId, CapabilityVersion)` intersection;
+- capability negotiation stores descriptive session metadata only and does not mutate `PolicyState`, create `AuthorizationGrant`, or bypass the existing independent policy gate;
+- two focused `CapabilityVersionRange` accessors expose major/minor bounds needed for correct intersection without duplicating policy capability types;
+- explicit graceful close and revocation terminal transitions reject invalid state changes;
+- Task 8 control request/response/event dispatch remains out of Task 7.
+
+Tests cover successful S-003-style activation, fresh sequence initialization, replayed proof/fresh nonce rejection, wrong channel binding rejection, incompatible protocol rejection, unsupported required-feature rejection, trust identity mismatch, accepted credential epoch mismatch, post-auth-only capability exchange, policy non-authority, and close/revocation lifecycle behavior.
+
+TDD and verification evidence:
+
+- initial Task 7 test head `3a4fafcc8cb72857549fa0e40edb3a76c4d4ea82` stopped at rustfmt and is not counted as valid RED evidence;
+- valid RED head `3a7af8ad57af1ecec2ae52753f80498e0c1a105c`: CI `34655692501` passed lockfile/rustfmt and failed `cargo check` specifically because `LogicalSession`, `SessionActivation`, `SessionHandshakeSide`, `SessionState`, and `SessionError` did not yet exist;
+- implementation/fix history preserved ordinary TDD commits on `m5-session-state`; no temporary RED branch was created;
+- exact code head `606f9022c1c4e702f88d1d71cbee907dc26d5b1b` passed CI `34656446809` and Fuzz Smoke `34656446822`.
+
+PR #13 is the Task 7 integration PR. After this documentation checkpoint is exact-head verified, merge only that verified head into `main`, run post-merge `main` CI, and record the integrated result before Task 8.
+
 ## Exact Next Task
 
-Continue **M5 Task 7 — Logical session activation and capability exchange**, following `docs/plans/phase-1/M5-pairing-session-simulator.md` test-first.
+First integrate **M5 Task 7 — Logical session activation and capability exchange** into canonical `main` after the documentation-inclusive PR head passes exact-head CI/fuzz.
 
-The next implementation slice should:
+Then continue **M5 Task 8 — Sequenced control request/response/event simulator**, following `docs/plans/phase-1/M5-pairing-session-simulator.md` test-first.
 
-1. create failing `crates/core/tests/session.rs` S-003/S-004 and N-020..N-027-style coverage before production changes;
-2. create `crates/core/src/session/state.rs` for the explicit `Created -> Authenticating -> Active -> Closing -> Closed` lifecycle plus the revocation terminal path;
-3. create `crates/core/src/session/capabilities.rs` for post-authentication capability intersection;
-4. modify `crates/core/src/session/mod.rs` only to compose/export the focused session features;
-5. require credential/trust validation, protocol/feature negotiation, channel-binding validation, both directional proofs, derived `SessionId`, and directional sequence initialization before `Active`;
-6. ensure capability advertisement/negotiation occurs only after authentication and never creates policy authority;
-7. keep Task 8 control request/response/event dispatch out of Task 7;
-8. run the full format/check/Clippy/workspace-test baseline, checkpoint this file, merge verified Task 7 into `main`, and reverify canonical `main` before Task 8.
+Task 8 should:
 
-Do not begin Task 8 until Task 7 is verified and integrated.
+1. create failing `apps/sim/tests/session_scenarios.rs` S-006 plus duplicate/gap/nonretryable request coverage before production changes;
+2. create `crates/core/src/control/mod.rs` for bounded authenticated M4 envelope dispatch and modify core exports only as needed;
+3. create `apps/sim/src/node.rs` for simulator composition over the existing bounded memory transport and logical-session context;
+4. use existing M4 envelope/message kinds, sequence validators, request/response correlation, event/session-close registry, cancellation semantics, and policy authorization rather than duplicating protocol or policy logic;
+5. fail malformed, duplicate, gap, stale-session, invalid-kind, unauthorized, or nonretryable control traffic closed without granting capability authority;
+6. keep M6 data-stream admission and all real networking out of Task 8;
+7. run exact-head format/check/Clippy/tests plus fuzz smoke, checkpoint this file, merge verified Task 8 into `main`, and reverify canonical `main` before Task 9.
+
+Task 9 then completes M5 with end-to-end scenarios, pairing/session-auth parser fuzz targets, fuzz workflow expansion, full baseline verification, final scope review, `CURRENT.md` M6 handoff, and canonical `main` integration.
 
 After M5 integration, the next milestone is **M6 — Authorized Data Streams**.
 
@@ -192,4 +223,4 @@ Before continuing in a new session:
 2. read `docs/architecture/MASTER-ARCHITECTURE.md` and this file;
 3. read `docs/plans/phase-1/M5-pairing-session-simulator.md`, `docs/architecture/SESSION-TRANSPORT.md`, and relevant ADRs;
 4. reconcile documentation with actual code before editing;
-5. branch from the verified current `main` head and continue from **M5 Task 7** above.
+5. finish Task 7 integration if PR #13 is not yet merged; otherwise branch Task 8 from the verified current `main` head.
