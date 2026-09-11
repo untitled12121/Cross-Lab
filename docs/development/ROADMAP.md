@@ -27,8 +27,8 @@ Closeout record: `docs/plans/phase-0/PHASE-0-CLOSEOUT.md`.
 Implementation sequence:
 
 - M1 — Repository Foundation — **Complete**
-- **M2 — Crypto + Identity — Active**
-- M3 — Trust + Policy
+- M2 — Crypto + Identity — **Complete on `foundation`; PR #7 pending integration**
+- **M3 — Trust + Policy — Ready next**
 - M4 — Protocol
 - M5 — Pairing + Authenticated Logical Session Simulator
 - M6 — Authorized Data Streams
@@ -37,11 +37,13 @@ Implementation sequence:
 - M9 — Remote Networking Evaluation ADR
 - M10 — First Linux Desktop + Android Vertical Slice
 
-M1 record: `docs/plans/phase-1/M1-repository-foundation.md`.
+Milestone records/plans:
 
-M2 is governed by `docs/architecture/CORE-SIMULATOR.md`, `docs/architecture/IDENTITY-AND-KEYS.md`, `docs/protocol/PROTOCOL-V1.md`, ADR-0002, and ADR-0006.
+- M1: `docs/plans/phase-1/M1-repository-foundation.md`
+- M2: `docs/plans/phase-1/M2-crypto-identity.md`
+- M3: `docs/plans/phase-1/M3-trust-policy.md`
 
-`main` remains the canonical integrated branch. `foundation` is the active Phase 1 implementation branch.
+`main` remains the canonical integrated branch. Use a short purpose-named implementation branch for the current unit of work and retire it after its commits are preserved in `main`.
 
 ## Later Phases
 
