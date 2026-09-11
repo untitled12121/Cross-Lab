@@ -64,5 +64,8 @@ fn sequence_space_exhaustion_is_terminal() {
 
     sequence.accept(u64::MAX).unwrap();
     assert_eq!(sequence.expected(), None);
-    assert_eq!(sequence.accept(u64::MAX).unwrap_err(), SequenceError::Exhausted);
+    assert_eq!(
+        sequence.accept(u64::MAX).unwrap_err(),
+        SequenceError::Exhausted
+    );
 }
