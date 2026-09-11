@@ -1,5 +1,5 @@
 use crosslab_crypto::{
-    CanonicalError, CanonicalTranscript, SignatureAlgorithm, SigningKey, blake3_256,
+    CanonicalError, CanonicalTranscript, SignatureAlgorithm, SigningKey, VerifyingKey, blake3_256,
     signed_object_digest,
 };
 
@@ -63,6 +63,11 @@ fn ed25519_signs_the_digest_and_rejects_modified_input() {
     let mut modified = digest;
     modified[0] ^= 1;
     assert!(verifying_key.verify_digest(&modified, &signature).is_err());
+}
+
+#[test]
+fn weak_ed25519_public_keys_are_rejected() {
+    assert!(VerifyingKey::from_bytes([0; 32]).is_err());
 }
 
 #[test]
