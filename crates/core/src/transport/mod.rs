@@ -31,7 +31,10 @@ impl fmt::Debug for ChannelBinding {
         formatter
             .debug_struct("ChannelBinding")
             .field("profile_id", &self.profile_id)
-            .field("bytes", &format_args!("[REDACTED; {} bytes]", self.bytes.len()))
+            .field(
+                "bytes",
+                &format_args!("[REDACTED; {} bytes]", self.bytes.len()),
+            )
             .finish()
     }
 }
