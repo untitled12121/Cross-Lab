@@ -73,8 +73,8 @@ pub fn decode_frame(frame: &[u8], limit: FrameLimit) -> Result<&[u8], FrameError
     let prefix = frame
         .get(..LENGTH_PREFIX_BYTES)
         .ok_or(FrameError::MissingLengthPrefix)?;
-    let declared = u32::from_be_bytes(prefix.try_into().expect("length prefix is four bytes"))
-        as usize;
+    let declared =
+        u32::from_be_bytes(prefix.try_into().expect("length prefix is four bytes")) as usize;
     let max = limit.max_payload_len();
 
     if declared > max {
