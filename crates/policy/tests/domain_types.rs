@@ -21,7 +21,10 @@ fn capability_id_rejects_noncanonical_values_and_length_overflow() {
         "clipboard.réad",
         "clipboard read",
     ] {
-        assert!(CapabilityId::parse(invalid).is_err(), "accepted {invalid:?}");
+        assert!(
+            CapabilityId::parse(invalid).is_err(),
+            "accepted {invalid:?}"
+        );
     }
 
     let oversized = format!("a.{}", "b".repeat(127));
@@ -47,7 +50,10 @@ fn operation_name_rejects_invalid_segments_and_length_overflow() {
         "réceive",
         "receive file",
     ] {
-        assert!(OperationName::parse(invalid).is_err(), "accepted {invalid:?}");
+        assert!(
+            OperationName::parse(invalid).is_err(),
+            "accepted {invalid:?}"
+        );
     }
 
     let oversized = "a".repeat(65);
