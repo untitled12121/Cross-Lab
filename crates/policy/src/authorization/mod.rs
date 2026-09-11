@@ -318,11 +318,7 @@ impl PolicyState {
         };
 
         if rule.effect == RuleEffect::Deny {
-            return PolicyDecision::deny_matched(
-                DecisionReason::ExplicitDeny,
-                rule,
-                self.revision,
-            );
+            return PolicyDecision::deny_matched(DecisionReason::ExplicitDeny, rule, self.revision);
         }
 
         if rule.constraints.iter().any(|constraint| match constraint {
