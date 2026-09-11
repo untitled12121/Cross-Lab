@@ -33,6 +33,24 @@ fn device_signing_delegation_verifies_against_owner_root() {
 }
 
 #[test]
+fn owner_root_cannot_be_created_through_authority_delegation() {
+    let (owner_id, root_key, root, _, _) = fixture();
+    let delegated_root_key = SigningKey::from_secret_bytes([34; 32]);
+    let delegation = AuthorityDelegation::issue(
+        owner_id,
+        AuthorityRole::OwnerRoot,
+        &delegated_root_key,
+        1,
+        &root_key,
+    );
+
+    assert_eq!(
+        delegation.verify(&root, 0),
+        Err(IdentityError::WrongIssuerRole)
+    );
+}
+
+#[test]
 fn delegation_rejects_unknown_root_key() {
     let (owner_id, _, _, _, delegation) = fixture();
     let unknown_root = OwnerRootRecord::new(owner_id, &SigningKey::from_secret_bytes([20; 32]), 0);
