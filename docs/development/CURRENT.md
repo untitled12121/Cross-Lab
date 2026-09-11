@@ -8,15 +8,18 @@ This file is the durable resume guide for active Cross-Lab development. Git hist
 
 ## Current Milestone
 
-**M5 — Pairing + Authenticated Logical Session Simulator: approved and starting.**
+**M5 — Pairing + Authenticated Logical Session Simulator: in progress.**
 
-M1–M4 are integrated into canonical `main`.
+M1–M4 are integrated into canonical `main`. M5 Tasks 1–4 are complete and verified on `m5-session`; the owner has explicitly requested integration of the verified work into `main` before continuing.
 
 ## Branch State
 
-- `main` — canonical integrated branch; contains verified M1–M4.
+- `main` — canonical integrated branch; contains verified M1–M4 and is the required integration target for the current M5 checkpoint.
+- `m5-session` — verified M5 Tasks 1–4 implementation branch; PR #10 targets `main`.
 - `planning` — planning/documentation branch; no active implementation belongs here.
-- M5 uses one short-lived implementation branch only. No temporary `*-red` branches are required for TDD.
+- No temporary `*-red` branches are required for TDD; failing contract-test checkpoints remain ordinary commits on the active implementation branch.
+
+The connected GitHub workflow writes directly to committed branches, so there is no separate uncommitted remote working-tree state. Repository history is the durable implementation state.
 
 ## Architecture Baseline
 
@@ -27,19 +30,12 @@ M1–M4 are integrated into canonical `main`.
 - `docs/protocol/PROTOCOL-V1.md` — protocol v1 wire/canonical rules.
 - ADR-0003 — single-use 256-bit pairing secret with directional HMAC-SHA-256 confirmations.
 - ADR-0004 — Protocol Buffers for ordinary v1 wire encoding with independent canonical signing transcripts.
+- ADR-0006 — focused `crosslab-crypto` foundation boundary used by identity, pairing, session, and later recovery cryptographic mechanics.
 - ADR-0007 — event namespace and session-close wire registry.
-
-## M4 Integration
-
-M4 was merged through PR #9 into `main` at `9dfc8cdb495bfc0a08adfca8377dde423250dcd6`.
-
-Post-merge CI run `34589394208` completed successfully on `main`, covering the locked dependency graph, Rustfmt, workspace check, Clippy with warnings denied, and the full workspace test suite.
-
-M4 provides the bounded transport-independent protocol domain required by M5: protocol/feature negotiation, framing, protobuf/domain conversion, envelopes, capability advertisements, requests/responses/events/cancellation/errors/session close, data-stream open headers, golden wire vectors, and parser fuzz smoke coverage.
 
 ## M5 Approved Scope
 
-M5 will implement the smallest transport-neutral simulator slice required by the Phase 1 specification:
+M5 implements the smallest transport-neutral simulator slice required by the Phase 1 specification:
 
 - pairing profile v1 orchestration using the single-use out-of-band secret;
 - canonical pairing transcript and directional confirmation verification;
@@ -50,20 +46,91 @@ M5 will implement the smallest transport-neutral simulator slice required by the
 - sequenced control request/response/event flow over the in-memory control channel;
 - required positive and negative M5 simulator/security tests.
 
-M5 does **not** introduce real networking, Quinn, persistence, UI/platform adapters, authorized bulk data-stream admission, plugins, or privileged services.
+M5 does **not** introduce real networking, Quinn, persistence, UI/platform adapters, authorized M6 bulk data-stream admission, plugins, or privileged services.
 
 The approved implementation keeps deterministic state machines and bounded in-memory queues without introducing a general async runtime dependency in M5.
 
+## M5 Progress
+
+### Task 1 — pairing confirmation primitives
+
+Complete and verified.
+
+- focused HMAC-SHA-256 generation and constant-time verification helpers in `crosslab-crypto`;
+- generic cryptographic mechanics remain inside the ADR-0006 boundary;
+- positive and tamper-rejection coverage.
+
+### Task 2 — pairing transcript and invitation domain state
+
+Complete and verified.
+
+- typed 128-bit `PairingId` and redacted/zeroized 256-bit `PairingSecret`;
+- single-use invitation lifecycle with terminal consumed/cancelled/expired states;
+- canonical `crosslab.pairing-transcript.v1` digest construction;
+- role-separated inviter/joiner HMAC confirmations;
+- wrong-secret/security-field/role rejection coverage;
+- frozen transcript and directional HMAC golden vectors.
+
+### Task 3 — pairing bootstrap protobuf messages
+
+Complete and verified.
+
+- dedicated pre-session `PairingBootstrapV1` outside `EnvelopeV1`;
+- typed hello, directional confirmation, and credential-accepted domain/wire messages;
+- strict profile, enum, public-key, fixed-length, and bootstrap frame validation;
+- frozen pairing-confirmation bootstrap frame vector.
+
+Task 3 code head `d522cb462a3ec75cff47ed955b47a73db0768a3d` passed CI `34638127568` and fuzz smoke `34638127476`.
+
+### Task 4 — pairing orchestration and trust commit
+
+Complete and verified.
+
+Implemented:
+
+- explicit inviter and joiner pairing state machines in `crates/core/src/pairing/flow.rs`;
+- S-002 and N-010..N-015 security/flow coverage plus owner/delegation/context negatives;
+- fail-closed replay, wrong-secret, pairing-id/nonce substitution, device-key substitution, invalid proof, cancelled/consumed invitation, owner mismatch, and invalid delegation handling;
+- trust creation only after both directional pairing confirmations, valid credential-chain verification, and final joiner proof of possession;
+- single-use invitation consumption on terminal success/failure paths;
+- focused `DeviceCredential::issue_for_public_key` issuance path so the inviter never requires the joiner private key;
+- deterministic credential-accepted proof golden vector.
+
+Task 4 final code head is `36583b732b20df6a7eef1905cec685ad50675a6b`.
+
+GitHub Actions CI run `34641303311` passed on that exact head:
+
+```text
+cargo metadata --locked --no-deps --format-version 1
+cargo fmt --check
+cargo check --workspace --all-targets --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-features
+```
+
+Fuzz Smoke run `34641303272` also completed successfully on the same head.
+
+The Task 4 diff from the prior Task 3 checkpoint is limited to the pairing orchestration slice, its tests/golden vector, exports, and the focused identity public-key credential issuance API/test. No session-auth, transport, policy, persistence, UI, platform, or networking implementation was introduced early.
+
+## Integration Instruction
+
+The owner explicitly requested that the verified M5 Tasks 1–4 checkpoint be merged into canonical `main` before further development. PR #10 should be marked ready and merged only after the documentation checkpoint itself receives green required verification. After integration, verify `main` and continue Task 5 from a fresh short-lived branch based on the verified `main` head.
+
 ## Exact Next Task
 
-1. create the single M5 implementation branch from current `main`;
-2. add the focused M5 implementation plan against the accepted simulator/session/pairing specifications;
-3. implement pairing confirmation primitives and pairing-domain state test-first;
-4. add bounded pairing/session-auth protobuf bootstrap messages and strict conversion;
-5. implement core pairing/session state machines plus the in-memory simulator transport;
-6. exercise capability exchange and sequenced request/response/event scenarios;
-7. run the complete format/check/Clippy/test baseline and relevant parser fuzz smoke;
-8. update this handoff, review the M5 diff, and integrate only when verified.
+Continue **M5 Task 5 — Session-auth domain and bootstrap wire contract**, following `docs/plans/phase-1/M5-pairing-session-simulator.md` test-first.
+
+The next implementation slice should:
+
+1. read the canonical session-auth fields and channel-binding rules in `docs/architecture/SESSION-TRANSPORT.md` and `docs/protocol/PROTOCOL-V1.md` before editing;
+2. inspect existing credential, signing/transcript, protocol negotiation, Task 3 bootstrap wire, and M4 framing/conversion APIs for reuse;
+3. create failing `crates/core/tests/session_auth.rs` and `crates/protocol/tests/session_auth_wire.rs` coverage for transcript/proof/`SessionId` golden behavior plus wrong nonce, channel binding, role, key, profile, enum, and malformed-length cases;
+4. implement `crates/core/src/session/mod.rs` and `crates/core/src/session/auth.rs` with canonical `SessionAuthTranscriptV1`, role-separated initiator/responder proofs, and deterministic `SessionId` derivation;
+5. add bounded pre-session session-auth hello/proof protobuf/domain messages and strict wire conversion outside ordinary post-auth `EnvelopeV1` control traffic;
+6. keep identity independent of transport identity and bind authentication to owner/device credentials, fresh nonces, negotiated protocol/features, and the deterministic channel binding;
+7. run focused tests and the complete format/check/Clippy/workspace-test baseline, freeze required golden vectors, commit, and checkpoint this file before Task 6.
+
+Do not begin the in-memory transport seam or session activation state machine until Task 5 is verified.
 
 After M5 integration, the next milestone is **M6 — Authorized Data Streams**.
 
@@ -71,9 +138,9 @@ After M5 integration, the next milestone is **M6 — Authorized Data Streams**.
 
 Before continuing in a new session:
 
-1. inspect `main`, the active M5 branch/PR if present, recent commits, branches, and CI;
-2. read `docs/architecture/MASTER-ARCHITECTURE.md`;
-3. read this file;
-4. read `CORE-SIMULATOR.md`, `SESSION-TRANSPORT.md`, `PAIRING-TRUST-REVOCATION.md`, and relevant protocol/identity/policy code;
-5. reconcile documentation with actual code before coding;
-6. continue from the exact next task above.
+1. inspect `main`, the active M5 branch, open PRs, recent commits, branch comparison, and latest CI/fuzz runs;
+2. read `docs/architecture/MASTER-ARCHITECTURE.md` and this file;
+3. read `docs/plans/phase-1/M5-pairing-session-simulator.md`, `docs/architecture/SESSION-TRANSPORT.md`, and relevant ADRs;
+4. reconcile documentation with actual code before editing;
+5. if PR #10 is not yet merged, finish its verified integration into `main`; otherwise branch from the verified `main` head;
+6. continue from **M5 Task 5** above.

@@ -1,8 +1,9 @@
 use crosslab_policy::{CapabilityId, CapabilityVersion, OperationId, OperationName, SessionId};
 use crosslab_protocol::{
     CancelRequest, ControlEnvelope, DataStreamOpen, EnvelopeBody, Event, EventId, EventType,
-    ProtocolVersion, RequestId, SessionClose, SessionCloseReason, StreamDirection, StreamId,
-    encode_control_envelope, encode_data_stream_open,
+    PairingBootstrapMessage, PairingConfirmation, PairingRole, ProtocolVersion, RequestId,
+    SessionClose, SessionCloseReason, StreamDirection, StreamId, encode_control_envelope,
+    encode_data_stream_open, encode_pairing_bootstrap,
 };
 
 #[test]
@@ -88,4 +89,22 @@ fn session_close_v1_matches_golden_frame_bytes() {
     expected.extend_from_slice(&[0x20, 0x0a, 0x5a, 0x02, 0x08, 0x06]);
 
     assert_eq!(encode_control_envelope(&envelope).unwrap(), expected);
+}
+
+#[test]
+fn pairing_confirmation_v1_matches_golden_frame_bytes() {
+    let confirmation = PairingBootstrapMessage::Confirmation(PairingConfirmation::new(
+        PairingRole::Joiner,
+        [0x11; 16],
+        [0x22; 32],
+    ));
+
+    let mut expected = vec![
+        0x00, 0x00, 0x00, 0x3a, 0x08, 0x01, 0x1a, 0x36, 0x08, 0x02, 0x12, 0x10,
+    ];
+    expected.extend_from_slice(&[0x11; 16]);
+    expected.extend_from_slice(&[0x1a, 0x20]);
+    expected.extend_from_slice(&[0x22; 32]);
+
+    assert_eq!(encode_pairing_bootstrap(&confirmation).unwrap(), expected);
 }

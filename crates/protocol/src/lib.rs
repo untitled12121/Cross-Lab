@@ -31,6 +31,8 @@ pub use version::{
     negotiate_protocol_version,
 };
 pub use wire::{
-    ProtocolWireError, decode_control_envelope, decode_data_stream_open, encode_control_envelope,
-    encode_data_stream_open,
+    PAIRING_PROFILE_V1, PairingBootstrapMessage, PairingConfirmation, PairingCredentialAccepted,
+    PairingHello, PairingRole, ProtocolWireError, decode_control_envelope, decode_data_stream_open,
+    decode_pairing_bootstrap, encode_control_envelope, encode_data_stream_open,
+    encode_pairing_bootstrap,
 };

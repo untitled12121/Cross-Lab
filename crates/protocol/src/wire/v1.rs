@@ -172,3 +172,86 @@ pub enum StreamDirectionV1 {
     SourceToDestination = 1,
     DestinationToSource = 2,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, prost::Enumeration)]
+#[repr(i32)]
+pub enum PairingRoleV1 {
+    Unspecified = 0,
+    Inviter = 1,
+    Joiner = 2,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, prost::Enumeration)]
+#[repr(i32)]
+pub enum SignatureAlgorithmV1 {
+    Unspecified = 0,
+    Ed25519 = 1,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct PairingHelloV1 {
+    #[prost(enumeration = "PairingRoleV1", tag = "1")]
+    pub role: i32,
+    #[prost(uint32, tag = "2")]
+    pub protocol_major: u32,
+    #[prost(bytes = "vec", tag = "3")]
+    pub pairing_id: Vec<u8>,
+    #[prost(bytes = "vec", tag = "4")]
+    pub owner_id: Vec<u8>,
+    #[prost(bytes = "vec", tag = "5")]
+    pub device_id: Vec<u8>,
+    #[prost(enumeration = "SignatureAlgorithmV1", tag = "6")]
+    pub device_algorithm: i32,
+    #[prost(bytes = "vec", tag = "7")]
+    pub device_public_key: Vec<u8>,
+    #[prost(bytes = "vec", tag = "8")]
+    pub nonce: Vec<u8>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct PairingConfirmationV1 {
+    #[prost(enumeration = "PairingRoleV1", tag = "1")]
+    pub role: i32,
+    #[prost(bytes = "vec", tag = "2")]
+    pub pairing_id: Vec<u8>,
+    #[prost(bytes = "vec", tag = "3")]
+    pub confirmation: Vec<u8>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct PairingCredentialAcceptedV1 {
+    #[prost(bytes = "vec", tag = "1")]
+    pub pairing_id: Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub pairing_transcript_digest: Vec<u8>,
+    #[prost(bytes = "vec", tag = "3")]
+    pub device_credential_signed_object_digest: Vec<u8>,
+    #[prost(bytes = "vec", tag = "4")]
+    pub joiner_device_id: Vec<u8>,
+    #[prost(bytes = "vec", tag = "5")]
+    pub joiner_device_key_id: Vec<u8>,
+    #[prost(enumeration = "SignatureAlgorithmV1", tag = "6")]
+    pub signature_algorithm: i32,
+    #[prost(bytes = "vec", tag = "7")]
+    pub signature: Vec<u8>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct PairingBootstrapV1 {
+    #[prost(uint32, tag = "1")]
+    pub pairing_profile: u32,
+    #[prost(oneof = "pairing_bootstrap_v1::Body", tags = "2, 3, 4")]
+    pub body: Option<pairing_bootstrap_v1::Body>,
+}
+
+pub mod pairing_bootstrap_v1 {
+    #[derive(Clone, PartialEq, prost::Oneof)]
+    pub enum Body {
+        #[prost(message, tag = "2")]
+        Hello(super::PairingHelloV1),
+        #[prost(message, tag = "3")]
+        Confirmation(super::PairingConfirmationV1),
+        #[prost(message, tag = "4")]
+        CredentialAccepted(super::PairingCredentialAcceptedV1),
+    }
+}
