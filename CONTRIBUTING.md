@@ -6,11 +6,12 @@ Cross-Lab is an architecture-first, Rust-first cross-device project. Contributio
 
 Read, in order:
 
-1. `docs/architecture/MASTER-ARCHITECTURE.md`
-2. `docs/development/CURRENT.md`
-3. the milestone/implementation document relevant to the task
-4. relevant ADRs under `docs/adr/`
-5. `docs/development/WORKFLOW.md`
+1. `docs/README.md`
+2. `docs/architecture/MASTER-ARCHITECTURE.md`
+3. `docs/development/CURRENT.md`
+4. the active milestone document under `docs/plans/`
+5. relevant ADRs under `docs/adr/`
+6. `docs/development/WORKFLOW.md`
 
 Inspect the active branch, recent commits, and repository state before modifying files. Git, code, and verification results take precedence over stale progress notes.
 
@@ -32,15 +33,16 @@ Run the checks relevant to the current milestone before claiming completion. Onc
 
 ```text
 cargo fmt --check
+cargo check --workspace --all-targets --all-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace
+cargo test --workspace --all-features
 ```
 
 Security, protocol, integration, fuzz, networking, privilege-boundary, or platform checks are added when the active milestone requires them. Record failed or unrun verification honestly in `docs/development/CURRENT.md`.
 
 ## Architecture Decisions
 
-ADRs live in `docs/adr/`. The ADR policy is defined in the Master Architecture and summarized in `docs/adr/README.md`. Accepted architectural changes that affect the baseline must update the Master Architecture in the same reviewed change. Superseded ADRs remain in the repository for historical context.
+ADRs live in `docs/adr/`. The ADR policy is defined by the Master Architecture and summarized in `docs/adr/README.md`. Accepted architectural changes that affect the baseline must update the Master Architecture and relevant focused specifications in the same reviewed milestone. Superseded ADRs remain in the repository for historical context.
 
 ## Licensing
 
