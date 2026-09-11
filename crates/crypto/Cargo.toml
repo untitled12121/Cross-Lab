@@ -14,4 +14,6 @@ workspace = true
 blake3.workspace = true
 ed25519-dalek.workspace = true
 getrandom.workspace = true
+hmac.workspace = true
+sha2.workspace = true
 zeroize.workspace = true

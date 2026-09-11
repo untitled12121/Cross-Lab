@@ -89,6 +89,8 @@ dependencies = [
  "blake3",
  "ed25519-dalek",
  "getrandom",
+ "hmac",
+ "sha2",
  "zeroize",
 ]
 
@@ -219,6 +221,15 @@ dependencies = [
  "cfg-if",
  "libc",
  "r-efi",
+]
+
+[[package]]
+name = "hmac"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6303bc9732ae41b04cb554b844a762b4115a61bfaa81e3e83050991eeb56863f"
+dependencies = [
+ "digest",
 ]
 
 [[package]]
