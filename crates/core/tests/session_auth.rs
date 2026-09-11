@@ -180,11 +180,6 @@ fn proofs_sign_exact_role_label_and_transcript_digest_and_derive_golden_session_
             fixture.responder_key.verifying_key(),
         )
         .unwrap();
-    eprintln!(
-        "responder_signature={:?} session_id={:?}",
-        responder.signature().to_bytes(),
-        session_id.to_bytes()
-    );
 
     assert_eq!(
         initiator.signature().to_bytes(),
@@ -195,8 +190,22 @@ fn proofs_sign_exact_role_label_and_transcript_digest_and_derive_golden_session_
             104, 86, 25, 194, 10, 6, 249, 9,
         ]
     );
-    assert_eq!(responder.signature().to_bytes(), [0_u8; 64]);
-    assert_eq!(session_id.to_bytes(), [0_u8; 32]);
+    assert_eq!(
+        responder.signature().to_bytes(),
+        [
+            153, 225, 14, 78, 235, 174, 229, 130, 215, 115, 213, 205, 128, 119, 135, 129, 233, 112,
+            163, 135, 209, 155, 147, 68, 39, 195, 57, 23, 154, 139, 200, 135, 177, 199, 142, 199, 85,
+            229, 25, 233, 62, 210, 158, 9, 206, 183, 63, 241, 193, 148, 219, 34, 188, 75, 65, 134,
+            208, 94, 178, 50, 130, 13, 39, 14,
+        ]
+    );
+    assert_eq!(
+        session_id.to_bytes(),
+        [
+            62, 134, 175, 242, 100, 178, 162, 131, 196, 71, 224, 94, 232, 228, 59, 155, 10, 159,
+            145, 42, 16, 176, 71, 149, 246, 68, 179, 89, 159, 84, 241, 98,
+        ]
+    );
 }
 
 #[test]
