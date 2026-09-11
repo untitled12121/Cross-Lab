@@ -2,6 +2,8 @@ mod capability;
 mod codec;
 mod control;
 mod envelope;
+mod event;
+mod session_close;
 pub mod v1;
 
 pub use codec::{ProtocolWireError, decode_data_stream_open, encode_data_stream_open};

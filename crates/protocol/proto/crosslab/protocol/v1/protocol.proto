@@ -45,8 +45,30 @@ message ControlResponseV1 {
   }
 }
 
+message EventV1 {
+  bytes event_id = 1;
+  optional string capability_id = 2;
+  string event_type = 3;
+  bytes body = 4;
+}
+
 message CancelRequestV1 {
   bytes request_id = 1;
+}
+
+enum SessionCloseReasonV1 {
+  SESSION_CLOSE_REASON_UNSPECIFIED = 0;
+  SESSION_CLOSE_REASON_NORMAL = 1;
+  SESSION_CLOSE_REASON_LOCAL_REQUEST = 2;
+  SESSION_CLOSE_REASON_PROTOCOL_ERROR = 3;
+  SESSION_CLOSE_REASON_AUTHENTICATION_LOST = 4;
+  SESSION_CLOSE_REASON_TRUST_REVOKED = 5;
+  SESSION_CLOSE_REASON_SHUTDOWN = 6;
+}
+
+message SessionCloseV1 {
+  SessionCloseReasonV1 reason = 1;
+  optional string diagnostic = 2;
 }
 
 message EnvelopeV1 {
@@ -58,8 +80,10 @@ message EnvelopeV1 {
     CapabilityAdvertisementV1 capability_advertisement = 5;
     ControlRequestV1 control_request = 6;
     ControlResponseV1 control_response = 7;
+    EventV1 event = 8;
     CancelRequestV1 cancel_request = 9;
     ProtocolErrorV1 protocol_error = 10;
+    SessionCloseV1 session_close = 11;
   }
 }
 

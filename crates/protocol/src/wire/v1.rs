@@ -74,9 +74,41 @@ pub mod control_response_v1 {
 }
 
 #[derive(Clone, PartialEq, prost::Message)]
+pub struct EventV1 {
+    #[prost(bytes = "vec", tag = "1")]
+    pub event_id: Vec<u8>,
+    #[prost(string, optional, tag = "2")]
+    pub capability_id: Option<String>,
+    #[prost(string, tag = "3")]
+    pub event_type: String,
+    #[prost(bytes = "vec", tag = "4")]
+    pub body: Vec<u8>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
 pub struct CancelRequestV1 {
     #[prost(bytes = "vec", tag = "1")]
     pub request_id: Vec<u8>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, prost::Enumeration)]
+#[repr(i32)]
+pub enum SessionCloseReasonV1 {
+    Unspecified = 0,
+    Normal = 1,
+    LocalRequest = 2,
+    ProtocolError = 3,
+    AuthenticationLost = 4,
+    TrustRevoked = 5,
+    Shutdown = 6,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct SessionCloseV1 {
+    #[prost(enumeration = "SessionCloseReasonV1", tag = "1")]
+    pub reason: i32,
+    #[prost(string, optional, tag = "2")]
+    pub diagnostic: Option<String>,
 }
 
 #[derive(Clone, PartialEq, prost::Message)]
@@ -89,7 +121,7 @@ pub struct EnvelopeV1 {
     pub session_id: Vec<u8>,
     #[prost(uint64, tag = "4")]
     pub message_seq: u64,
-    #[prost(oneof = "envelope_v1::Body", tags = "5, 6, 7, 9, 10")]
+    #[prost(oneof = "envelope_v1::Body", tags = "5, 6, 7, 8, 9, 10, 11")]
     pub body: Option<envelope_v1::Body>,
 }
 
@@ -102,10 +134,14 @@ pub mod envelope_v1 {
         ControlRequest(super::ControlRequestV1),
         #[prost(message, tag = "7")]
         ControlResponse(super::ControlResponseV1),
+        #[prost(message, tag = "8")]
+        Event(super::EventV1),
         #[prost(message, tag = "9")]
         CancelRequest(super::CancelRequestV1),
         #[prost(message, tag = "10")]
         ProtocolError(super::ProtocolErrorV1),
+        #[prost(message, tag = "11")]
+        SessionClose(super::SessionCloseV1),
     }
 }
 

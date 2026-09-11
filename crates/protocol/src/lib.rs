@@ -14,9 +14,11 @@ pub use capability::{
 };
 pub use control::{
     CancelRequest, ControlEnvelope, ControlRequest, ControlResponse, ControlResponseResult,
-    ControlSequence, DiagnosticError, EnvelopeBody, EventId, MAX_DIAGNOSTIC_BYTES,
-    ProtocolDiagnostic, ProtocolErrorCode, ProtocolErrorCodeError, ProtocolFailure,
-    ProtocolIdError, RequestId, RetryClass, RetryClassError, SequenceError, StreamId,
+    ControlSequence, DiagnosticError, EnvelopeBody, Event, EventError, EventId, EventScope,
+    EventType, EventTypeError, MAX_DIAGNOSTIC_BYTES, MAX_EVENT_TYPE_BYTES, ProtocolDiagnostic,
+    ProtocolErrorCode, ProtocolErrorCodeError, ProtocolFailure, ProtocolIdError, RequestId,
+    RetryClass, RetryClassError, SYSTEM_EVENT_TYPE_PREFIX, SequenceError, SessionClose,
+    SessionCloseReason, SessionCloseReasonError, StreamId,
 };
 pub use data_stream::{DataStreamOpen, StreamDirection};
 pub use feature::{

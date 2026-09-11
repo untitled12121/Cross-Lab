@@ -9,7 +9,7 @@ use super::{
     codec::{ProtocolWireError, copy_32},
     v1::{
         CancelRequestV1, CapabilityAdvertisementV1, ControlRequestV1, ControlResponseV1,
-        EnvelopeV1, ProtocolErrorV1, envelope_v1,
+        EnvelopeV1, EventV1, ProtocolErrorV1, SessionCloseV1, envelope_v1,
     },
 };
 
@@ -38,11 +38,15 @@ impl From<&ControlEnvelope> for EnvelopeV1 {
             EnvelopeBody::ControlResponse(response) => {
                 envelope_v1::Body::ControlResponse(ControlResponseV1::from(response))
             }
+            EnvelopeBody::Event(event) => envelope_v1::Body::Event(EventV1::from(event)),
             EnvelopeBody::CancelRequest(cancel) => {
                 envelope_v1::Body::CancelRequest(CancelRequestV1::from(cancel))
             }
             EnvelopeBody::ProtocolError(error) => {
                 envelope_v1::Body::ProtocolError(ProtocolErrorV1::from(error))
+            }
+            EnvelopeBody::SessionClose(close) => {
+                envelope_v1::Body::SessionClose(SessionCloseV1::from(close))
             }
         };
         let version = envelope.protocol_version();
@@ -77,11 +81,15 @@ impl TryFrom<EnvelopeV1> for ControlEnvelope {
             envelope_v1::Body::ControlResponse(response) => {
                 EnvelopeBody::ControlResponse(response.try_into()?)
             }
+            envelope_v1::Body::Event(event) => EnvelopeBody::Event(event.try_into()?),
             envelope_v1::Body::CancelRequest(cancel) => {
                 EnvelopeBody::CancelRequest(cancel.try_into()?)
             }
             envelope_v1::Body::ProtocolError(error) => {
                 EnvelopeBody::ProtocolError(error.try_into()?)
+            }
+            envelope_v1::Body::SessionClose(close) => {
+                EnvelopeBody::SessionClose(close.try_into()?)
             }
         };
 
