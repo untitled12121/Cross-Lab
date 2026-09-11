@@ -125,10 +125,7 @@ impl Fixture {
         .unwrap()
     }
 
-    fn proofs(
-        &self,
-        transcript: &SessionAuthTranscriptV1,
-    ) -> (SessionAuthProof, SessionAuthProof) {
+    fn proofs(&self, transcript: &SessionAuthTranscriptV1) -> (SessionAuthProof, SessionAuthProof) {
         (
             transcript
                 .create_proof(SessionAuthRole::Initiator, &self.initiator_key)
@@ -200,13 +197,22 @@ fn valid_authentication_activates_with_fresh_context_and_zero_sequences() {
     assert_eq!(session.state(), SessionState::Active);
     assert_eq!(context.session_id(), expected_session_id);
     assert_eq!(context.owner_id(), fixture.owner_id);
-    assert_eq!(context.local_device_id(), fixture.initiator_credential.device_id());
-    assert_eq!(context.peer_device_id(), fixture.responder_credential.device_id());
+    assert_eq!(
+        context.local_device_id(),
+        fixture.initiator_credential.device_id()
+    );
+    assert_eq!(
+        context.peer_device_id(),
+        fixture.responder_credential.device_id()
+    );
     assert_eq!(context.peer_credential_epoch(), 5);
     assert_eq!(context.peer_trust_revision(), 0);
     assert_eq!(context.protocol_version(), ProtocolVersion::new(1, 2));
     assert_eq!(context.negotiated_features(), &[2, 3]);
-    assert_eq!(context.transport_security_class(), TransportSecurityClass::InProcessTest);
+    assert_eq!(
+        context.transport_security_class(),
+        TransportSecurityClass::InProcessTest
+    );
     assert_eq!(context.next_send_sequence(), 0);
     assert_eq!(context.next_receive_sequence(), 0);
     assert!(context.negotiated_capabilities().is_empty());
@@ -451,7 +457,10 @@ fn peer_trust_identity_and_accepted_credential_epoch_are_activation_gates() {
         &initiator_proof,
         &responder_proof,
     );
-    assert_eq!(session.authenticate(activation), Err(SessionError::PeerTrustMismatch));
+    assert_eq!(
+        session.authenticate(activation),
+        Err(SessionError::PeerTrustMismatch)
+    );
     assert_eq!(session.state(), SessionState::Closed);
 
     let stale_trust = TrustRecord::trusted(
