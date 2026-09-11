@@ -10,17 +10,16 @@ This file is the durable resume guide for active Cross-Lab development. Git hist
 
 **M5 — Pairing + Authenticated Logical Session Simulator: in progress.**
 
-Verified M1–M4 and M5 Tasks 1–5 are integrated into canonical `main`. M5 Task 6 is implemented and code-verified on `m5-memory-transport`; PR #12 must receive exact-head documentation-inclusive verification, merge into `main`, and pass post-merge `main` verification before Task 7 begins.
+Verified M1–M4 and M5 Tasks 1–6 are integrated into canonical `main`. The next implementation slice is M5 Task 7 after this integration-record commit is verified on `main`.
 
 ## Branch State
 
-- `main` — canonical integrated branch; contains verified M1–M4 and M5 Tasks 1–5.
+- `main` — canonical integrated branch; contains verified M1–M4 and M5 Tasks 1–6.
 - `m5-session` — historical M5 Tasks 1–4 branch; PR #10 merged.
 - `m5-session-auth` — historical M5 Task 5 branch; PR #11 merged.
-- `m5-memory-transport` — active M5 Task 6 branch; draft PR #12 targets `main`.
+- `m5-memory-transport` — historical M5 Task 6 branch; PR #12 merged.
 - `planning` — planning/documentation branch; no active implementation belongs here.
-- Do not begin Task 7 until PR #12 is exact-head verified, merged into `main`, and canonical `main` is reverified.
-- Start Task 7 from a fresh short-lived branch based on that verified `main` head.
+- Start Task 7 from a fresh short-lived branch based on the verified current `main` head.
 - No temporary `*-red` branches are required for TDD; failing contract-test checkpoints remain ordinary commits on the active implementation branch.
 
 The connected GitHub workflow writes directly to committed branches, so there is no separate uncommitted remote working-tree state. Repository history is the durable implementation state.
@@ -134,7 +133,7 @@ The uploaded-repository runtime was unavailable for local ZIP inspection during 
 
 ### Task 6 — bounded in-memory transport seam
 
-Implementation complete and code-verified on `m5-memory-transport`; final documentation-inclusive PR verification/integration is pending.
+Complete, verified, and integrated.
 
 Implemented:
 
@@ -159,14 +158,16 @@ TDD and verification evidence:
 
 - initial RED commit `dc1fd126e32e3e6b8710988158540d3e91c9289f` was formatting-only and is not counted as valid RED evidence;
 - valid RED head `e27a2c115b635986a7193559aeb7ab5c8898f309`: CI `34654445082` passed lockfile/rustfmt and failed `cargo check` specifically because the Task 6 core transport exports and simulator library/adapter did not yet exist;
-- implementation head `44d2bc83a604d33cbd00c1f8973c188db77196f0` reached rustfmt and required only one formatter rewrite in the core transport module;
-- code-verified head `9690e20467f5fdd6c80779bbe3adced4134c7f60`: CI `34654834396` passed lockfile, Rustfmt, workspace check, Clippy with warnings denied, and the full workspace test suite.
+- code-verified head `9690e20467f5fdd6c80779bbe3adced4134c7f60`: CI `34654834396` passed lockfile, Rustfmt, workspace check, Clippy with warnings denied, and the full workspace test suite;
+- final exact PR head `9f2fcaf157245b6dd1f1ab1083e9507961cc7e8a` passed CI `34654964311`;
+- PR #12 merged with preserved history at `32bf75951c0e0e768efac80c4320059e04550483`;
+- post-merge canonical `main` CI `34655051368` passed lockfile, Rustfmt, workspace check, Clippy with warnings denied, and the full workspace test suite.
 
-No protocol parser or wire schema changed in Task 6, so the protocol-parser fuzz target surface is unchanged; Task 6's relevant verification gate is the complete workspace CI baseline above.
+No protocol parser or wire schema changed in Task 6, so the protocol-parser fuzz target surface was unchanged; Task 6's relevant verification gate was the complete workspace CI baseline.
 
 ## Exact Next Task
 
-After PR #12 is exact-head verified, merged, and `main` is reverified, continue **M5 Task 7 — Logical session activation and capability exchange**, following `docs/plans/phase-1/M5-pairing-session-simulator.md` test-first.
+Continue **M5 Task 7 — Logical session activation and capability exchange**, following `docs/plans/phase-1/M5-pairing-session-simulator.md` test-first.
 
 The next implementation slice should:
 
@@ -187,9 +188,8 @@ After M5 integration, the next milestone is **M6 — Authorized Data Streams**.
 
 Before continuing in a new session:
 
-1. inspect `main`, `m5-memory-transport`, PR #12, recent commits, branch comparison, and latest CI runs;
+1. inspect `main`, recent commits, branch state, and latest CI runs;
 2. read `docs/architecture/MASTER-ARCHITECTURE.md` and this file;
 3. read `docs/plans/phase-1/M5-pairing-session-simulator.md`, `docs/architecture/SESSION-TRANSPORT.md`, and relevant ADRs;
 4. reconcile documentation with actual code before editing;
-5. finish Task 6 PR verification/integration if PR #12 is still open;
-6. otherwise branch from the verified current `main` head and continue from **M5 Task 7** above.
+5. branch from the verified current `main` head and continue from **M5 Task 7** above.
