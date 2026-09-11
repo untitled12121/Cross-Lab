@@ -61,7 +61,8 @@ impl TryFrom<EnvelopeV1> for ControlEnvelope {
     type Error = ProtocolWireError;
 
     fn try_from(wire: EnvelopeV1) -> Result<Self, Self::Error> {
-        let protocol_version = protocol_version_from_wire(wire.protocol_major, wire.protocol_minor)?;
+        let protocol_version =
+            protocol_version_from_wire(wire.protocol_major, wire.protocol_minor)?;
         let session_id = SessionId::from_bytes(copy_32(
             wire.session_id,
             ProtocolWireError::InvalidSessionIdLength,
@@ -93,7 +94,10 @@ impl TryFrom<EnvelopeV1> for ControlEnvelope {
     }
 }
 
-fn protocol_version_from_wire(major: u32, minor: u32) -> Result<ProtocolVersion, ProtocolWireError> {
+fn protocol_version_from_wire(
+    major: u32,
+    minor: u32,
+) -> Result<ProtocolVersion, ProtocolWireError> {
     let major = u16::try_from(major).map_err(|_| ProtocolWireError::InvalidProtocolVersion)?;
     let minor = u16::try_from(minor).map_err(|_| ProtocolWireError::InvalidProtocolVersion)?;
     Ok(ProtocolVersion::new(major, minor))
