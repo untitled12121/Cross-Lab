@@ -22,22 +22,24 @@ Closeout record: `docs/plans/phase-0/PHASE-0-CLOSEOUT.md`.
 
 ## Phase 1 — Core Simulator
 
-**Status: Next**
+**Status: Active**
 
-Foundation implementation sequence:
+Implementation sequence:
 
-- M1 — Repository Foundation: minimal Rust workspace, tooling, simulator shell
-- M2 — Identity
-- M3 — Trust and Policy
+- **M1 — Repository Foundation**: minimal Rust workspace, tooling, package shells, and verification baseline
+- M2 — Crypto + Identity
+- M3 — Trust + Policy
 - M4 — Protocol
-- M5 — Deterministic Two-Peer Simulator
+- M5 — Pairing + Authenticated Logical Session Simulator
 - M6 — Authorized Data Streams
 - M7 — Failure and Security Lifecycle
 - M8 — Quinn Transport
 - M9 — Remote Networking Evaluation ADR
 - M10 — First Linux Desktop + Android Vertical Slice
 
-Implementation begins on a purpose-named `foundation` branch created from the integrated Phase 0 `main` baseline.
+Active milestone: `docs/plans/phase-1/M1-repository-foundation.md`.
+
+`main` remains the canonical integrated branch. Use short-lived purpose branches only when a unit of work benefits from isolation; do not create branches merely to represent phase transitions or chat handoffs.
 
 ## Later Phases
 

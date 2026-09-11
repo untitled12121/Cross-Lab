@@ -14,7 +14,7 @@ Phase 0 does not prove runtime correctness. It establishes the contracts Phase 1
 
 Phase 0 is complete when:
 
-- every required foundational area in Master Architecture Section 44 is covered by a normative specification or accepted ADR;
+- every required foundational area in the Master Architecture is covered by a normative specification or accepted ADR;
 - no required Phase 0 item remains blocked;
 - accepted ADRs and the Master Architecture agree;
 - the repository license is explicit;
@@ -104,4 +104,4 @@ All Phase 0 entry conditions are satisfied. The next implementation milestone is
 
 **Phase 1 / M1 — Repository Foundation**
 
-Create the minimal Rust workspace and simulator shell on a clean `foundation` branch from the integrated `main` baseline. The first implementation checkpoint must verify current stable dependency versions before adding them and must immediately establish formatting, linting, and test automation.
+Begin M1 from the integrated `main` baseline using `docs/plans/phase-1/M1-repository-foundation.md`. `main` remains the canonical branch; use a short-lived purpose branch only when a unit of implementation work benefits from isolation. The first implementation checkpoint must verify current stable dependency versions before adding them and must establish formatting, linting, build/check, and test automation immediately.
