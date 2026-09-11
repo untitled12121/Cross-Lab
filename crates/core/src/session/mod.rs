@@ -1,5 +1,3 @@
 mod auth;
 
-pub use auth::{
-    SessionAuthError, SessionAuthProof, SessionAuthRole, SessionAuthTranscriptV1,
-};
+pub use auth::{SessionAuthError, SessionAuthProof, SessionAuthRole, SessionAuthTranscriptV1};
