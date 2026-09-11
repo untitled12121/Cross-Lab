@@ -1,9 +1,11 @@
 //! Versioned Cross-Lab wire-contract domain.
 
+mod control;
 mod feature;
 mod framing;
 mod version;
 
+pub use control::{ControlSequence, SequenceError};
 pub use feature::{
     FeatureNegotiationError, FeatureSet, MAX_REQUIRED_FEATURES, MAX_SUPPORTED_FEATURES,
     negotiate_features,
