@@ -99,6 +99,18 @@ impl CapabilityVersionRange {
             && version.minor >= self.min_minor
             && version.minor <= self.max_minor
     }
+
+    pub const fn major(self) -> u16 {
+        self.major
+    }
+
+    pub const fn min_minor(self) -> u16 {
+        self.min_minor
+    }
+
+    pub const fn max_minor(self) -> u16 {
+        self.max_minor
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,6 +139,10 @@ impl LocalCapability {
 
     pub const fn supports(&self, version: CapabilityVersion) -> bool {
         self.supported_versions.supports(version)
+    }
+
+    pub const fn supported_versions(&self) -> CapabilityVersionRange {
+        self.supported_versions
     }
 
     pub const fn runtime_available(&self) -> bool {
