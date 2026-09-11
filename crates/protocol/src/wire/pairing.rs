@@ -180,7 +180,8 @@ pub fn decode_pairing_bootstrap(
     frame: &[u8],
 ) -> Result<PairingBootstrapMessage, ProtocolWireError> {
     let payload = decode_frame(frame, FrameLimit::BootstrapHello)?;
-    let wire = PairingBootstrapV1::decode(payload).map_err(|_| ProtocolWireError::MalformedProtobuf)?;
+    let wire =
+        PairingBootstrapV1::decode(payload).map_err(|_| ProtocolWireError::MalformedProtobuf)?;
     wire.try_into()
 }
 
@@ -254,10 +255,7 @@ impl TryFrom<PairingHelloV1> for PairingHello {
         let role = role_from_wire(wire.role)?;
         let protocol_major = u16::try_from(wire.protocol_major)
             .map_err(|_| ProtocolWireError::InvalidProtocolVersion)?;
-        let pairing_id = copy_16(
-            wire.pairing_id,
-            ProtocolWireError::InvalidPairingIdLength,
-        )?;
+        let pairing_id = copy_16(wire.pairing_id, ProtocolWireError::InvalidPairingIdLength)?;
         let owner_id = OwnerId::from_bytes(copy_32(
             wire.owner_id,
             ProtocolWireError::InvalidOwnerIdLength,
@@ -273,10 +271,7 @@ impl TryFrom<PairingHelloV1> for PairingHello {
         )?;
         let device_public_key = VerifyingKey::from_bytes(device_public_key_bytes)
             .map_err(|_| ProtocolWireError::InvalidDevicePublicKey)?;
-        let nonce = copy_32(
-            wire.nonce,
-            ProtocolWireError::InvalidPairingNonceLength,
-        )?;
+        let nonce = copy_32(wire.nonce, ProtocolWireError::InvalidPairingNonceLength)?;
 
         Ok(Self::new(
             role,
@@ -306,10 +301,7 @@ impl TryFrom<PairingConfirmationV1> for PairingConfirmation {
     fn try_from(wire: PairingConfirmationV1) -> Result<Self, Self::Error> {
         Ok(Self::new(
             role_from_wire(wire.role)?,
-            copy_16(
-                wire.pairing_id,
-                ProtocolWireError::InvalidPairingIdLength,
-            )?,
+            copy_16(wire.pairing_id, ProtocolWireError::InvalidPairingIdLength)?,
             copy_32(
                 wire.confirmation,
                 ProtocolWireError::InvalidPairingConfirmationLength,
@@ -338,10 +330,7 @@ impl TryFrom<PairingCredentialAcceptedV1> for PairingCredentialAccepted {
     type Error = ProtocolWireError;
 
     fn try_from(wire: PairingCredentialAcceptedV1) -> Result<Self, Self::Error> {
-        let pairing_id = copy_16(
-            wire.pairing_id,
-            ProtocolWireError::InvalidPairingIdLength,
-        )?;
+        let pairing_id = copy_16(wire.pairing_id, ProtocolWireError::InvalidPairingIdLength)?;
         let pairing_transcript_digest = copy_32(
             wire.pairing_transcript_digest,
             ProtocolWireError::InvalidPairingTranscriptDigestLength,
