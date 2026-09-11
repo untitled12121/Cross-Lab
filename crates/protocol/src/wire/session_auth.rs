@@ -285,7 +285,7 @@ impl TryFrom<DeviceCredentialV1> for DeviceCredential {
             ProtocolWireError::InvalidSignatureLength,
         )?);
 
-        DeviceCredential::from_signed_parts(
+        DeviceCredential::from_unverified_signed_parts(
             schema_version,
             owner_id,
             device_id,
