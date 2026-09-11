@@ -19,7 +19,18 @@ pub enum ProtocolWireError {
     InvalidEventIdLength(usize),
     InvalidStreamIdLength(usize),
     InvalidOperationIdLength(usize),
+    InvalidPairingIdLength(usize),
+    InvalidOwnerIdLength(usize),
+    InvalidDeviceIdLength(usize),
+    InvalidKeyIdLength(usize),
+    InvalidDevicePublicKeyLength(usize),
+    InvalidPairingNonceLength(usize),
+    InvalidPairingConfirmationLength(usize),
+    InvalidPairingTranscriptDigestLength(usize),
+    InvalidSignedObjectDigestLength(usize),
+    InvalidSignatureLength(usize),
     MissingEnvelopeBody,
+    MissingPairingBootstrapBody,
     MissingCapabilityVersion,
     MissingCapabilityMinVersion,
     MissingCapabilityMaxVersion,
@@ -35,6 +46,10 @@ pub enum ProtocolWireError {
     InvalidSessionCloseReason(i32),
     InvalidDiagnostic,
     InvalidStreamDirection(i32),
+    InvalidPairingProfile(u32),
+    InvalidPairingRole(i32),
+    InvalidSignatureAlgorithm(i32),
+    InvalidDevicePublicKey,
     TooManyCapabilityEntries(usize),
 }
 
@@ -49,7 +64,20 @@ impl fmt::Display for ProtocolWireError {
             Self::InvalidEventIdLength(_) => "event identifier length is invalid",
             Self::InvalidStreamIdLength(_) => "stream identifier length is invalid",
             Self::InvalidOperationIdLength(_) => "operation identifier length is invalid",
+            Self::InvalidPairingIdLength(_) => "pairing identifier length is invalid",
+            Self::InvalidOwnerIdLength(_) => "owner identifier length is invalid",
+            Self::InvalidDeviceIdLength(_) => "device identifier length is invalid",
+            Self::InvalidKeyIdLength(_) => "key identifier length is invalid",
+            Self::InvalidDevicePublicKeyLength(_) => "device public key length is invalid",
+            Self::InvalidPairingNonceLength(_) => "pairing nonce length is invalid",
+            Self::InvalidPairingConfirmationLength(_) => "pairing confirmation length is invalid",
+            Self::InvalidPairingTranscriptDigestLength(_) => {
+                "pairing transcript digest length is invalid"
+            }
+            Self::InvalidSignedObjectDigestLength(_) => "signed object digest length is invalid",
+            Self::InvalidSignatureLength(_) => "signature length is invalid",
             Self::MissingEnvelopeBody => "control envelope body is missing",
+            Self::MissingPairingBootstrapBody => "pairing bootstrap body is missing",
             Self::MissingCapabilityVersion => "capability version is missing",
             Self::MissingCapabilityMinVersion => "minimum capability version is missing",
             Self::MissingCapabilityMaxVersion => "maximum capability version is missing",
@@ -65,6 +93,10 @@ impl fmt::Display for ProtocolWireError {
             Self::InvalidSessionCloseReason(_) => "session close reason is invalid",
             Self::InvalidDiagnostic => "protocol diagnostic is invalid",
             Self::InvalidStreamDirection(_) => "stream direction is invalid",
+            Self::InvalidPairingProfile(_) => "pairing profile is invalid",
+            Self::InvalidPairingRole(_) => "pairing role is invalid",
+            Self::InvalidSignatureAlgorithm(_) => "signature algorithm is invalid",
+            Self::InvalidDevicePublicKey => "device public key is invalid",
             Self::TooManyCapabilityEntries(_) => "capability advertisement exceeds the entry limit",
         })
     }
@@ -184,6 +216,14 @@ pub(super) fn copy_32(
     bytes: Vec<u8>,
     error: fn(usize) -> ProtocolWireError,
 ) -> Result<[u8; 32], ProtocolWireError> {
+    let len = bytes.len();
+    bytes.try_into().map_err(|_| error(len))
+}
+
+pub(super) fn copy_64(
+    bytes: Vec<u8>,
+    error: fn(usize) -> ProtocolWireError,
+) -> Result<[u8; 64], ProtocolWireError> {
     let len = bytes.len();
     bytes.try_into().map_err(|_| error(len))
 }

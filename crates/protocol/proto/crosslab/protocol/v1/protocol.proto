@@ -103,3 +103,50 @@ message DataStreamOpenV1 {
   StreamDirectionV1 direction = 7;
   uint32 stream_index = 8;
 }
+
+enum PairingRoleV1 {
+  PAIRING_ROLE_UNSPECIFIED = 0;
+  PAIRING_ROLE_INVITER = 1;
+  PAIRING_ROLE_JOINER = 2;
+}
+
+enum SignatureAlgorithmV1 {
+  SIGNATURE_ALGORITHM_UNSPECIFIED = 0;
+  SIGNATURE_ALGORITHM_ED25519 = 1;
+}
+
+message PairingHelloV1 {
+  PairingRoleV1 role = 1;
+  uint32 protocol_major = 2;
+  bytes pairing_id = 3;
+  bytes owner_id = 4;
+  bytes device_id = 5;
+  SignatureAlgorithmV1 device_algorithm = 6;
+  bytes device_public_key = 7;
+  bytes nonce = 8;
+}
+
+message PairingConfirmationV1 {
+  PairingRoleV1 role = 1;
+  bytes pairing_id = 2;
+  bytes confirmation = 3;
+}
+
+message PairingCredentialAcceptedV1 {
+  bytes pairing_id = 1;
+  bytes pairing_transcript_digest = 2;
+  bytes device_credential_signed_object_digest = 3;
+  bytes joiner_device_id = 4;
+  bytes joiner_device_key_id = 5;
+  SignatureAlgorithmV1 signature_algorithm = 6;
+  bytes signature = 7;
+}
+
+message PairingBootstrapV1 {
+  uint32 pairing_profile = 1;
+  oneof body {
+    PairingHelloV1 hello = 2;
+    PairingConfirmationV1 confirmation = 3;
+    PairingCredentialAcceptedV1 credential_accepted = 4;
+  }
+}
