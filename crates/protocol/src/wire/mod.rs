@@ -1,3 +1,4 @@
+mod capability;
 mod codec;
 pub mod v1;
 

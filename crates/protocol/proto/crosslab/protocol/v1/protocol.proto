@@ -7,6 +7,17 @@ message CapabilityVersionV1 {
   uint32 minor = 2;
 }
 
+message CapabilityAdvertisementEntryV1 {
+  string capability_id = 1;
+  CapabilityVersionV1 min_version = 2;
+  CapabilityVersionV1 max_version = 3;
+  bool runtime_available = 4;
+}
+
+message CapabilityAdvertisementV1 {
+  repeated CapabilityAdvertisementEntryV1 entries = 1;
+}
+
 enum StreamDirectionV1 {
   STREAM_DIRECTION_UNSPECIFIED = 0;
   STREAM_DIRECTION_SOURCE_TO_DESTINATION = 1;

@@ -7,6 +7,24 @@ pub struct CapabilityVersionV1 {
 }
 
 #[derive(Clone, PartialEq, prost::Message)]
+pub struct CapabilityAdvertisementEntryV1 {
+    #[prost(string, tag = "1")]
+    pub capability_id: String,
+    #[prost(message, optional, tag = "2")]
+    pub min_version: Option<CapabilityVersionV1>,
+    #[prost(message, optional, tag = "3")]
+    pub max_version: Option<CapabilityVersionV1>,
+    #[prost(bool, tag = "4")]
+    pub runtime_available: bool,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct CapabilityAdvertisementV1 {
+    #[prost(message, repeated, tag = "1")]
+    pub entries: Vec<CapabilityAdvertisementEntryV1>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
 pub struct DataStreamOpenV1 {
     #[prost(bytes = "vec", tag = "1")]
     pub session_id: Vec<u8>,

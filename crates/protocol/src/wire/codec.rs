@@ -17,10 +17,14 @@ pub enum ProtocolWireError {
     InvalidStreamIdLength(usize),
     InvalidOperationIdLength(usize),
     MissingCapabilityVersion,
+    MissingCapabilityMinVersion,
+    MissingCapabilityMaxVersion,
     InvalidCapabilityVersion,
+    InvalidCapabilityVersionRange,
     InvalidCapabilityId,
     InvalidOperationName,
     InvalidStreamDirection(i32),
+    TooManyCapabilityEntries(usize),
 }
 
 impl fmt::Display for ProtocolWireError {
@@ -32,10 +36,14 @@ impl fmt::Display for ProtocolWireError {
             Self::InvalidStreamIdLength(_) => "stream identifier length is invalid",
             Self::InvalidOperationIdLength(_) => "operation identifier length is invalid",
             Self::MissingCapabilityVersion => "capability version is missing",
+            Self::MissingCapabilityMinVersion => "minimum capability version is missing",
+            Self::MissingCapabilityMaxVersion => "maximum capability version is missing",
             Self::InvalidCapabilityVersion => "capability version is invalid",
+            Self::InvalidCapabilityVersionRange => "capability version range is invalid",
             Self::InvalidCapabilityId => "capability identifier is invalid",
             Self::InvalidOperationName => "operation name is invalid",
             Self::InvalidStreamDirection(_) => "stream direction is invalid",
+            Self::TooManyCapabilityEntries(_) => "capability advertisement exceeds the entry limit",
         })
     }
 }
@@ -132,7 +140,7 @@ impl TryFrom<DataStreamOpenV1> for DataStreamOpen {
     }
 }
 
-fn capability_version_from_wire(
+pub(super) fn capability_version_from_wire(
     wire: CapabilityVersionV1,
 ) -> Result<CapabilityVersion, ProtocolWireError> {
     let major =
