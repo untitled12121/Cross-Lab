@@ -35,11 +35,7 @@ fn device_signing_delegation_verifies_against_owner_root() {
 #[test]
 fn delegation_rejects_unknown_root_key() {
     let (owner_id, _, _, _, delegation) = fixture();
-    let unknown_root = OwnerRootRecord::new(
-        owner_id,
-        &SigningKey::from_secret_bytes([20; 32]),
-        0,
-    );
+    let unknown_root = OwnerRootRecord::new(owner_id, &SigningKey::from_secret_bytes([20; 32]), 0);
 
     assert_eq!(
         delegation.verify(&unknown_root, 0),
