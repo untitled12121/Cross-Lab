@@ -235,7 +235,11 @@ struct PolicyKey {
 }
 
 impl PolicyKey {
-    fn new(source_device_id: DeviceId, capability_id: CapabilityId, operation: OperationName) -> Self {
+    fn new(
+        source_device_id: DeviceId,
+        capability_id: CapabilityId,
+        operation: OperationName,
+    ) -> Self {
         Self {
             source_device_id,
             capability_id,
@@ -290,7 +294,10 @@ impl PolicyState {
         if !context.local_capability.runtime_available() {
             return PolicyDecision::deny(DecisionReason::RuntimeUnavailable);
         }
-        if !context.local_capability.supports(context.negotiated_version) {
+        if !context
+            .local_capability
+            .supports(context.negotiated_version)
+        {
             return PolicyDecision::deny(DecisionReason::IncompatibleCapabilityVersion);
         }
 
