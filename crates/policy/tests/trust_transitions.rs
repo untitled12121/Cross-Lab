@@ -1,7 +1,5 @@
 use crosslab_crypto::{Signature, SigningKey};
-use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceId, OwnerId, OwnerRootRecord,
-};
+use crosslab_identity::{AuthorityDelegation, AuthorityRole, DeviceId, OwnerId, OwnerRootRecord};
 use crosslab_policy::{
     TransitionId, TrustRecord, TrustState, TrustTransition, TrustTransitionError,
 };
@@ -140,7 +138,8 @@ fn forged_root_signature_is_rejected() {
         &root_key,
     )
     .unwrap();
-    let forged_signature = SigningKey::from_secret_bytes([15; 32]).sign_digest(&valid.transcript_digest());
+    let forged_signature =
+        SigningKey::from_secret_bytes([15; 32]).sign_digest(&valid.transcript_digest());
     let forged = TrustTransition::from_signed_revocation(
         record.owner_id(),
         record.device_id(),
