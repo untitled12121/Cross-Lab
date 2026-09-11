@@ -98,7 +98,7 @@ impl DeviceCredential {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn from_signed_parts(
+    pub fn from_unverified_signed_parts(
         schema_version: u16,
         owner_id: OwnerId,
         device_id: DeviceId,
