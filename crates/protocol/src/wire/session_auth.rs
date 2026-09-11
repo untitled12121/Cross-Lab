@@ -214,10 +214,7 @@ impl TryFrom<SessionAuthHelloV1> for SessionAuthHello {
         }
         let protocol_ranges = protocol_ranges_from_wire(wire.protocol_ranges)?;
         let features = features_from_wire(wire.supported_features, wire.required_features)?;
-        let nonce = copy_32(
-            wire.nonce,
-            ProtocolWireError::InvalidSessionAuthNonceLength,
-        )?;
+        let nonce = copy_32(wire.nonce, ProtocolWireError::InvalidSessionAuthNonceLength)?;
 
         Ok(Self::new(credential, protocol_ranges, features, nonce))
     }
