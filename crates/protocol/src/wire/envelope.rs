@@ -88,9 +88,7 @@ impl TryFrom<EnvelopeV1> for ControlEnvelope {
             envelope_v1::Body::ProtocolError(error) => {
                 EnvelopeBody::ProtocolError(error.try_into()?)
             }
-            envelope_v1::Body::SessionClose(close) => {
-                EnvelopeBody::SessionClose(close.try_into()?)
-            }
+            envelope_v1::Body::SessionClose(close) => EnvelopeBody::SessionClose(close.try_into()?),
         };
 
         Ok(ControlEnvelope::new(

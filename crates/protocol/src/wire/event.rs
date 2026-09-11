@@ -31,8 +31,8 @@ impl TryFrom<EventV1> for Event {
             wire.event_id,
             ProtocolWireError::InvalidEventIdLength,
         )?);
-        let event_type = EventType::parse(&wire.event_type)
-            .map_err(|_| ProtocolWireError::InvalidEventType)?;
+        let event_type =
+            EventType::parse(&wire.event_type).map_err(|_| ProtocolWireError::InvalidEventType)?;
 
         match wire.capability_id {
             Some(value) => {

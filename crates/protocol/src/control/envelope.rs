@@ -2,9 +2,7 @@ use crosslab_policy::SessionId;
 
 use crate::{CapabilityAdvertisement, ProtocolVersion};
 
-use super::{
-    CancelRequest, ControlRequest, ControlResponse, Event, ProtocolFailure, SessionClose,
-};
+use super::{CancelRequest, ControlRequest, ControlResponse, Event, ProtocolFailure, SessionClose};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EnvelopeBody {

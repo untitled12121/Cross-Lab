@@ -57,10 +57,7 @@ pub struct SessionClose {
 }
 
 impl SessionClose {
-    pub const fn new(
-        reason: SessionCloseReason,
-        diagnostic: Option<ProtocolDiagnostic>,
-    ) -> Self {
+    pub const fn new(reason: SessionCloseReason, diagnostic: Option<ProtocolDiagnostic>) -> Self {
         Self { reason, diagnostic }
     }
 
