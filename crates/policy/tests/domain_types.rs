@@ -1,4 +1,4 @@
-use crosslab_policy::{CapabilityId, OperationName};
+use crosslab_policy::{CapabilityId, CapabilityVersion, CapabilityVersionRange, OperationName};
 
 #[test]
 fn capability_id_accepts_canonical_dotted_ascii() {
@@ -58,4 +58,20 @@ fn operation_name_rejects_invalid_segments_and_length_overflow() {
 
     let oversized = "a".repeat(65);
     assert!(OperationName::parse(&oversized).is_err());
+}
+
+#[test]
+fn capability_version_range_matches_only_its_major_and_minor_window() {
+    let range = CapabilityVersionRange::new(1, 2, 4).unwrap();
+
+    assert!(range.supports(CapabilityVersion::new(1, 2)));
+    assert!(range.supports(CapabilityVersion::new(1, 4)));
+    assert!(!range.supports(CapabilityVersion::new(1, 1)));
+    assert!(!range.supports(CapabilityVersion::new(1, 5)));
+    assert!(!range.supports(CapabilityVersion::new(2, 3)));
+}
+
+#[test]
+fn capability_version_range_rejects_an_inverted_minor_window() {
+    assert!(CapabilityVersionRange::new(1, 5, 4).is_err());
 }
