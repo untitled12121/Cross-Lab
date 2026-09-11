@@ -10,16 +10,17 @@ This file is the durable resume guide for active Cross-Lab development. Git hist
 
 **M5 — Pairing + Authenticated Logical Session Simulator: in progress.**
 
-Verified M1–M4 and M5 Tasks 1–6 are integrated into canonical `main`. M5 Task 7 is implemented and exact-head verified on `m5-session-state`; integration into `main` is the current handoff step.
+Verified M1–M4 and M5 Tasks 1–7 are integrated into canonical `main`. The next implementation slice is M5 Task 8 after this integration-record commit is verified on `main`.
 
 ## Branch State
 
-- `main` — canonical integrated branch; contains verified M1–M4 and M5 Tasks 1–6.
+- `main` — canonical integrated branch; contains verified M1–M4 and M5 Tasks 1–7.
 - `m5-session` — historical M5 Tasks 1–4 branch; PR #10 merged.
 - `m5-session-auth` — historical M5 Task 5 branch; PR #11 merged.
 - `m5-memory-transport` — historical M5 Task 6 branch; PR #12 merged.
-- `m5-session-state` — active M5 Task 7 branch; PR #13 open pending documentation-inclusive exact-head verification and integration.
+- `m5-session-state` — historical M5 Task 7 branch; PR #13 merged.
 - `planning` — planning/documentation branch; no active implementation belongs here.
+- Start Task 8 from a fresh short-lived branch based on the verified current `main` head.
 - No temporary `*-red` branches are required for TDD; failing contract-test checkpoints remain ordinary commits on the active implementation branch.
 
 The connected GitHub workflow writes directly to committed branches, so there is no separate uncommitted remote working-tree state. Repository history is the durable implementation state.
@@ -167,7 +168,7 @@ No protocol parser or wire schema changed in Task 6, so the protocol-parser fuzz
 
 ### Task 7 — logical session activation and capability exchange
 
-Complete and exact-head verified; integration pending.
+Complete, verified, and integrated.
 
 Implemented:
 
@@ -190,16 +191,14 @@ TDD and verification evidence:
 
 - initial Task 7 test head `3a4fafcc8cb72857549fa0e40edb3a76c4d4ea82` stopped at rustfmt and is not counted as valid RED evidence;
 - valid RED head `3a7af8ad57af1ecec2ae52753f80498e0c1a105c`: CI `34655692501` passed lockfile/rustfmt and failed `cargo check` specifically because `LogicalSession`, `SessionActivation`, `SessionHandshakeSide`, `SessionState`, and `SessionError` did not yet exist;
-- implementation/fix history preserved ordinary TDD commits on `m5-session-state`; no temporary RED branch was created;
-- exact code head `606f9022c1c4e702f88d1d71cbee907dc26d5b1b` passed CI `34656446809` and Fuzz Smoke `34656446822`.
-
-PR #13 is the Task 7 integration PR. After this documentation checkpoint is exact-head verified, merge only that verified head into `main`, run post-merge `main` CI, and record the integrated result before Task 8.
+- exact code head `606f9022c1c4e702f88d1d71cbee907dc26d5b1b` passed CI `34656446809` and Fuzz Smoke `34656446822`;
+- documentation-inclusive PR head `94f418469a24dcd0d9598311a1d20bfda1bbef3a` passed CI `34658806668` and Fuzz Smoke `34658806735`;
+- PR #13 merged with preserved history at `e17075245b566522bb4c822cc22b3ee2245fe7a7`;
+- post-merge canonical `main` CI `34658951190` passed lockfile, Rustfmt, workspace check, Clippy with warnings denied, and the full workspace test suite.
 
 ## Exact Next Task
 
-First integrate **M5 Task 7 — Logical session activation and capability exchange** into canonical `main` after the documentation-inclusive PR head passes exact-head CI/fuzz.
-
-Then continue **M5 Task 8 — Sequenced control request/response/event simulator**, following `docs/plans/phase-1/M5-pairing-session-simulator.md` test-first.
+Continue **M5 Task 8 — Sequenced control request/response/event simulator**, following `docs/plans/phase-1/M5-pairing-session-simulator.md` test-first.
 
 Task 8 should:
 
@@ -223,4 +222,4 @@ Before continuing in a new session:
 2. read `docs/architecture/MASTER-ARCHITECTURE.md` and this file;
 3. read `docs/plans/phase-1/M5-pairing-session-simulator.md`, `docs/architecture/SESSION-TRANSPORT.md`, and relevant ADRs;
 4. reconcile documentation with actual code before editing;
-5. finish Task 7 integration if PR #13 is not yet merged; otherwise branch Task 8 from the verified current `main` head.
+5. branch from the verified current `main` head and continue from **M5 Task 8** above.
