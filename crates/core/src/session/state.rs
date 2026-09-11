@@ -117,15 +117,16 @@ pub enum SessionError {
 impl fmt::Display for SessionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidState => formatter.write_str("logical session state transition is invalid"),
+            Self::InvalidState => {
+                formatter.write_str("logical session state transition is invalid")
+            }
             Self::Identity(error) => fmt::Display::fmt(error, formatter),
             Self::PeerNotTrusted => formatter.write_str("peer device is not trusted"),
             Self::PeerTrustMismatch => {
                 formatter.write_str("peer trust record does not match the authenticated identity")
             }
-            Self::PeerCredentialEpochMismatch => formatter.write_str(
-                "peer credential epoch does not match the locally accepted trust epoch",
-            ),
+            Self::PeerCredentialEpochMismatch => formatter
+                .write_str("peer credential epoch does not match the locally accepted trust epoch"),
             Self::Protocol(error) => fmt::Display::fmt(error, formatter),
             Self::Feature(error) => fmt::Display::fmt(error, formatter),
             Self::Auth(error) => fmt::Display::fmt(error, formatter),
@@ -247,10 +248,7 @@ impl LogicalSession {
         self.context.as_ref()
     }
 
-    pub fn authenticate(
-        &mut self,
-        activation: SessionActivation<'_>,
-    ) -> Result<(), SessionError> {
+    pub fn authenticate(&mut self, activation: SessionActivation<'_>) -> Result<(), SessionError> {
         if self.state != SessionState::Created {
             return Err(SessionError::InvalidState);
         }
@@ -345,10 +343,8 @@ fn authenticate(activation: SessionActivation<'_>) -> Result<SessionContext, Ses
         activation.initiator.protocol_ranges,
         activation.responder.protocol_ranges,
     )?;
-    let negotiated_features = negotiate_features(
-        activation.initiator.features,
-        activation.responder.features,
-    )?;
+    let negotiated_features =
+        negotiate_features(activation.initiator.features, activation.responder.features)?;
     let transcript = SessionAuthTranscriptV1::new(
         activation.root.owner_id(),
         activation.initiator.credential,
