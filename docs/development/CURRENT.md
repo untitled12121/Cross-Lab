@@ -10,7 +10,7 @@ This file is the durable resume guide for active Cross-Lab development. Git hist
 
 **M5 — Pairing + Authenticated Logical Session Simulator: in progress.**
 
-M1–M4 and verified M5 Tasks 1–4 are integrated into canonical `main`. M5 Task 5 is implemented and code-verified on `m5-session-auth`; its documentation-inclusive PR head must be verified and merged before Task 6 begins.
+M1–M4 and verified M5 Tasks 1–4 are integrated into canonical `main`. M5 Task 5 implementation is complete on `m5-session-auth`; final exact-head PR verification and integration are pending before Task 6 begins.
 
 ## Branch State
 
@@ -105,7 +105,7 @@ The final PR-head checkpoint `588366d69dcd89d3a9a4f709fbca833eb263be57` passed C
 
 ### Task 5 — session-auth domain and bootstrap wire contract
 
-Implementation complete and code-verified on `m5-session-auth`; final documentation-inclusive PR verification/integration is pending.
+Implementation complete on `m5-session-auth`; final exact-head PR verification/integration is pending.
 
 Implemented:
 
@@ -114,7 +114,7 @@ Implemented:
 - exact role-separated Ed25519 proof inputs for initiator and responder without an unintended extra hashing layer;
 - deterministic `SessionId` derivation from the transcript digest plus both verified signatures;
 - generic message signing/verification helpers inside `crosslab-crypto` while retaining existing digest-signing APIs;
-- structural `DeviceCredential::from_signed_parts` import so session-auth wire decoding can reconstruct a signed credential without moving credential-chain verification into the protocol crate;
+- structural `DeviceCredential::from_unverified_signed_parts` import so session-auth wire decoding can reconstruct unverified signed credential data without implying trust or moving credential-chain verification into the protocol crate;
 - dedicated bounded pre-session `SessionAuthBootstrapV1` hello/proof messages outside ordinary `EnvelopeV1` traffic;
 - strict profile, role, algorithm, identity, public-key, credential, nonce, transcript-digest, signature, protocol-range, feature-count, feature-ID, and frame-limit validation;
 - boxed session-auth hello storage at the domain credential/raw Prost oneof seams to satisfy the strict large-enum footprint lint without changing protobuf field tags or serialized wire bytes;
@@ -125,9 +125,10 @@ TDD evidence:
 
 - RED contract head `c37f598522b6aa114bd3f62c32a5590e96c1e7db` passed lockfile/rustfmt and failed `cargo check` on the intentionally missing signed-credential import/session-auth APIs in CI `34644867753`;
 - vector-capture CI `34652914633` passed lockfile/rustfmt/check/Clippy and failed only the deliberate zero golden assertions;
-- final code head `9dbbd50d99348ba4a06eaadbc25442eec627b3f3` passed CI `34653333962` and fuzz smoke `34653333970`.
+- code head `9dbbd50d99348ba4a06eaadbc25442eec627b3f3` passed CI `34653333962` and fuzz smoke `34653333970` before the final API-safety naming refinement;
+- pre-merge review then renamed the structural constructor to `from_unverified_signed_parts` so callers cannot mistake imported wire data for an already-verified credential; final exact-head verification covers that refinement and the documentation checkpoint.
 
-`docs/protocol/PROTOCOL-V1.md` now registers the session-auth transcript field tags plus exact feature-set/channel-binding digest labels, role proof labels, and `SessionId` derivation required by the approved session architecture.
+`docs/protocol/PROTOCOL-V1.md` registers the session-auth transcript field tags plus exact feature-set/channel-binding digest labels, role proof labels, and `SessionId` derivation required by the approved session architecture.
 
 The uploaded-repository runtime was unavailable for local ZIP inspection during this slice, so related open-source trust/transport patterns were reviewed narrowly through the corresponding public upstream repositories. No external identity or transport architecture was copied into Cross-Lab.
 
@@ -137,7 +138,7 @@ PR #10 was marked ready and merged into `main` with preserved commit history at 
 
 Post-merge `main` CI run `34643788450` passed the locked dependency graph, Rustfmt, workspace check, Clippy with warnings denied, and the full workspace test suite.
 
-The integrated scope contains pairing cryptography/domain/bootstrap/orchestration, trust commit gating, focused public-key credential issuance, tests, and vectors. Task 5 remains on PR #11 until its final documentation-inclusive head is verified and merged.
+The integrated scope contains pairing cryptography/domain/bootstrap/orchestration, trust commit gating, focused public-key credential issuance, tests, and vectors. Task 5 remains on PR #11 until its final exact head is verified and merged.
 
 ## Exact Next Task
 
