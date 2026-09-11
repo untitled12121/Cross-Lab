@@ -1,4 +1,4 @@
-use crosslab_protocol::{FeatureSet, FeatureNegotiationError, negotiate_features};
+use crosslab_protocol::{FeatureNegotiationError, FeatureSet, negotiate_features};
 
 #[test]
 fn optional_unknown_features_are_ignored() {
