@@ -13,9 +13,10 @@ pub use capability::{
     MAX_CAPABILITY_ADVERTISEMENT_ENTRIES,
 };
 pub use control::{
-    ControlSequence, DiagnosticError, EventId, MAX_DIAGNOSTIC_BYTES, ProtocolDiagnostic,
-    ProtocolErrorCode, ProtocolErrorCodeError, ProtocolFailure, ProtocolIdError, RequestId,
-    RetryClass, RetryClassError, SequenceError, StreamId,
+    CancelRequest, ControlRequest, ControlResponse, ControlResponseResult, ControlSequence,
+    DiagnosticError, EventId, MAX_DIAGNOSTIC_BYTES, ProtocolDiagnostic, ProtocolErrorCode,
+    ProtocolErrorCodeError, ProtocolFailure, ProtocolIdError, RequestId, RetryClass,
+    RetryClassError, SequenceError, StreamId,
 };
 pub use data_stream::{DataStreamOpen, StreamDirection};
 pub use feature::{
