@@ -2,6 +2,7 @@
 
 mod pairing;
 mod session;
+mod transport;
 
 pub use pairing::{
     PairingConfirmationError, PairingConfirmationRole, PairingFlowError, PairingId,
@@ -9,3 +10,7 @@ pub use pairing::{
     PairingInviterState, PairingJoinerFlow, PairingJoinerState, PairingSecret, PairingTranscript,
 };
 pub use session::{SessionAuthError, SessionAuthProof, SessionAuthRole, SessionAuthTranscriptV1};
+pub use transport::{
+    ChannelBinding, ConnectionMetadata, ControlReceiveError, ControlSendError, TransportConnection,
+    TransportSecurityClass,
+};
