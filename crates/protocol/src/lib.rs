@@ -1,10 +1,15 @@
 //! Versioned Cross-Lab wire-contract domain.
 
+mod capability;
 mod control;
 mod feature;
 mod framing;
 mod version;
 
+pub use capability::{
+    CapabilityAdvertisement, CapabilityAdvertisementEntry, CapabilityAdvertisementError,
+    MAX_CAPABILITY_ADVERTISEMENT_ENTRIES,
+};
 pub use control::{
     ControlSequence, DiagnosticError, EventId, MAX_DIAGNOSTIC_BYTES, ProtocolDiagnostic,
     ProtocolIdError, RequestId, RetryClass, RetryClassError, SequenceError, StreamId,
