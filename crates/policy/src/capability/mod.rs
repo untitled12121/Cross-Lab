@@ -51,6 +51,67 @@ impl OperationName {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CapabilityVersion {
+    major: u16,
+    minor: u16,
+}
+
+impl CapabilityVersion {
+    pub const fn new(major: u16, minor: u16) -> Self {
+        Self { major, minor }
+    }
+
+    pub const fn major(self) -> u16 {
+        self.major
+    }
+
+    pub const fn minor(self) -> u16 {
+        self.minor
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CapabilityVersionRange {
+    major: u16,
+    min_minor: u16,
+    max_minor: u16,
+}
+
+impl CapabilityVersionRange {
+    pub const fn new(
+        major: u16,
+        min_minor: u16,
+        max_minor: u16,
+    ) -> Result<Self, VersionRangeError> {
+        if min_minor > max_minor {
+            return Err(VersionRangeError);
+        }
+        Ok(Self {
+            major,
+            min_minor,
+            max_minor,
+        })
+    }
+
+    pub const fn supports(self, version: CapabilityVersion) -> bool {
+        version.major == self.major
+            && version.minor >= self.min_minor
+            && version.minor <= self.max_minor
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VersionRangeError;
+
+impl fmt::Display for VersionRangeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("capability version range is inverted")
+    }
+}
+
+impl std::error::Error for VersionRangeError {}
+
 fn valid_segment(value: &str) -> bool {
     let bytes = value.as_bytes();
     if bytes.is_empty() || !bytes[0].is_ascii_lowercase() || bytes.last() == Some(&b'-') {
