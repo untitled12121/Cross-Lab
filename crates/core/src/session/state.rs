@@ -84,7 +84,7 @@ impl<'a> SessionActivation<'a> {
         }
     }
 
-    fn local_and_peer(self) -> (SessionHandshakeSide<'a>, SessionHandshakeSide<'a>) {
+    fn local_and_peer(&self) -> (SessionHandshakeSide<'a>, SessionHandshakeSide<'a>) {
         match self.local_role {
             SessionAuthRole::Initiator => (self.initiator, self.responder),
             SessionAuthRole::Responder => (self.responder, self.initiator),
