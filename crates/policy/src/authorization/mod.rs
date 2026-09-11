@@ -283,22 +283,29 @@ impl PolicyState {
 
     pub fn evaluate(&self, context: &AuthorizationContext) -> PolicyDecision {
         match context.trust_state {
-            TrustState::Pending => return PolicyDecision::deny(DecisionReason::UntrustedPeer),
-            TrustState::Revoked => return PolicyDecision::deny(DecisionReason::RevokedPeer),
+            TrustState::Pending => {
+                return PolicyDecision::deny(DecisionReason::UntrustedPeer, self.revision);
+            }
+            TrustState::Revoked => {
+                return PolicyDecision::deny(DecisionReason::RevokedPeer, self.revision);
+            }
             TrustState::Trusted => {}
         }
 
         if context.local_capability.capability_id() != &context.capability_id {
-            return PolicyDecision::deny(DecisionReason::UnsupportedCapability);
+            return PolicyDecision::deny(DecisionReason::UnsupportedCapability, self.revision);
         }
         if !context.local_capability.runtime_available() {
-            return PolicyDecision::deny(DecisionReason::RuntimeUnavailable);
+            return PolicyDecision::deny(DecisionReason::RuntimeUnavailable, self.revision);
         }
         if !context
             .local_capability
             .supports(context.negotiated_version)
         {
-            return PolicyDecision::deny(DecisionReason::IncompatibleCapabilityVersion);
+            return PolicyDecision::deny(
+                DecisionReason::IncompatibleCapabilityVersion,
+                self.revision,
+            );
         }
 
         let key = PolicyKey::new(
@@ -307,17 +314,25 @@ impl PolicyState {
             context.operation.clone(),
         );
         let Some(rule) = self.rules.get(&key) else {
-            return PolicyDecision::deny(DecisionReason::NoMatchingRule);
+            return PolicyDecision::deny(DecisionReason::NoMatchingRule, self.revision);
         };
 
         if rule.effect == RuleEffect::Deny {
-            return PolicyDecision::deny(DecisionReason::ExplicitDeny);
+            return PolicyDecision::deny_matched(
+                DecisionReason::ExplicitDeny,
+                rule,
+                self.revision,
+            );
         }
 
         if rule.constraints.iter().any(|constraint| match constraint {
             Constraint::LocalOnly => context.network_class != NetworkClass::Local,
         }) {
-            return PolicyDecision::deny(DecisionReason::ConstraintFailed);
+            return PolicyDecision::deny_matched(
+                DecisionReason::ConstraintFailed,
+                rule,
+                self.revision,
+            );
         }
 
         let scope = ApprovalScope::from_context(context);
@@ -337,10 +352,10 @@ impl PolicyState {
             .collect::<Vec<_>>();
 
         if !missing.is_empty() {
-            return PolicyDecision::ask(missing);
+            return PolicyDecision::ask(rule, missing, self.revision);
         }
 
-        PolicyDecision::allow(AuthorizationGrant {
+        let grant = AuthorizationGrant {
             rule_id: rule.rule_id,
             source_device_id: context.source_device_id,
             destination_device_id: context.destination_device_id,
@@ -350,7 +365,9 @@ impl PolicyState {
             operation: context.operation.clone(),
             trust_revision: context.trust_revision,
             policy_revision: self.revision,
-        })
+            constraints_snapshot: rule.constraints.clone(),
+        };
+        PolicyDecision::allow(rule, grant, self.revision)
     }
 }
 
@@ -378,35 +395,59 @@ pub enum DecisionReason {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PolicyDecision {
     effect: DecisionEffect,
-    reason: DecisionReason,
+    matched_rule_id: Option<RuleId>,
+    constraints: Vec<Constraint>,
     required_obligations: Vec<Obligation>,
+    reason: DecisionReason,
+    policy_revision: u64,
     grant: Option<AuthorizationGrant>,
 }
 
 impl PolicyDecision {
-    fn deny(reason: DecisionReason) -> Self {
+    fn deny(reason: DecisionReason, policy_revision: u64) -> Self {
         Self {
             effect: DecisionEffect::Deny,
-            reason,
+            matched_rule_id: None,
+            constraints: Vec::new(),
             required_obligations: Vec::new(),
+            reason,
+            policy_revision,
             grant: None,
         }
     }
 
-    fn ask(required_obligations: Vec<Obligation>) -> Self {
+    fn deny_matched(reason: DecisionReason, rule: &PolicyRule, policy_revision: u64) -> Self {
+        Self {
+            effect: DecisionEffect::Deny,
+            matched_rule_id: Some(rule.rule_id),
+            constraints: rule.constraints.clone(),
+            required_obligations: Vec::new(),
+            reason,
+            policy_revision,
+            grant: None,
+        }
+    }
+
+    fn ask(rule: &PolicyRule, required_obligations: Vec<Obligation>, policy_revision: u64) -> Self {
         Self {
             effect: DecisionEffect::Ask,
-            reason: DecisionReason::ApprovalRequired,
+            matched_rule_id: Some(rule.rule_id),
+            constraints: rule.constraints.clone(),
             required_obligations,
+            reason: DecisionReason::ApprovalRequired,
+            policy_revision,
             grant: None,
         }
     }
 
-    fn allow(grant: AuthorizationGrant) -> Self {
+    fn allow(rule: &PolicyRule, grant: AuthorizationGrant, policy_revision: u64) -> Self {
         Self {
             effect: DecisionEffect::Allow,
-            reason: DecisionReason::Allowed,
+            matched_rule_id: Some(rule.rule_id),
+            constraints: rule.constraints.clone(),
             required_obligations: Vec::new(),
+            reason: DecisionReason::Allowed,
+            policy_revision,
             grant: Some(grant),
         }
     }
@@ -415,12 +456,24 @@ impl PolicyDecision {
         self.effect
     }
 
-    pub const fn reason(&self) -> DecisionReason {
-        self.reason
+    pub const fn matched_rule_id(&self) -> Option<RuleId> {
+        self.matched_rule_id
+    }
+
+    pub fn constraints(&self) -> &[Constraint] {
+        &self.constraints
     }
 
     pub fn required_obligations(&self) -> &[Obligation] {
         &self.required_obligations
+    }
+
+    pub const fn reason(&self) -> DecisionReason {
+        self.reason
+    }
+
+    pub const fn policy_revision(&self) -> u64 {
+        self.policy_revision
     }
 
     pub fn into_grant(self) -> Option<AuthorizationGrant> {
@@ -439,4 +492,5 @@ pub struct AuthorizationGrant {
     pub(crate) operation: OperationName,
     pub(crate) trust_revision: u64,
     pub(crate) policy_revision: u64,
+    pub(crate) constraints_snapshot: Vec<Constraint>,
 }
