@@ -57,9 +57,7 @@ impl fmt::Display for PairingFlowError {
             Self::UnexpectedState => "pairing flow received a message in an unexpected state",
             Self::CredentialMismatch => "device credential does not match the confirmed pairing",
             Self::JoinerKeyMismatch => "joiner private key does not match the issued credential",
-            Self::InvalidCredentialAcceptance => {
-                "credential acceptance proof verification failed"
-            }
+            Self::InvalidCredentialAcceptance => "credential acceptance proof verification failed",
             Self::Identity(error) => return fmt::Display::fmt(error, formatter),
         })
     }
@@ -193,10 +191,10 @@ impl PairingInviterFlow {
             return self.fail(PairingFlowError::InvalidConfirmation);
         }
 
-        let value = self.context.transcript.confirmation(
-            PairingConfirmationRole::Inviter,
-            self.invitation.secret(),
-        );
+        let value = self
+            .context
+            .transcript
+            .confirmation(PairingConfirmationRole::Inviter, self.invitation.secret());
         self.state = PairingInviterState::ReadyToIssueCredential;
         Ok(PairingConfirmation::new(
             PairingRole::Inviter,
