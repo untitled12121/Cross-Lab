@@ -292,7 +292,9 @@ impl TrustTransition {
             .trust_revision()
             .checked_add(1)
             .ok_or(TrustTransitionError::InvalidRevision)?;
-        if self.previous_revision != record.trust_revision() || self.new_revision != expected_revision {
+        if self.previous_revision != record.trust_revision()
+            || self.new_revision != expected_revision
+        {
             return Err(TrustTransitionError::InvalidRevision);
         }
         Ok(())
@@ -309,7 +311,9 @@ fn ensure_record_active(record: &TrustRecord) -> Result<(), TrustTransitionError
 fn ensure_ordinary_delegated_role(role: AuthorityRole) -> Result<(), TrustTransitionError> {
     match role {
         AuthorityRole::Administrative | AuthorityRole::DeviceSigning => Ok(()),
-        AuthorityRole::OwnerRoot | AuthorityRole::Recovery => Err(TrustTransitionError::WrongIssuerRole),
+        AuthorityRole::OwnerRoot | AuthorityRole::Recovery => {
+            Err(TrustTransitionError::WrongIssuerRole)
+        }
     }
 }
 
