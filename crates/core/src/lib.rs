@@ -9,7 +9,11 @@ pub use pairing::{
     PairingInvitation, PairingInvitationError, PairingInvitationState, PairingInviterFlow,
     PairingInviterState, PairingJoinerFlow, PairingJoinerState, PairingSecret, PairingTranscript,
 };
-pub use session::{SessionAuthError, SessionAuthProof, SessionAuthRole, SessionAuthTranscriptV1};
+pub use session::{
+    LogicalSession, NegotiatedCapability, SessionActivation, SessionAuthError, SessionAuthProof,
+    SessionAuthRole, SessionAuthTranscriptV1, SessionContext, SessionError, SessionHandshakeSide,
+    SessionState,
+};
 pub use transport::{
     ChannelBinding, ConnectionMetadata, ControlReceiveError, ControlSendError, TransportConnection,
     TransportSecurityClass,
