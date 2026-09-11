@@ -1,13 +1,12 @@
 use std::num::NonZeroUsize;
 
-use crosslab_core::{ControlReceiveError, ControlSendError, TransportConnection, TransportSecurityClass};
+use crosslab_core::{
+    ControlReceiveError, ControlSendError, TransportConnection, TransportSecurityClass,
+};
 use crosslab_sim::transport::{MemorySide, MemoryTransportPair};
 
 fn pair(capacity: usize, binding: u8) -> MemoryTransportPair {
-    MemoryTransportPair::new(
-        NonZeroUsize::new(capacity).unwrap(),
-        [binding; 32],
-    )
+    MemoryTransportPair::new(NonZeroUsize::new(capacity).unwrap(), [binding; 32])
 }
 
 #[test]
@@ -100,16 +99,34 @@ fn channel_binding_and_metadata_are_connection_scoped_and_transport_neutral() {
     let (first_a, first_b) = first.endpoints();
     let (second_a, _) = second.endpoints();
 
-    assert_eq!(first_a.security_class(), TransportSecurityClass::InProcessTest);
-    assert_eq!(first_b.security_class(), TransportSecurityClass::InProcessTest);
+    assert_eq!(
+        first_a.security_class(),
+        TransportSecurityClass::InProcessTest
+    );
+    assert_eq!(
+        first_b.security_class(),
+        TransportSecurityClass::InProcessTest
+    );
     assert_eq!(first_a.channel_binding(), first_b.channel_binding());
     assert_eq!(first_a.channel_binding().profile_id(), "in-process-test");
     assert_eq!(first_a.channel_binding().bytes(), &[0x31; 32]);
     assert_ne!(first_a.channel_binding(), second_a.channel_binding());
 
-    assert_eq!(first_a.connection_metadata().local_endpoint(), Some("memory:a"));
-    assert_eq!(first_a.connection_metadata().remote_endpoint(), Some("memory:b"));
+    assert_eq!(
+        first_a.connection_metadata().local_endpoint(),
+        Some("memory:a")
+    );
+    assert_eq!(
+        first_a.connection_metadata().remote_endpoint(),
+        Some("memory:b")
+    );
     assert_eq!(first_a.connection_metadata().metered(), Some(false));
-    assert_eq!(first_b.connection_metadata().local_endpoint(), Some("memory:b"));
-    assert_eq!(first_b.connection_metadata().remote_endpoint(), Some("memory:a"));
+    assert_eq!(
+        first_b.connection_metadata().local_endpoint(),
+        Some("memory:b")
+    );
+    assert_eq!(
+        first_b.connection_metadata().remote_endpoint(),
+        Some("memory:a")
+    );
 }
