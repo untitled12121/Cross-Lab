@@ -46,8 +46,12 @@ pub(crate) fn negotiate_session_capabilities(
                 continue;
             }
 
-            let min_minor = local_range.min_minor().max(peer_capability.min_version().minor());
-            let max_minor = local_range.max_minor().min(peer_capability.max_version().minor());
+            let min_minor = local_range
+                .min_minor()
+                .max(peer_capability.min_version().minor());
+            let max_minor = local_range
+                .max_minor()
+                .min(peer_capability.max_version().minor());
             if min_minor > max_minor {
                 continue;
             }
