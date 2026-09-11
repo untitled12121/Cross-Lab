@@ -2,13 +2,13 @@ use crosslab_crypto::{SignatureAlgorithm, SigningKey};
 use crosslab_identity::{
     AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
 };
+use crosslab_protocol::wire::v1::{
+    SessionAuthBootstrapV1, SessionAuthRoleV1, SignatureAlgorithmV1, session_auth_bootstrap_v1,
+};
 use crosslab_protocol::{
     FeatureSet, FrameLimit, ProtocolRange, ProtocolWireError, SESSION_AUTH_PROFILE_V1,
     SessionAuthBootstrapMessage, SessionAuthHello, SessionAuthProofMessage, SessionAuthRole,
     decode_session_auth_bootstrap, encode_frame, encode_session_auth_bootstrap,
-};
-use crosslab_protocol::wire::v1::{
-    SessionAuthBootstrapV1, SessionAuthRoleV1, SignatureAlgorithmV1, session_auth_bootstrap_v1,
 };
 use prost::Message;
 
@@ -148,7 +148,12 @@ fn hello_rejects_malformed_device_credential() {
     let session_auth_bootstrap_v1::Body::Hello(hello) = raw.body.as_mut().unwrap() else {
         unreachable!();
     };
-    hello.device_credential.as_mut().unwrap().device_key_id.pop();
+    hello
+        .device_credential
+        .as_mut()
+        .unwrap()
+        .device_key_id
+        .pop();
     assert_eq!(
         decode_session_auth_bootstrap(&frame(&raw)),
         Err(ProtocolWireError::InvalidKeyIdLength(31))
@@ -158,8 +163,11 @@ fn hello_rejects_malformed_device_credential() {
     let session_auth_bootstrap_v1::Body::Hello(hello) = raw.body.as_mut().unwrap() else {
         unreachable!();
     };
-    hello.device_credential.as_mut().unwrap().signature_algorithm =
-        SignatureAlgorithmV1::Unspecified as i32;
+    hello
+        .device_credential
+        .as_mut()
+        .unwrap()
+        .signature_algorithm = SignatureAlgorithmV1::Unspecified as i32;
     assert_eq!(
         decode_session_auth_bootstrap(&frame(&raw)),
         Err(ProtocolWireError::InvalidSignatureAlgorithm(0))
@@ -240,7 +248,9 @@ fn proof_rejects_role_digest_algorithm_and_signature_errors() {
     proof.transcript_digest.pop();
     assert_eq!(
         decode_session_auth_bootstrap(&frame(&raw)),
-        Err(ProtocolWireError::InvalidSessionAuthTranscriptDigestLength(31))
+        Err(ProtocolWireError::InvalidSessionAuthTranscriptDigestLength(
+            31
+        ))
     );
 
     let mut raw = raw_proof();
