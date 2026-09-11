@@ -1,0 +1,32 @@
+name: Fuzz Smoke
+
+on:
+  pull_request:
+    paths:
+      - "crates/protocol/**"
+      - "crates/policy/**"
+      - "fuzz/**"
+      - ".github/workflows/fuzz.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: Protocol Parsers
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install nightly Rust
+        run: rustup toolchain install nightly --profile minimal --component rustfmt
+      - name: Install cargo-fuzz
+        run: cargo +nightly install cargo-fuzz --version 0.13.2 --locked
+      - name: Format fuzz targets
+        run: cargo +nightly fmt --manifest-path fuzz/Cargo.toml -- --check
+      - name: Run bounded fuzz smoke
+        run: |
+          cargo +nightly fuzz run control_frame -- -runs=256
+          cargo +nightly fuzz run data_stream_open -- -runs=256
+          cargo +nightly fuzz run identifiers -- -runs=256
