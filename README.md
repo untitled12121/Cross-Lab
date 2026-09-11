@@ -2,7 +2,7 @@
 
 # Cross-Lab
 
-**A local-first, owner-controlled cross-device ecosystem.**
+**An open-source system for secure communication, control, and data exchange across your devices.**
 
 Linux · Windows · macOS · Android · iOS / iPadOS
 
@@ -56,14 +56,6 @@ Transport Adapters
 The initial implementation proves the architecture with a deterministic Core Simulator before introducing real networking or platform-specific feature complexity. Quinn is the first planned real IP transport after the simulator foundation.
 
 For the complete dependency model, security boundaries, platform strategy, protocol rules, and phased roadmap, see the [Master Architecture](./docs/architecture/MASTER-ARCHITECTURE.md).
-
-## Project Status
-
-> **Phase 0 — Architecture and Security Specification is complete.** Cross-Lab is ready to begin Phase 1 implementation with the deterministic Core Simulator and minimal Rust workspace foundation.
-
-Cross-Lab is still pre-release. Production platform capabilities, installers, compatibility guarantees, and end-user releases have not been published yet.
-
-The active implementation state is tracked in [`docs/development/CURRENT.md`](./docs/development/CURRENT.md), with the roadmap in [`docs/development/ROADMAP.md`](./docs/development/ROADMAP.md).
 
 ## Documentation
 
