@@ -10,7 +10,7 @@ This file is the durable resume guide for active Cross-Lab development. Git hist
 
 **M5 — Pairing + Authenticated Logical Session Simulator: in progress.**
 
-M1–M4 are integrated into canonical `main`. M5 Tasks 1–2 are complete and verified on the active implementation branch.
+M1–M4 are integrated into canonical `main`. M5 Tasks 1–3 are complete and verified on the active implementation branch.
 
 ## Branch State
 
@@ -72,17 +72,32 @@ Complete and committed on `m5-session`.
 
 Complete and verified on `m5-session`.
 
+- typed 128-bit `PairingId` and redacted/zeroized 256-bit `PairingSecret`;
+- single-use invitation lifecycle with terminal consumed/cancelled/expired states;
+- canonical `crosslab.pairing-transcript.v1` digest construction;
+- role-separated inviter/joiner HMAC confirmations;
+- wrong-secret/security-field/role rejection coverage;
+- frozen transcript and directional HMAC golden vectors.
+
+### Task 3 — pairing bootstrap protobuf messages
+
+Complete and verified on `m5-session`.
+
 Implemented:
 
-- typed 128-bit `PairingId`;
-- redacted, zeroized 256-bit `PairingSecret`;
-- single-use invitation lifecycle with `Pending`, `Consumed`, `Cancelled`, and `Expired` terminal behavior;
-- canonical pairing transcript using the protocol-v1 `crosslab.pairing-transcript.v1` domain and fixed field registry;
-- role-separated inviter/joiner HMAC-SHA-256 confirmations over the canonical transcript digest;
-- rejection tests for wrong secret, pairing ID, device key, nonce, and confirmation role;
-- frozen golden vectors for the transcript digest and both directional confirmations.
+- dedicated pre-session `PairingBootstrapV1` wrapper outside `EnvelopeV1`;
+- typed hello, directional confirmation, and credential-accepted domain/wire messages;
+- tracked `.proto` additions and matching hand-maintained Prost v1 schema mirror;
+- fixed profile-v1 validation and strict role/signature-algorithm validation;
+- exact 16/32/64-byte validation for pairing IDs, owner/device/key IDs, nonces, confirmations, transcript/signed-object digests, public keys, and signatures;
+- Ed25519 public-key structural validation;
+- bootstrap decoding through the existing 65,536-byte `FrameLimit::BootstrapHello` path so oversized declared frames fail before protobuf decoding;
+- malformed profile/body/enum/length negative coverage;
+- frozen pairing-confirmation bootstrap frame vector.
 
-Verification at implementation head `db4cd1c3e9d1507d106bbfc75622606fc1b14051` succeeded in GitHub Actions run `34617038160`:
+The Task 3 implementation code head is `d522cb462a3ec75cff47ed955b47a73db0768a3d`.
+
+GitHub Actions CI run `34638127568` passed:
 
 ```text
 cargo metadata --locked --no-deps --format-version 1
@@ -92,22 +107,23 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 ```
 
-All steps passed.
+Protocol fuzz smoke run `34638127476` also passed on the same code head. Task 3 did not add the dedicated pairing/session-auth fuzz targets reserved for M5 Task 9; this run verifies the existing bounded parser suite remains green after the protocol extension.
 
 ## Exact Next Task
 
-Continue **M5 Task 3 — bounded pairing/session-auth bootstrap protobuf messages and strict conversion**, following `docs/plans/phase-1/M5-pairing-session-simulator.md` test-first.
+Continue **M5 Task 4 — Pairing orchestration and trust commit**, following `docs/plans/phase-1/M5-pairing-session-simulator.md` test-first.
 
 The next implementation slice should:
 
-1. read the Task 3 file list and exact message/limit requirements from the active M5 plan and protocol specification;
-2. inspect existing `crosslab-protocol` schemas, conversion helpers, limits, and parser tests before editing;
-3. add failing contract tests for pairing/session-auth bootstrap messages, exact-length identifiers/keys/nonces/proofs, collection bounds, malformed/unknown values, and frame limits required by the plan;
-4. implement the minimum protobuf/domain types and strict bounded conversion needed to make those tests pass;
-5. run focused protocol tests, then the complete format/check/Clippy/workspace-test baseline;
-6. commit the completed Task 3 slice on `m5-session` and update this handoff before moving to Task 4.
+1. inspect `OwnerRootRecord`, `AuthorityDelegation`, `DeviceCredential`, trust-state APIs, Task 2 pairing transcript/confirmation types, and Task 3 pairing wire-domain types before editing;
+2. create failing `crates/core/tests/pairing_flow.rs` coverage for the approved S-002 and N-010..N-015 pairing/trust scenarios;
+3. implement `crates/core/src/pairing/flow.rs` as explicit inviter/joiner state machines with fail-closed transitions;
+4. require both directional confirmations, valid owner/credential context, and final joiner proof of possession before any `TrustRecord::Trusted` result can be emitted;
+5. enforce single-use invitation consumption and ensure cancellation, expiry, replay, owner mismatch, wrong proof, or partial failure can never produce trusted state;
+6. run focused tests followed by the complete format/check/Clippy/workspace-test baseline;
+7. commit the completed Task 4 slice on `m5-session` and update this handoff before starting Task 5.
 
-Do not begin the in-memory transport/session state-machine work until Task 3 is verified.
+Do not begin session-auth or transport work until Task 4 is verified.
 
 After M5 integration, the next milestone is **M6 — Authorized Data Streams**.
 
@@ -116,9 +132,8 @@ After M5 integration, the next milestone is **M6 — Authorized Data Streams**.
 Before continuing in a new session:
 
 1. inspect `main`, `m5-session`, draft PR #10, recent commits, branch comparison, and latest CI;
-2. read `docs/architecture/MASTER-ARCHITECTURE.md`;
-3. read this file;
-4. read `docs/plans/phase-1/M5-pairing-session-simulator.md` and the relevant M5 architecture/protocol specifications;
-5. inspect the existing protocol implementation and tests for the Task 3 slice;
-6. reconcile documentation with actual code before coding;
-7. continue from **M5 Task 3** above.
+2. read `docs/architecture/MASTER-ARCHITECTURE.md` and this file;
+3. read `docs/plans/phase-1/M5-pairing-session-simulator.md` plus the pairing/trust architecture and relevant ADRs;
+4. inspect existing identity/trust/pairing implementation and tests for the Task 4 slice;
+5. reconcile documentation with actual code before editing;
+6. continue from **M5 Task 4** above.
