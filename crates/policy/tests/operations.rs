@@ -2,8 +2,8 @@ use crosslab_identity::DeviceId;
 use crosslab_policy::{
     AuthorizationGrant, AuthorizedOperation, CapabilityId, CapabilityVersion,
     CapabilityVersionRange, Constraint, LocalCapability, NetworkClass, OperationError,
-    OperationName, OperationState, OperationUseContext, PolicyRule, PolicyState, RuleEffect, RuleId,
-    SessionId, TrustState, UsePolicy,
+    OperationName, OperationState, OperationUseContext, PolicyRule, PolicyState, RuleEffect,
+    RuleId, SessionId, TrustState, UsePolicy,
 };
 
 struct Fixture {
