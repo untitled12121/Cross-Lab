@@ -3,7 +3,9 @@ use core::fmt;
 use crosslab_crypto::random_bytes;
 use crosslab_identity::DeviceId;
 
-use crate::{AuthorizationGrant, CapabilityId, CapabilityVersion, OperationName, SessionId};
+use crate::{
+    AuthorizationGrant, CapabilityId, CapabilityVersion, Constraint, OperationName, SessionId,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct OperationId([u8; 32]);
@@ -99,6 +101,7 @@ pub struct AuthorizedOperation {
     operation: OperationName,
     trust_revision: u64,
     policy_revision: u64,
+    constraints_snapshot: Vec<Constraint>,
     created_at: u64,
     expires_at: u64,
     use_policy: UsePolicy,
@@ -128,6 +131,7 @@ impl AuthorizedOperation {
             operation: grant.operation,
             trust_revision: grant.trust_revision,
             policy_revision: grant.policy_revision,
+            constraints_snapshot: grant.constraints_snapshot,
             created_at,
             expires_at,
             use_policy,
@@ -193,6 +197,10 @@ impl AuthorizedOperation {
 
     pub const fn state(&self) -> OperationState {
         self.state
+    }
+
+    pub fn constraints_snapshot(&self) -> &[Constraint] {
+        &self.constraints_snapshot
     }
 
     pub const fn created_at(&self) -> u64 {
