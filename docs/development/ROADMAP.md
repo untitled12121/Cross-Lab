@@ -26,8 +26,8 @@ Closeout record: `docs/plans/phase-0/PHASE-0-CLOSEOUT.md`.
 
 Implementation sequence:
 
-- **M1 — Repository Foundation**: minimal Rust workspace, tooling, package shells, and verification baseline
-- M2 — Crypto + Identity
+- M1 — Repository Foundation — **Complete**
+- **M2 — Crypto + Identity — Active**
 - M3 — Trust + Policy
 - M4 — Protocol
 - M5 — Pairing + Authenticated Logical Session Simulator
@@ -37,9 +37,11 @@ Implementation sequence:
 - M9 — Remote Networking Evaluation ADR
 - M10 — First Linux Desktop + Android Vertical Slice
 
-Active milestone: `docs/plans/phase-1/M1-repository-foundation.md`.
+M1 record: `docs/plans/phase-1/M1-repository-foundation.md`.
 
-`main` remains the canonical integrated branch. Use short-lived purpose branches only when a unit of work benefits from isolation; do not create branches merely to represent phase transitions or chat handoffs.
+M2 is governed by `docs/architecture/CORE-SIMULATOR.md`, `docs/architecture/IDENTITY-AND-KEYS.md`, `docs/protocol/PROTOCOL-V1.md`, ADR-0002, and ADR-0006.
+
+`main` remains the canonical integrated branch. `foundation` is the active Phase 1 implementation branch.
 
 ## Later Phases
 
