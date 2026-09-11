@@ -88,7 +88,7 @@ impl TrustRecord {
         Ok(())
     }
 
-    pub fn revoke(&mut self, transition_id: TransitionId) -> Result<(), TrustError> {
+    fn revoke(&mut self, transition_id: TransitionId) -> Result<(), TrustError> {
         if self.state == TrustState::Revoked {
             return Err(TrustError::AlreadyRevoked);
         }
