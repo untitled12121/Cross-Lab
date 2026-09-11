@@ -1,7 +1,7 @@
 use crosslab_policy::{CapabilityId, CapabilityVersion};
 use crosslab_protocol::{
-    CapabilityAdvertisement, CapabilityAdvertisementEntry, ProtocolWireError,
-    MAX_CAPABILITY_ADVERTISEMENT_ENTRIES, wire,
+    CapabilityAdvertisement, CapabilityAdvertisementEntry, MAX_CAPABILITY_ADVERTISEMENT_ENTRIES,
+    ProtocolWireError, wire,
 };
 
 fn entry(id: &str, min_minor: u16, max_minor: u16) -> CapabilityAdvertisementEntry {
