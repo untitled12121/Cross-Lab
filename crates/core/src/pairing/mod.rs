@@ -2,9 +2,13 @@ use core::fmt;
 
 use zeroize::Zeroize;
 
+mod flow;
 mod invitation;
 mod transcript;
 
+pub use flow::{
+    PairingFlowError, PairingInviterFlow, PairingInviterState, PairingJoinerFlow, PairingJoinerState,
+};
 pub use invitation::{PairingInvitation, PairingInvitationError, PairingInvitationState};
 pub use transcript::PairingTranscript;
 

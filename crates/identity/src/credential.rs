@@ -32,6 +32,27 @@ impl DeviceCredential {
         issuer: &AuthorityDelegation,
         issuer_key: &SigningKey,
     ) -> Result<Self, IdentityError> {
+        Self::issue_for_public_key(
+            owner_id,
+            device_id,
+            device_key.verifying_key(),
+            credential_epoch,
+            root,
+            issuer,
+            issuer_key,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn issue_for_public_key(
+        owner_id: OwnerId,
+        device_id: DeviceId,
+        device_public_key: VerifyingKey,
+        credential_epoch: u64,
+        root: &OwnerRootRecord,
+        issuer: &AuthorityDelegation,
+        issuer_key: &SigningKey,
+    ) -> Result<Self, IdentityError> {
         if issuer.role() != AuthorityRole::DeviceSigning {
             return Err(IdentityError::WrongIssuerRole);
         }
@@ -49,7 +70,6 @@ impl DeviceCredential {
         }
 
         let device_algorithm = SignatureAlgorithm::Ed25519;
-        let device_public_key = device_key.verifying_key();
         let device_key_id = KeyId::derive(device_algorithm, &device_public_key);
         let issuer_device_signing_key_id = issuer.delegated_key_id();
         let digest = credential_digest(

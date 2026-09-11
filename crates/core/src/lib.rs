@@ -3,6 +3,7 @@
 mod pairing;
 
 pub use pairing::{
-    PairingConfirmationError, PairingConfirmationRole, PairingId, PairingInvitation,
-    PairingInvitationError, PairingInvitationState, PairingSecret, PairingTranscript,
+    PairingConfirmationError, PairingConfirmationRole, PairingFlowError, PairingId,
+    PairingInvitation, PairingInvitationError, PairingInvitationState, PairingInviterFlow,
+    PairingInviterState, PairingJoinerFlow, PairingJoinerState, PairingSecret, PairingTranscript,
 };
