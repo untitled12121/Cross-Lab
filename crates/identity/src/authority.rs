@@ -45,7 +45,8 @@ impl AuthorityDelegation {
         let delegated_algorithm = SignatureAlgorithm::Ed25519;
         let delegated_public_key = delegated_key.verifying_key();
         let delegated_key_id = KeyId::derive(delegated_algorithm, &delegated_public_key);
-        let issuer_root_key_id = KeyId::derive(SignatureAlgorithm::Ed25519, &issuer_root.verifying_key());
+        let issuer_root_key_id =
+            KeyId::derive(SignatureAlgorithm::Ed25519, &issuer_root.verifying_key());
         let digest = delegation_digest(
             1,
             owner_id,
@@ -71,11 +72,7 @@ impl AuthorityDelegation {
         }
     }
 
-    pub fn verify(
-        &self,
-        root: &OwnerRootRecord,
-        minimum_epoch: u64,
-    ) -> Result<(), IdentityError> {
+    pub fn verify(&self, root: &OwnerRootRecord, minimum_epoch: u64) -> Result<(), IdentityError> {
         if self.schema_version != 1 {
             return Err(IdentityError::UnsupportedSchema);
         }
@@ -156,11 +153,20 @@ fn delegation_digest(
     delegation_epoch: u64,
     issuer_root_key_id: KeyId,
 ) -> [u8; 32] {
-    let mut transcript = CanonicalTranscript::new(DOMAIN).expect("static canonical domain is valid");
-    transcript.push(1, schema_version.to_be_bytes()).expect("fixed field is valid");
-    transcript.push(2, owner_id.to_bytes()).expect("fixed field is valid");
-    transcript.push(3, role.code().to_be_bytes()).expect("fixed field is valid");
-    transcript.push(4, delegated_key_id.to_bytes()).expect("fixed field is valid");
+    let mut transcript =
+        CanonicalTranscript::new(DOMAIN).expect("static canonical domain is valid");
+    transcript
+        .push(1, schema_version.to_be_bytes())
+        .expect("fixed field is valid");
+    transcript
+        .push(2, owner_id.to_bytes())
+        .expect("fixed field is valid");
+    transcript
+        .push(3, role.code().to_be_bytes())
+        .expect("fixed field is valid");
+    transcript
+        .push(4, delegated_key_id.to_bytes())
+        .expect("fixed field is valid");
     transcript
         .push(5, delegated_algorithm.code().to_be_bytes())
         .expect("fixed field is valid");

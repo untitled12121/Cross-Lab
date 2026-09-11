@@ -117,7 +117,12 @@ impl DeviceCredential {
         issuer: &AuthorityDelegation,
         issuer_key: &SigningKey,
     ) -> Result<Self, IdentityError> {
-        self.verify(root, issuer, self.credential_epoch, issuer.delegation_epoch())?;
+        self.verify(
+            root,
+            issuer,
+            self.credential_epoch,
+            issuer.delegation_epoch(),
+        )?;
         let next_epoch = self
             .credential_epoch
             .checked_add(1)
@@ -186,11 +191,20 @@ fn credential_digest(
     credential_epoch: u64,
     issuer_device_signing_key_id: KeyId,
 ) -> [u8; 32] {
-    let mut transcript = CanonicalTranscript::new(DOMAIN).expect("static canonical domain is valid");
-    transcript.push(1, schema_version.to_be_bytes()).expect("fixed field is valid");
-    transcript.push(2, owner_id.to_bytes()).expect("fixed field is valid");
-    transcript.push(3, device_id.to_bytes()).expect("fixed field is valid");
-    transcript.push(4, device_key_id.to_bytes()).expect("fixed field is valid");
+    let mut transcript =
+        CanonicalTranscript::new(DOMAIN).expect("static canonical domain is valid");
+    transcript
+        .push(1, schema_version.to_be_bytes())
+        .expect("fixed field is valid");
+    transcript
+        .push(2, owner_id.to_bytes())
+        .expect("fixed field is valid");
+    transcript
+        .push(3, device_id.to_bytes())
+        .expect("fixed field is valid");
+    transcript
+        .push(4, device_key_id.to_bytes())
+        .expect("fixed field is valid");
     transcript
         .push(5, device_algorithm.code().to_be_bytes())
         .expect("fixed field is valid");

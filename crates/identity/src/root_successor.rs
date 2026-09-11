@@ -74,10 +74,17 @@ impl RootSuccessor {
         {
             return Err(IdentityError::InvalidRootSuccessor);
         }
-        if self.next_root_epoch != current.root_epoch().checked_add(1).ok_or(IdentityError::InvalidRootSuccessor)? {
+        if self.next_root_epoch
+            != current
+                .root_epoch()
+                .checked_add(1)
+                .ok_or(IdentityError::InvalidRootSuccessor)?
+        {
             return Err(IdentityError::InvalidRootSuccessor);
         }
-        if KeyId::derive(self.next_root_algorithm, &self.next_root_public_key) != self.next_root_key_id {
+        if KeyId::derive(self.next_root_algorithm, &self.next_root_public_key)
+            != self.next_root_key_id
+        {
             return Err(IdentityError::MalformedPublicKey);
         }
 
@@ -122,9 +129,14 @@ fn successor_digest(
     next_root_public_key: VerifyingKey,
     next_root_epoch: u64,
 ) -> [u8; 32] {
-    let mut transcript = CanonicalTranscript::new(DOMAIN).expect("static canonical domain is valid");
-    transcript.push(1, schema_version.to_be_bytes()).expect("fixed field is valid");
-    transcript.push(2, owner_id.to_bytes()).expect("fixed field is valid");
+    let mut transcript =
+        CanonicalTranscript::new(DOMAIN).expect("static canonical domain is valid");
+    transcript
+        .push(1, schema_version.to_be_bytes())
+        .expect("fixed field is valid");
+    transcript
+        .push(2, owner_id.to_bytes())
+        .expect("fixed field is valid");
     transcript
         .push(3, current_root_key_id.to_bytes())
         .expect("fixed field is valid");
