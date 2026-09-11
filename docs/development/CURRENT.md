@@ -10,15 +10,17 @@ This file is the durable resume guide for active Cross-Lab development. Git hist
 
 **M5 — Pairing + Authenticated Logical Session Simulator: in progress.**
 
-Verified M1–M4 and M5 Tasks 1–5 are integrated into canonical `main`. The next implementation slice is M5 Task 6 after this integration-record commit is verified on `main`.
+Verified M1–M4 and M5 Tasks 1–5 are integrated into canonical `main`. M5 Task 6 is implemented and code-verified on `m5-memory-transport`; PR #12 must receive exact-head documentation-inclusive verification, merge into `main`, and pass post-merge `main` verification before Task 7 begins.
 
 ## Branch State
 
 - `main` — canonical integrated branch; contains verified M1–M4 and M5 Tasks 1–5.
 - `m5-session` — historical M5 Tasks 1–4 branch; PR #10 merged.
 - `m5-session-auth` — historical M5 Task 5 branch; PR #11 merged.
+- `m5-memory-transport` — active M5 Task 6 branch; draft PR #12 targets `main`.
 - `planning` — planning/documentation branch; no active implementation belongs here.
-- Start Task 6 from a fresh short-lived branch based on the verified current `main` head.
+- Do not begin Task 7 until PR #12 is exact-head verified, merged into `main`, and canonical `main` is reverified.
+- Start Task 7 from a fresh short-lived branch based on that verified `main` head.
 - No temporary `*-red` branches are required for TDD; failing contract-test checkpoints remain ordinary commits on the active implementation branch.
 
 The connected GitHub workflow writes directly to committed branches, so there is no separate uncommitted remote working-tree state. Repository history is the durable implementation state.
@@ -125,25 +127,59 @@ TDD and verification evidence:
 - pre-merge review renamed the structural import to `from_unverified_signed_parts` so unverified state is explicit;
 - final exact PR head `8ad7c79eca6e8aa70c887d27d3a66aa713df9d9f` passed CI `34653899890` and fuzz smoke `34653899783`;
 - PR #11 merged with preserved history at `8cb6f013055a4f05ff599cc0d31adac45d2756b4`;
-- post-merge canonical `main` CI `34654018205` passed lockfile, Rustfmt, workspace check, Clippy with warnings denied, and the full workspace test suite.
+- post-merge canonical `main` CI `34654018205` passed lockfile, Rustfmt, workspace check, Clippy with warnings denied, and the full workspace test suite;
+- final integration-record `main` head `f2ace2758af626f442d41308799d19806ad46904` passed CI `34654100309`.
 
 The uploaded-repository runtime was unavailable for local ZIP inspection during Task 5, so related open-source trust/transport patterns were reviewed narrowly through corresponding public upstream repositories. No external identity or transport architecture was copied into Cross-Lab.
 
+### Task 6 — bounded in-memory transport seam
+
+Implementation complete and code-verified on `m5-memory-transport`; final documentation-inclusive PR verification/integration is pending.
+
+Implemented:
+
+- narrow transport-neutral `crosslab-core` seam for `TransportSecurityClass`, opaque `ChannelBinding`, diagnostic `ConnectionMetadata`, bounded nonblocking control send/receive, close, and closed-state observation;
+- payload-preserving `ControlSendError::Full`/`Closed` so backpressure or shutdown never silently drops the caller's frame, with payload-redacting `Debug` and generic `Display` output;
+- simulator-owned `MemoryTransportPair` with two endpoints, a shared bounded FIFO per control direction, explicit nonzero capacity, and deterministic `InProcessTest` channel binding;
+- deterministic connection-scoped endpoint metadata without treating metadata as identity or authority;
+- ordered control-frame delivery and `Empty` receive behavior while an inbound direction remains open;
+- explicit queue-saturation backpressure without loss;
+- deterministic `disconnect_now` fault injection that abandons queued work and closes both endpoints;
+- idempotent full connection close with peer propagation;
+- deterministic one-direction close injection while preserving the reverse direction;
+- distinct test channel bindings across separate connections and matching binding semantics across paired endpoints;
+- simulator `src/lib.rs` module exposure so integration tests exercise the same adapter API future simulator composition will use;
+- no new dependency, async runtime, unbounded queue, busy polling, real networking, toy encryption, transport-library type leakage, or Task 7 session state.
+
+The plan listed `apps/sim/Cargo.toml` and `apps/sim/src/main.rs` as possible modifications. No edit was necessary: Cargo automatically discovers `src/lib.rs`, existing dependencies already cover the adapter, and the empty simulator binary has no Task 6 composition behavior to add. This keeps the slice smaller without changing the approved transport architecture.
+
+Tests cover bounded FIFO ordering, frame-preserving saturation, disconnect/queued-work abandonment, idempotent close propagation, directional close behavior, `InProcessTest` classification, matching/distinct channel bindings, and neutral endpoint metadata.
+
+TDD and verification evidence:
+
+- initial RED commit `dc1fd126e32e3e6b8710988158540d3e91c9289f` was formatting-only and is not counted as valid RED evidence;
+- valid RED head `e27a2c115b635986a7193559aeb7ab5c8898f309`: CI `34654445082` passed lockfile/rustfmt and failed `cargo check` specifically because the Task 6 core transport exports and simulator library/adapter did not yet exist;
+- implementation head `44d2bc83a604d33cbd00c1f8973c188db77196f0` reached rustfmt and required only one formatter rewrite in the core transport module;
+- code-verified head `9690e20467f5fdd6c80779bbe3adced4134c7f60`: CI `34654834396` passed lockfile, Rustfmt, workspace check, Clippy with warnings denied, and the full workspace test suite.
+
+No protocol parser or wire schema changed in Task 6, so the protocol-parser fuzz target surface is unchanged; Task 6's relevant verification gate is the complete workspace CI baseline above.
+
 ## Exact Next Task
 
-Continue **M5 Task 6 — Bounded in-memory transport seam**, following `docs/plans/phase-1/M5-pairing-session-simulator.md` test-first.
+After PR #12 is exact-head verified, merged, and `main` is reverified, continue **M5 Task 7 — Logical session activation and capability exchange**, following `docs/plans/phase-1/M5-pairing-session-simulator.md` test-first.
 
 The next implementation slice should:
 
-1. read the transport-neutral connection/channel-binding contract in `docs/architecture/SESSION-TRANSPORT.md` before editing;
-2. inspect existing core session-auth, M4 framing/control, and simulator APIs plus relevant uploaded/public upstream transport references for reuse patterns without adopting their identity models;
-3. create failing `apps/sim/tests/memory_transport.rs` coverage for bounded ordering, queue saturation, disconnect, close propagation, and distinct deterministic channel bindings;
-4. create `crates/core/src/transport/mod.rs` as the narrow transport-neutral seam for connection metadata, channel binding, control send/receive, and close behavior;
-5. create `apps/sim/src/transport.rs` with a deterministic bounded `MemoryTransportPair` using the `InProcessTest` security class;
-6. keep transport-library types out of the core domain and use no unbounded queues, busy polling, real networking, or general async runtime dependency;
-7. verify deterministic failure behavior, run the complete format/check/Clippy/workspace-test baseline, commit, merge verified Task 6 into `main`, and checkpoint this file before Task 7.
+1. create failing `crates/core/tests/session.rs` S-003/S-004 and N-020..N-027-style coverage before production changes;
+2. create `crates/core/src/session/state.rs` for the explicit `Created -> Authenticating -> Active -> Closing -> Closed` lifecycle plus the revocation terminal path;
+3. create `crates/core/src/session/capabilities.rs` for post-authentication capability intersection;
+4. modify `crates/core/src/session/mod.rs` only to compose/export the focused session features;
+5. require credential/trust validation, protocol/feature negotiation, channel-binding validation, both directional proofs, derived `SessionId`, and directional sequence initialization before `Active`;
+6. ensure capability advertisement/negotiation occurs only after authentication and never creates policy authority;
+7. keep Task 8 control request/response/event dispatch out of Task 7;
+8. run the full format/check/Clippy/workspace-test baseline, checkpoint this file, merge verified Task 7 into `main`, and reverify canonical `main` before Task 8.
 
-Do not begin the Task 7 logical-session activation/capability-exchange state machine until Task 6 is verified and integrated.
+Do not begin Task 8 until Task 7 is verified and integrated.
 
 After M5 integration, the next milestone is **M6 — Authorized Data Streams**.
 
@@ -151,8 +187,9 @@ After M5 integration, the next milestone is **M6 — Authorized Data Streams**.
 
 Before continuing in a new session:
 
-1. inspect `main`, recent commits, branch state, and latest CI/fuzz runs;
+1. inspect `main`, `m5-memory-transport`, PR #12, recent commits, branch comparison, and latest CI runs;
 2. read `docs/architecture/MASTER-ARCHITECTURE.md` and this file;
 3. read `docs/plans/phase-1/M5-pairing-session-simulator.md`, `docs/architecture/SESSION-TRANSPORT.md`, and relevant ADRs;
 4. reconcile documentation with actual code before editing;
-5. branch from the verified current `main` head and continue from **M5 Task 6** above.
+5. finish Task 6 PR verification/integration if PR #12 is still open;
+6. otherwise branch from the verified current `main` head and continue from **M5 Task 7** above.
