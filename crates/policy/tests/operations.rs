@@ -97,7 +97,7 @@ fn allow_grant_creates_active_operation_with_nonreused_random_id() {
 fn matching_binding_and_revisions_validate() {
     let fixture = Fixture::new();
     let mut operation =
-        AuthorizedOperation::issue(fixture.grant, 10, 20, UsePolicy::SingleStream).unwrap();
+        AuthorizedOperation::issue(fixture.grant.clone(), 10, 20, UsePolicy::SingleStream).unwrap();
 
     operation
         .validate(
@@ -156,7 +156,7 @@ fn operation_id_does_not_authorize_wrong_source_or_session() {
 fn expiry_transitions_operation_to_terminal_expired_state() {
     let fixture = Fixture::new();
     let mut operation =
-        AuthorizedOperation::issue(fixture.grant, 10, 20, UsePolicy::SingleStream).unwrap();
+        AuthorizedOperation::issue(fixture.grant.clone(), 10, 20, UsePolicy::SingleStream).unwrap();
 
     assert_eq!(
         operation.validate(
@@ -187,7 +187,7 @@ fn trust_or_policy_revision_change_revokes_operation() {
     assert_eq!(trust_changed.state(), OperationState::Revoked);
 
     let mut policy_changed =
-        AuthorizedOperation::issue(fixture.grant, 10, 20, UsePolicy::SingleStream).unwrap();
+        AuthorizedOperation::issue(fixture.grant.clone(), 10, 20, UsePolicy::SingleStream).unwrap();
     assert_eq!(
         policy_changed.validate(
             &fixture.use_context(),
