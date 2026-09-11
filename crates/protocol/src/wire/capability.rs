@@ -57,7 +57,9 @@ impl TryFrom<CapabilityAdvertisementV1> for CapabilityAdvertisement {
 
         CapabilityAdvertisement::new(entries).map_err(|error| match error {
             CapabilityAdvertisementError::TooManyEntries => {
-                ProtocolWireError::TooManyCapabilityEntries(MAX_CAPABILITY_ADVERTISEMENT_ENTRIES + 1)
+                ProtocolWireError::TooManyCapabilityEntries(
+                    MAX_CAPABILITY_ADVERTISEMENT_ENTRIES + 1,
+                )
             }
             CapabilityAdvertisementError::InvalidVersionRange => {
                 ProtocolWireError::InvalidCapabilityVersionRange
