@@ -97,6 +97,41 @@ impl DeviceCredential {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_unverified_signed_parts(
+        schema_version: u16,
+        owner_id: OwnerId,
+        device_id: DeviceId,
+        device_key_id: KeyId,
+        device_algorithm: SignatureAlgorithm,
+        device_public_key: VerifyingKey,
+        credential_epoch: u64,
+        issuer_device_signing_key_id: KeyId,
+        signature: Signature,
+    ) -> Result<Self, IdentityError> {
+        if schema_version != 1 {
+            return Err(IdentityError::UnsupportedSchema);
+        }
+        if device_algorithm != SignatureAlgorithm::Ed25519 {
+            return Err(IdentityError::UnsupportedAlgorithm);
+        }
+        if KeyId::derive(device_algorithm, &device_public_key) != device_key_id {
+            return Err(IdentityError::MalformedPublicKey);
+        }
+
+        Ok(Self {
+            schema_version,
+            owner_id,
+            device_id,
+            device_key_id,
+            device_algorithm,
+            device_public_key,
+            credential_epoch,
+            issuer_device_signing_key_id,
+            signature,
+        })
+    }
+
     pub fn verify(
         &self,
         root: &OwnerRootRecord,
@@ -171,6 +206,10 @@ impl DeviceCredential {
         )
     }
 
+    pub const fn schema_version(&self) -> u16 {
+        self.schema_version
+    }
+
     pub const fn owner_id(&self) -> OwnerId {
         self.owner_id
     }
@@ -181,6 +220,10 @@ impl DeviceCredential {
 
     pub const fn device_key_id(&self) -> KeyId {
         self.device_key_id
+    }
+
+    pub const fn device_algorithm(&self) -> SignatureAlgorithm {
+        self.device_algorithm
     }
 
     pub const fn device_public_key(&self) -> VerifyingKey {

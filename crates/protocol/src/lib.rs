@@ -32,7 +32,9 @@ pub use version::{
 };
 pub use wire::{
     PAIRING_PROFILE_V1, PairingBootstrapMessage, PairingConfirmation, PairingCredentialAccepted,
-    PairingHello, PairingRole, ProtocolWireError, decode_control_envelope, decode_data_stream_open,
-    decode_pairing_bootstrap, encode_control_envelope, encode_data_stream_open,
-    encode_pairing_bootstrap,
+    PairingHello, PairingRole, ProtocolWireError, SESSION_AUTH_PROFILE_V1,
+    SessionAuthBootstrapMessage, SessionAuthHello, SessionAuthProofMessage, SessionAuthRole,
+    decode_control_envelope, decode_data_stream_open, decode_pairing_bootstrap,
+    decode_session_auth_bootstrap, encode_control_envelope, encode_data_stream_open,
+    encode_pairing_bootstrap, encode_session_auth_bootstrap,
 };

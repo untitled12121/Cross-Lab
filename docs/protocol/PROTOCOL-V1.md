@@ -293,7 +293,8 @@ Exact byte layout:
 ```text
 magic              17 bytes ASCII: "crosslab-canon-1\0"
 domain_len         u16 big-endian
-domain             domain_len bytes, validated ASCIIfield_count        u16 big-endian
+domain             domain_len bytes, validated ASCII
+field_count        u16 big-endian
 repeated fields:
   tag              u16 big-endian
   value_len        u32 big-endian
@@ -468,7 +469,75 @@ Domain: `crosslab.trust-transition.v1`
 10 issuer_key_id: 32 bytes
 ```
 
-P0.7 adds the session-authentication transcript domain/fields without changing these object definitions.
+### 19.7 Session authentication transcript
+
+Domain: `crosslab.session-auth.v1`
+
+```text
+1 schema_version: u16
+2 owner_id: 32 bytes
+3 initiator_device_id: 32 bytes
+4 initiator_device_key_id: 32 bytes
+5 initiator_credential_signed_object_digest: 32 bytes
+6 initiator_nonce: 32 bytes
+7 responder_device_id: 32 bytes
+8 responder_device_key_id: 32 bytes
+9 responder_credential_signed_object_digest: 32 bytes
+10 responder_nonce: 32 bytes
+11 negotiated_protocol_major: u16
+12 negotiated_protocol_minor: u16
+13 negotiated_feature_set_digest: 32 bytes
+14 channel_binding_profile_digest: 32 bytes
+15 channel_binding_value_digest: 32 bytes
+```
+
+The credential digest fields use `SignedObjectDigestV1` from section 17.4.
+
+The negotiated feature set is canonicalized as ascending unique `u16` feature IDs. Its digest is:
+
+```text
+NegotiatedFeatureSetDigestV1 = BLAKE3-256(
+  "crosslab.session-auth.feature-set.v1\0" ||
+  feature_id_1_u16_be || ... || feature_id_n_u16_be
+)
+```
+
+An empty negotiated feature set hashes only the domain label.
+
+Channel binding profile and value are hashed separately so a profile identifier cannot be confused with binding bytes:
+
+```text
+ChannelBindingProfileDigestV1 = BLAKE3-256(
+  "crosslab.session-auth.channel-binding-profile.v1\0" ||
+  channel_binding_profile_bytes
+)
+
+ChannelBindingValueDigestV1 = BLAKE3-256(
+  "crosslab.session-auth.channel-binding-value.v1\0" ||
+  channel_binding_value_bytes
+)
+```
+
+Session-authentication proofs sign the exact role label followed by the 32-byte session-auth transcript digest:
+
+```text
+initiator proof input =
+  "crosslab.session-auth.initiator-proof.v1" || transcript_digest
+
+responder proof input =
+  "crosslab.session-auth.responder-proof.v1" || transcript_digest
+```
+
+After both proofs verify, the logical session identifier is:
+
+```text
+SessionId = BLAKE3-256(
+  "crosslab.session-id.v1\0" ||
+  transcript_digest ||
+  initiator_signature_bytes ||
+  responder_signature_bytes
+)
+```
 
 ## 20. Canonical decoding/verification rule
 

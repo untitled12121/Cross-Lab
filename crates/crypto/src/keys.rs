@@ -35,8 +35,12 @@ impl SigningKey {
         VerifyingKey(self.0.verifying_key())
     }
 
+    pub fn sign_message(&self, message: &[u8]) -> Signature {
+        Signature(self.0.sign(message))
+    }
+
     pub fn sign_digest(&self, digest: &[u8; 32]) -> Signature {
-        Signature(self.0.sign(digest))
+        self.sign_message(digest)
     }
 }
 
@@ -66,14 +70,22 @@ impl VerifyingKey {
         self.0.to_bytes()
     }
 
+    pub fn verify_message(
+        &self,
+        message: &[u8],
+        signature: &Signature,
+    ) -> Result<(), VerificationError> {
+        self.0
+            .verify_strict(message, &signature.0)
+            .map_err(|_| VerificationError)
+    }
+
     pub fn verify_digest(
         &self,
         digest: &[u8; 32],
         signature: &Signature,
     ) -> Result<(), VerificationError> {
-        self.0
-            .verify_strict(digest, &signature.0)
-            .map_err(|_| VerificationError)
+        self.verify_message(digest, signature)
     }
 }
 

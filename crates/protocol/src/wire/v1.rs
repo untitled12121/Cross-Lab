@@ -255,3 +255,93 @@ pub mod pairing_bootstrap_v1 {
         CredentialAccepted(super::PairingCredentialAcceptedV1),
     }
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, prost::Enumeration)]
+#[repr(i32)]
+pub enum SessionAuthRoleV1 {
+    Unspecified = 0,
+    Initiator = 1,
+    Responder = 2,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct ProtocolRangeV1 {
+    #[prost(uint32, tag = "1")]
+    pub major: u32,
+    #[prost(uint32, tag = "2")]
+    pub min_minor: u32,
+    #[prost(uint32, tag = "3")]
+    pub max_minor: u32,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct DeviceCredentialV1 {
+    #[prost(uint32, tag = "1")]
+    pub schema_version: u32,
+    #[prost(bytes = "vec", tag = "2")]
+    pub owner_id: Vec<u8>,
+    #[prost(bytes = "vec", tag = "3")]
+    pub device_id: Vec<u8>,
+    #[prost(bytes = "vec", tag = "4")]
+    pub device_key_id: Vec<u8>,
+    #[prost(enumeration = "SignatureAlgorithmV1", tag = "5")]
+    pub device_algorithm: i32,
+    #[prost(bytes = "vec", tag = "6")]
+    pub device_public_key: Vec<u8>,
+    #[prost(uint64, tag = "7")]
+    pub credential_epoch: u64,
+    #[prost(bytes = "vec", tag = "8")]
+    pub issuer_device_signing_key_id: Vec<u8>,
+    #[prost(enumeration = "SignatureAlgorithmV1", tag = "9")]
+    pub signature_algorithm: i32,
+    #[prost(bytes = "vec", tag = "10")]
+    pub signature: Vec<u8>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct SessionAuthHelloV1 {
+    #[prost(bytes = "vec", tag = "1")]
+    pub owner_id: Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub device_id: Vec<u8>,
+    #[prost(message, optional, tag = "3")]
+    pub device_credential: Option<DeviceCredentialV1>,
+    #[prost(message, repeated, tag = "4")]
+    pub protocol_ranges: Vec<ProtocolRangeV1>,
+    #[prost(uint32, repeated, tag = "5")]
+    pub supported_features: Vec<u32>,
+    #[prost(uint32, repeated, tag = "6")]
+    pub required_features: Vec<u32>,
+    #[prost(bytes = "vec", tag = "7")]
+    pub nonce: Vec<u8>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct SessionAuthProofV1 {
+    #[prost(enumeration = "SessionAuthRoleV1", tag = "1")]
+    pub role: i32,
+    #[prost(bytes = "vec", tag = "2")]
+    pub transcript_digest: Vec<u8>,
+    #[prost(enumeration = "SignatureAlgorithmV1", tag = "3")]
+    pub signature_algorithm: i32,
+    #[prost(bytes = "vec", tag = "4")]
+    pub signature: Vec<u8>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct SessionAuthBootstrapV1 {
+    #[prost(uint32, tag = "1")]
+    pub session_auth_profile: u32,
+    #[prost(oneof = "session_auth_bootstrap_v1::Body", tags = "2, 3")]
+    pub body: Option<session_auth_bootstrap_v1::Body>,
+}
+
+pub mod session_auth_bootstrap_v1 {
+    #[derive(Clone, PartialEq, prost::Oneof)]
+    pub enum Body {
+        #[prost(message, boxed, tag = "2")]
+        Hello(Box<super::SessionAuthHelloV1>),
+        #[prost(message, tag = "3")]
+        Proof(super::SessionAuthProofV1),
+    }
+}

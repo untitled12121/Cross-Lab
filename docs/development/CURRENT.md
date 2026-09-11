@@ -10,14 +10,16 @@ This file is the durable resume guide for active Cross-Lab development. Git hist
 
 **M5 — Pairing + Authenticated Logical Session Simulator: in progress.**
 
-M1–M4 and verified M5 Tasks 1–4 are integrated into canonical `main`. The exact next implementation slice is M5 Task 5.
+M1–M4 and verified M5 Tasks 1–4 are integrated into canonical `main`. M5 Task 5 implementation is complete on `m5-session-auth`; final exact-head PR verification and integration are pending before Task 6 begins.
 
 ## Branch State
 
 - `main` — canonical integrated branch; contains verified M1–M4 and M5 Tasks 1–4.
 - `m5-session` — historical M5 Tasks 1–4 feature branch; PR #10 is merged into `main`.
+- `m5-session-auth` — active M5 Task 5 feature branch; draft PR #11 targets `main`.
 - `planning` — planning/documentation branch; no active implementation belongs here.
-- Start Task 5 from a fresh short-lived branch based on the verified current `main` head.
+- Do not begin Task 6 until PR #11 is exact-head verified, merged into `main`, and canonical `main` is reverified.
+- Start Task 6 from a fresh short-lived branch based on that verified `main` head.
 - No temporary `*-red` branches are required for TDD; failing contract-test checkpoints remain ordinary commits on the active implementation branch.
 
 The connected GitHub workflow writes directly to committed branches, so there is no separate uncommitted remote working-tree state. Repository history is the durable implementation state.
@@ -28,7 +30,7 @@ The connected GitHub workflow writes directly to committed branches, so there is
 - `docs/architecture/CORE-SIMULATOR.md` — Phase 1 simulator and milestone specification.
 - `docs/architecture/SESSION-TRANSPORT.md` — logical-session and transport contract.
 - `docs/architecture/PAIRING-TRUST-REVOCATION.md` — pairing/trust semantics.
-- `docs/protocol/PROTOCOL-V1.md` — protocol v1 wire/canonical rules.
+- `docs/protocol/PROTOCOL-V1.md` — protocol v1 wire/canonical rules, including the session-auth v1 canonical registry.
 - ADR-0003 — single-use 256-bit pairing secret with directional HMAC-SHA-256 confirmations.
 - ADR-0004 — Protocol Buffers for ordinary v1 wire encoding with independent canonical signing transcripts.
 - ADR-0006 — focused `crosslab-crypto` foundation boundary used by identity, pairing, session, and later recovery cryptographic mechanics.
@@ -101,29 +103,58 @@ Task 4 final code head `36583b732b20df6a7eef1905cec685ad50675a6b` passed CI `346
 
 The final PR-head checkpoint `588366d69dcd89d3a9a4f709fbca833eb263be57` passed CI `34643647466` and fuzz smoke `34643647458`.
 
+### Task 5 — session-auth domain and bootstrap wire contract
+
+Implementation complete on `m5-session-auth`; final exact-head PR verification/integration is pending.
+
+Implemented:
+
+- canonical `SessionAuthTranscriptV1` using the 15 fields approved in `SESSION-TRANSPORT.md`;
+- deterministic canonicalization of negotiated feature IDs and separate domain-separated digests for feature set, channel-binding profile, and channel-binding value;
+- exact role-separated Ed25519 proof inputs for initiator and responder without an unintended extra hashing layer;
+- deterministic `SessionId` derivation from the transcript digest plus both verified signatures;
+- generic message signing/verification helpers inside `crosslab-crypto` while retaining existing digest-signing APIs;
+- structural `DeviceCredential::from_unverified_signed_parts` import so session-auth wire decoding can reconstruct unverified signed credential data without implying trust or moving credential-chain verification into the protocol crate;
+- dedicated bounded pre-session `SessionAuthBootstrapV1` hello/proof messages outside ordinary `EnvelopeV1` traffic;
+- strict profile, role, algorithm, identity, public-key, credential, nonce, transcript-digest, signature, protocol-range, feature-count, feature-ID, and frame-limit validation;
+- boxed session-auth hello storage at the domain credential/raw Prost oneof seams to satisfy the strict large-enum footprint lint without changing protobuf field tags or serialized wire bytes;
+- frozen transcript digest, initiator proof, responder proof, and `SessionId` golden vectors;
+- negative coverage for nonce/channel-binding substitution, wrong role/key/owner, malformed credentials, invalid protocol ranges/features, and malformed bootstrap fields.
+
+TDD evidence:
+
+- RED contract head `c37f598522b6aa114bd3f62c32a5590e96c1e7db` passed lockfile/rustfmt and failed `cargo check` on the intentionally missing signed-credential import/session-auth APIs in CI `34644867753`;
+- vector-capture CI `34652914633` passed lockfile/rustfmt/check/Clippy and failed only the deliberate zero golden assertions;
+- code head `9dbbd50d99348ba4a06eaadbc25442eec627b3f3` passed CI `34653333962` and fuzz smoke `34653333970` before the final API-safety naming refinement;
+- pre-merge review then renamed the structural constructor to `from_unverified_signed_parts` so callers cannot mistake imported wire data for an already-verified credential; final exact-head verification covers that refinement and the documentation checkpoint.
+
+`docs/protocol/PROTOCOL-V1.md` registers the session-auth transcript field tags plus exact feature-set/channel-binding digest labels, role proof labels, and `SessionId` derivation required by the approved session architecture.
+
+The uploaded-repository runtime was unavailable for local ZIP inspection during this slice, so related open-source trust/transport patterns were reviewed narrowly through the corresponding public upstream repositories. No external identity or transport architecture was copied into Cross-Lab.
+
 ## M5 Tasks 1–4 Integration
 
 PR #10 was marked ready and merged into `main` with preserved commit history at merge commit `b54395109b8fe7ed49862f7f8c508659a2fd7a36`.
 
 Post-merge `main` CI run `34643788450` passed the locked dependency graph, Rustfmt, workspace check, Clippy with warnings denied, and the full workspace test suite.
 
-The integrated scope contains pairing cryptography/domain/bootstrap/orchestration, trust commit gating, focused public-key credential issuance, tests, and vectors. It does not contain Task 5 session authentication, Task 6 transport, or later M5 slices.
+The integrated scope contains pairing cryptography/domain/bootstrap/orchestration, trust commit gating, focused public-key credential issuance, tests, and vectors. Task 5 remains on PR #11 until its final exact head is verified and merged.
 
 ## Exact Next Task
 
-Continue **M5 Task 5 — Session-auth domain and bootstrap wire contract**, following `docs/plans/phase-1/M5-pairing-session-simulator.md` test-first.
+After PR #11 is exact-head verified, merged, and `main` is reverified, continue **M5 Task 6 — Bounded in-memory transport seam**, following `docs/plans/phase-1/M5-pairing-session-simulator.md` test-first.
 
 The next implementation slice should:
 
-1. read the canonical session-auth fields and channel-binding rules in `docs/architecture/SESSION-TRANSPORT.md` and `docs/protocol/PROTOCOL-V1.md` before editing;
-2. inspect existing credential, signing/transcript, protocol negotiation, Task 3 bootstrap wire, and M4 framing/conversion APIs for reuse;
-3. create failing `crates/core/tests/session_auth.rs` and `crates/protocol/tests/session_auth_wire.rs` coverage for transcript/proof/`SessionId` golden behavior plus wrong nonce, channel binding, role, key, profile, enum, and malformed-length cases;
-4. implement `crates/core/src/session/mod.rs` and `crates/core/src/session/auth.rs` with canonical `SessionAuthTranscriptV1`, role-separated initiator/responder proofs, and deterministic `SessionId` derivation;
-5. add bounded pre-session session-auth hello/proof protobuf/domain messages and strict wire conversion outside ordinary post-auth `EnvelopeV1` control traffic;
-6. keep identity independent of transport identity and bind authentication to owner/device credentials, fresh nonces, negotiated protocol/features, and deterministic channel binding;
-7. run focused tests and the complete format/check/Clippy/workspace-test baseline, freeze required golden vectors, commit, and checkpoint this file before Task 6.
+1. read the transport-neutral connection/channel-binding contract in `docs/architecture/SESSION-TRANSPORT.md` before editing;
+2. inspect the existing core session-auth, M4 framing/control, and simulator APIs plus relevant uploaded/public upstream transport references for reuse patterns without adopting their identity models;
+3. create failing `apps/sim/tests/memory_transport.rs` coverage for bounded ordering, queue saturation, disconnect, close propagation, and distinct deterministic channel bindings;
+4. create `crates/core/src/transport/mod.rs` as the narrow transport-neutral seam for connection metadata, channel binding, control send/receive, and close behavior;
+5. create `apps/sim/src/transport.rs` with a deterministic bounded `MemoryTransportPair` using the `InProcessTest` security class;
+6. keep transport-library types out of the core domain and use no unbounded queues, busy polling, real networking, or general async runtime dependency;
+7. verify deterministic failure behavior, run the complete format/check/Clippy/workspace-test baseline, commit, and checkpoint this file before Task 7.
 
-Do not begin the in-memory transport seam or session activation state machine until Task 5 is verified.
+Do not begin the Task 7 logical-session activation/capability-exchange state machine until Task 6 is verified and integrated.
 
 After M5 integration, the next milestone is **M6 — Authorized Data Streams**.
 
@@ -131,9 +162,9 @@ After M5 integration, the next milestone is **M6 — Authorized Data Streams**.
 
 Before continuing in a new session:
 
-1. inspect `main`, the active M5 branch, open PRs, recent commits, branch comparison, and latest CI/fuzz runs;
+1. inspect `main`, `m5-session-auth`, PR #11, recent commits, branch comparison, and latest CI/fuzz runs;
 2. read `docs/architecture/MASTER-ARCHITECTURE.md` and this file;
 3. read `docs/plans/phase-1/M5-pairing-session-simulator.md`, `docs/architecture/SESSION-TRANSPORT.md`, and relevant ADRs;
 4. reconcile documentation with actual code before editing;
-5. branch from the verified current `main` head if no active Task 5 branch exists;
-6. continue from **M5 Task 5** above.
+5. finish Task 5 PR verification/integration if PR #11 is still open;
+6. otherwise branch from the verified current `main` head and continue from **M5 Task 6** above.
