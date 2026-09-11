@@ -1,0 +1,105 @@
+syntax = "proto3";
+
+package crosslab.protocol.v1;
+
+message CapabilityVersionV1 {
+  uint32 major = 1;
+  uint32 minor = 2;
+}
+
+message CapabilityAdvertisementEntryV1 {
+  string capability_id = 1;
+  CapabilityVersionV1 min_version = 2;
+  CapabilityVersionV1 max_version = 3;
+  bool runtime_available = 4;
+}
+
+message CapabilityAdvertisementV1 {
+  repeated CapabilityAdvertisementEntryV1 entries = 1;
+}
+
+enum RetryClassV1 {
+  RETRY_CLASS_NON_RETRYABLE = 0;
+  RETRY_CLASS_IDEMPOTENT = 1;
+}
+
+message ControlRequestV1 {
+  bytes request_id = 1;
+  string capability_id = 2;
+  CapabilityVersionV1 capability_version = 3;
+  string operation_name = 4;
+  RetryClassV1 retry_class = 5;
+  bytes body = 6;
+}
+
+message ProtocolErrorV1 {
+  uint32 code = 1;
+  optional string diagnostic = 2;
+}
+
+message ControlResponseV1 {
+  bytes request_id = 1;
+  oneof result {
+    bytes success_body = 2;
+    ProtocolErrorV1 error = 3;
+  }
+}
+
+message EventV1 {
+  bytes event_id = 1;
+  optional string capability_id = 2;
+  string event_type = 3;
+  bytes body = 4;
+}
+
+message CancelRequestV1 {
+  bytes request_id = 1;
+}
+
+enum SessionCloseReasonV1 {
+  SESSION_CLOSE_REASON_UNSPECIFIED = 0;
+  SESSION_CLOSE_REASON_NORMAL = 1;
+  SESSION_CLOSE_REASON_LOCAL_REQUEST = 2;
+  SESSION_CLOSE_REASON_PROTOCOL_ERROR = 3;
+  SESSION_CLOSE_REASON_AUTHENTICATION_LOST = 4;
+  SESSION_CLOSE_REASON_TRUST_REVOKED = 5;
+  SESSION_CLOSE_REASON_SHUTDOWN = 6;
+}
+
+message SessionCloseV1 {
+  SessionCloseReasonV1 reason = 1;
+  optional string diagnostic = 2;
+}
+
+message EnvelopeV1 {
+  uint32 protocol_major = 1;
+  uint32 protocol_minor = 2;
+  bytes session_id = 3;
+  uint64 message_seq = 4;
+  oneof body {
+    CapabilityAdvertisementV1 capability_advertisement = 5;
+    ControlRequestV1 control_request = 6;
+    ControlResponseV1 control_response = 7;
+    EventV1 event = 8;
+    CancelRequestV1 cancel_request = 9;
+    ProtocolErrorV1 protocol_error = 10;
+    SessionCloseV1 session_close = 11;
+  }
+}
+
+enum StreamDirectionV1 {
+  STREAM_DIRECTION_UNSPECIFIED = 0;
+  STREAM_DIRECTION_SOURCE_TO_DESTINATION = 1;
+  STREAM_DIRECTION_DESTINATION_TO_SOURCE = 2;
+}
+
+message DataStreamOpenV1 {
+  bytes session_id = 1;
+  bytes stream_id = 2;
+  bytes operation_id = 3;
+  string capability_id = 4;
+  CapabilityVersionV1 capability_version = 5;
+  string operation_name = 6;
+  StreamDirectionV1 direction = 7;
+  uint32 stream_index = 8;
+}

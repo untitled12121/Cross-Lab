@@ -8,54 +8,61 @@ This file is the durable resume guide for active Cross-Lab development. Git hist
 
 ## Current Milestone
 
-**M3 — Trust + Policy: complete and integrated into `main`.**
+**M4 — Protocol: implementation complete and verified on `protocol`; PR #9 is ready for integration.**
 
-The next implementation milestone is **M4 — Protocol**.
+M1–M3 are integrated into canonical `main`. Do not begin M5 implementation until PR #9 is integrated and canonical `main` is verified.
 
 ## Branch State
 
-- `main` — canonical integrated branch; includes verified M1, M2, and M3.
-- `trust-policy` — completed M3 branch with no unique work after PR #8 integration; may be retired.
-- `foundation` — completed M2 branch with no required unique M3 work.
+- `main` — canonical integrated branch; contains verified M1, M2, and M3.
+- `protocol` — completed M4 implementation branch and head of PR #9.
 - `planning` — planning/documentation branch; no active implementation belongs here.
-
-Create a fresh `protocol` branch from current `main` before M4 implementation. Do not continue M4 work on `trust-policy`.
 
 ## Architecture Baseline
 
 - `docs/architecture/MASTER-ARCHITECTURE.md` — Revision 2.1, source of truth.
 - `docs/architecture/CORE-SIMULATOR.md` — Phase 1 simulator and milestone specification.
-- `docs/architecture/IDENTITY-AND-KEYS.md` — implemented M2 identity contract.
-- `docs/architecture/PAIRING-TRUST-REVOCATION.md` — implemented M3 trust/revocation contract.
-- `docs/architecture/POLICY-AUTHORIZATION.md` — implemented M3 policy/operation contract.
-- `docs/protocol/PROTOCOL-V1.md` — primary M4 protocol specification.
-- ADR-0002 and ADR-0006 — accepted identity cryptographic profile and focused crypto boundary.
+- `docs/protocol/PROTOCOL-V1.md` — primary protocol v1 specification.
+- ADR-0004 — Protocol Buffers for ordinary v1 wire encoding with independent canonical signing transcripts.
+- ADR-0007 — accepted v1 event namespace and session-close wire registry.
+- Existing identity, trust, policy, and crypto ADR/spec decisions remain authoritative inputs to protocol conversion.
 
-## M3 Integrated
+## M4 Complete
 
-M3 establishes the platform-independent trust and authorization domain required by the Core Simulator:
+M4 establishes the transport-independent protocol domain and bounded parser surface required by the later Core Simulator:
 
-- typed trust state, trust revisions, credential epochs, and transition IDs;
-- signed owner-root and delegated ordinary revocation transitions;
-- fail-closed verification of owner/device binding, issuer authority, signatures, credential epochs, and revisions;
-- no public unsigned mutation path for trust revocation;
-- canonical typed capability IDs, operation names, versions, version ranges, and runtime availability;
-- deterministic exact-device policy rules with `Allow`, `Deny`, and `Ask` decisions;
-- scoped synthetic local approval evidence;
-- decision metadata including matched rule, constraints, reason, and policy revision;
-- cryptographically random operation IDs created only from an allow grant;
-- operation binding to source, destination, logical session, capability, version, and operation;
-- trust/policy revision and constraint snapshots;
-- bounded operation lifetime and terminal cancellation/expiry/revocation/consumption behavior;
-- fixed v1 trust-revocation digest/signature regression vector and negative security coverage.
+- bounded protocol version/range negotiation with highest-common-version selection;
+- bounded supported/required feature negotiation;
+- `u32` big-endian bootstrap, normal-control, and data-stream framing limits;
+- random 128-bit request/event/stream identifiers and directional control-sequence validation;
+- stable typed protocol error codes and bounded safe diagnostics;
+- bounded capability advertisements with strict domain/wire conversion;
+- control request, response, event, cancellation, retry-class, protocol-error, and session-close domain types;
+- validated namespaced event types, explicit capability/system event scope, and reserved `crosslab.system.*` system namespace;
+- stable session-close reasons with unknown/unspecified values rejected fail-closed;
+- strict protobuf conversion with exact identifier lengths, canonical domain validation, and explicit enum validation;
+- data-stream open headers carrying session, stream, operation, capability/version/operation, direction, and stream index bindings;
+- established-session control envelopes carrying protocol version, session ID, message sequence, and all M4 body variants;
+- tracked public v1 `.proto` schema alongside Rust wire types;
+- fixed protobuf/framing golden vectors covering data-stream open, control envelope, system event, and session close;
+- parser/compatibility tests for malformed frames, invalid identifiers/enums, missing envelope bodies, sequence replay/gaps, and bounded collections;
+- independent `fuzz/` workspace with bounded targets for control-envelope parsing, data-stream header parsing, and capability/operation identifier validation;
+- dedicated `Fuzz Smoke` GitHub Actions verification without adding fuzz dependencies to the production workspace.
 
-No pairing orchestration, protobuf/wire framing, logical-session runtime, real networking, persistence, UI, platform adapter, plugin, or privileged-service implementation was introduced.
+The only cross-crate M4 change outside `crosslab-protocol` is the narrow `OperationId::from_bytes` constructor needed for strict wire-to-domain conversion. No pairing orchestration, authenticated logical-session runtime, real networking, persistence, UI, platform adapter, plugin, or privileged-service implementation was introduced.
 
-PR #8 merged M3 into `main` as `0d83b43d8e15f849344987bda62022331494caac`.
+## Protocol Decision Resolved
+
+The previously underspecified event/session-close wire contract is resolved by accepted ADR-0007 and the tracked v1 protobuf schema:
+
+- event envelope body tag `8` carries a 16-byte `event_id`, optional capability scope, validated namespaced `event_type`, and opaque body bytes;
+- system events omit capability scope and use the reserved `crosslab.system.*` namespace;
+- session-close envelope body tag `11` uses the stable v1 reason registry `Normal=1`, `LocalRequest=2`, `ProtocolError=3`, `AuthenticationLost=4`, `TrustRevoked=5`, `Shutdown=6`; protobuf value `0` and unknown values are rejected;
+- optional session-close diagnostics use the existing 512-byte UTF-8 protocol diagnostic bound.
 
 ## Verification
 
-Implementation head `2308d7fdaaa8e0a67abac5fe70e42c6abc7d9b67` passed GitHub Actions run `34560029752` on Rust 1.98.1. The final M3 documentation head `2543d5627f86d508dcd3b2363e3831b35be09fe8` passed pull-request run `34560264063` against the then-current `main`. Both runs completed the configured verification gates successfully:
+Final implementation/test head `064b221923d4b7f130257d625cca2a49e9c7c461` passed normal PR CI run `34588958781` on Rust 1.98.1:
 
 ```text
 cargo metadata --locked --no-deps --format-version 1
@@ -65,25 +72,25 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 ```
 
-GitHub recorded PR #8 as merged without conflict. The merge commit contains the verified `trust-policy` tree plus this integration history.
+The same head passed `Fuzz Smoke` run `34588958761`, including fuzz-workspace formatting and bounded runs of all three protocol parser/identifier fuzz targets.
+
+A final PR scope review found only protocol-domain/schema/tests, the narrow policy ID reconstruction seam, dependency/lockfile changes for Prost, protocol fuzz tooling, and milestone documentation. No M5 runtime/session/transport work is present.
 
 ## Exact Next Task
 
-1. inspect current `main`, recent commits, open PRs, branches, and this handoff;
-2. read `docs/architecture/MASTER-ARCHITECTURE.md`, `docs/protocol/PROTOCOL-V1.md`, and the protocol/M4 sections of `docs/architecture/CORE-SIMULATOR.md`;
-3. create a fresh `protocol` implementation branch from current `main`;
-4. implement M4 test-first, beginning with protocol version/range negotiation and bounded framing/domain-conversion foundations;
-5. continue with protobuf v1 messages, strict conversions, control/data-stream headers, compatibility/error handling, parser tests, golden vectors, and the protocol fuzz targets required by the accepted specifications.
-
-Do not introduce pairing orchestration, authenticated logical sessions, real networking, persistence, UI, platform adapters, plugins, or privileged services during M4.
+1. integrate PR #9 into canonical `main`;
+2. verify the integrated `main` state and its normal CI result;
+3. update this handoff with the M4 merge commit and mark **M5 — Pairing + Authenticated Logical Session Simulator** active;
+4. before M5 coding, read `docs/architecture/SESSION-TRANSPORT.md`, pairing/trust specifications, `CORE-SIMULATOR.md` M5 requirements, and current `main` code;
+5. design and implement the smallest in-memory transport/session slice without introducing real networking or platform integration.
 
 ## Resume Procedure
 
 Before continuing in a new session:
 
-1. inspect repository/branch/PR state and recent commits;
+1. inspect `main`, PR #9/integration state, recent commits, branches, and CI;
 2. read `docs/architecture/MASTER-ARCHITECTURE.md`;
 3. read this file;
-4. read `docs/protocol/PROTOCOL-V1.md` and the M4/protocol sections of `docs/architecture/CORE-SIMULATOR.md`;
-5. reconcile the documentation with actual code and CI state;
+4. read `docs/architecture/CORE-SIMULATOR.md`, `docs/architecture/SESSION-TRANSPORT.md`, and relevant pairing/session protocol specifications;
+5. reconcile documentation with actual code before coding;
 6. continue from the exact next task above.

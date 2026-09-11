@@ -1,0 +1,38 @@
+[package]
+name = "crosslab-protocol-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT OR Apache-2.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+crosslab-policy = { path = "../crates/policy" }
+crosslab-protocol = { path = "../crates/protocol" }
+libfuzzer-sys = "=0.4.13"
+
+[[bin]]
+name = "control_frame"
+path = "fuzz_targets/control_frame.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "data_stream_open"
+path = "fuzz_targets/data_stream_open.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "identifiers"
+path = "fuzz_targets/identifiers.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]
