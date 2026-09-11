@@ -40,6 +40,7 @@ M2 implements:
 - OS-backed secure random generation and redacted/zeroized secret handling;
 - typed 256-bit `OwnerId`, `DeviceId`, and `KeyId` values with v1 key-fingerprint derivation;
 - owner root records, typed authority roles and signed authority delegations;
+- explicit rejection of Owner Root creation through ordinary `AuthorityDelegation`; root replacement is restricted to the two-signature `RootSuccessor` path;
 - signed device credential issue/verification, credential epochs, and device-key rotation;
 - normal owner-root successor continuity requiring both current and next root signatures;
 - deterministic implementation-derived transcript/signature regression vectors;
@@ -50,7 +51,7 @@ Wire serialization, pairing orchestration/HMAC confirmation, trust/policy state,
 
 ## Verification
 
-M2 implementation head `eaf93a70c779be339c9b694a867e1655d784740e` passed GitHub Actions run `34553168548` on Rust 1.98.1:
+M2 implementation head `b34082156fe4e69aa8f26c1ba2fc0485ca66218a` passed GitHub Actions run `34553938717` on Rust 1.98.1:
 
 ```text
 cargo metadata --locked --no-deps --format-version 1
@@ -60,11 +61,11 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 ```
 
-PR #7 closeout documentation must also pass the same CI baseline before integration.
+The final documentation checkpoint must pass the same CI baseline before PR #7 is integrated.
 
 ## Exact Next Task
 
-1. finish PR #7 review and integrate M2 into `main` only after final CI remains green;
+1. complete final PR #7 review and integrate M2 into `main` only after the documentation checkpoint remains green;
 2. synchronize/retire the completed `foundation` branch;
 3. begin `docs/plans/phase-1/M3-trust-policy.md` on a purpose branch such as `trust-policy`;
 4. start M3 test-first with typed trust state/revisions plus validated capability and operation identifiers before implementing the pure policy evaluator and authorized-operation lifecycle.

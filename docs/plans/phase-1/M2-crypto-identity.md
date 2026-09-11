@@ -33,7 +33,8 @@ The crate remains implementation-neutral at its public Cross-Lab boundary and co
 - profile-v1 `KeyId` derivation;
 - `OwnerRootRecord`;
 - explicit `AuthorityRole` values;
-- signed `AuthorityDelegation` issue/verification;
+- signed `AuthorityDelegation` issue/verification for delegable roles;
+- rejection of `AuthorityRole::OwnerRoot` through ordinary delegation, keeping root replacement on the `RootSuccessor` continuity path;
 - signed `DeviceCredential` issue/verification;
 - credential epochs and device-key rotation preserving `DeviceId`;
 - normal owner-root successor verification requiring current- and next-root continuity signatures;
@@ -53,6 +54,7 @@ Tests cover:
 - signed-object digest binding;
 - stable ID and `KeyId` behavior;
 - owner-root/delegation verification;
+- rejection of Owner Root creation through ordinary authority delegation;
 - wrong root, wrong owner, wrong issuer key, and wrong issuer role;
 - stale authority and credential epochs;
 - recovery authority rejected for ordinary device credential issuance;
@@ -79,7 +81,7 @@ Versions are captured in `Cargo.lock`. No networking, serialization, persistence
 
 ## Verification
 
-Implementation head `eaf93a70c779be339c9b694a867e1655d784740e` passed GitHub Actions run `34553168548` with Rust 1.98.1:
+Implementation head `b34082156fe4e69aa8f26c1ba2fc0485ca66218a` passed GitHub Actions run `34553938717` with Rust 1.98.1:
 
 ```text
 cargo metadata --locked --no-deps --format-version 1
@@ -88,6 +90,8 @@ cargo check --workspace --all-targets --all-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 ```
+
+The final documentation checkpoint is verified separately before integration.
 
 ## Handoff
 
