@@ -67,6 +67,8 @@ fn no_matching_rule_denies() {
 
     assert_eq!(decision.effect(), DecisionEffect::Deny);
     assert_eq!(decision.reason(), DecisionReason::NoMatchingRule);
+    assert_eq!(decision.matched_rule_id(), None);
+    assert_eq!(decision.policy_revision(), 0);
 }
 
 #[test]
@@ -79,6 +81,8 @@ fn exact_allow_rule_allows_when_context_is_eligible() {
 
     assert_eq!(decision.effect(), DecisionEffect::Allow);
     assert_eq!(decision.reason(), DecisionReason::Allowed);
+    assert_eq!(decision.matched_rule_id(), Some(RuleId::from_bytes([9; 32])));
+    assert_eq!(decision.policy_revision(), 1);
     assert!(decision.into_grant().is_some());
 }
 
@@ -156,6 +160,7 @@ fn false_hard_constraint_denies() {
 
     assert_eq!(decision.effect(), DecisionEffect::Deny);
     assert_eq!(decision.reason(), DecisionReason::ConstraintFailed);
+    assert_eq!(decision.constraints(), &[Constraint::LocalOnly]);
 }
 
 #[test]
