@@ -1,124 +1,99 @@
 # M3 — Trust + Policy
 
 **Phase:** Phase 1 — Core Simulator  
-**Status:** Ready after M2 integration  
+**Status:** Complete  
 **Architecture baseline:** `docs/architecture/MASTER-ARCHITECTURE.md`, Revision 2.1  
 **Primary specifications:** `docs/architecture/PAIRING-TRUST-REVOCATION.md`, `docs/architecture/POLICY-AUTHORIZATION.md`  
 **Supporting specification:** `docs/architecture/CORE-SIMULATOR.md`
 
 ## Objective
 
-Implement the deterministic trust and authorization domain required by the Core Simulator. M3 establishes explicit trust/revocation state, validated capability/policy types, a pure fail-closed policy evaluator, synthetic local approval evidence, and bounded operation-scoped authority.
+Implement the deterministic trust and authorization domain required by the Core Simulator without introducing pairing orchestration, wire serialization, sessions, real networking, persistence, UI, platform adapters, or privileged operations.
 
-M3 must not introduce pairing orchestration, wire serialization, sessions, real networking, persistence, UI prompts, biometrics, platform adapters, or privileged operations.
+## Delivered
 
-## Scope
+### Trust and revocation
 
-### Trust state
+`crosslab-policy` now provides:
 
-Implement typed trust records with the Phase 1 states:
+- typed `TrustState` values for `Pending`, `Trusted`, and terminal ordinary `Revoked` state;
+- `TrustRecord` bound to owner/device identity, accepted credential epoch, trust revision, and last transition ID;
+- exact next-epoch validation for credential rotation while preserving stable device identity;
+- signed `TrustTransition` revocation objects bound to owner, device, credential epoch, issuer authority, and trust revision;
+- owner-root and delegated administrative/device-signing revocation verification;
+- explicit rejection of Recovery authority on the ordinary revocation path;
+- strict signature, issuer, owner/device, credential-epoch, and revision checks before trust mutation;
+- a private trust-record revocation mutation path so callers cannot bypass signed transition verification.
 
-```text
-Pending
-Trusted
-Revoked
-```
+### Capability domain
 
-A trust record carries owner/device identity, accepted credential epoch, trust revision, and last transition identifier. Ordinary authorization requires `Trusted`; `Pending` and `Revoked` must fail closed.
+The policy crate provides validated strongly typed:
 
-Implement the trust/revision behavior required by the simulator, including:
-
-- initial trusted record creation from an already validated credential/pairing result;
-- accepted credential-epoch advancement for the same `DeviceId`;
-- monotonic trust revisions;
-- terminal ordinary revocation semantics for Phase 1;
-- hooks/results needed to invalidate operation authority after trust changes.
-
-Signed pairing/revocation orchestration remains bounded to the ownership defined by the trust specification and must use the existing crypto boundary if introduced in this milestone.
-
-### Capability domain types
-
-Implement strongly typed validated values for:
-
-- `CapabilityId` using the exact lowercase ASCII dotted grammar and 128-byte maximum;
+- `CapabilityId` using the canonical lowercase ASCII dotted grammar and 128-byte maximum;
 - `OperationName` using one canonical segment and 64-byte maximum;
-- `CapabilityVersion` and compatible local capability inputs required by policy;
-- runtime availability and the minimum typed security/context values required by M3 tests.
+- `CapabilityVersion` and compatible version ranges;
+- `LocalCapability` with runtime availability used by authorization decisions.
 
-Do not accept unchecked strings as authorization identifiers.
+Unchecked strings are not accepted as authorization identifiers.
 
-### Policy state and evaluator
+### Policy evaluation
 
-Implement deterministic exact-device policy state keyed by:
+The M3 evaluator provides:
 
-```text
-(source_device_id, capability_id, operation_name)
-```
+- exact device/capability/operation rules;
+- `Allow`, `Deny`, and `Ask` effects;
+- typed constraints and obligations required by Phase 1 tests;
+- scoped synthetic locally verified approval evidence;
+- deterministic `AuthorizationContext` and typed `PolicyDecision` results;
+- matched-rule, constraint, reason, and policy-revision metadata;
+- fail-closed behavior for missing rules, untrusted/revoked peers, unsupported capabilities, incompatible versions, unavailable runtime capabilities, and failed constraints.
 
-Implement typed:
-
-- `PolicyRule`;
-- `RuleEffect` (`Allow`, `Deny`, `Ask`);
-- Phase 1 constraints actually required by simulator tests;
-- Phase 1 obligations actually required by simulator tests;
-- locally verified synthetic approval evidence;
-- `AuthorizationContext`;
-- `PolicyDecision` and typed `DecisionReason`.
-
-Evaluation follows the specification order and is pure: no UI, networking, persistence, key generation, or privileged/platform calls occur inside policy evaluation.
-
-No matching rule is `Deny`.
+Policy evaluation remains pure and performs no UI, networking, persistence, key generation, platform calls, or privileged work.
 
 ### Authorized operations
 
-Only a final `Allow` may create an `AuthorizedOperation`.
+Only an `Allow` decision can yield the authorization grant used to create an `AuthorizedOperation`.
 
-Implement:
+M3 implements:
 
-- cryptographically random 256-bit `OperationId`;
-- source/destination/session/capability/version/operation binding;
+- cryptographically random 256-bit `OperationId` values;
+- source, destination, logical-session, capability, version, and operation binding;
 - trust and policy revision snapshots;
-- bounded lifetime/expiry state supplied by deterministic simulator context;
-- typed use policy needed by current tests;
-- terminal `Active -> Cancelled | Expired | Revoked | Consumed` transitions;
-- validation that possession of an `OperationId` alone grants no authority;
-- invalidation after relevant policy/trust revision change.
+- constraint snapshots from the allowing rule;
+- explicit bounded lifetime supplied by the caller/simulator context;
+- `SingleAction` and `SingleStream` use policies required by current tests;
+- terminal `Cancelled`, `Expired`, `Revoked`, and `Consumed` states;
+- denial after binding mismatch, expiry, terminal state, trust revision change, or policy revision change.
 
-## Dependency and Boundary Rules
+Possession of an `OperationId` alone does not authorize work.
 
-- `crosslab-policy` remains platform-independent and deterministic.
-- Reuse `crosslab-identity` domain types rather than duplicating identity state.
-- Use `crosslab-crypto` only for generic cryptographic mechanics where the approved trust domain requires them; keep trust/policy semantics in `crosslab-policy`.
-- Do not add protobuf, Quinn, database, GPUI, mobile, plugin, or privileged-service dependencies.
-- Keep public policy types strongly typed and avoid extension-by-arbitrary-string escape hatches.
+## Security and Regression Tests
 
-## Required Tests
+Tests cover:
 
-M3 must cover at least:
+- canonical capability/operation identifier grammar and limits;
+- trust record identity, credential epochs, revisions, and terminal revocation;
+- owner-root and delegated signed revocation;
+- recovery-role rejection on ordinary revocation;
+- wrong issuer key, forged signature, stale credential epoch, and invalid trust revision rejection;
+- no-rule, explicit-deny, pending/revoked, unsupported, runtime-unavailable, incompatible-version, and constraint failures;
+- scoped approval requirements and wrong-scope approval rejection;
+- operation creation only from an allow grant;
+- complete operation binding checks;
+- expiry, cancellation, explicit revocation, consumption, and revision invalidation;
+- operation constraint snapshot propagation.
 
-- valid and invalid `CapabilityId`/`OperationName` grammar and limits;
-- no rule -> deny;
-- exact allow rule + satisfied constraints -> allow;
-- explicit deny -> deny;
-- untrusted/revoked source -> deny;
-- unsupported/runtime-unavailable capability -> deny;
-- incompatible capability version -> deny;
-- false hard constraint -> deny;
-- missing interactive approval -> ask;
-- locally verified approval -> allow after reevaluation;
-- spoofed peer approval cannot satisfy a local obligation;
-- `OperationId` created only after allow;
-- wrong source/session/capability/operation with a valid `OperationId` -> deny;
-- expired/cancelled/revoked/consumed operation -> deny;
-- policy revision invalidates active operation;
-- trust revision/revocation invalidates active operation;
-- credential-epoch advancement preserves trusted device identity while rejecting stale epochs.
+A fixed synthetic v1 trust-revocation regression vector freezes the canonical transition digest and Ed25519 signature. As with the M2 vectors, it protects the current signing contract against accidental changes; independent cross-implementation vector validation remains a later interoperability activity.
 
-Tests should be deterministic except where testing secure-random shape/uniqueness properties.
+## Dependencies and Boundaries
+
+M3 adds only the existing internal `crosslab-crypto` dependency required for signed trust transitions. No protobuf, Quinn, database, GPUI, mobile, plugin, persistence, platform, or privileged-service dependency is introduced.
+
+Trust/policy semantics remain owned by `crosslab-policy`; generic cryptographic mechanics remain in `crosslab-crypto`; owner and authority identities remain in `crosslab-identity`.
 
 ## Verification
 
-Run from the repository root:
+Implementation head `2308d7fdaaa8e0a67abac5fe70e42c6abc7d9b67` passed GitHub Actions run `34560029752` on Rust 1.98.1:
 
 ```text
 cargo metadata --locked --no-deps --format-version 1
@@ -128,19 +103,12 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 ```
 
-## Acceptance Criteria
-
-M3 is complete when:
-
-- trust/revocation state and revision semantics required by Phase 1 are implemented and tested;
-- capability and operation identifiers are validated typed values;
-- policy evaluation is deterministic, pure, exact-rule based, and fail-closed;
-- interactive obligations can only be satisfied by typed locally verified evidence;
-- operation authority is created only after `Allow`, is strongly bound to context, and becomes unusable after terminal/revision-invalidating changes;
-- no platform/network/persistence/pairing/session behavior leaks into the policy domain;
-- the full workspace verification baseline is green;
-- `docs/development/CURRENT.md` records the verified M3 checkpoint and exact M4 task.
+The final documentation checkpoint is verified separately by the PR workflow before integration.
 
 ## Handoff
 
-After M3, proceed to **M4 — Protocol** for protobuf schemas/codecs, compatibility negotiation, bounded framing, envelopes/request/event/cancel/error/data-stream headers, protocol vectors, and parser/compatibility tests.
+After PR #8 is integrated, proceed to **M4 — Protocol**.
+
+M4 owns protocol version/range negotiation, bounded frame codecs, protobuf wire messages and strict domain conversion, control/session envelopes, request/response/event/cancel/error forms, capability advertisements, data-stream open headers, compatibility/error codes, parser tests, golden protocol vectors, and the initial protocol fuzz targets defined by `PROTOCOL-V1.md` and `CORE-SIMULATOR.md`.
+
+Pairing orchestration, authenticated logical sessions, real networking, persistence, UI, platform adapters, and privileged services remain outside M4.

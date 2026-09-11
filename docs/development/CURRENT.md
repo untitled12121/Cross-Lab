@@ -8,46 +8,52 @@ This file is the durable resume guide for active Cross-Lab development. Git hist
 
 ## Current Milestone
 
-**M2 — Crypto + Identity: complete and integrated into `main`.**
+**M3 — Trust + Policy: complete and verified on `trust-policy`.**
 
-**M3 — Trust + Policy: next implementation milestone; design approval is the immediate gate before code changes.**
+PR #8 is the integration vehicle into `main`. After that integration, the next implementation milestone is **M4 — Protocol**.
 
 ## Branch State
 
-- `main` — canonical integrated branch; includes verified M1 and M2.
-- `foundation` — completed M2 branch; contains no unique work and may be retired.
-- `planning` — planning/documentation branch; contains no unique work and should remain synchronized when idle.
-- next implementation branch after M3 design approval: `trust-policy`.
+- `main` — canonical integrated branch; PR #8 targets it with the completed M3 implementation.
+- `trust-policy` — completed M3 branch; keep until PR #8 is integrated.
+- `foundation` — completed M2 branch with no required unique M3 work.
+- `planning` — planning/documentation branch; no active implementation belongs here.
+
+Do not start M4 implementation on `trust-policy`.
 
 ## Architecture Baseline
 
 - `docs/architecture/MASTER-ARCHITECTURE.md` — Revision 2.1, source of truth.
-- `docs/architecture/CORE-SIMULATOR.md` — Phase 1 simulator specification.
+- `docs/architecture/CORE-SIMULATOR.md` — Phase 1 simulator and milestone specification.
 - `docs/architecture/IDENTITY-AND-KEYS.md` — implemented M2 identity contract.
-- `docs/architecture/PAIRING-TRUST-REVOCATION.md` — M3 trust/revocation contract.
-- `docs/architecture/POLICY-AUTHORIZATION.md` — M3 policy/operation contract.
-- `docs/protocol/PROTOCOL-V1.md` — canonical transcript and signing rules.
+- `docs/architecture/PAIRING-TRUST-REVOCATION.md` — implemented M3 trust/revocation contract.
+- `docs/architecture/POLICY-AUTHORIZATION.md` — implemented M3 policy/operation contract.
+- `docs/protocol/PROTOCOL-V1.md` — primary M4 protocol specification.
 - ADR-0002 and ADR-0006 — accepted identity cryptographic profile and focused crypto boundary.
 
-## M2 Integrated
+## M3 Delivered
 
-M2 delivered:
+M3 establishes the platform-independent trust and authorization domain required by the Core Simulator:
 
-- canonical transcript v1 encoding and domain-separated BLAKE3 transcript/signed-object digests;
-- Ed25519 wrappers with weak-public-key rejection and strict signature verification;
-- OS-backed secure randomness and secret-safe handling boundaries;
-- typed `OwnerId`, `DeviceId`, and `KeyId`;
-- owner root records, delegated authority verification, and explicit rejection of Owner Root through ordinary delegation;
-- signed device credentials, credential epochs, and device-key rotation;
-- two-signature owner-root successor continuity;
-- deterministic signing/transcript regression vectors and negative security tests;
-- credential-bound device proof-of-possession verification.
+- typed trust state, trust revisions, credential epochs, and transition IDs;
+- signed owner-root and delegated ordinary revocation transitions;
+- fail-closed verification of owner/device binding, issuer authority, signatures, credential epochs, and revisions;
+- no public unsigned mutation path for trust revocation;
+- canonical typed capability IDs, operation names, versions, version ranges, and runtime availability;
+- deterministic exact-device policy rules with `Allow`, `Deny`, and `Ask` decisions;
+- scoped synthetic local approval evidence;
+- decision metadata including matched rule, constraints, reason, and policy revision;
+- cryptographically random operation IDs created only from an allow grant;
+- operation binding to source, destination, logical session, capability, version, and operation;
+- trust/policy revision and constraint snapshots;
+- bounded operation lifetime and terminal cancellation/expiry/revocation/consumption behavior;
+- fixed v1 trust-revocation digest/signature regression vector and negative security coverage.
 
-PR #7 merged into `main` as `08f899f53b12f7678e8831757cd3a8907a512c06`.
+No pairing orchestration, protobuf/wire framing, logical-session runtime, real networking, persistence, UI, platform adapter, plugin, or privileged-service implementation was introduced.
 
 ## Verification
 
-Final M2 PR head `9f50088e2ac443f61cfe53db1b618077b14607fb` passed GitHub Actions run `34554060161` on Rust 1.98.1. The pull-request workflow tested the merge result against the then-current `main`, and PR #7 merged without conflict.
+Implementation head `2308d7fdaaa8e0a67abac5fe70e42c6abc7d9b67` passed GitHub Actions run `34560029752` on Rust 1.98.1. The run verified the PR merge result against the then-current `main` and completed all configured gates successfully:
 
 ```text
 cargo metadata --locked --no-deps --format-version 1
@@ -57,23 +63,27 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 ```
 
+The documentation checkpoint containing this handoff must also pass the same PR workflow before PR #8 is merged. GitHub PR/CI state is authoritative for that final integration check.
+
 ## Exact Next Task
 
-1. review and approve the M3 Trust + Policy design against `PAIRING-TRUST-REVOCATION.md`, `POLICY-AUTHORIZATION.md`, and `CORE-SIMULATOR.md`;
-2. create/use the `trust-policy` branch from current `main`;
-3. implement M3 test-first, beginning with typed trust state/revisions and validated `CapabilityId`/`OperationName` domain values;
-4. then implement the pure fail-closed policy evaluator and bounded `AuthorizedOperation` lifecycle.
+After PR #8 is integrated into `main`:
 
-Do not introduce pairing orchestration, protobuf/wire framing, sessions, real networking, persistence, UI, platform adapters, plugins, or privileged services during M3.
+1. inspect `main`, recent commits, open PRs, branches, and this handoff;
+2. read `docs/architecture/MASTER-ARCHITECTURE.md`, `docs/protocol/PROTOCOL-V1.md`, and the protocol/M4 sections of `docs/architecture/CORE-SIMULATOR.md`;
+3. create a fresh `protocol` implementation branch from current `main`;
+4. implement M4 test-first, beginning with protocol version/range negotiation and bounded framing/domain-conversion foundations;
+5. continue with protobuf v1 messages, strict conversions, control/data-stream headers, compatibility/error handling, parser tests, golden vectors, and the protocol fuzz targets required by the accepted specifications.
+
+Do not introduce pairing orchestration, authenticated logical sessions, real networking, persistence, UI, platform adapters, plugins, or privileged services during M4.
 
 ## Resume Procedure
 
 Before continuing in a new session:
 
-1. inspect `main`, active branches, open PRs, recent commits, and repository state;
+1. inspect repository/branch/PR state and recent commits;
 2. read `docs/architecture/MASTER-ARCHITECTURE.md`;
 3. read this file;
-4. read `docs/plans/phase-1/M3-trust-policy.md`;
-5. read `PAIRING-TRUST-REVOCATION.md`, `POLICY-AUTHORIZATION.md`, and the M3 ownership sections of `CORE-SIMULATOR.md`;
-6. reconcile documentation with actual code and verification state;
-7. continue from the exact next task above.
+4. read `docs/protocol/PROTOCOL-V1.md` and the M4/protocol sections of `docs/architecture/CORE-SIMULATOR.md`;
+5. reconcile the documentation with actual code and CI state;
+6. continue from the exact next task above.
