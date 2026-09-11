@@ -34,7 +34,10 @@ fn control_response_preserves_request_correlation_and_typed_result() {
         ControlResponseResult::Success(b"ok".to_vec()),
     );
     assert_eq!(success.request_id().to_bytes(), [2; 16]);
-    assert_eq!(success.result(), &ControlResponseResult::Success(b"ok".to_vec()));
+    assert_eq!(
+        success.result(),
+        &ControlResponseResult::Success(b"ok".to_vec())
+    );
 
     let failure = ProtocolFailure::new(
         ProtocolErrorCode::AuthorizationDenied,
