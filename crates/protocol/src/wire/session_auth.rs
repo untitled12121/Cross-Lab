@@ -127,9 +127,9 @@ pub fn decode_session_auth_bootstrap(
 impl From<&SessionAuthBootstrapMessage> for SessionAuthBootstrapV1 {
     fn from(message: &SessionAuthBootstrapMessage) -> Self {
         let body = match message {
-            SessionAuthBootstrapMessage::Hello(hello) => {
-                session_auth_bootstrap_v1::Body::Hello(SessionAuthHelloV1::from(hello))
-            }
+            SessionAuthBootstrapMessage::Hello(hello) => session_auth_bootstrap_v1::Body::Hello(
+                Box::new(SessionAuthHelloV1::from(hello)),
+            ),
             SessionAuthBootstrapMessage::Proof(proof) => {
                 session_auth_bootstrap_v1::Body::Proof(SessionAuthProofV1::from(proof))
             }
@@ -156,7 +156,9 @@ impl TryFrom<SessionAuthBootstrapV1> for SessionAuthBootstrapMessage {
             .body
             .ok_or(ProtocolWireError::MissingSessionAuthBootstrapBody)?
         {
-            session_auth_bootstrap_v1::Body::Hello(hello) => hello.try_into().map(Self::Hello),
+            session_auth_bootstrap_v1::Body::Hello(hello) => {
+                (*hello).try_into().map(Self::Hello)
+            }
             session_auth_bootstrap_v1::Body::Proof(proof) => proof.try_into().map(Self::Proof),
         }
     }
