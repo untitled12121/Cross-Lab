@@ -101,6 +101,39 @@ impl CapabilityVersionRange {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalCapability {
+    capability_id: CapabilityId,
+    supported_versions: CapabilityVersionRange,
+    runtime_available: bool,
+}
+
+impl LocalCapability {
+    pub const fn new(
+        capability_id: CapabilityId,
+        supported_versions: CapabilityVersionRange,
+        runtime_available: bool,
+    ) -> Self {
+        Self {
+            capability_id,
+            supported_versions,
+            runtime_available,
+        }
+    }
+
+    pub fn capability_id(&self) -> &CapabilityId {
+        &self.capability_id
+    }
+
+    pub const fn supports(&self, version: CapabilityVersion) -> bool {
+        self.supported_versions.supports(version)
+    }
+
+    pub const fn runtime_available(&self) -> bool {
+        self.runtime_available
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VersionRangeError;
 
