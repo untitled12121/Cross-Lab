@@ -15,6 +15,7 @@ pub use capability::{
     OperationName, VersionRangeError,
 };
 pub use operation::{
-    AuthorizedOperation, OperationError, OperationId, OperationState, OperationUseContext, UsePolicy,
+    AuthorizedOperation, OperationError, OperationId, OperationState, OperationUseContext,
+    UsePolicy,
 };
 pub use trust::{TransitionId, TrustError, TrustRecord, TrustState};

@@ -116,7 +116,8 @@ impl AuthorizedOperation {
             return Err(OperationError::InvalidLifetime);
         }
 
-        let id = OperationId(random_bytes::<32>().map_err(|_| OperationError::RandomnessUnavailable)?);
+        let id =
+            OperationId(random_bytes::<32>().map_err(|_| OperationError::RandomnessUnavailable)?);
         Ok(Self {
             id,
             source_device_id: grant.source_device_id,
