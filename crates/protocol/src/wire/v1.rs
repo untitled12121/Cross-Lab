@@ -339,8 +339,8 @@ pub struct SessionAuthBootstrapV1 {
 pub mod session_auth_bootstrap_v1 {
     #[derive(Clone, PartialEq, prost::Oneof)]
     pub enum Body {
-        #[prost(message, tag = "2")]
-        Hello(super::SessionAuthHelloV1),
+        #[prost(message, boxed, tag = "2")]
+        Hello(Box<super::SessionAuthHelloV1>),
         #[prost(message, tag = "3")]
         Proof(super::SessionAuthProofV1),
     }
