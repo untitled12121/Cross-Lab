@@ -18,4 +18,6 @@ pub use operation::{
     AuthorizedOperation, OperationError, OperationId, OperationState, OperationUseContext,
     UsePolicy,
 };
-pub use trust::{TransitionId, TrustError, TrustRecord, TrustState};
+pub use trust::{
+    TransitionId, TrustError, TrustRecord, TrustState, TrustTransition, TrustTransitionError,
+};

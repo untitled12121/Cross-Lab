@@ -2,6 +2,10 @@ use core::fmt;
 
 use crosslab_identity::{DeviceId, OwnerId};
 
+mod transition;
+
+pub use transition::{TrustTransition, TrustTransitionError};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TransitionId([u8; 32]);
 
