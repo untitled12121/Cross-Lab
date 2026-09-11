@@ -251,6 +251,10 @@ impl TrustTransition {
         self.credential_epoch_context
     }
 
+    pub const fn signature(&self) -> Signature {
+        self.signature
+    }
+
     fn unsigned_revocation(
         record: &TrustRecord,
         transition_id: TransitionId,
