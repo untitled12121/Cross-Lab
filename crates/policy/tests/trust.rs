@@ -1,5 +1,8 @@
-use crosslab_identity::{DeviceId, OwnerId};
-use crosslab_policy::{TransitionId, TrustError, TrustRecord, TrustState};
+use crosslab_crypto::SigningKey;
+use crosslab_identity::{DeviceId, OwnerId, OwnerRootRecord};
+use crosslab_policy::{
+    TransitionId, TrustError, TrustRecord, TrustState, TrustTransition, TrustTransitionError,
+};
 
 fn trusted_record() -> TrustRecord {
     TrustRecord::trusted(
@@ -49,17 +52,26 @@ fn credential_epoch_rejects_stale_and_skipped_values() {
 }
 
 #[test]
-fn revocation_is_terminal_and_advances_trust_revision() {
+fn signed_revocation_is_terminal_and_advances_trust_revision() {
     let mut record = trusted_record();
-    let transition = TransitionId::from_bytes([4; 32]);
+    let root_key = SigningKey::from_secret_bytes([4; 32]);
+    let root = OwnerRootRecord::new(record.owner_id(), &root_key, 0);
+    let transition_id = TransitionId::from_bytes([5; 32]);
+    let transition =
+        TrustTransition::issue_root_revocation(&record, transition_id, &root, &root_key).unwrap();
 
-    record.revoke(transition).unwrap();
+    transition.apply_root(&mut record, &root).unwrap();
 
     assert_eq!(record.state(), TrustState::Revoked);
     assert_eq!(record.trust_revision(), 1);
-    assert_eq!(record.last_transition_id(), transition);
+    assert_eq!(record.last_transition_id(), transition_id);
     assert_eq!(
-        record.revoke(TransitionId::from_bytes([5; 32])),
-        Err(TrustError::AlreadyRevoked)
+        TrustTransition::issue_root_revocation(
+            &record,
+            TransitionId::from_bytes([6; 32]),
+            &root,
+            &root_key,
+        ),
+        Err(TrustTransitionError::AlreadyRevoked)
     );
 }
