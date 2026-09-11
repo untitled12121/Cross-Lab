@@ -10,10 +10,7 @@ pub struct FeatureSet {
 }
 
 impl FeatureSet {
-    pub fn new(
-        supported: &[u16],
-        required: &[u16],
-    ) -> Result<Self, FeatureNegotiationError> {
+    pub fn new(supported: &[u16], required: &[u16]) -> Result<Self, FeatureNegotiationError> {
         if supported.len() > MAX_SUPPORTED_FEATURES {
             return Err(FeatureNegotiationError::TooManySupportedFeatures);
         }
@@ -61,7 +58,10 @@ impl fmt::Display for FeatureNegotiationError {
                 formatter.write_str("too many required protocol features were advertised")
             }
             Self::UnsupportedRequiredFeature(feature) => {
-                write!(formatter, "required protocol feature {feature} is unsupported")
+                write!(
+                    formatter,
+                    "required protocol feature {feature} is unsupported"
+                )
             }
         }
     }
