@@ -55,7 +55,8 @@ pub fn encode_data_stream_open(header: &DataStreamOpen) -> Result<Vec<u8>, Proto
 
 pub fn decode_data_stream_open(frame: &[u8]) -> Result<DataStreamOpen, ProtocolWireError> {
     let payload = decode_frame(frame, FrameLimit::DataStreamOpen)?;
-    let wire = DataStreamOpenV1::decode(payload).map_err(|_| ProtocolWireError::MalformedProtobuf)?;
+    let wire =
+        DataStreamOpenV1::decode(payload).map_err(|_| ProtocolWireError::MalformedProtobuf)?;
     wire.try_into()
 }
 
@@ -134,8 +135,10 @@ impl TryFrom<DataStreamOpenV1> for DataStreamOpen {
 fn capability_version_from_wire(
     wire: CapabilityVersionV1,
 ) -> Result<CapabilityVersion, ProtocolWireError> {
-    let major = u16::try_from(wire.major).map_err(|_| ProtocolWireError::InvalidCapabilityVersion)?;
-    let minor = u16::try_from(wire.minor).map_err(|_| ProtocolWireError::InvalidCapabilityVersion)?;
+    let major =
+        u16::try_from(wire.major).map_err(|_| ProtocolWireError::InvalidCapabilityVersion)?;
+    let minor =
+        u16::try_from(wire.minor).map_err(|_| ProtocolWireError::InvalidCapabilityVersion)?;
     Ok(CapabilityVersion::new(major, minor))
 }
 
