@@ -1,8 +1,9 @@
 use std::num::NonZeroUsize;
 
 use crosslab_core::{
-    ControlDispatchError, LogicalSession, SessionActivation, SessionAuthRole, SessionAuthTranscriptV1,
-    SessionHandshakeSide, SessionState, TransportConnection, TransportSecurityClass,
+    ControlDispatchError, LogicalSession, SessionActivation, SessionAuthRole,
+    SessionAuthTranscriptV1, SessionHandshakeSide, SessionState, TransportConnection,
+    TransportSecurityClass,
 };
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
@@ -228,10 +229,7 @@ impl Fixture {
 }
 
 fn transport_pair() -> MemoryTransportPair {
-    MemoryTransportPair::new(
-        NonZeroUsize::new(CONTROL_CAPACITY).unwrap(),
-        [0x40; 32],
-    )
+    MemoryTransportPair::new(NonZeroUsize::new(CONTROL_CAPACITY).unwrap(), [0x40; 32])
 }
 
 fn request(request_id: RequestId, retry_class: RetryClass, body: &[u8]) -> ControlRequest {
@@ -534,9 +532,9 @@ fn unauthorized_request_never_reaches_dispatch_and_session_remains_active() {
         .unwrap();
     assert!(matches!(
         node_b.receive_one(),
-        Err(NodeError::Dispatch(ControlDispatchError::AuthorizationDenied(
-            DecisionReason::NoMatchingRule
-        )))
+        Err(NodeError::Dispatch(
+            ControlDispatchError::AuthorizationDenied(DecisionReason::NoMatchingRule)
+        ))
     ));
     assert_eq!(node_b.session().state(), SessionState::Active);
 }
@@ -591,9 +589,7 @@ fn malformed_frame_invalid_session_and_registered_close_fail_closed() {
     let pair = transport_pair();
     let (session_a, session_b) = fixture.sessions(&pair, true);
     let (endpoint_a, endpoint_b) = pair.endpoints();
-    endpoint_a
-        .try_send_control(vec![0, 0, 0, 1, 0xff])
-        .unwrap();
+    endpoint_a.try_send_control(vec![0, 0, 0, 1, 0xff]).unwrap();
     let mut node_b = SimNode::new(
         session_b,
         endpoint_b,
