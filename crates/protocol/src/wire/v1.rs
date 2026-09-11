@@ -80,6 +80,36 @@ pub struct CancelRequestV1 {
 }
 
 #[derive(Clone, PartialEq, prost::Message)]
+pub struct EnvelopeV1 {
+    #[prost(uint32, tag = "1")]
+    pub protocol_major: u32,
+    #[prost(uint32, tag = "2")]
+    pub protocol_minor: u32,
+    #[prost(bytes = "vec", tag = "3")]
+    pub session_id: Vec<u8>,
+    #[prost(uint64, tag = "4")]
+    pub message_seq: u64,
+    #[prost(oneof = "envelope_v1::Body", tags = "5, 6, 7, 9, 10")]
+    pub body: Option<envelope_v1::Body>,
+}
+
+pub mod envelope_v1 {
+    #[derive(Clone, PartialEq, prost::Oneof)]
+    pub enum Body {
+        #[prost(message, tag = "5")]
+        CapabilityAdvertisement(super::CapabilityAdvertisementV1),
+        #[prost(message, tag = "6")]
+        ControlRequest(super::ControlRequestV1),
+        #[prost(message, tag = "7")]
+        ControlResponse(super::ControlResponseV1),
+        #[prost(message, tag = "9")]
+        CancelRequest(super::CancelRequestV1),
+        #[prost(message, tag = "10")]
+        ProtocolError(super::ProtocolErrorV1),
+    }
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
 pub struct DataStreamOpenV1 {
     #[prost(bytes = "vec", tag = "1")]
     pub session_id: Vec<u8>,

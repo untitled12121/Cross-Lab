@@ -49,6 +49,20 @@ message CancelRequestV1 {
   bytes request_id = 1;
 }
 
+message EnvelopeV1 {
+  uint32 protocol_major = 1;
+  uint32 protocol_minor = 2;
+  bytes session_id = 3;
+  uint64 message_seq = 4;
+  oneof body {
+    CapabilityAdvertisementV1 capability_advertisement = 5;
+    ControlRequestV1 control_request = 6;
+    ControlResponseV1 control_response = 7;
+    CancelRequestV1 cancel_request = 9;
+    ProtocolErrorV1 protocol_error = 10;
+  }
+}
+
 enum StreamDirectionV1 {
   STREAM_DIRECTION_UNSPECIFIED = 0;
   STREAM_DIRECTION_SOURCE_TO_DESTINATION = 1;

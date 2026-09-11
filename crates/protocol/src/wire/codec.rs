@@ -13,10 +13,12 @@ use super::v1::{CapabilityVersionV1, DataStreamOpenV1, StreamDirectionV1};
 pub enum ProtocolWireError {
     Frame(FrameError),
     MalformedProtobuf,
+    InvalidProtocolVersion,
     InvalidSessionIdLength(usize),
     InvalidRequestIdLength(usize),
     InvalidStreamIdLength(usize),
     InvalidOperationIdLength(usize),
+    MissingEnvelopeBody,
     MissingCapabilityVersion,
     MissingCapabilityMinVersion,
     MissingCapabilityMaxVersion,
@@ -37,10 +39,12 @@ impl fmt::Display for ProtocolWireError {
         formatter.write_str(match self {
             Self::Frame(_) => "protocol frame is invalid",
             Self::MalformedProtobuf => "protobuf payload is malformed",
+            Self::InvalidProtocolVersion => "protocol version is invalid",
             Self::InvalidSessionIdLength(_) => "session identifier length is invalid",
             Self::InvalidRequestIdLength(_) => "request identifier length is invalid",
             Self::InvalidStreamIdLength(_) => "stream identifier length is invalid",
             Self::InvalidOperationIdLength(_) => "operation identifier length is invalid",
+            Self::MissingEnvelopeBody => "control envelope body is missing",
             Self::MissingCapabilityVersion => "capability version is missing",
             Self::MissingCapabilityMinVersion => "minimum capability version is missing",
             Self::MissingCapabilityMaxVersion => "maximum capability version is missing",
@@ -168,7 +172,7 @@ pub(super) fn copy_16(
     bytes.try_into().map_err(|_| error(len))
 }
 
-fn copy_32(
+pub(super) fn copy_32(
     bytes: Vec<u8>,
     error: fn(usize) -> ProtocolWireError,
 ) -> Result<[u8; 32], ProtocolWireError> {

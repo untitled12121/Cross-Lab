@@ -13,10 +13,10 @@ pub use capability::{
     MAX_CAPABILITY_ADVERTISEMENT_ENTRIES,
 };
 pub use control::{
-    CancelRequest, ControlRequest, ControlResponse, ControlResponseResult, ControlSequence,
-    DiagnosticError, EventId, MAX_DIAGNOSTIC_BYTES, ProtocolDiagnostic, ProtocolErrorCode,
-    ProtocolErrorCodeError, ProtocolFailure, ProtocolIdError, RequestId, RetryClass,
-    RetryClassError, SequenceError, StreamId,
+    CancelRequest, ControlEnvelope, ControlRequest, ControlResponse, ControlResponseResult,
+    ControlSequence, DiagnosticError, EnvelopeBody, EventId, MAX_DIAGNOSTIC_BYTES,
+    ProtocolDiagnostic, ProtocolErrorCode, ProtocolErrorCodeError, ProtocolFailure, ProtocolIdError,
+    RequestId, RetryClass, RetryClassError, SequenceError, StreamId,
 };
 pub use data_stream::{DataStreamOpen, StreamDirection};
 pub use feature::{
@@ -28,4 +28,7 @@ pub use version::{
     MAX_PROTOCOL_RANGES, ProtocolRange, ProtocolVersion, VersionNegotiationError,
     negotiate_protocol_version,
 };
-pub use wire::{ProtocolWireError, decode_data_stream_open, encode_data_stream_open};
+pub use wire::{
+    ProtocolWireError, decode_control_envelope, decode_data_stream_open, encode_control_envelope,
+    encode_data_stream_open,
+};
