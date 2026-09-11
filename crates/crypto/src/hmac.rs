@@ -22,7 +22,8 @@ pub fn verify_hmac_sha256(
 ) -> Result<(), HmacVerificationError> {
     let mut mac = HmacSha256::new_from_slice(key).expect("HMAC-SHA-256 accepts any key length");
     mac.update(message);
-    mac.verify_slice(expected).map_err(|_| HmacVerificationError)
+    mac.verify_slice(expected)
+        .map_err(|_| HmacVerificationError)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
