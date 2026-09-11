@@ -262,8 +262,13 @@ fn explicit_terminal_transitions_prevent_further_use() {
         Err(OperationError::Inactive(OperationState::Revoked))
     );
 
-    let mut consumed =
-        AuthorizedOperation::issue(fixture.grant, 10, 20, UsePolicy::SingleAction).unwrap();
+    let mut consumed = AuthorizedOperation::issue(
+        fixture.grant.clone(),
+        10,
+        20,
+        UsePolicy::SingleAction,
+    )
+    .unwrap();
     consumed.consume();
     assert_eq!(consumed.state(), OperationState::Consumed);
     assert_eq!(
