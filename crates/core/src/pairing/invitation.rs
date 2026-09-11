@@ -69,10 +69,7 @@ impl PairingInvitation {
         self.transition(PairingInvitationState::Expired)
     }
 
-    fn transition(
-        &mut self,
-        next: PairingInvitationState,
-    ) -> Result<(), PairingInvitationError> {
+    fn transition(&mut self, next: PairingInvitationState) -> Result<(), PairingInvitationError> {
         if self.state != PairingInvitationState::Pending {
             return Err(PairingInvitationError::NotPending);
         }
