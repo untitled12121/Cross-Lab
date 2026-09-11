@@ -27,10 +27,14 @@ pub enum ProtocolWireError {
     InvalidPairingNonceLength(usize),
     InvalidPairingConfirmationLength(usize),
     InvalidPairingTranscriptDigestLength(usize),
+    InvalidSessionAuthNonceLength(usize),
+    InvalidSessionAuthTranscriptDigestLength(usize),
     InvalidSignedObjectDigestLength(usize),
     InvalidSignatureLength(usize),
     MissingEnvelopeBody,
     MissingPairingBootstrapBody,
+    MissingSessionAuthBootstrapBody,
+    MissingDeviceCredential,
     MissingCapabilityVersion,
     MissingCapabilityMinVersion,
     MissingCapabilityMaxVersion,
@@ -48,8 +52,18 @@ pub enum ProtocolWireError {
     InvalidStreamDirection(i32),
     InvalidPairingProfile(u32),
     InvalidPairingRole(i32),
+    InvalidSessionAuthProfile(u32),
+    InvalidSessionAuthRole(i32),
     InvalidSignatureAlgorithm(i32),
+    InvalidCredentialSchema(u32),
     InvalidDevicePublicKey,
+    InvalidDeviceCredential,
+    CredentialIdentityMismatch,
+    InvalidProtocolRange,
+    InvalidFeatureId(u32),
+    TooManyProtocolRanges(usize),
+    TooManySupportedFeatures(usize),
+    TooManyRequiredFeatures(usize),
     TooManyCapabilityEntries(usize),
 }
 
@@ -74,10 +88,18 @@ impl fmt::Display for ProtocolWireError {
             Self::InvalidPairingTranscriptDigestLength(_) => {
                 "pairing transcript digest length is invalid"
             }
+            Self::InvalidSessionAuthNonceLength(_) => {
+                "session authentication nonce length is invalid"
+            }
+            Self::InvalidSessionAuthTranscriptDigestLength(_) => {
+                "session authentication transcript digest length is invalid"
+            }
             Self::InvalidSignedObjectDigestLength(_) => "signed object digest length is invalid",
             Self::InvalidSignatureLength(_) => "signature length is invalid",
             Self::MissingEnvelopeBody => "control envelope body is missing",
             Self::MissingPairingBootstrapBody => "pairing bootstrap body is missing",
+            Self::MissingSessionAuthBootstrapBody => "session authentication bootstrap body is missing",
+            Self::MissingDeviceCredential => "device credential is missing",
             Self::MissingCapabilityVersion => "capability version is missing",
             Self::MissingCapabilityMinVersion => "minimum capability version is missing",
             Self::MissingCapabilityMaxVersion => "maximum capability version is missing",
@@ -95,8 +117,20 @@ impl fmt::Display for ProtocolWireError {
             Self::InvalidStreamDirection(_) => "stream direction is invalid",
             Self::InvalidPairingProfile(_) => "pairing profile is invalid",
             Self::InvalidPairingRole(_) => "pairing role is invalid",
+            Self::InvalidSessionAuthProfile(_) => "session authentication profile is invalid",
+            Self::InvalidSessionAuthRole(_) => "session authentication role is invalid",
             Self::InvalidSignatureAlgorithm(_) => "signature algorithm is invalid",
+            Self::InvalidCredentialSchema(_) => "device credential schema is invalid",
             Self::InvalidDevicePublicKey => "device public key is invalid",
+            Self::InvalidDeviceCredential => "device credential structure is invalid",
+            Self::CredentialIdentityMismatch => {
+                "session hello identity does not match its device credential"
+            }
+            Self::InvalidProtocolRange => "protocol range is invalid",
+            Self::InvalidFeatureId(_) => "protocol feature identifier is invalid",
+            Self::TooManyProtocolRanges(_) => "too many protocol ranges were advertised",
+            Self::TooManySupportedFeatures(_) => "too many supported features were advertised",
+            Self::TooManyRequiredFeatures(_) => "too many required features were advertised",
             Self::TooManyCapabilityEntries(_) => "capability advertisement exceeds the entry limit",
         })
     }

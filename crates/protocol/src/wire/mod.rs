@@ -4,6 +4,7 @@ mod control;
 mod envelope;
 mod event;
 mod pairing;
+mod session_auth;
 mod session_close;
 pub mod v1;
 
@@ -12,4 +13,9 @@ pub use envelope::{decode_control_envelope, encode_control_envelope};
 pub use pairing::{
     PAIRING_PROFILE_V1, PairingBootstrapMessage, PairingConfirmation, PairingCredentialAccepted,
     PairingHello, PairingRole, decode_pairing_bootstrap, encode_pairing_bootstrap,
+};
+pub use session_auth::{
+    SESSION_AUTH_PROFILE_V1, SessionAuthBootstrapMessage, SessionAuthHello,
+    SessionAuthProofMessage, SessionAuthRole, decode_session_auth_bootstrap,
+    encode_session_auth_bootstrap,
 };

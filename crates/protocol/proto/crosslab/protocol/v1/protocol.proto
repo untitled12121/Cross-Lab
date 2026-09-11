@@ -150,3 +150,53 @@ message PairingBootstrapV1 {
     PairingCredentialAcceptedV1 credential_accepted = 4;
   }
 }
+
+enum SessionAuthRoleV1 {
+  SESSION_AUTH_ROLE_UNSPECIFIED = 0;
+  SESSION_AUTH_ROLE_INITIATOR = 1;
+  SESSION_AUTH_ROLE_RESPONDER = 2;
+}
+
+message ProtocolRangeV1 {
+  uint32 major = 1;
+  uint32 min_minor = 2;
+  uint32 max_minor = 3;
+}
+
+message DeviceCredentialV1 {
+  uint32 schema_version = 1;
+  bytes owner_id = 2;
+  bytes device_id = 3;
+  bytes device_key_id = 4;
+  SignatureAlgorithmV1 device_algorithm = 5;
+  bytes device_public_key = 6;
+  uint64 credential_epoch = 7;
+  bytes issuer_device_signing_key_id = 8;
+  SignatureAlgorithmV1 signature_algorithm = 9;
+  bytes signature = 10;
+}
+
+message SessionAuthHelloV1 {
+  bytes owner_id = 1;
+  bytes device_id = 2;
+  DeviceCredentialV1 device_credential = 3;
+  repeated ProtocolRangeV1 protocol_ranges = 4;
+  repeated uint32 supported_features = 5;
+  repeated uint32 required_features = 6;
+  bytes nonce = 7;
+}
+
+message SessionAuthProofV1 {
+  SessionAuthRoleV1 role = 1;
+  bytes transcript_digest = 2;
+  SignatureAlgorithmV1 signature_algorithm = 3;
+  bytes signature = 4;
+}
+
+message SessionAuthBootstrapV1 {
+  uint32 session_auth_profile = 1;
+  oneof body {
+    SessionAuthHelloV1 hello = 2;
+    SessionAuthProofV1 proof = 3;
+  }
+}
