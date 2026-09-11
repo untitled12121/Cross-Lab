@@ -42,6 +42,21 @@ fn pairing_transcript_equality_is_field_exact() {
 }
 
 #[test]
+fn pairing_transcript_and_confirmations_match_golden_vectors() {
+    let transcript = transcript();
+    let secret = PairingSecret::from_bytes([0x99; 32]);
+
+    assert_eq!(
+        (
+            transcript.digest(),
+            transcript.confirmation(PairingConfirmationRole::Inviter, &secret),
+            transcript.confirmation(PairingConfirmationRole::Joiner, &secret),
+        ),
+        ([0; 32], [0; 32], [0; 32])
+    );
+}
+
+#[test]
 fn pairing_confirmation_is_role_and_transcript_bound() {
     let transcript = transcript();
     let secret = PairingSecret::from_bytes([0x99; 32]);
