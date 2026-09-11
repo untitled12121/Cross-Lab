@@ -205,7 +205,7 @@ impl TryFrom<SessionAuthHelloV1> for SessionAuthHello {
             wire.device_id,
             ProtocolWireError::InvalidDeviceIdLength,
         )?);
-        let credential = wire
+        let credential: DeviceCredential = wire
             .device_credential
             .ok_or(ProtocolWireError::MissingDeviceCredential)?
             .try_into()?;
