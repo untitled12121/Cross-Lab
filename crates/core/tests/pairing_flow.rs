@@ -127,12 +127,7 @@ fn s002_pairing_commits_trust_only_after_final_joiner_proof() {
     assert_eq!(inviter.invitation_state(), PairingInvitationState::Pending);
 
     let credential = inviter
-        .issue_joiner_credential(
-            &fixture.root,
-            &fixture.delegation,
-            &fixture.issuer_key,
-            7,
-        )
+        .issue_joiner_credential(&fixture.root, &fixture.delegation, &fixture.issuer_key, 7)
         .unwrap();
     assert_eq!(
         inviter.state(),
@@ -207,11 +202,8 @@ fn n012_pairing_id_and_nonce_substitution_are_rejected() {
     let mut pairing_id_inviter = fixture.inviter_flow();
     let joiner = fixture.joiner_flow();
     let valid = joiner.joiner_confirmation().unwrap();
-    let wrong_pairing_id = PairingConfirmation::new(
-        PairingRole::Joiner,
-        [0xfe; 16],
-        valid.confirmation(),
-    );
+    let wrong_pairing_id =
+        PairingConfirmation::new(PairingRole::Joiner, [0xfe; 16], valid.confirmation());
     assert_eq!(
         pairing_id_inviter.verify_joiner_confirmation(&wrong_pairing_id),
         Err(PairingFlowError::InvalidConfirmation)
@@ -277,12 +269,8 @@ fn n013_joiner_key_substitution_after_confirmation_is_rejected() {
     );
     assert_eq!(joiner.state(), PairingJoinerState::Failed);
 
-    let result = inviter.issue_joiner_credential(
-        &fixture.root,
-        &fixture.delegation,
-        &fixture.issuer_key,
-        0,
-    );
+    let result =
+        inviter.issue_joiner_credential(&fixture.root, &fixture.delegation, &fixture.issuer_key, 0);
     assert!(result.is_ok());
     assert_ne!(inviter.state(), PairingInviterState::Trusted);
 }
@@ -311,12 +299,7 @@ fn n015_wrong_credential_accepted_device_key_never_commits_trust() {
     let fixture = Fixture::new();
     let (mut inviter, mut joiner) = fixture.confirmed_flows();
     let credential = inviter
-        .issue_joiner_credential(
-            &fixture.root,
-            &fixture.delegation,
-            &fixture.issuer_key,
-            0,
-        )
+        .issue_joiner_credential(&fixture.root, &fixture.delegation, &fixture.issuer_key, 0)
         .unwrap();
 
     assert_eq!(
@@ -351,12 +334,7 @@ fn mismatched_owner_or_invalid_delegation_fails_before_acceptance() {
     let fixture = Fixture::new();
     let (mut inviter, mut joiner) = fixture.confirmed_flows();
     let credential = inviter
-        .issue_joiner_credential(
-            &fixture.root,
-            &fixture.delegation,
-            &fixture.issuer_key,
-            0,
-        )
+        .issue_joiner_credential(&fixture.root, &fixture.delegation, &fixture.issuer_key, 0)
         .unwrap();
 
     let wrong_owner = OwnerId::from_bytes([0x31; 32]);
@@ -376,12 +354,7 @@ fn mismatched_owner_or_invalid_delegation_fails_before_acceptance() {
     let fixture = Fixture::new();
     let (mut inviter, mut joiner) = fixture.confirmed_flows();
     let credential = inviter
-        .issue_joiner_credential(
-            &fixture.root,
-            &fixture.delegation,
-            &fixture.issuer_key,
-            0,
-        )
+        .issue_joiner_credential(&fixture.root, &fixture.delegation, &fixture.issuer_key, 0)
         .unwrap();
     let wrong_root_key = SigningKey::from_secret_bytes([0x33; 32]);
     let wrong_issuer_key = SigningKey::from_secret_bytes([0x34; 32]);
@@ -419,7 +392,12 @@ fn mismatched_pairing_hello_context_is_rejected_before_confirmation() {
     );
 
     assert_eq!(
-        PairingInviterFlow::new(fixture.invitation(), fixture.inviter_hello, wrong_owner_hello).err(),
+        PairingInviterFlow::new(
+            fixture.invitation(),
+            fixture.inviter_hello,
+            wrong_owner_hello,
+        )
+        .err(),
         Some(PairingFlowError::InvalidPairingContext)
     );
     assert_eq!(
@@ -439,18 +417,19 @@ fn inviter_credential_issuance_does_not_require_joiner_private_key() {
     let (mut inviter, _) = fixture.confirmed_flows();
 
     let credential = inviter
-        .issue_joiner_credential(
-            &fixture.root,
-            &fixture.delegation,
-            &fixture.issuer_key,
-            2,
-        )
+        .issue_joiner_credential(&fixture.root, &fixture.delegation, &fixture.issuer_key, 2)
         .unwrap();
 
     assert_eq!(credential.device_id(), fixture.joiner_device_id);
-    assert_eq!(credential.device_public_key(), fixture.joiner_key.verifying_key());
+    assert_eq!(
+        credential.device_public_key(),
+        fixture.joiner_key.verifying_key()
+    );
     credential
         .verify(&fixture.root, &fixture.delegation, 2, 0)
         .unwrap();
-    assert_eq!(fixture.inviter_key.verifying_key(), fixture.inviter_hello.device_public_key());
+    assert_eq!(
+        fixture.inviter_key.verifying_key(),
+        fixture.inviter_hello.device_public_key()
+    );
 }
