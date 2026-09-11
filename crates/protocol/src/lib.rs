@@ -14,7 +14,8 @@ pub use capability::{
 };
 pub use control::{
     ControlSequence, DiagnosticError, EventId, MAX_DIAGNOSTIC_BYTES, ProtocolDiagnostic,
-    ProtocolIdError, RequestId, RetryClass, RetryClassError, SequenceError, StreamId,
+    ProtocolErrorCode, ProtocolErrorCodeError, ProtocolFailure, ProtocolIdError, RequestId,
+    RetryClass, RetryClassError, SequenceError, StreamId,
 };
 pub use data_stream::{DataStreamOpen, StreamDirection};
 pub use feature::{
