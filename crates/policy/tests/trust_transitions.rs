@@ -60,6 +60,59 @@ fn administrative_authority_can_sign_ordinary_revocation() {
 }
 
 #[test]
+fn device_signing_authority_can_sign_ordinary_revocation() {
+    let (mut record, root_key, root) = fixture();
+    let device_signing_key = SigningKey::from_secret_bytes([17; 32]);
+    let delegation = AuthorityDelegation::issue(
+        record.owner_id(),
+        AuthorityRole::DeviceSigning,
+        &device_signing_key,
+        2,
+        &root_key,
+    );
+    let transition = TrustTransition::issue_delegated_revocation(
+        &record,
+        TransitionId::from_bytes([18; 32]),
+        &root,
+        &delegation,
+        &device_signing_key,
+        2,
+    )
+    .unwrap();
+
+    transition
+        .apply_delegated(&mut record, &root, &delegation, 2)
+        .unwrap();
+
+    assert_eq!(record.state(), TrustState::Revoked);
+}
+
+#[test]
+fn inactive_delegation_is_rejected() {
+    let (record, root_key, root) = fixture();
+    let administrative_key = SigningKey::from_secret_bytes([19; 32]);
+    let delegation = AuthorityDelegation::issue(
+        record.owner_id(),
+        AuthorityRole::Administrative,
+        &administrative_key,
+        0,
+        &root_key,
+    );
+
+    assert_eq!(
+        TrustTransition::issue_delegated_revocation(
+            &record,
+            TransitionId::from_bytes([20; 32]),
+            &root,
+            &delegation,
+            &administrative_key,
+            1,
+        ),
+        Err(TrustTransitionError::InvalidDelegation)
+    );
+}
+
+#[test]
 fn recovery_authority_is_rejected_from_ordinary_revocation_path() {
     let (record, root_key, root) = fixture();
     let recovery_key = SigningKey::from_secret_bytes([8; 32]);
