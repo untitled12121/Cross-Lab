@@ -7,7 +7,8 @@ mod invitation;
 mod transcript;
 
 pub use flow::{
-    PairingFlowError, PairingInviterFlow, PairingInviterState, PairingJoinerFlow, PairingJoinerState,
+    PairingFlowError, PairingInviterFlow, PairingInviterState, PairingJoinerFlow,
+    PairingJoinerState,
 };
 pub use invitation::{PairingInvitation, PairingInvitationError, PairingInvitationState};
 pub use transcript::PairingTranscript;
