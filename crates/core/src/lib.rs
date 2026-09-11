@@ -1,9 +1,11 @@
 //! Platform-independent Cross-Lab coordination core.
 
+mod control;
 mod pairing;
 mod session;
 mod transport;
 
+pub use control::{ControlDispatchError, ControlDispatcher, InboundControl};
 pub use pairing::{
     PairingConfirmationError, PairingConfirmationRole, PairingFlowError, PairingId,
     PairingInvitation, PairingInvitationError, PairingInvitationState, PairingInviterFlow,
