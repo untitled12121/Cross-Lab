@@ -144,7 +144,13 @@ fn session_auth_transcript_matches_canonical_fields_and_golden_digest() {
         .unwrap();
 
     assert_eq!(transcript.canonical_bytes(), expected.encode());
-    assert_eq!(transcript.digest(), [0_u8; 32]);
+    assert_eq!(
+        transcript.digest(),
+        [
+            193, 66, 221, 201, 81, 21, 62, 210, 103, 196, 131, 43, 7, 5, 14, 52, 99, 81,
+            160, 66, 173, 141, 4, 42, 239, 230, 10, 8, 38, 173, 131, 7,
+        ]
+    );
 }
 
 #[test]
@@ -166,20 +172,31 @@ fn proofs_sign_exact_role_label_and_transcript_digest_and_derive_golden_session_
         .verify_message(&initiator_input, &initiator.signature())
         .unwrap();
 
-    assert_eq!(initiator.signature().to_bytes(), [0_u8; 64]);
-    assert_eq!(responder.signature().to_bytes(), [0_u8; 64]);
-    assert_eq!(
-        transcript
-            .derive_session_id(
-                &initiator,
-                fixture.initiator_key.verifying_key(),
-                &responder,
-                fixture.responder_key.verifying_key(),
-            )
-            .unwrap()
-            .to_bytes(),
-        [0_u8; 32]
+    let session_id = transcript
+        .derive_session_id(
+            &initiator,
+            fixture.initiator_key.verifying_key(),
+            &responder,
+            fixture.responder_key.verifying_key(),
+        )
+        .unwrap();
+    eprintln!(
+        "responder_signature={:?} session_id={:?}",
+        responder.signature().to_bytes(),
+        session_id.to_bytes()
     );
+
+    assert_eq!(
+        initiator.signature().to_bytes(),
+        [
+            126, 118, 176, 165, 120, 180, 193, 32, 121, 174, 86, 239, 239, 195, 205, 127, 250,
+            134, 211, 156, 86, 246, 34, 203, 97, 0, 126, 62, 238, 120, 92, 140, 200, 213, 161,
+            176, 102, 181, 183, 97, 75, 118, 46, 30, 75, 90, 144, 51, 228, 139, 198, 102, 163,
+            150, 61, 73, 104, 86, 25, 194, 10, 6, 249, 9,
+        ]
+    );
+    assert_eq!(responder.signature().to_bytes(), [0_u8; 64]);
+    assert_eq!(session_id.to_bytes(), [0_u8; 32]);
 }
 
 #[test]
