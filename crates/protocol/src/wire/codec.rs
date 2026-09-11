@@ -14,15 +14,20 @@ pub enum ProtocolWireError {
     Frame(FrameError),
     MalformedProtobuf,
     InvalidSessionIdLength(usize),
+    InvalidRequestIdLength(usize),
     InvalidStreamIdLength(usize),
     InvalidOperationIdLength(usize),
     MissingCapabilityVersion,
     MissingCapabilityMinVersion,
     MissingCapabilityMaxVersion,
+    MissingControlResponseResult,
     InvalidCapabilityVersion,
     InvalidCapabilityVersionRange,
     InvalidCapabilityId,
     InvalidOperationName,
+    InvalidRetryClass(i32),
+    InvalidProtocolErrorCode(u32),
+    InvalidDiagnostic,
     InvalidStreamDirection(i32),
     TooManyCapabilityEntries(usize),
 }
@@ -33,15 +38,20 @@ impl fmt::Display for ProtocolWireError {
             Self::Frame(_) => "protocol frame is invalid",
             Self::MalformedProtobuf => "protobuf payload is malformed",
             Self::InvalidSessionIdLength(_) => "session identifier length is invalid",
+            Self::InvalidRequestIdLength(_) => "request identifier length is invalid",
             Self::InvalidStreamIdLength(_) => "stream identifier length is invalid",
             Self::InvalidOperationIdLength(_) => "operation identifier length is invalid",
             Self::MissingCapabilityVersion => "capability version is missing",
             Self::MissingCapabilityMinVersion => "minimum capability version is missing",
             Self::MissingCapabilityMaxVersion => "maximum capability version is missing",
+            Self::MissingControlResponseResult => "control response result is missing",
             Self::InvalidCapabilityVersion => "capability version is invalid",
             Self::InvalidCapabilityVersionRange => "capability version range is invalid",
             Self::InvalidCapabilityId => "capability identifier is invalid",
             Self::InvalidOperationName => "operation name is invalid",
+            Self::InvalidRetryClass(_) => "retry class is invalid",
+            Self::InvalidProtocolErrorCode(_) => "protocol error code is invalid",
+            Self::InvalidDiagnostic => "protocol diagnostic is invalid",
             Self::InvalidStreamDirection(_) => "stream direction is invalid",
             Self::TooManyCapabilityEntries(_) => "capability advertisement exceeds the entry limit",
         })
@@ -150,7 +160,7 @@ pub(super) fn capability_version_from_wire(
     Ok(CapabilityVersion::new(major, minor))
 }
 
-fn copy_16(
+pub(super) fn copy_16(
     bytes: Vec<u8>,
     error: fn(usize) -> ProtocolWireError,
 ) -> Result<[u8; 16], ProtocolWireError> {

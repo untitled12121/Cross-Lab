@@ -18,6 +18,37 @@ message CapabilityAdvertisementV1 {
   repeated CapabilityAdvertisementEntryV1 entries = 1;
 }
 
+enum RetryClassV1 {
+  RETRY_CLASS_NON_RETRYABLE = 0;
+  RETRY_CLASS_IDEMPOTENT = 1;
+}
+
+message ControlRequestV1 {
+  bytes request_id = 1;
+  string capability_id = 2;
+  CapabilityVersionV1 capability_version = 3;
+  string operation_name = 4;
+  RetryClassV1 retry_class = 5;
+  bytes body = 6;
+}
+
+message ProtocolErrorV1 {
+  uint32 code = 1;
+  optional string diagnostic = 2;
+}
+
+message ControlResponseV1 {
+  bytes request_id = 1;
+  oneof result {
+    bytes success_body = 2;
+    ProtocolErrorV1 error = 3;
+  }
+}
+
+message CancelRequestV1 {
+  bytes request_id = 1;
+}
+
 enum StreamDirectionV1 {
   STREAM_DIRECTION_UNSPECIFIED = 0;
   STREAM_DIRECTION_SOURCE_TO_DESTINATION = 1;
