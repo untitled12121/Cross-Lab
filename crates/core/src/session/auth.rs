@@ -10,8 +10,7 @@ use crosslab_protocol::{MAX_SUPPORTED_FEATURES, ProtocolVersion};
 
 const DOMAIN: &str = "crosslab.session-auth.v1";
 const FEATURE_SET_DOMAIN: &[u8] = b"crosslab.session-auth.feature-set.v1\0";
-const CHANNEL_BINDING_PROFILE_DOMAIN: &[u8] =
-    b"crosslab.session-auth.channel-binding-profile.v1\0";
+const CHANNEL_BINDING_PROFILE_DOMAIN: &[u8] = b"crosslab.session-auth.channel-binding-profile.v1\0";
 const CHANNEL_BINDING_VALUE_DOMAIN: &[u8] = b"crosslab.session-auth.channel-binding-value.v1\0";
 const INITIATOR_PROOF_LABEL: &[u8] = b"crosslab.session-auth.initiator-proof.v1";
 const RESPONDER_PROOF_LABEL: &[u8] = b"crosslab.session-auth.responder-proof.v1";
