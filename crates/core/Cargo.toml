@@ -11,6 +11,7 @@ publish = false
 workspace = true
 
 [dependencies]
+crosslab-crypto = { path = "../crypto" }
 crosslab-identity = { path = "../identity" }
 crosslab-policy = { path = "../policy" }
 crosslab-protocol = { path = "../protocol" }
