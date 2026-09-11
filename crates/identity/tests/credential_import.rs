@@ -28,7 +28,7 @@ fn signed_device_credential_can_be_reconstructed_without_private_keys() {
     )
     .unwrap();
 
-    let imported = DeviceCredential::from_signed_parts(
+    let imported = DeviceCredential::from_unverified_signed_parts(
         1,
         credential.owner_id(),
         credential.device_id(),
