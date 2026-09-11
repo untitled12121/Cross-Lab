@@ -14,9 +14,14 @@ fn event_type_accepts_only_canonical_namespaced_ascii() {
         "clipboard.changed_",
         ".clipboard.changed",
         "clipboard.changed.",
+        "clipboard.changé",
     ] {
         assert!(EventType::parse(invalid).is_err(), "accepted {invalid:?}");
     }
+
+    let oversized = format!("a.{}", "b".repeat(127));
+    assert_eq!(oversized.len(), 129);
+    assert!(EventType::parse(&oversized).is_err());
 }
 
 #[test]
