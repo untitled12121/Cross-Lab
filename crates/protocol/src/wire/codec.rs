@@ -98,7 +98,9 @@ impl fmt::Display for ProtocolWireError {
             Self::InvalidSignatureLength(_) => "signature length is invalid",
             Self::MissingEnvelopeBody => "control envelope body is missing",
             Self::MissingPairingBootstrapBody => "pairing bootstrap body is missing",
-            Self::MissingSessionAuthBootstrapBody => "session authentication bootstrap body is missing",
+            Self::MissingSessionAuthBootstrapBody => {
+                "session authentication bootstrap body is missing"
+            }
             Self::MissingDeviceCredential => "device credential is missing",
             Self::MissingCapabilityVersion => "capability version is missing",
             Self::MissingCapabilityMinVersion => "minimum capability version is missing",
