@@ -1,6 +1,4 @@
-use crosslab_policy::{
-    CapabilityId, CapabilityVersion, OperationId, OperationName, SessionId,
-};
+use crosslab_policy::{CapabilityId, CapabilityVersion, OperationId, OperationName, SessionId};
 
 use crate::StreamId;
 
