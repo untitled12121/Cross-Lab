@@ -23,7 +23,7 @@ pub enum SessionAuthRole {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionAuthHello {
-    device_credential: DeviceCredential,
+    device_credential: Box<DeviceCredential>,
     protocol_ranges: Vec<ProtocolRange>,
     features: FeatureSet,
     nonce: [u8; 32],
@@ -37,7 +37,7 @@ impl SessionAuthHello {
         nonce: [u8; 32],
     ) -> Self {
         Self {
-            device_credential,
+            device_credential: Box::new(device_credential),
             protocol_ranges,
             features,
             nonce,
@@ -53,7 +53,7 @@ impl SessionAuthHello {
     }
 
     pub const fn device_credential(&self) -> DeviceCredential {
-        self.device_credential
+        *self.device_credential
     }
 
     pub fn protocol_ranges(&self) -> &[ProtocolRange] {
@@ -167,7 +167,7 @@ impl From<&SessionAuthHello> for SessionAuthHelloV1 {
         Self {
             owner_id: hello.owner_id().to_bytes().to_vec(),
             device_id: hello.device_id().to_bytes().to_vec(),
-            device_credential: Some(DeviceCredentialV1::from(&hello.device_credential)),
+            device_credential: Some(DeviceCredentialV1::from(hello.device_credential.as_ref())),
             protocol_ranges: hello
                 .protocol_ranges
                 .iter()
