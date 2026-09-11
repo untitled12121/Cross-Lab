@@ -38,7 +38,12 @@ fn capability_and_system_event_scopes_are_explicit() {
     assert_eq!(event.body(), b"value");
 
     let system_type = EventType::parse("crosslab.system.trust-revoked").unwrap();
-    let system = Event::system(EventId::from_bytes([2; 16]), system_type.clone(), Vec::new()).unwrap();
+    let system = Event::system(
+        EventId::from_bytes([2; 16]),
+        system_type.clone(),
+        Vec::new(),
+    )
+    .unwrap();
     assert_eq!(system.scope(), &EventScope::System);
 
     assert!(
