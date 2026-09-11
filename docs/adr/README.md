@@ -4,7 +4,7 @@ Architecture Decision Records (ADRs) preserve material Cross-Lab design decision
 
 ## Current Baseline
 
-Phase 0 accepted the following ADRs on 2026-09-11:
+Cross-Lab has accepted the following ADRs:
 
 | ADR | Decision | Status |
 |---|---|---|
@@ -14,6 +14,7 @@ Phase 0 accepted the following ADRs on 2026-09-11:
 | ADR-0004 | Protocol Buffers wire encoding with independent canonical signing transcripts | Accepted |
 | ADR-0005 | TUF-style update trust with separated roles and production root thresholding | Accepted |
 | ADR-0006 | Focused shared `crosslab-crypto` crate boundary | Accepted |
+| ADR-0007 | Protocol v1 event namespace and session-close wire registry | Accepted |
 
 The governing architecture is `docs/architecture/MASTER-ARCHITECTURE.md`, Revision 2.1.
 
