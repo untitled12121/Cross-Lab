@@ -21,6 +21,12 @@ fn trust_revocation_transition_v1_golden_vector() {
     )
     .unwrap();
 
-    assert_eq!(transition.transcript_digest(), [0; 32]);
+    assert_eq!(
+        transition.transcript_digest(),
+        [
+            181, 222, 134, 94, 95, 78, 81, 129, 119, 53, 74, 10, 139, 65, 36, 116, 226, 239,
+            148, 183, 231, 66, 179, 141, 148, 38, 231, 4, 187, 15, 171, 26,
+        ]
+    );
     assert_eq!(transition.signature().to_bytes(), [0; 64]);
 }
