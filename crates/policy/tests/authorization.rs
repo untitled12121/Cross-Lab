@@ -143,7 +143,11 @@ fn false_hard_constraint_denies() {
     let fixture = Fixture::new();
     let mut policy = PolicyState::new();
     policy
-        .insert(fixture.rule(RuleEffect::Allow).with_constraint(Constraint::LocalOnly))
+        .insert(
+            fixture
+                .rule(RuleEffect::Allow)
+                .with_constraint(Constraint::LocalOnly),
+        )
         .unwrap();
 
     let mut context = fixture.context();
@@ -202,8 +206,7 @@ fn wrong_scope_approval_does_not_satisfy_obligation() {
         fixture.capability.clone(),
         fixture.operation.clone(),
     );
-    let context =
-        context.with_verified_approval(VerifiedApproval::owner_confirmation(wrong_scope));
+    let context = context.with_verified_approval(VerifiedApproval::owner_confirmation(wrong_scope));
     let decision = policy.evaluate(&context);
 
     assert_eq!(decision.effect(), DecisionEffect::Ask);
