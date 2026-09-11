@@ -2,6 +2,7 @@
 
 mod capability;
 mod control;
+mod data_stream;
 mod feature;
 mod framing;
 mod version;
@@ -14,6 +15,7 @@ pub use control::{
     ControlSequence, DiagnosticError, EventId, MAX_DIAGNOSTIC_BYTES, ProtocolDiagnostic,
     ProtocolIdError, RequestId, RetryClass, RetryClassError, SequenceError, StreamId,
 };
+pub use data_stream::{DataStreamOpen, StreamDirection};
 pub use feature::{
     FeatureNegotiationError, FeatureSet, MAX_REQUIRED_FEATURES, MAX_SUPPORTED_FEATURES,
     negotiate_features,
