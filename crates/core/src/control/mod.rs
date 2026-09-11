@@ -8,9 +8,8 @@ use crosslab_policy::{
     PolicyState, TrustState,
 };
 use crosslab_protocol::{
-    CancelRequest, ControlEnvelope, ControlRequest, ControlResponse, ControlResponseResult,
-    ControlSequence, EnvelopeBody, Event, EventScope, ProtocolFailure, RequestId, RetryClass,
-    SequenceError, SessionClose,
+    ControlEnvelope, ControlRequest, ControlResponse, ControlSequence, EnvelopeBody, Event,
+    EventScope, ProtocolFailure, RequestId, RetryClass, SequenceError, SessionClose,
 };
 
 use crate::SessionContext;
@@ -142,7 +141,11 @@ impl ControlDispatcher {
                 self.accept_request(context, request, policy, local_capabilities, network_class)
             }
             EnvelopeBody::ControlResponse(response) => {
-                if self.pending_outgoing.remove(&response.request_id()).is_none() {
+                if self
+                    .pending_outgoing
+                    .remove(&response.request_id())
+                    .is_none()
+                {
                     return Err(ControlDispatchError::UnknownRequest);
                 }
                 Ok(InboundControl::Response(response.clone()))
@@ -283,30 +286,4 @@ impl ControlDispatcher {
             Err(ControlDispatchError::InvalidEventCapability)
         }
     }
-}
-
-pub fn request_body(request: ControlRequest) -> EnvelopeBody {
-    EnvelopeBody::ControlRequest(request)
-}
-
-pub fn response_body(request_id: RequestId, result: ControlResponseResult) -> EnvelopeBody {
-    EnvelopeBody::ControlResponse(ControlResponse::new(request_id, result))
-}
-
-pub fn event_body(event: Event) -> EnvelopeBody {
-    EnvelopeBody::Event(event)
-}
-
-pub fn cancel_body(request_id: RequestId) -> EnvelopeBody {
-    EnvelopeBody::CancelRequest(CancelRequest::new(request_id))
-}
-
-pub fn capability_advertisement_body(
-    advertisement: crosslab_protocol::CapabilityAdvertisement,
-) -> EnvelopeBody {
-    EnvelopeBody::CapabilityAdvertisement(advertisement)
-}
-
-pub fn session_close_body(close: SessionClose) -> EnvelopeBody {
-    EnvelopeBody::SessionClose(close)
 }
