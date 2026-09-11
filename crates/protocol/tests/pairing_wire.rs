@@ -2,8 +2,8 @@ use crosslab_crypto::{Signature, SigningKey};
 use crosslab_identity::{DeviceId, KeyId, OwnerId};
 use crosslab_protocol::{
     FrameError, PairingBootstrapMessage, PairingConfirmation, PairingCredentialAccepted,
-    PairingHello, PairingRole, ProtocolWireError, decode_pairing_bootstrap,
-    encode_pairing_bootstrap, encode_frame, wire,
+    PairingHello, PairingRole, ProtocolWireError, decode_pairing_bootstrap, encode_frame,
+    encode_pairing_bootstrap, wire,
 };
 use prost::Message;
 
@@ -104,9 +104,8 @@ fn pairing_bootstrap_messages_round_trip_outside_the_session_envelope() {
 
 #[test]
 fn pairing_bootstrap_rejects_unknown_profile_and_missing_body() {
-    let mut unknown_profile = raw_bootstrap(wire::v1::pairing_bootstrap_v1::Body::Hello(
-        raw_hello(),
-    ));
+    let mut unknown_profile =
+        raw_bootstrap(wire::v1::pairing_bootstrap_v1::Body::Hello(raw_hello()));
     unknown_profile.pairing_profile = 2;
     assert_eq!(
         decode_pairing_bootstrap(&frame(unknown_profile)).unwrap_err(),
@@ -290,9 +289,9 @@ fn pairing_credential_accepted_rejects_malformed_proof_fields() {
     ];
 
     for (accepted, expected_error) in cases {
-        let bootstrap = raw_bootstrap(
-            wire::v1::pairing_bootstrap_v1::Body::CredentialAccepted(accepted),
-        );
+        let bootstrap = raw_bootstrap(wire::v1::pairing_bootstrap_v1::Body::CredentialAccepted(
+            accepted,
+        ));
         assert_eq!(
             decode_pairing_bootstrap(&frame(bootstrap)).unwrap_err(),
             expected_error
@@ -301,9 +300,9 @@ fn pairing_credential_accepted_rejects_malformed_proof_fields() {
 
     let mut invalid_algorithm = raw_credential_accepted();
     invalid_algorithm.signature_algorithm = 99;
-    let bootstrap = raw_bootstrap(
-        wire::v1::pairing_bootstrap_v1::Body::CredentialAccepted(invalid_algorithm),
-    );
+    let bootstrap = raw_bootstrap(wire::v1::pairing_bootstrap_v1::Body::CredentialAccepted(
+        invalid_algorithm,
+    ));
     assert_eq!(
         decode_pairing_bootstrap(&frame(bootstrap)).unwrap_err(),
         ProtocolWireError::InvalidSignatureAlgorithm(99)
