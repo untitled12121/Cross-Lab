@@ -89,11 +89,7 @@ impl PairingTranscript {
         transcript.digest()
     }
 
-    pub fn confirmation(
-        &self,
-        role: PairingConfirmationRole,
-        secret: &PairingSecret,
-    ) -> [u8; 32] {
+    pub fn confirmation(&self, role: PairingConfirmationRole, secret: &PairingSecret) -> [u8; 32] {
         let message = self.confirmation_message(role);
         hmac_sha256(secret.as_bytes(), &message)
     }
