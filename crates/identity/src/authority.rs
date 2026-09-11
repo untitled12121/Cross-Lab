@@ -76,6 +76,9 @@ impl AuthorityDelegation {
         if self.schema_version != 1 {
             return Err(IdentityError::UnsupportedSchema);
         }
+        if self.role == AuthorityRole::OwnerRoot {
+            return Err(IdentityError::WrongIssuerRole);
+        }
         if self.owner_id != root.owner_id() {
             return Err(IdentityError::WrongOwner);
         }
