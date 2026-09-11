@@ -45,11 +45,7 @@ fn pairing_confirmation_is_role_and_transcript_bound() {
     let wrong_secret = PairingSecret::from_bytes([0xaa; 32]);
     assert!(
         transcript
-            .verify_confirmation(
-                PairingConfirmationRole::Inviter,
-                &wrong_secret,
-                &inviter,
-            )
+            .verify_confirmation(PairingConfirmationRole::Inviter, &wrong_secret, &inviter,)
             .is_err()
     );
 }
@@ -91,14 +87,8 @@ fn pairing_invitation_is_single_use() {
     assert_eq!(invitation.state(), PairingInvitationState::Pending);
     assert_eq!(invitation.consume(), Ok(()));
     assert_eq!(invitation.state(), PairingInvitationState::Consumed);
-    assert_eq!(
-        invitation.cancel(),
-        Err(PairingInvitationError::NotPending)
-    );
-    assert_eq!(
-        invitation.expire(),
-        Err(PairingInvitationError::NotPending)
-    );
+    assert_eq!(invitation.cancel(), Err(PairingInvitationError::NotPending));
+    assert_eq!(invitation.expire(), Err(PairingInvitationError::NotPending));
 }
 
 #[test]
