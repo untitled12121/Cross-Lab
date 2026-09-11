@@ -10,13 +10,14 @@ This file is the durable resume guide for active Cross-Lab development. Git hist
 
 **M5 — Pairing + Authenticated Logical Session Simulator: in progress.**
 
-M1–M4 are integrated into canonical `main`. M5 Tasks 1–4 are complete and verified on `m5-session`; the owner has explicitly requested integration of the verified work into `main` before continuing.
+M1–M4 and verified M5 Tasks 1–4 are integrated into canonical `main`. The exact next implementation slice is M5 Task 5.
 
 ## Branch State
 
-- `main` — canonical integrated branch; contains verified M1–M4 and is the required integration target for the current M5 checkpoint.
-- `m5-session` — verified M5 Tasks 1–4 implementation branch; PR #10 targets `main`.
+- `main` — canonical integrated branch; contains verified M1–M4 and M5 Tasks 1–4.
+- `m5-session` — historical M5 Tasks 1–4 feature branch; PR #10 is merged into `main`.
 - `planning` — planning/documentation branch; no active implementation belongs here.
+- Start Task 5 from a fresh short-lived branch based on the verified current `main` head.
 - No temporary `*-red` branches are required for TDD; failing contract-test checkpoints remain ordinary commits on the active implementation branch.
 
 The connected GitHub workflow writes directly to committed branches, so there is no separate uncommitted remote working-tree state. Repository history is the durable implementation state.
@@ -54,7 +55,7 @@ The approved implementation keeps deterministic state machines and bounded in-me
 
 ### Task 1 — pairing confirmation primitives
 
-Complete and verified.
+Complete, verified, and integrated.
 
 - focused HMAC-SHA-256 generation and constant-time verification helpers in `crosslab-crypto`;
 - generic cryptographic mechanics remain inside the ADR-0006 boundary;
@@ -62,7 +63,7 @@ Complete and verified.
 
 ### Task 2 — pairing transcript and invitation domain state
 
-Complete and verified.
+Complete, verified, and integrated.
 
 - typed 128-bit `PairingId` and redacted/zeroized 256-bit `PairingSecret`;
 - single-use invitation lifecycle with terminal consumed/cancelled/expired states;
@@ -73,7 +74,7 @@ Complete and verified.
 
 ### Task 3 — pairing bootstrap protobuf messages
 
-Complete and verified.
+Complete, verified, and integrated.
 
 - dedicated pre-session `PairingBootstrapV1` outside `EnvelopeV1`;
 - typed hello, directional confirmation, and credential-accepted domain/wire messages;
@@ -84,7 +85,7 @@ Task 3 code head `d522cb462a3ec75cff47ed955b47a73db0768a3d` passed CI `346381275
 
 ### Task 4 — pairing orchestration and trust commit
 
-Complete and verified.
+Complete, verified, and integrated.
 
 Implemented:
 
@@ -96,25 +97,17 @@ Implemented:
 - focused `DeviceCredential::issue_for_public_key` issuance path so the inviter never requires the joiner private key;
 - deterministic credential-accepted proof golden vector.
 
-Task 4 final code head is `36583b732b20df6a7eef1905cec685ad50675a6b`.
+Task 4 final code head `36583b732b20df6a7eef1905cec685ad50675a6b` passed CI `34641303311` and fuzz smoke `34641303272`.
 
-GitHub Actions CI run `34641303311` passed on that exact head:
+The final PR-head checkpoint `588366d69dcd89d3a9a4f709fbca833eb263be57` passed CI `34643647466` and fuzz smoke `34643647458`.
 
-```text
-cargo metadata --locked --no-deps --format-version 1
-cargo fmt --check
-cargo check --workspace --all-targets --all-features
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-features
-```
+## M5 Tasks 1–4 Integration
 
-Fuzz Smoke run `34641303272` also completed successfully on the same head.
+PR #10 was marked ready and merged into `main` with preserved commit history at merge commit `b54395109b8fe7ed49862f7f8c508659a2fd7a36`.
 
-The Task 4 diff from the prior Task 3 checkpoint is limited to the pairing orchestration slice, its tests/golden vector, exports, and the focused identity public-key credential issuance API/test. No session-auth, transport, policy, persistence, UI, platform, or networking implementation was introduced early.
+Post-merge `main` CI run `34643788450` passed the locked dependency graph, Rustfmt, workspace check, Clippy with warnings denied, and the full workspace test suite.
 
-## Integration Instruction
-
-The owner explicitly requested that the verified M5 Tasks 1–4 checkpoint be merged into canonical `main` before further development. PR #10 should be marked ready and merged only after the documentation checkpoint itself receives green required verification. After integration, verify `main` and continue Task 5 from a fresh short-lived branch based on the verified `main` head.
+The integrated scope contains pairing cryptography/domain/bootstrap/orchestration, trust commit gating, focused public-key credential issuance, tests, and vectors. It does not contain Task 5 session authentication, Task 6 transport, or later M5 slices.
 
 ## Exact Next Task
 
@@ -127,7 +120,7 @@ The next implementation slice should:
 3. create failing `crates/core/tests/session_auth.rs` and `crates/protocol/tests/session_auth_wire.rs` coverage for transcript/proof/`SessionId` golden behavior plus wrong nonce, channel binding, role, key, profile, enum, and malformed-length cases;
 4. implement `crates/core/src/session/mod.rs` and `crates/core/src/session/auth.rs` with canonical `SessionAuthTranscriptV1`, role-separated initiator/responder proofs, and deterministic `SessionId` derivation;
 5. add bounded pre-session session-auth hello/proof protobuf/domain messages and strict wire conversion outside ordinary post-auth `EnvelopeV1` control traffic;
-6. keep identity independent of transport identity and bind authentication to owner/device credentials, fresh nonces, negotiated protocol/features, and the deterministic channel binding;
+6. keep identity independent of transport identity and bind authentication to owner/device credentials, fresh nonces, negotiated protocol/features, and deterministic channel binding;
 7. run focused tests and the complete format/check/Clippy/workspace-test baseline, freeze required golden vectors, commit, and checkpoint this file before Task 6.
 
 Do not begin the in-memory transport seam or session activation state machine until Task 5 is verified.
@@ -142,5 +135,5 @@ Before continuing in a new session:
 2. read `docs/architecture/MASTER-ARCHITECTURE.md` and this file;
 3. read `docs/plans/phase-1/M5-pairing-session-simulator.md`, `docs/architecture/SESSION-TRANSPORT.md`, and relevant ADRs;
 4. reconcile documentation with actual code before editing;
-5. if PR #10 is not yet merged, finish its verified integration into `main`; otherwise branch from the verified `main` head;
+5. branch from the verified current `main` head if no active Task 5 branch exists;
 6. continue from **M5 Task 5** above.
