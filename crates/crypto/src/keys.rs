@@ -1,6 +1,6 @@
 use core::fmt;
 
-use ed25519_dalek::{Signer, Verifier};
+use ed25519_dalek::Signer;
 use zeroize::Zeroize;
 
 use crate::{RandomError, random_bytes};
@@ -51,9 +51,11 @@ pub struct VerifyingKey(ed25519_dalek::VerifyingKey);
 
 impl VerifyingKey {
     pub fn from_bytes(bytes: [u8; 32]) -> Result<Self, VerificationError> {
-        ed25519_dalek::VerifyingKey::from_bytes(&bytes)
-            .map(Self)
-            .map_err(|_| VerificationError)
+        let key = ed25519_dalek::VerifyingKey::from_bytes(&bytes).map_err(|_| VerificationError)?;
+        if key.is_weak() {
+            return Err(VerificationError);
+        }
+        Ok(Self(key))
     }
 
     pub fn as_bytes(&self) -> &[u8; 32] {
@@ -70,7 +72,7 @@ impl VerifyingKey {
         signature: &Signature,
     ) -> Result<(), VerificationError> {
         self.0
-            .verify(digest, &signature.0)
+            .verify_strict(digest, &signature.0)
             .map_err(|_| VerificationError)
     }
 }
