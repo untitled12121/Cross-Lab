@@ -27,8 +27,8 @@ Closeout record: `docs/plans/phase-0/PHASE-0-CLOSEOUT.md`.
 Implementation sequence:
 
 - M1 — Repository Foundation — **Complete**
-- M2 — Crypto + Identity — **Complete on `foundation`; PR #7 pending integration**
-- **M3 — Trust + Policy — Ready next**
+- M2 — Crypto + Identity — **Complete and integrated into `main`**
+- **M3 — Trust + Policy — Next**
 - M4 — Protocol
 - M5 — Pairing + Authenticated Logical Session Simulator
 - M6 — Authorized Data Streams
@@ -43,7 +43,7 @@ Milestone records/plans:
 - M2: `docs/plans/phase-1/M2-crypto-identity.md`
 - M3: `docs/plans/phase-1/M3-trust-policy.md`
 
-`main` remains the canonical integrated branch. Use a short purpose-named implementation branch for the current unit of work and retire it after its commits are preserved in `main`.
+`main` remains the canonical integrated branch. M3 starts only after its design is approved, then uses a short purpose branch such as `trust-policy`.
 
 ## Later Phases
 
