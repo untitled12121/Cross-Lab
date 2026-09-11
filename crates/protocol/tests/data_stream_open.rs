@@ -1,6 +1,4 @@
-use crosslab_policy::{
-    CapabilityId, CapabilityVersion, OperationId, OperationName, SessionId,
-};
+use crosslab_policy::{CapabilityId, CapabilityVersion, OperationId, OperationName, SessionId};
 use crosslab_protocol::{DataStreamOpen, StreamDirection, StreamId};
 
 fn open_header(direction: StreamDirection, stream_index: u32) -> DataStreamOpen {
