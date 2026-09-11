@@ -1,9 +1,9 @@
 use crosslab_identity::DeviceId;
 use crosslab_policy::{
     AuthorizationGrant, AuthorizedOperation, CapabilityId, CapabilityVersion,
-    CapabilityVersionRange, LocalCapability, NetworkClass, OperationError, OperationName,
-    OperationState, OperationUseContext, PolicyRule, PolicyState, RuleEffect, RuleId, SessionId,
-    TrustState, UsePolicy,
+    CapabilityVersionRange, Constraint, LocalCapability, NetworkClass, OperationError,
+    OperationName, OperationState, OperationUseContext, PolicyRule, PolicyState, RuleEffect, RuleId,
+    SessionId, TrustState, UsePolicy,
 };
 
 struct Fixture {
@@ -33,13 +33,16 @@ impl Fixture {
         );
         let mut policy = PolicyState::new();
         policy
-            .insert(PolicyRule::new(
-                RuleId::from_bytes([4; 32]),
-                source,
-                capability.clone(),
-                operation.clone(),
-                RuleEffect::Allow,
-            ))
+            .insert(
+                PolicyRule::new(
+                    RuleId::from_bytes([4; 32]),
+                    source,
+                    capability.clone(),
+                    operation.clone(),
+                    RuleEffect::Allow,
+                )
+                .with_constraint(Constraint::LocalOnly),
+            )
             .unwrap();
         let context = crosslab_policy::AuthorizationContext::new(
             source,
@@ -91,6 +94,7 @@ fn allow_grant_creates_active_operation_with_nonreused_random_id() {
     assert_eq!(first.state(), OperationState::Active);
     assert_eq!(first.id().as_bytes().len(), 32);
     assert_ne!(first.id(), second.id());
+    assert_eq!(first.constraints_snapshot(), &[Constraint::LocalOnly]);
 }
 
 #[test]
@@ -110,46 +114,73 @@ fn matching_binding_and_revisions_validate() {
 }
 
 #[test]
-fn operation_id_does_not_authorize_wrong_source_or_session() {
+fn operation_id_does_not_authorize_mismatched_context() {
     let fixture = Fixture::new();
     let mut operation =
-        AuthorizedOperation::issue(fixture.grant, 10, 20, UsePolicy::SingleStream).unwrap();
+        AuthorizedOperation::issue(fixture.grant.clone(), 10, 20, UsePolicy::SingleStream).unwrap();
 
-    let wrong_source = OperationUseContext::new(
-        DeviceId::from_bytes([40; 32]),
-        fixture.destination,
-        fixture.session,
-        fixture.capability.clone(),
-        fixture.version,
-        fixture.operation.clone(),
-    );
-    assert_eq!(
-        operation.validate(
-            &wrong_source,
-            15,
-            fixture.trust_revision,
-            fixture.policy_revision,
+    let contexts = [
+        OperationUseContext::new(
+            DeviceId::from_bytes([40; 32]),
+            fixture.destination,
+            fixture.session,
+            fixture.capability.clone(),
+            fixture.version,
+            fixture.operation.clone(),
         ),
-        Err(OperationError::BindingMismatch)
-    );
+        OperationUseContext::new(
+            fixture.source,
+            DeviceId::from_bytes([41; 32]),
+            fixture.session,
+            fixture.capability.clone(),
+            fixture.version,
+            fixture.operation.clone(),
+        ),
+        OperationUseContext::new(
+            fixture.source,
+            fixture.destination,
+            SessionId::from_bytes([42; 32]),
+            fixture.capability.clone(),
+            fixture.version,
+            fixture.operation.clone(),
+        ),
+        OperationUseContext::new(
+            fixture.source,
+            fixture.destination,
+            fixture.session,
+            CapabilityId::parse("clipboard.read").unwrap(),
+            fixture.version,
+            fixture.operation.clone(),
+        ),
+        OperationUseContext::new(
+            fixture.source,
+            fixture.destination,
+            fixture.session,
+            fixture.capability.clone(),
+            CapabilityVersion::new(1, 1),
+            fixture.operation.clone(),
+        ),
+        OperationUseContext::new(
+            fixture.source,
+            fixture.destination,
+            fixture.session,
+            fixture.capability.clone(),
+            fixture.version,
+            OperationName::parse("send").unwrap(),
+        ),
+    ];
 
-    let wrong_session = OperationUseContext::new(
-        fixture.source,
-        fixture.destination,
-        SessionId::from_bytes([41; 32]),
-        fixture.capability.clone(),
-        fixture.version,
-        fixture.operation.clone(),
-    );
-    assert_eq!(
-        operation.validate(
-            &wrong_session,
-            15,
-            fixture.trust_revision,
-            fixture.policy_revision,
-        ),
-        Err(OperationError::BindingMismatch)
-    );
+    for context in contexts {
+        assert_eq!(
+            operation.validate(
+                &context,
+                15,
+                fixture.trust_revision,
+                fixture.policy_revision,
+            ),
+            Err(OperationError::BindingMismatch)
+        );
+    }
 }
 
 #[test]
@@ -217,8 +248,31 @@ fn explicit_terminal_transitions_prevent_further_use() {
         Err(OperationError::Inactive(OperationState::Cancelled))
     );
 
+    let mut revoked =
+        AuthorizedOperation::issue(fixture.grant.clone(), 10, 20, UsePolicy::SingleAction).unwrap();
+    revoked.revoke();
+    assert_eq!(revoked.state(), OperationState::Revoked);
+    assert_eq!(
+        revoked.validate(
+            &fixture.use_context(),
+            15,
+            fixture.trust_revision,
+            fixture.policy_revision,
+        ),
+        Err(OperationError::Inactive(OperationState::Revoked))
+    );
+
     let mut consumed =
         AuthorizedOperation::issue(fixture.grant, 10, 20, UsePolicy::SingleAction).unwrap();
     consumed.consume();
     assert_eq!(consumed.state(), OperationState::Consumed);
+    assert_eq!(
+        consumed.validate(
+            &fixture.use_context(),
+            15,
+            fixture.trust_revision,
+            fixture.policy_revision,
+        ),
+        Err(OperationError::Inactive(OperationState::Consumed))
+    );
 }
