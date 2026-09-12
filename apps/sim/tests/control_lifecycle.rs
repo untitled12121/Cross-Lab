@@ -10,8 +10,8 @@ use crosslab_identity::{
     AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
 };
 use crosslab_policy::{
-    CapabilityId, CapabilityVersion, OperationName, PolicyState, TransitionId, TrustRecord,
-    TrustTransition,
+    CapabilityId, CapabilityVersion, NetworkClass, OperationName, PolicyState, TransitionId,
+    TrustRecord, TrustTransition,
 };
 use crosslab_protocol::{
     ControlRequest, FeatureSet, ProtocolRange, ProtocolVersion, RequestId, RetryClass,
@@ -211,6 +211,7 @@ fn send_side_transport_loss_closes_session_and_discards_pending_authority() {
         endpoint_a,
         PolicyState::new(),
         Vec::new(),
+        NetworkClass::Local,
         NonZeroUsize::new(CAPACITY).unwrap(),
     )
     .unwrap();
@@ -238,13 +239,14 @@ fn receive_side_transport_loss_closes_active_session() {
         endpoint_b,
         PolicyState::new(),
         Vec::new(),
+        NetworkClass::Local,
         NonZeroUsize::new(CAPACITY).unwrap(),
     )
     .unwrap();
 
     pair.faults().disconnect_now();
     assert!(matches!(
-        node.receive_one(),
+        node.receive_one(&fixture.initiator_trust),
         Err(NodeError::Receive(ControlReceiveError::Closed))
     ));
     assert_eq!(node.session().state(), SessionState::Closed);
@@ -262,6 +264,7 @@ fn accepted_peer_revocation_closes_session_transport_and_pending_authority() {
         endpoint_b,
         PolicyState::new(),
         Vec::new(),
+        NetworkClass::Local,
         NonZeroUsize::new(CAPACITY).unwrap(),
     )
     .unwrap();
@@ -293,6 +296,7 @@ fn wrong_peer_revocation_cannot_terminate_an_unrelated_session() {
         endpoint_b,
         PolicyState::new(),
         Vec::new(),
+        NetworkClass::Local,
         NonZeroUsize::new(CAPACITY).unwrap(),
     )
     .unwrap();
@@ -316,6 +320,7 @@ fn shutdown_is_idempotent_and_discards_pending_authority() {
         endpoint_a,
         PolicyState::new(),
         Vec::new(),
+        NetworkClass::Local,
         NonZeroUsize::new(CAPACITY).unwrap(),
     )
     .unwrap();
@@ -341,6 +346,7 @@ fn bounded_control_backpressure_preserves_dispatch_state_until_retry() {
         endpoint_a,
         PolicyState::new(),
         Vec::new(),
+        NetworkClass::Local,
         NonZeroUsize::new(CAPACITY).unwrap(),
     )
     .unwrap();
@@ -373,6 +379,7 @@ fn malformed_control_input_discards_pending_authority_and_closes_transport() {
         endpoint_b,
         PolicyState::new(),
         Vec::new(),
+        NetworkClass::Local,
         NonZeroUsize::new(CAPACITY).unwrap(),
     )
     .unwrap();
@@ -381,7 +388,10 @@ fn malformed_control_input_discards_pending_authority_and_closes_transport() {
     assert_eq!(node.pending_request_count(), 1);
     endpoint_a.try_send_control(vec![0, 0, 0, 1, 0xff]).unwrap();
 
-    assert!(matches!(node.receive_one(), Err(NodeError::Wire(_))));
+    assert!(matches!(
+        node.receive_one(&fixture.initiator_trust),
+        Err(NodeError::Wire(_))
+    ));
     assert_eq!(node.session().state(), SessionState::Closed);
     assert_eq!(node.pending_request_count(), 0);
     assert!(endpoint_b.is_closed());
@@ -398,6 +408,7 @@ fn peer_close_discards_pending_authority_and_closes_transport() {
         endpoint_a,
         PolicyState::new(),
         Vec::new(),
+        NetworkClass::Local,
         NonZeroUsize::new(CAPACITY).unwrap(),
     )
     .unwrap();
@@ -406,6 +417,7 @@ fn peer_close_discards_pending_authority_and_closes_transport() {
         endpoint_b,
         PolicyState::new(),
         Vec::new(),
+        NetworkClass::Local,
         NonZeroUsize::new(CAPACITY).unwrap(),
     )
     .unwrap();
@@ -417,7 +429,7 @@ fn peer_close_discards_pending_authority_and_closes_transport() {
         .unwrap();
 
     assert!(matches!(
-        node_b.receive_one().unwrap(),
+        node_b.receive_one(&fixture.initiator_trust).unwrap(),
         NodeEvent::SessionClosed(SessionCloseReason::Normal)
     ));
     assert_eq!(node_b.session().state(), SessionState::Closed);
