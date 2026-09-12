@@ -15,7 +15,10 @@ fn candidate_defaults_match_quinn_semantic_limits() {
     let candidate = CandidateConfig::default();
     let quinn = QuicTransportConfig::default();
 
-    assert_eq!(candidate.control_queue_capacity(), quinn.control_queue_capacity());
+    assert_eq!(
+        candidate.control_queue_capacity(),
+        quinn.control_queue_capacity()
+    );
     assert_eq!(
         candidate.incoming_stream_queue_capacity(),
         quinn.incoming_stream_queue_capacity()
@@ -45,7 +48,10 @@ fn candidate_defaults_match_quinn_semantic_limits() {
         candidate.max_concurrent_remote_bi_streams(),
         quinn.max_concurrent_remote_bi_streams()
     );
-    assert_eq!(candidate.stream_receive_window(), quinn.stream_receive_window());
+    assert_eq!(
+        candidate.stream_receive_window(),
+        quinn.stream_receive_window()
+    );
     assert_eq!(
         candidate.connection_receive_window(),
         quinn.connection_receive_window()
@@ -93,9 +99,7 @@ async fn record_reader_rejects_declared_length_before_allocating_body() {
     send.write_all(&9_u32.to_be_bytes())
         .await
         .expect("write declared length");
-    send.write_all(&[0_u8])
-        .await
-        .expect("write partial body");
+    send.write_all(&[0_u8]).await.expect("write partial body");
     send.finish().expect("finish malformed record stream");
     let (_, mut recv) = pair
         .server_connection()
@@ -134,7 +138,10 @@ async fn record_reader_rejects_truncated_body() {
         .await
         .expect("accept truncated record stream");
 
-    assert_eq!(read_record(&mut recv, 8, false).await, Err(RecordError::Read));
+    assert_eq!(
+        read_record(&mut recv, 8, false).await,
+        Err(RecordError::Read)
+    );
     pair.shutdown().await;
 }
 
@@ -175,7 +182,9 @@ async fn control_bridge_preserves_order_and_bounded_backpressure() {
     );
 
     assert_eq!(eventually_receive(pair.server()).await, vec![1]);
-    pair.client().try_send(vec![2]).expect("second queued frame");
+    pair.client()
+        .try_send(vec![2])
+        .expect("second queued frame");
     assert_eq!(eventually_receive(pair.server()).await, vec![2]);
     pair.shutdown().await;
 }
@@ -232,9 +241,7 @@ async fn eventually_receive(
     .expect("control receive timed out")
 }
 
-async fn eventually_closed(
-    bridge: &crosslab_m9_networking::candidate::control::ControlBridge,
-) {
+async fn eventually_closed(bridge: &crosslab_m9_networking::candidate::control::ControlBridge) {
     timeout(Duration::from_secs(5), async {
         loop {
             if bridge.try_receive() == Err(ControlReceiveError::Closed) {
