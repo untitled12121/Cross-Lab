@@ -1,9 +1,9 @@
 use std::num::NonZeroUsize;
 
 use crosslab_core::{
-    ControlDispatchError, LogicalSession, SessionActivation, SessionAuthRole, SessionAuthTranscriptV1,
-    SessionError, SessionHandshakeSide, SessionState, StreamAdmission, StreamAdmissionError,
-    TransportConnection, TransportSecurityClass,
+    ControlDispatchError, LogicalSession, SessionActivation, SessionAuthRole,
+    SessionAuthTranscriptV1, SessionError, SessionHandshakeSide, SessionState, StreamAdmission,
+    StreamAdmissionError, TransportConnection, TransportSecurityClass,
 };
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
