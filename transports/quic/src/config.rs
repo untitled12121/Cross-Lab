@@ -105,9 +105,7 @@ impl Default for QuicTransportConfig {
             max_concurrent_remote_uni_streams: nonzero_u32(
                 DEFAULT_MAX_CONCURRENT_REMOTE_UNI_STREAMS,
             ),
-            max_concurrent_remote_bi_streams: nonzero_u32(
-                DEFAULT_MAX_CONCURRENT_REMOTE_BI_STREAMS,
-            ),
+            max_concurrent_remote_bi_streams: nonzero_u32(DEFAULT_MAX_CONCURRENT_REMOTE_BI_STREAMS),
             stream_receive_window: nonzero_u64(DEFAULT_STREAM_RECEIVE_WINDOW),
             connection_receive_window: nonzero_u64(DEFAULT_CONNECTION_RECEIVE_WINDOW),
             idle_timeout_ms: nonzero_u64(DEFAULT_IDLE_TIMEOUT_MS),
