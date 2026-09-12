@@ -16,6 +16,10 @@ quinn.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "time"] }
 
 [dev-dependencies]
+crosslab-crypto = { path = "../../crates/crypto" }
+crosslab-identity = { path = "../../crates/identity" }
+crosslab-policy = { path = "../../crates/policy" }
+crosslab-protocol = { path = "../../crates/protocol" }
 rcgen.workspace = true
 rustls.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }
