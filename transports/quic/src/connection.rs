@@ -56,7 +56,7 @@ impl SharedState {
     }
 }
 
-pub(crate) struct QuicTransportConnection {
+pub struct QuicTransportConnection {
     connection: Connection,
     channel_binding: ChannelBinding,
     metadata: ConnectionMetadata,
@@ -114,7 +114,7 @@ impl QuicTransportConnection {
         }
     }
 
-    pub(crate) async fn shutdown(&self) {
+    pub async fn shutdown(&self) {
         self.close();
         let tasks = {
             let mut tasks = lock(&self.tasks);
