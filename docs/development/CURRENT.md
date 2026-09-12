@@ -8,115 +8,131 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 ## Current Milestone
 
-**M5 — Pairing + Authenticated Logical Session Simulator: complete, verified, and integrated.**
+**M6 — Authorized Data Streams: implementation complete on the feature branch; exact documentation-inclusive PR verification and merge are pending.**
 
-M1–M5 are integrated into canonical `main`. The next milestone is **M6 — Authorized Data Streams**, which has not started. M6 implementation must begin only after this final M5 integration-record commit is verified on `main` and an approved M6 implementation plan is created/read from the architecture baseline.
+M1–M5 are complete, verified, and integrated into canonical `main`. M6 Tasks 1–5 are implemented and the final code head has passed the full Rust baseline and bounded fuzz smoke.
 
 ## Branch State
 
-- `main` — canonical branch through complete M5; Task 9 PR #15 merged at `e9ddec90b9ad232c917c302188400abb23a39c54`, and post-merge CI `34662096131` passed.
-- `m5-closeout` — historical M5 Task 9 branch, fully contained in `main`; safe to delete.
-- `m5-session`, `m5-session-auth`, `m5-memory-transport`, `m5-session-state`, `m5-control-sim` — historical M5 branches fully contained in `main`; safe to delete.
-- `planning`, `protocol`, `trust-policy` — historical branches with zero commits ahead of `main`; safe to delete if their names are not wanted for archival navigation.
-
-Deleting merged branch refs does not delete commits or pull-request history. The connected GitHub tool does not expose branch-ref deletion, so branch cleanup is a GitHub UI/CLI action.
+- `main` — canonical through complete M5; final M5 integration-record head `c24f68342709efc72549f0bf8f3ea8df2ef6de48` passed CI `34662220773`.
+- `m6-authorized-streams` — active M6 branch, based on `c24f68342709efc72549f0bf8f3ea8df2ef6de48` and represented by PR #16.
+- Final M6 code head before this documentation checkpoint: `71ad5a620ff9c1c7be397a81a6adfddd2fc3cd20`.
+- PR #16 had no submitted reviews or unresolved review threads at final code-head review.
 
 ## Architecture Baseline
 
-- `docs/architecture/MASTER-ARCHITECTURE.md` — Revision 2.1, source of truth.
-- `docs/architecture/CORE-SIMULATOR.md` — Phase 1 simulator specification and milestone staging.
-- `docs/architecture/SESSION-TRANSPORT.md` — logical-session and transport contract.
-- `docs/architecture/PAIRING-TRUST-REVOCATION.md` — pairing/trust semantics.
-- `docs/protocol/PROTOCOL-V1.md` — protocol v1 wire/canonical registry.
-- ADR-0003 — single-use pairing secret and directional HMAC confirmations.
-- ADR-0004 — Protocol Buffers for ordinary v1 wire encoding with independent canonical signing transcripts.
-- ADR-0006 — focused `crosslab-crypto` foundation boundary.
-- ADR-0007 — event namespace and session-close wire registry.
+- uploaded Cross-Lab Master Architecture & Development Plan — primary architectural source of truth;
+- `docs/architecture/MASTER-ARCHITECTURE.md` — approved evolved repository architecture, Revision 2.1;
+- `docs/architecture/CORE-SIMULATOR.md` — Phase 1 scenarios/milestone staging including S-007 and N-035..N-045;
+- `docs/architecture/SESSION-TRANSPORT.md` — stream admission/transport contract;
+- `docs/protocol/PROTOCOL-V1.md` — existing bounded `DataStreamOpenV1` wire contract;
+- M3 `AuthorizedOperation` / `UsePolicy`;
+- M5 `LogicalSession`, `SessionContext`, `TransportConnection`, `MemoryTransportPair`, and simulator composition.
 
-## M5 Scope Guardrails
+## M6 Approved Architecture
 
-M5 proves pairing, credential/trust commit, bounded in-memory transport, channel-bound authenticated logical sessions, capability exchange, and sequenced control request/response/event simulation. It does **not** add real networking, Quinn/Iroh/libp2p integration, persistence, UI/platform adapters, plugins, privileged services, or M6 authorized data-stream admission. Queues/state are bounded and the simulator uses deterministic synchronous/nonblocking orchestration without a general async runtime.
+- control-plane authorization remains separate from data-plane bytes;
+- every accepted stream requires a locally held valid `AuthorizedOperation`;
+- reuse existing M4 `DataStreamOpen` rather than inventing another header;
+- `UsePolicy::MultiStream { max_streams: NonZeroU32 }` is bounded; there is no unlimited stream authorization;
+- policy owns authority plus monotonic stream-use budget only;
+- core owns session-bound stream admission, direction/index/replay state, operation registry, and admitted-stream lifecycle;
+- transport carries opaque opening bytes and bounded chunks without interpreting authorization;
+- simulator provides bounded stream opens/chunks, ownership-preserving backpressure, graceful finish, cancellation, and deterministic shutdown;
+- no async runtime, real network transport, real files, UI/platform, persistence, or M7 reconnect/revocation implementation enters M6.
 
-## M5 Integrated Progress
+## M6 Planning Checkpoints
 
-### Tasks 1–4 — pairing through trust commit
+Written design: `docs/plans/phase-1/M6-authorized-data-streams-design.md`
 
-Complete, verified, and integrated through PR #10. Includes single-use invitations, canonical pairing transcript/directional confirmations, pairing bootstrap wire messages, inviter/joiner state machines, public-key credential issuance, joiner proof of private-key possession, and trust commit only after final proof.
+- `1af29c57ff68b449ed991f8e372736da9ba9da42` — initial written design;
+- `5a2bb9c3bbf5e9aa85d93dfc55b1599d4caa15ee` — refinement separating policy budget from core index/replay ownership.
 
-Task 4 final head `588366d69dcd89d3a9a4f709fbca833eb263be57` passed CI `34643647466` and Fuzz Smoke `34643647458`; PR #10 merged at `b54395109b8fe7ed49862f7f8c508659a2fd7a36`; post-merge CI `34643788450` passed.
+Implementation plan: `docs/plans/phase-1/M6-authorized-data-streams.md`
 
-### Task 5 — session-auth domain and bootstrap wire
+- `9805347a4aad0da788554d40b371c4657cc7e37c` — initial implementation plan;
+- `8faf3da38e57159dbbebd73611f958aba61e8376` — refinement making transport seam + memory adapter one atomic task and requiring simulator capacity checks before dequeue/admission.
 
-Complete, verified, and integrated through PR #11. Includes canonical `SessionAuthTranscriptV1`, role-separated direct Ed25519 proofs, deterministic `SessionId`, explicit unverified credential import, strict bounded session-auth bootstrap parsing, golden vectors, and canonical registry documentation.
+Research inspected before implementation:
 
-Final PR head `8ad7c79eca6e8aa70c887d27d3a66aa713df9d9f` passed CI `34653899890` and Fuzz Smoke `34653899783`; PR #11 merged at `8cb6f013055a4f05ff599cc0d31adac45d2756b4`; post-merge CI `34654018205` passed; integration-record head `f2ace2758af626f442d41308799d19806ad46904` passed CI `34654100309`.
+- uploaded Quinn — graceful send `finish`, abortive send `reset`, receive-side stop/cancellation lifecycle semantics;
+- uploaded Iroh — unidirectional stream open/accept and graceful finish patterns;
+- reuse is semantic only; no external transport type/code/dependency was introduced in M6.
 
-### Task 6 — bounded in-memory transport seam
+## M6 Completed Implementation
 
-Complete, verified, and integrated through PR #12. Includes opaque channel binding, `InProcessTest` transport security classification, diagnostic metadata, bounded ordered control queues, frame-preserving backpressure errors, deterministic close/disconnect/directional-close behavior, and no real networking or async runtime.
+### Task 1 — bounded stream-use authority
 
-Final PR head `9f2fcaf157245b6dd1f1ab1083e9507961cc7e8a` passed CI `34654964311`; PR #12 merged at `32bf75951c0e0e768efac80c4320059e04550483`; post-merge CI `34655051368` passed.
+- Added bounded `MultiStream`, reservation accounting, stream-use rejection for `SingleAction`, budget exhaustion, and terminal/revision validation in `crosslab-policy`.
+- Valid RED: `aa14692a3f46f65bb541c6f24cd475977a36d78b`, CI `34663985161` failed after the intended missing policy APIs were exercised.
+- GREEN: `9a508d0934c7d9bc76861d61ef26482c46f61ced`, CI `34664047097` and Fuzz Smoke `34664047042` passed.
 
-### Task 7 — logical session activation and capability exchange
+### Task 2 — session-bound core stream admission
 
-Complete, verified, and integrated through PR #13. Includes explicit lifecycle state, credential/trust/protocol/feature/channel-binding/proof gates, authenticated `SessionContext`, fresh directional sequence initialization, post-auth capability intersection, and close/revocation transitions without converting capability advertisement into policy authority.
+- Added bounded operation registry/active-stream state, session/capability/version/direction/index binding, duplicate protection, operation reservation, finish/cancel lifecycle, and bounded MultiStream index tracking.
+- Valid RED: `ecd08f358114eca6e0ab6f27ef703050e6870ed1`, CI `34664295772` passed lockfile/rustfmt and failed at workspace check for the intentionally missing admission implementation.
+- GREEN/refinement head: `44ac89eb3b99ae3adba4f34c8526658eae763405`, CI `34664768007` and Fuzz Smoke `34664768009` passed.
 
-Exact code head `606f9022c1c4e702f88d1d71cbee907dc26d5b1b` passed CI `34656446809` and Fuzz Smoke `34656446822`; documentation-inclusive head `94f418469a24dcd0d9598311a1d20bfda1bbef3a` passed CI `34658806668` and Fuzz Smoke `34658806735`; PR #13 merged at `e17075245b566522bb4c822cc22b3ee2245fe7a7`; post-merge CI `34658951190` passed; integration-record head `fd3a31acb731ba2f56720c96b0320e3fa685d9db` passed CI `34659038543`.
+### Task 3 — transport-neutral streams + bounded memory transport
 
-### Task 8 — sequenced control request/response/event simulator
+- Extended the transport seam with unidirectional send/receive traits and explicit open/accept/send/receive errors while preserving unsent byte ownership and redacting payloads from `Debug`.
+- Extended `MemoryTransportPair` with explicit bounded stream/open/chunk capacities, ordered delivery, graceful finish, cancellation, close propagation, and deterministic reclamation using only `Arc<Mutex<_>>` plus bounded `VecDeque` state.
+- Valid RED: `d0615b88fc28951fb988435319d2a82b4ceab17d`, CI `34664820379` passed lockfile/rustfmt and failed at workspace check for the missing neutral stream APIs.
+- Final Task 3 GREEN head: `7c500cf23560a697c6d633443f613fac8afe0994`, CI `34670304564` and Fuzz Smoke `34670304596` passed.
 
-Complete, verified, and integrated through PR #14. Includes a focused bounded `ControlDispatcher`, exact SessionId/protocol and directional sequence validation, bounded request/correlation/nonretryable history, state advancement only after successful bounded enqueue, negotiated capability/runtime and `PolicyState` authorization before dispatch, response/cancel/event/capability/session-close handling, and `SimNode` composition over the existing transport/session boundaries.
+### Task 4 — simulator stream runtime + S-007
 
-Valid RED head `1bfaabc763f63b53e378aedf44cd3a1318084058` failed only for missing Task 8 APIs after lockfile/rustfmt passed in CI `34659510366`. Exact code head `af5a535e4531a480f85ea91f79503f852f842009` passed CI `34659955291`; documentation-inclusive head `212212e4a353abf7d4b505dd633c9f95a04e3027` passed CI `34660116960`; PR #14 merged at `b14f4c4a7b42b22c1c8de23be4c8c518e24dbc34`; post-merge CI `34660239776` passed; final integration-record head `3d7789868431eaae11cd9dee2053c7f6976e0989` passed CI `34661243555`.
+- Added `apps/sim/src/stream.rs` as composition glue only: protocol encode/decode stays in protocol, authorization/admission stays in core/policy, and queues stay in transport.
+- S-007 proves `Allow -> AuthorizationGrant -> AuthorizedOperation(SingleStream) -> encoded open -> remote admission -> three ordered synthetic chunks -> graceful finish -> reuse rejection` with no real file I/O.
+- Runtime saturation is checked before transport dequeue so a pending stream and its operation budget remain untouched until capacity is available.
+- Valid RED: `3c0d8fb16cf0e543bd991b0577b8bcbe5f1d2287`, CI `34670774976` passed lockfile/rustfmt and failed at workspace check only because `crosslab_sim::stream` did not yet exist.
+- GREEN: `ecc07ed513b89229a8e61441010b8af1a7256912`, CI `34670944091` and Fuzz Smoke `34670944110` passed.
 
-### Task 9 — end-to-end scenarios, parser fuzz expansion, and closeout
+### Task 5 — security/lifecycle closeout
 
-Complete, verified, and integrated through PR #15.
+The completed test matrix explicitly covers:
 
-Implemented:
+- N-035 — no registered `OperationId` rejects before payload exposure;
+- N-036 — expired/cancelled/revoked/consumed operations reject;
+- N-037 — wrong session, authenticated peer binding, capability, version, operation, and direction reject;
+- N-038 — second `SingleStream` use rejects;
+- N-039 — trust/policy revision changes reject;
+- N-043 — pending-open, chunk, and simulator-runtime saturation produce bounded backpressure/resource errors;
+- N-045 — malformed setup and admission failure cancel the receive side without dangling admitted/runtime state;
+- shutdown — active memory streams are cancelled, admission authority is cancelled, and the memory transport closes;
+- `MultiStream(2)` — indices 1 then 0 succeed; duplicate index and index 2 fail.
 
-- `apps/sim/tests/m5_scenarios.rs` composes the existing production-domain slices instead of adding parallel security logic;
-- positive composed path: pairing confirmations -> joiner credential issuance/proof -> trust commit -> fresh memory channel binding -> authenticated logical sessions -> bidirectional capability exchange -> policy-authorized sequenced request/response/event;
-- integration negatives for wrong pairing secret, replayed session proof under a fresh nonce, proof bound to another channel, stale locally accepted credential epoch, and owner-mismatched peer trust;
-- decoder-only fuzz targets for `decode_pairing_bootstrap` and `decode_session_auth_bootstrap`;
-- both targets registered in `fuzz/Cargo.toml` and added to the existing bounded 256-run Fuzz Smoke workflow;
-- final Task 9 code diff contains only the composed simulator test plus fuzz manifest/targets/workflow; no production behavior or M6 functionality changed.
+Final code head `71ad5a620ff9c1c7be397a81a6adfddd2fc3cd20` passed:
 
-Verification and integration evidence:
+- CI `34671218918`: locked metadata, rustfmt, workspace check, Clippy with `-D warnings`, and all workspace tests;
+- Fuzz Smoke `34671218922`: success on the existing bounded parser targets, including the M6-owned `data_stream_open` parser surface.
 
-- initial scenario head `b70bf41c2f32b8d4812cdfa114264d19b6727354` stopped at rustfmt and is not semantic verification evidence;
-- formatted scenario head `3bdd5e46831158a8b48d018630d4c8445a886e67` passed full CI `34661728554`;
-- exact Task 9 code head `8a4ae668d6cbfd329d72914d8b47279263cf14d7` passed full workspace CI `34661829192` and Fuzz Smoke `34661829233`;
-- documentation-inclusive PR head `654683b62cde22cdd528920fcebeec64d6ca3119` passed full CI `34661982660` and Fuzz Smoke `34661982649`;
-- Fuzz Smoke covers `control_frame`, `data_stream_open`, `identifiers`, `pairing_bootstrap`, and `session_auth`, each bounded to 256 runs;
-- PR #15 merged with preserved history at `e9ddec90b9ad232c917c302188400abb23a39c54`;
-- the merge commit tree `bd2a00f42833f1f970fcb0ba77e03104b874f9a6` is exactly the same tree as the fuzz-verified documentation-inclusive PR head;
-- post-merge canonical `main` CI `34662096131` passed lockfile, Rustfmt, workspace check, Clippy with warnings denied, and the full workspace test suite;
-- Fuzz Smoke has `pull_request`/manual triggers but no `push` trigger, so no redundant post-merge fuzz run was emitted; the merged tree is exactly the tree already verified by Fuzz Smoke `34661982649`.
+No new parser was introduced, so no fuzz target/workflow modification was justified.
+
+## Final Scope Review
+
+PR #16 changes only these M6 areas:
+
+- policy stream-use budgets and tests;
+- core stream admission and transport stream seam plus tests;
+- bounded in-memory simulator stream transport/runtime plus tests;
+- M6 design/implementation documentation and this resume guide.
+
+The final diff contains no Quinn/Iroh/libp2p integration, sockets/TLS, async runtime, real files/resume/sync, persistence, UI/platform adapters, plugins, privileged services, or M7 lifecycle implementation.
 
 ## Exact Next Task
 
-Prepare **M6 — Authorized Data Streams** before implementation.
+1. Verify this documentation-inclusive PR head with locked metadata, rustfmt, workspace check, Clippy `-D warnings`, all workspace tests, and Fuzz Smoke.
+2. Mark PR #16 ready and merge only that exact verified head to `main` using preserved-history merge with expected-head protection.
+3. Verify canonical post-merge `main` CI and confirm the merge tree matches the fuzz-verified PR tree.
+4. Write the final M6 integration record on `main`, verify that documentation-only head, then begin **M7 — disconnect/reconnect/revocation/failure simulator** from the verified canonical `main` state.
 
-1. verify this final M5 integration-record commit on canonical `main`;
-2. create an approved M6 implementation plan derived from `docs/architecture/MASTER-ARCHITECTURE.md`, `docs/architecture/CORE-SIMULATOR.md`, the existing M3 authorized-operation lifecycle, M4 `DataStreamOpen` contract, and M5 bounded transport/session seams;
-3. inspect relevant existing Cross-Lab code and uploaded research repositories before choosing implementation details;
-4. design M6 as small feature-first vertical slices with operation-bound stream admission, bounded stream-open/data queues, bounded byte chunks, explicit backpressure/cancellation, and single/multistream use semantics;
-5. keep real networking out of M6; Quinn remains M8 after the in-memory simulator exit criteria;
-6. branch M6 only from the verified final M5 `main` head and follow test-first implementation/verification/integration.
-
-## M6 Handoff
-
-Per `docs/architecture/CORE-SIMULATOR.md`, M6 delivers operation-bound stream admission, bounded data queues/chunks, backpressure, cancellation, and single/multistream use semantics needed by tests. The existing M4 `DataStreamOpen` protocol header and M3 authorized-operation lifecycle must be reused rather than replaced.
-
-M6 is not yet started. No M6 production code should be added until its implementation plan is approved and the final M5 integration-record head is green.
+Do not start M7 implementation before the M6 merge and final canonical checkpoint are verified.
 
 ## Resume Procedure
 
-Before continuing in a new chat:
-
-1. inspect `main`, recent commits, branch/PR state, and workflow results;
-2. read `docs/architecture/MASTER-ARCHITECTURE.md`, this file, `docs/architecture/CORE-SIMULATOR.md`, and the active milestone plan/ADRs;
-3. reconcile documentation with actual code before editing;
-4. if the final M5 integration-record CI has not passed, finish that verification first; otherwise begin M6 planning from the verified canonical `main` head;
+1. inspect `main`, `m6-authorized-streams`, recent commits, PR/workflow state, and repository cleanliness;
+2. read the Master Architecture, this file, the active milestone plan, and relevant ADRs/architecture contracts;
+3. reconcile docs with actual code before editing;
+4. work in small verified milestones and merge only exact verified heads to `main`;
 5. never rely on chat history or stash as the only copy of incomplete work.

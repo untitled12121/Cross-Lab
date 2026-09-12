@@ -1,3 +1,5 @@
+use std::num::NonZeroU32;
+
 use crosslab_identity::DeviceId;
 use crosslab_policy::{
     AuthorizationGrant, AuthorizedOperation, CapabilityId, CapabilityVersion,
@@ -275,4 +277,160 @@ fn explicit_terminal_transitions_prevent_further_use() {
         ),
         Err(OperationError::Inactive(OperationState::Consumed))
     );
+}
+
+#[test]
+fn single_action_cannot_reserve_stream_use() {
+    let fixture = Fixture::new();
+    let mut operation =
+        AuthorizedOperation::issue(fixture.grant.clone(), 10, 20, UsePolicy::SingleAction).unwrap();
+
+    assert_eq!(
+        operation.reserve_stream_use(
+            &fixture.use_context(),
+            15,
+            fixture.trust_revision,
+            fixture.policy_revision,
+        ),
+        Err(OperationError::StreamUseNotAllowed)
+    );
+    assert_eq!(operation.reserved_stream_uses(), 0);
+}
+
+#[test]
+fn single_stream_budget_is_monotonic() {
+    let fixture = Fixture::new();
+    let mut operation =
+        AuthorizedOperation::issue(fixture.grant.clone(), 10, 20, UsePolicy::SingleStream).unwrap();
+
+    operation
+        .reserve_stream_use(
+            &fixture.use_context(),
+            15,
+            fixture.trust_revision,
+            fixture.policy_revision,
+        )
+        .unwrap();
+
+    assert_eq!(operation.reserved_stream_uses(), 1);
+    assert!(operation.stream_budget_exhausted());
+    assert_eq!(
+        operation.reserve_stream_use(
+            &fixture.use_context(),
+            15,
+            fixture.trust_revision,
+            fixture.policy_revision,
+        ),
+        Err(OperationError::StreamBudgetExhausted)
+    );
+    assert_eq!(operation.reserved_stream_uses(), 1);
+}
+
+#[test]
+fn bounded_multi_stream_stops_at_declared_budget() {
+    let fixture = Fixture::new();
+    let mut operation = AuthorizedOperation::issue(
+        fixture.grant.clone(),
+        10,
+        20,
+        UsePolicy::MultiStream {
+            max_streams: NonZeroU32::new(2).unwrap(),
+        },
+    )
+    .unwrap();
+
+    for expected in 1..=2 {
+        operation
+            .reserve_stream_use(
+                &fixture.use_context(),
+                15,
+                fixture.trust_revision,
+                fixture.policy_revision,
+            )
+            .unwrap();
+        assert_eq!(operation.reserved_stream_uses(), expected);
+    }
+
+    assert!(operation.stream_budget_exhausted());
+    assert_eq!(
+        operation.reserve_stream_use(
+            &fixture.use_context(),
+            15,
+            fixture.trust_revision,
+            fixture.policy_revision,
+        ),
+        Err(OperationError::StreamBudgetExhausted)
+    );
+}
+
+#[test]
+fn failed_reservations_do_not_spend_stream_budget() {
+    let fixture = Fixture::new();
+
+    let mut expired =
+        AuthorizedOperation::issue(fixture.grant.clone(), 10, 20, UsePolicy::SingleStream).unwrap();
+    assert_eq!(
+        expired.reserve_stream_use(
+            &fixture.use_context(),
+            20,
+            fixture.trust_revision,
+            fixture.policy_revision,
+        ),
+        Err(OperationError::Inactive(OperationState::Expired))
+    );
+    assert_eq!(expired.reserved_stream_uses(), 0);
+
+    let mut cancelled =
+        AuthorizedOperation::issue(fixture.grant.clone(), 10, 20, UsePolicy::SingleStream).unwrap();
+    cancelled.cancel();
+    assert_eq!(
+        cancelled.reserve_stream_use(
+            &fixture.use_context(),
+            15,
+            fixture.trust_revision,
+            fixture.policy_revision,
+        ),
+        Err(OperationError::Inactive(OperationState::Cancelled))
+    );
+    assert_eq!(cancelled.reserved_stream_uses(), 0);
+
+    let mut revoked =
+        AuthorizedOperation::issue(fixture.grant.clone(), 10, 20, UsePolicy::SingleStream).unwrap();
+    revoked.revoke();
+    assert_eq!(
+        revoked.reserve_stream_use(
+            &fixture.use_context(),
+            15,
+            fixture.trust_revision,
+            fixture.policy_revision,
+        ),
+        Err(OperationError::Inactive(OperationState::Revoked))
+    );
+    assert_eq!(revoked.reserved_stream_uses(), 0);
+
+    let mut trust_changed =
+        AuthorizedOperation::issue(fixture.grant.clone(), 10, 20, UsePolicy::SingleStream).unwrap();
+    assert_eq!(
+        trust_changed.reserve_stream_use(
+            &fixture.use_context(),
+            15,
+            fixture.trust_revision + 1,
+            fixture.policy_revision,
+        ),
+        Err(OperationError::TrustRevisionChanged)
+    );
+    assert_eq!(trust_changed.reserved_stream_uses(), 0);
+
+    let mut policy_changed =
+        AuthorizedOperation::issue(fixture.grant.clone(), 10, 20, UsePolicy::SingleStream).unwrap();
+    assert_eq!(
+        policy_changed.reserve_stream_use(
+            &fixture.use_context(),
+            15,
+            fixture.trust_revision,
+            fixture.policy_revision + 1,
+        ),
+        Err(OperationError::PolicyRevisionChanged)
+    );
+    assert_eq!(policy_changed.reserved_stream_uses(), 0);
 }
