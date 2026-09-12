@@ -284,9 +284,9 @@ fn remote_session_cannot_satisfy_local_only_policy() {
     node_a.send_request(request(0xde)).unwrap();
     assert!(matches!(
         node_b.receive_one(&fixture.initiator_trust),
-        Err(NodeError::Dispatch(ControlDispatchError::AuthorizationDenied(
-            DecisionReason::ConstraintFailed
-        )))
+        Err(NodeError::Dispatch(
+            ControlDispatchError::AuthorizationDenied(DecisionReason::ConstraintFailed)
+        ))
     ));
     assert_eq!(node_b.session().state(), SessionState::Active);
 }
@@ -321,9 +321,9 @@ fn locally_revoked_peer_is_rejected_before_explicit_teardown() {
     let revoked = fixture.revoke_initiator();
     assert!(matches!(
         node_b.receive_one(&revoked),
-        Err(NodeError::Dispatch(ControlDispatchError::AuthorizationDenied(
-            DecisionReason::RevokedPeer
-        )))
+        Err(NodeError::Dispatch(
+            ControlDispatchError::AuthorizationDenied(DecisionReason::RevokedPeer)
+        ))
     ));
     assert_eq!(node_b.session().state(), SessionState::Closed);
     assert!(endpoint_b.is_closed());
