@@ -8,7 +8,7 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 ## Current Milestone
 
-**M8 — Quinn Transport: Tasks 1–4 are GREEN; Task 5 bounded unidirectional stream bridge is next.**
+**M8 — Quinn Transport: Tasks 1–5 are GREEN; Task 6 session authentication over Quinn is next.**
 
 M1–M7 are complete and integrated into canonical `main`. M8 remains isolated on `m8-quinn-transport` and is not yet ready to merge.
 
@@ -46,7 +46,7 @@ Production dependency baseline:
 - rustls `0.23.44` where concrete loopback trust construction requires it;
 - rcgen `0.14.10` dev-only for ephemeral loopback certificate fixtures.
 
-The uploaded Quinn repository has been inspected. It is Quinn `main` at package version `0.12.0`; it is research/reference material only. Production remains pinned to separately verified published stable Quinn `0.11.11`. Relevant stream and connection behavior was reconciled against that source without copying its architecture.
+The uploaded Quinn repository has been inspected as research/reference material. Production remains pinned to Quinn `0.11.11`. Task 5 additionally reconciled the exact `quinn-0.11.11` tag behavior for `SendStream::reset`, `SendStream::stopped`, `RecvStream::stop`, and `ReadExactError`, so FIN/reset/STOP mapping targets the pinned production API rather than Quinn `main`. Architecture was not copied from Quinn.
 
 ## M8 Completed Work
 
@@ -81,27 +81,39 @@ GREEN checkpoint:
 
 ### Task 4 — Typed config and bounded control bridge
 
-Implemented:
-
-- public typed `QuicTransportConfig` with nonzero bounds for control/stream queues, frame/chunk sizes, concurrent remote streams, receive windows, and idle timeout;
-- `QuicTransportConnection` implementing the transport-neutral `TransportConnection` contract;
-- one bounded Tokio outbound control queue and one bounded inbound control queue;
-- a single control writer preserving ordered records;
-- a control reader that awaits inbound capacity so application backpressure propagates instead of reading indefinitely;
-- a shared terminal state with a watch signal used by connection-owned tasks;
-- a Quinn close monitor that maps remote connection loss into terminal transport state;
-- explicit local close and async `shutdown()` that closes the QUIC connection and joins all owned control/monitor tasks;
-- ownership-preserving `Full`, `TooLarge`, and `Closed` control behavior;
-- active stream methods remain bounded placeholders until Task 5 (`TooLarge`/`Full`/`Empty`, terminal -> `Closed`).
-
-Real loopback tests prove ordered delivery, deterministic bounded local saturation, oversize rejection without capacity consumption, remote-close terminal propagation, and explicit shutdown/task completion.
+Implemented typed nonzero QUIC configuration, `QuicTransportConnection`, bounded ordered control queues, terminal connection state, remote-close monitoring, ownership-preserving control backpressure, and explicit shutdown that closes Quinn and joins connection-owned tasks.
 
 GREEN checkpoint:
 
 - head `5da78c5e0182704b84ffeeb63b5e7f57d7b47257`;
-- CI `34685447091` — `cargo metadata --locked`, `cargo fmt --check`, workspace check, Clippy `-D warnings`, and the full workspace test suite passed; `crosslab-transport-quic` ran 9/9 tests successfully.
+- CI `34685447091` — locked metadata, rustfmt, workspace check, Clippy `-D warnings`, and the full workspace test suite passed; the QUIC crate passed 9/9 tests.
 
-The concrete constructor remains crate-private because making it public would leak Quinn stream/connection types across the adapter boundary. Until a production endpoint/bootstrap orchestration path consumes that constructor, narrow non-test dead-code allowances remain on the staged private binding/connection/record modules rather than weakening the architecture.
+### Task 5 — Bounded unidirectional data-stream bridge
+
+Implemented:
+
+- synchronous outgoing stream-slot reservation with an owned semaphore permit;
+- bounded per-stream outbound chunk queues with ownership-preserving `Full`, `TooLarge`, and `Closed` outcomes;
+- asynchronous Quinn `open_uni()` drivers that write one bounded opening record followed by ordered bounded chunk records;
+- a bounded inbound accept queue and explicit concurrent-remote-stream semaphore;
+- opening-record validation before an `IncomingUniStream` becomes visible to the application;
+- bounded inbound chunk queues with application backpressure propagated to the Quinn reader task;
+- graceful FIN mapped to `StreamReceiveError::Finished` only after queued chunks drain;
+- sender `cancel()` and sender drop mapped to Quinn RESET and receiver `Cancelled`;
+- receiver `cancel()`/drop mapped to Quinn STOP, observed by the sender through `SendStream::stopped()` so later sends fail closed;
+- connection terminal state cancelling active send/receive stream authority and rejecting future open/accept operations;
+- a connection-owned task registry that atomically stops accepting child stream tasks before shutdown drains and joins all owned task handles;
+- private record framing now distinguishes clean FIN (`ReadExactError::FinishedEarly(0)` while reading a new record prefix) from reset/truncation without weakening existing framing bounds.
+
+The Task 5 RED checkpoint was commit `8dc278bde3b560fdce2356f1a2c5e8636217f322`; CI `34685655519` passed lockfile/format/check/Clippy and failed all eight new stream tests specifically because the old placeholder returned `StreamOpenError::Full` for every valid open.
+
+GREEN checkpoint:
+
+- latest verified implementation head before this documentation-only refresh: `cd7ac6ca71bbc253ffdeee9584aa886dcca15d62`;
+- CI `34686263644` — `cargo metadata --locked`, `cargo fmt --check`, workspace check, Clippy `-D warnings`, and `cargo test --workspace --all-features` all passed;
+- `crosslab-transport-quic` passed 17/17 tests, including all eight Task 5 real-loopback scenarios for ordered chunks, opening/stream-slot bounds, chunk bounds/backpressure, FIN, RESET/drop, STOP, and connection-close cancellation.
+
+The concrete Quinn constructor remains crate-private because making it public would leak Quinn types across the adapter boundary. Narrow staged non-test dead-code allowances remain only where production endpoint/bootstrap orchestration has not yet consumed private adapter helpers.
 
 ## Active Pull Request
 
@@ -114,29 +126,25 @@ The concrete constructor remains crate-private because making it public would le
 
 The approved implementation plan still requires:
 
-1. Task 5 — bounded authorized unidirectional stream bridge with opening-frame/chunk limits, stream-slot saturation, FIN/reset/stop/cancellation semantics, and terminal propagation;
-2. Task 6 — prove the existing Cross-Lab session-auth protocol over the Quinn exporter binding without creating a second authentication architecture;
-3. remaining reconnect/revocation/failure/shutdown integration scenarios from the M8 plan;
-4. final dependency/boundary/security review and full workspace verification;
-5. update architecture/docs for completed M8 factual state;
-6. only then merge the exact verified M8 head to `main` and verify canonical `main` after merge.
+1. Task 6 — prove the existing Cross-Lab session-auth protocol over the Quinn exporter binding without creating a second authentication architecture;
+2. Task 7 — prove control, authorized streams, reconnect, revocation, failure, saturation, cancellation, and shutdown integration scenarios over Quinn;
+3. Task 8 — final dependency/boundary/security review, architecture reconciliation, full workspace verification, and durable M9 handoff;
+4. only then merge the exact verified M8 head to `main` and verify canonical `main` after merge.
 
 ## Exact Next Task
 
-Start **Task 5 RED** from `docs/plans/phase-1/M8-quinn-transport.md`.
+Start **Task 6 RED** from `docs/plans/phase-1/M8-quinn-transport.md`.
 
-Write real loopback tests first for the unidirectional stream bridge proving at minimum:
+Use the existing production session-auth domain APIs and bounded bootstrap wire format. Test-only Quinn orchestration must exchange the existing `SessionAuthHello` and role-separated proof messages over the same reserved bidirectional control stream, activate ordinary `LogicalSession` state using the Quinn TLS-exporter `ChannelBinding`, then promote that same stream into `QuicTransportConnection`.
 
-- opening-frame delivery followed by ordered payload chunks;
-- bounded outgoing stream-slot saturation with opening-frame ownership preservation;
-- opening-frame and chunk oversize rejection before queue/stream allocation;
-- bounded chunk backpressure with ownership preservation;
-- graceful sender finish maps to receiver `Finished` after queued chunks drain;
-- sender cancellation/reset maps to receiver `Cancelled`;
-- receiver cancellation/stop causes later sender work to fail closed;
-- connection loss cancels pending and active stream authority and future open/accept calls fail closed.
+RED coverage must prove at minimum:
 
-Verify the RED failure before implementing the minimal stream bridge.
+- trusted peers can activate with `AuthenticatedConfidentialChannel` over the real Quinn exporter binding;
+- a proof bound to the wrong connection binding is rejected before `Active`;
+- a proof from an old connection cannot be replayed after reconnect;
+- ordinary authenticated control traffic is not accepted before session authentication completes.
+
+Do not introduce a Quinn certificate-to-`DeviceId` mapping, a second authentication transcript, or an adapter-specific authorization bypass.
 
 ## Resume Procedure
 
