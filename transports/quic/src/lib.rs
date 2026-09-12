@@ -1,8 +1,7 @@
 use core::fmt;
 
+#[cfg_attr(not(test), allow(dead_code))]
 mod binding;
-
-pub(crate) use binding::derive_channel_binding;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuicTransportError {
