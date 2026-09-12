@@ -1,8 +1,9 @@
 use std::num::{NonZeroU32, NonZeroUsize};
 
 use crosslab_core::{
-    ChannelBinding, LogicalSession, SessionActivation, SessionAuthRole, SessionAuthTranscriptV1,
-    SessionHandshakeSide, StreamAdmission, StreamAdmissionError, TransportSecurityClass,
+    AdmittedStream, ChannelBinding, LogicalSession, SessionActivation, SessionAuthRole,
+    SessionAuthTranscriptV1, SessionHandshakeSide, StreamAdmission, StreamAdmissionError,
+    TransportSecurityClass,
 };
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
@@ -188,13 +189,28 @@ impl Fixture {
         &self,
         admission: &mut StreamAdmission,
         open: &DataStreamOpen,
-    ) -> Result<crosslab_core::AdmittedStream, StreamAdmissionError> {
+    ) -> Result<AdmittedStream, StreamAdmissionError> {
+        self.admit_with_revisions(
+            admission,
+            open,
+            self.trust_revision,
+            self.policy_revision,
+        )
+    }
+
+    fn admit_with_revisions(
+        &self,
+        admission: &mut StreamAdmission,
+        open: &DataStreamOpen,
+        trust_revision: u64,
+        policy_revision: u64,
+    ) -> Result<AdmittedStream, StreamAdmissionError> {
         admission.admit_inbound(
             &self.session,
             open,
             15,
-            self.trust_revision,
-            self.policy_revision,
+            trust_revision,
+            policy_revision,
         )
     }
 }
@@ -395,13 +411,7 @@ fn terminal_expired_and_revision_invalid_operations_fail() {
         let mut admission = StreamAdmission::new(NonZeroUsize::new(4).unwrap());
         admission.register_operation(operation).unwrap();
         assert_eq!(
-            admission.admit_inbound(
-                &fixture.session,
-                &open,
-                15,
-                trust_revision,
-                policy_revision,
-            ),
+            fixture.admit_with_revisions(&mut admission, &open, trust_revision, policy_revision),
             Err(StreamAdmissionError::Operation(expected))
         );
     }
