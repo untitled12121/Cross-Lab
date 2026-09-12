@@ -1,6 +1,4 @@
-use crosslab_core::{
-    SessionAuthError, SessionError, SessionState, TransportSecurityClass,
-};
+use crosslab_core::{SessionAuthError, SessionError, SessionState, TransportSecurityClass};
 
 #[tokio::test]
 async fn session_auth_quinn_trusted_peers_activate() {
@@ -33,14 +31,14 @@ async fn session_auth_quinn_trusted_peers_activate() {
 #[tokio::test]
 async fn session_auth_wrong_connection_binding_fails_before_active() {
     let fixture = AuthFixture::new();
-    let rejected = match authenticate_loopback_session_pair(&fixture, AuthAttempt::WrongBinding).await
-    {
-        Ok(pair) => {
-            pair.shutdown().await;
-            panic!("session authentication accepted a proof bound to another channel")
-        }
-        Err(rejected) => rejected,
-    };
+    let rejected =
+        match authenticate_loopback_session_pair(&fixture, AuthAttempt::WrongBinding).await {
+            Ok(pair) => {
+                pair.shutdown().await;
+                panic!("session authentication accepted a proof bound to another channel")
+            }
+            Err(rejected) => rejected,
+        };
 
     assert_eq!(rejected.client_session.state(), SessionState::Closed);
     assert_eq!(rejected.server_session.state(), SessionState::Closed);
