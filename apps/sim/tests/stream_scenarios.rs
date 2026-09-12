@@ -11,8 +11,8 @@ use crosslab_identity::{
 };
 use crosslab_policy::{
     AuthorizationContext, AuthorizedOperation, CapabilityId, CapabilityVersion,
-    CapabilityVersionRange, LocalCapability, NetworkClass, OperationName, PolicyRule, PolicyState,
-    RuleEffect, RuleId, TransitionId, TrustRecord, TrustState, UsePolicy,
+    CapabilityVersionRange, LocalCapability, NetworkClass, OperationId, OperationName, PolicyRule,
+    PolicyState, RuleEffect, RuleId, TransitionId, TrustRecord, TrustState, UsePolicy,
 };
 use crosslab_protocol::{
     CapabilityAdvertisement, CapabilityAdvertisementEntry, DataStreamOpen, FeatureSet,
@@ -199,16 +199,11 @@ impl Fixture {
         AuthorizedOperation::issue(self.grant.clone(), 10, 20, use_policy).unwrap()
     }
 
-    fn open(
-        &self,
-        operation: &AuthorizedOperation,
-        stream_index: u32,
-        stream_byte: u8,
-    ) -> DataStreamOpen {
+    fn open(&self, operation_id: OperationId, stream_index: u32, stream_byte: u8) -> DataStreamOpen {
         DataStreamOpen::new(
             self.sender_session.context().unwrap().session_id(),
             StreamId::from_bytes([stream_byte; 16]),
-            operation.id(),
+            operation_id,
             self.capability.clone(),
             self.version,
             self.operation_name.clone(),
@@ -228,8 +223,9 @@ fn s007_authorized_single_stream_flows_in_order_and_cannot_be_reused() {
     let fixture = Fixture::new(&pair);
     let (sender_endpoint, receiver_endpoint) = pair.endpoints();
     let operation = fixture.operation(UsePolicy::SingleStream);
-    let open = fixture.open(&operation, 0, 0x71);
-    let mut sender = SimStreamRuntime::new(
+    let operation_id = operation.id();
+    let open = fixture.open(operation_id, 0, 0x71);
+    let sender = SimStreamRuntime::new(
         &fixture.sender_session,
         sender_endpoint,
         NonZeroUsize::new(4).unwrap(),
@@ -262,12 +258,12 @@ fn s007_authorized_single_stream_flows_in_order_and_cannot_be_reused() {
         Err(SimStreamError::Receive(StreamReceiveError::Finished))
     ));
 
-    let second = fixture.open(&fixture.operation(UsePolicy::SingleStream), 0, 0x72);
+    let second = fixture.open(operation_id, 0, 0x72);
     let mut second_send = sender.open_uni(&second).unwrap();
     assert!(matches!(
         receiver.accept_one(15, fixture.trust_revision, fixture.policy_revision),
         Err(SimStreamError::Admission(
-            StreamAdmissionError::OperationNotFound
+            StreamAdmissionError::DuplicateStreamIndex
         ))
     ));
     assert!(second_send.try_send_chunk(vec![9]).is_err());
@@ -282,10 +278,12 @@ fn saturated_runtime_leaves_pending_stream_and_operation_budget_unspent() {
         max_streams: NonZeroU32::new(2).unwrap(),
     });
     let single = fixture.operation(UsePolicy::SingleStream);
-    let multi_first = fixture.open(&multi, 0, 0x73);
-    let single_open = fixture.open(&single, 0, 0x74);
-    let multi_second = fixture.open(&multi, 1, 0x75);
-    let mut sender = SimStreamRuntime::new(
+    let multi_id = multi.id();
+    let single_id = single.id();
+    let multi_first = fixture.open(multi_id, 0, 0x73);
+    let single_open = fixture.open(single_id, 0, 0x74);
+    let multi_second = fixture.open(multi_id, 1, 0x75);
+    let sender = SimStreamRuntime::new(
         &fixture.sender_session,
         sender_endpoint,
         NonZeroUsize::new(2).unwrap(),
@@ -302,14 +300,14 @@ fn saturated_runtime_leaves_pending_stream_and_operation_budget_unspent() {
 
     let _multi_first_send = sender.open_uni(&multi_first).unwrap();
     let mut single_send = sender.open_uni(&single_open).unwrap();
-    let first_id = receiver
+    let first_stream_id = receiver
         .accept_one(15, fixture.trust_revision, fixture.policy_revision)
         .unwrap();
-    let single_id = receiver
+    let single_stream_id = receiver
         .accept_one(15, fixture.trust_revision, fixture.policy_revision)
         .unwrap();
-    assert_eq!(first_id, multi_first.stream_id());
-    assert_eq!(single_id, single_open.stream_id());
+    assert_eq!(first_stream_id, multi_first.stream_id());
+    assert_eq!(single_stream_id, single_open.stream_id());
 
     let _multi_second_send = sender.open_uni(&multi_second).unwrap();
     assert!(matches!(
@@ -319,7 +317,7 @@ fn saturated_runtime_leaves_pending_stream_and_operation_budget_unspent() {
 
     single_send.finish();
     assert!(matches!(
-        receiver.try_receive_chunk(single_id),
+        receiver.try_receive_chunk(single_stream_id),
         Err(SimStreamError::Receive(StreamReceiveError::Finished))
     ));
 
