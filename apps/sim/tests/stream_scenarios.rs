@@ -2,8 +2,8 @@ use std::num::{NonZeroU32, NonZeroUsize};
 
 use crosslab_core::{
     LogicalSession, SessionActivation, SessionAuthRole, SessionAuthTranscriptV1,
-    SessionHandshakeSide, StreamAdmissionError, StreamReceiveError, TransportConnection,
-    TransportSecurityClass,
+    SessionHandshakeSide, SessionState, StreamAcceptError, StreamAdmissionError,
+    StreamReceiveError, TransportConnection, TransportSecurityClass,
 };
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
@@ -12,8 +12,8 @@ use crosslab_identity::{
 use crosslab_policy::{
     AuthorizationContext, AuthorizedOperation, CapabilityId, CapabilityVersion,
     CapabilityVersionRange, LocalCapability, NetworkClass, OperationError, OperationId,
-    OperationName, PolicyRule, PolicyState, RuleEffect, RuleId, TransitionId, TrustRecord,
-    TrustState, UsePolicy,
+    OperationName, PolicyRule, PolicyState, RuleEffect, RuleId, SessionId, TransitionId,
+    TrustRecord, TrustState, TrustTransition, UsePolicy,
 };
 use crosslab_protocol::{
     CapabilityAdvertisement, CapabilityAdvertisementEntry, DataStreamOpen, FeatureSet,
@@ -25,8 +25,13 @@ use crosslab_sim::{
 };
 
 struct Fixture {
-    sender_session: LogicalSession,
-    receiver_session: LogicalSession,
+    root_key: SigningKey,
+    root: OwnerRootRecord,
+    sender_session: Option<LogicalSession>,
+    receiver_session: Option<LogicalSession>,
+    session_id: SessionId,
+    receiver_device_id: DeviceId,
+    sender_trust: TrustRecord,
     capability: CapabilityId,
     version: CapabilityVersion,
     operation_name: OperationName,
@@ -159,6 +164,8 @@ impl Fixture {
                 .unwrap();
         }
 
+        let session_id = receiver_session.context().unwrap().session_id();
+        let receiver_device_id = receiver_credential.device_id();
         let trust_revision = sender_trust.trust_revision();
         let mut policy = PolicyState::new();
         policy
@@ -172,8 +179,8 @@ impl Fixture {
             .unwrap();
         let context = AuthorizationContext::new(
             sender_credential.device_id(),
-            receiver_credential.device_id(),
-            receiver_session.context().unwrap().session_id(),
+            receiver_device_id,
+            session_id,
             capability.clone(),
             version,
             operation_name.clone(),
@@ -185,8 +192,13 @@ impl Fixture {
         let grant = policy.evaluate(&context).into_grant().unwrap();
 
         Self {
-            sender_session,
-            receiver_session,
+            root_key,
+            root,
+            sender_session: Some(sender_session),
+            receiver_session: Some(receiver_session),
+            session_id,
+            receiver_device_id,
+            sender_trust,
             capability,
             version,
             operation_name,
@@ -194,6 +206,13 @@ impl Fixture {
             policy_revision: policy.revision(),
             grant,
         }
+    }
+
+    fn take_sessions(&mut self) -> (LogicalSession, LogicalSession) {
+        (
+            self.sender_session.take().unwrap(),
+            self.receiver_session.take().unwrap(),
+        )
     }
 
     fn operation(&self, use_policy: UsePolicy) -> AuthorizedOperation {
@@ -216,11 +235,10 @@ impl Fixture {
                 RuleEffect::Allow,
             ))
             .unwrap();
-        let session = self.receiver_session.context().unwrap();
         let context = AuthorizationContext::new(
             source,
-            session.local_device_id(),
-            session.session_id(),
+            self.receiver_device_id,
+            self.session_id,
             self.capability.clone(),
             self.version,
             self.operation_name.clone(),
@@ -241,7 +259,7 @@ impl Fixture {
         stream_byte: u8,
     ) -> DataStreamOpen {
         DataStreamOpen::new(
-            self.sender_session.context().unwrap().session_id(),
+            self.session_id,
             StreamId::from_bytes([stream_byte; 16]),
             operation_id,
             self.capability.clone(),
@@ -250,6 +268,19 @@ impl Fixture {
             StreamDirection::SourceToDestination,
             stream_index,
         )
+    }
+
+    fn revoked_sender(&self, transition_byte: u8) -> TrustRecord {
+        let transition = TrustTransition::issue_root_revocation(
+            &self.sender_trust,
+            TransitionId::from_bytes([transition_byte; 32]),
+            &self.root,
+            &self.root_key,
+        )
+        .unwrap();
+        let mut revoked = self.sender_trust;
+        transition.apply_root(&mut revoked, &self.root).unwrap();
+        revoked
     }
 }
 
@@ -260,19 +291,20 @@ fn transport_pair() -> MemoryTransportPair {
 #[test]
 fn s007_authorized_single_stream_flows_in_order_and_cannot_be_reused() {
     let pair = transport_pair();
-    let fixture = Fixture::new(&pair);
+    let mut fixture = Fixture::new(&pair);
     let (sender_endpoint, receiver_endpoint) = pair.endpoints();
     let operation = fixture.operation(UsePolicy::SingleStream);
     let operation_id = operation.id();
     let open = fixture.open(operation_id, 0, 0x71);
-    let sender = SimStreamRuntime::new(
-        &fixture.sender_session,
+    let (sender_session, receiver_session) = fixture.take_sessions();
+    let mut sender = SimStreamRuntime::new(
+        sender_session,
         sender_endpoint,
         NonZeroUsize::new(4).unwrap(),
     )
     .unwrap();
     let mut receiver = SimStreamRuntime::new(
-        &fixture.receiver_session,
+        receiver_session,
         receiver_endpoint,
         NonZeroUsize::new(4).unwrap(),
     )
@@ -312,7 +344,7 @@ fn s007_authorized_single_stream_flows_in_order_and_cannot_be_reused() {
 #[test]
 fn saturated_runtime_leaves_pending_stream_and_operation_budget_unspent() {
     let pair = transport_pair();
-    let fixture = Fixture::new(&pair);
+    let mut fixture = Fixture::new(&pair);
     let (sender_endpoint, receiver_endpoint) = pair.endpoints();
     let multi = fixture.operation(UsePolicy::MultiStream {
         max_streams: NonZeroU32::new(2).unwrap(),
@@ -323,14 +355,15 @@ fn saturated_runtime_leaves_pending_stream_and_operation_budget_unspent() {
     let multi_first = fixture.open(multi_id, 0, 0x73);
     let single_open = fixture.open(single_id, 0, 0x74);
     let multi_second = fixture.open(multi_id, 1, 0x75);
-    let sender = SimStreamRuntime::new(
-        &fixture.sender_session,
+    let (sender_session, receiver_session) = fixture.take_sessions();
+    let mut sender = SimStreamRuntime::new(
+        sender_session,
         sender_endpoint,
         NonZeroUsize::new(2).unwrap(),
     )
     .unwrap();
     let mut receiver = SimStreamRuntime::new(
-        &fixture.receiver_session,
+        receiver_session,
         receiver_endpoint,
         NonZeroUsize::new(2).unwrap(),
     )
@@ -372,18 +405,19 @@ fn saturated_runtime_leaves_pending_stream_and_operation_budget_unspent() {
 #[test]
 fn unregistered_operation_is_rejected_before_payload_exposure() {
     let pair = transport_pair();
-    let fixture = Fixture::new(&pair);
+    let mut fixture = Fixture::new(&pair);
     let (sender_endpoint, receiver_endpoint) = pair.endpoints();
     let operation = fixture.operation(UsePolicy::SingleStream);
     let open = fixture.open(operation.id(), 0, 0x76);
-    let sender = SimStreamRuntime::new(
-        &fixture.sender_session,
+    let (sender_session, receiver_session) = fixture.take_sessions();
+    let mut sender = SimStreamRuntime::new(
+        sender_session,
         sender_endpoint,
         NonZeroUsize::new(2).unwrap(),
     )
     .unwrap();
     let mut receiver = SimStreamRuntime::new(
-        &fixture.receiver_session,
+        receiver_session,
         receiver_endpoint,
         NonZeroUsize::new(2).unwrap(),
     )
@@ -407,19 +441,20 @@ fn unregistered_operation_is_rejected_before_payload_exposure() {
 #[test]
 fn authenticated_peer_mismatch_is_rejected_and_cancelled() {
     let pair = transport_pair();
-    let fixture = Fixture::new(&pair);
+    let mut fixture = Fixture::new(&pair);
     let (sender_endpoint, receiver_endpoint) = pair.endpoints();
     let operation =
         fixture.operation_for_source(DeviceId::from_bytes([0x77; 32]), UsePolicy::SingleStream);
     let open = fixture.open(operation.id(), 0, 0x78);
-    let sender = SimStreamRuntime::new(
-        &fixture.sender_session,
+    let (sender_session, receiver_session) = fixture.take_sessions();
+    let mut sender = SimStreamRuntime::new(
+        sender_session,
         sender_endpoint,
         NonZeroUsize::new(2).unwrap(),
     )
     .unwrap();
     let mut receiver = SimStreamRuntime::new(
-        &fixture.receiver_session,
+        receiver_session,
         receiver_endpoint,
         NonZeroUsize::new(2).unwrap(),
     )
@@ -439,10 +474,11 @@ fn authenticated_peer_mismatch_is_rejected_and_cancelled() {
 #[test]
 fn malformed_open_is_cancelled_without_dangling_runtime_state() {
     let pair = transport_pair();
-    let fixture = Fixture::new(&pair);
+    let mut fixture = Fixture::new(&pair);
     let (sender_endpoint, receiver_endpoint) = pair.endpoints();
+    let (_, receiver_session) = fixture.take_sessions();
     let mut receiver = SimStreamRuntime::new(
-        &fixture.receiver_session,
+        receiver_session,
         receiver_endpoint,
         NonZeroUsize::new(2).unwrap(),
     )
@@ -458,20 +494,21 @@ fn malformed_open_is_cancelled_without_dangling_runtime_state() {
 }
 
 #[test]
-fn shutdown_cancels_active_streams_and_closes_transport() {
+fn shutdown_cancels_active_streams_and_closes_session_and_transport() {
     let pair = transport_pair();
-    let fixture = Fixture::new(&pair);
+    let mut fixture = Fixture::new(&pair);
     let (sender_endpoint, receiver_endpoint) = pair.endpoints();
     let operation = fixture.operation(UsePolicy::SingleStream);
     let open = fixture.open(operation.id(), 0, 0x79);
-    let sender = SimStreamRuntime::new(
-        &fixture.sender_session,
+    let (sender_session, receiver_session) = fixture.take_sessions();
+    let mut sender = SimStreamRuntime::new(
+        sender_session,
         sender_endpoint,
         NonZeroUsize::new(2).unwrap(),
     )
     .unwrap();
     let mut receiver = SimStreamRuntime::new(
-        &fixture.receiver_session,
+        receiver_session,
         receiver_endpoint,
         NonZeroUsize::new(2).unwrap(),
     )
@@ -485,10 +522,106 @@ fn shutdown_cancels_active_streams_and_closes_transport() {
     send.try_send_chunk(vec![1]).unwrap();
 
     receiver.shutdown();
+    receiver.shutdown();
 
+    assert_eq!(receiver.session().state(), SessionState::Closed);
     assert!(sender_endpoint.is_closed());
     assert!(receiver_endpoint.is_closed());
     assert!(send.try_send_chunk(vec![2]).is_err());
+    assert!(matches!(
+        receiver.try_receive_chunk(stream_id),
+        Err(SimStreamError::StreamNotFound)
+    ));
+}
+
+#[test]
+fn disconnect_during_accept_closes_stream_runtime_session() {
+    let pair = transport_pair();
+    let mut fixture = Fixture::new(&pair);
+    let (_, receiver_endpoint) = pair.endpoints();
+    let (_, receiver_session) = fixture.take_sessions();
+    let mut receiver = SimStreamRuntime::new(
+        receiver_session,
+        receiver_endpoint,
+        NonZeroUsize::new(2).unwrap(),
+    )
+    .unwrap();
+
+    pair.faults().disconnect_now();
+    assert!(matches!(
+        receiver.accept_one(15, fixture.trust_revision, fixture.policy_revision),
+        Err(SimStreamError::Accept(StreamAcceptError::Closed))
+    ));
+    assert_eq!(receiver.session().state(), SessionState::Closed);
+}
+
+#[test]
+fn disconnect_during_active_stream_cancels_authority_and_closes_session() {
+    let pair = transport_pair();
+    let mut fixture = Fixture::new(&pair);
+    let (sender_endpoint, receiver_endpoint) = pair.endpoints();
+    let operation = fixture.operation(UsePolicy::SingleStream);
+    let open = fixture.open(operation.id(), 0, 0x7a);
+    let (sender_session, receiver_session) = fixture.take_sessions();
+    let mut sender = SimStreamRuntime::new(
+        sender_session,
+        sender_endpoint,
+        NonZeroUsize::new(2).unwrap(),
+    )
+    .unwrap();
+    let mut receiver = SimStreamRuntime::new(
+        receiver_session,
+        receiver_endpoint,
+        NonZeroUsize::new(2).unwrap(),
+    )
+    .unwrap();
+    receiver.register_operation(operation).unwrap();
+
+    let _send = sender.open_uni(&open).unwrap();
+    let stream_id = receiver
+        .accept_one(15, fixture.trust_revision, fixture.policy_revision)
+        .unwrap();
+
+    pair.faults().disconnect_now();
+    assert!(matches!(
+        receiver.try_receive_chunk(stream_id),
+        Err(SimStreamError::Receive(StreamReceiveError::Cancelled))
+    ));
+    assert_eq!(receiver.session().state(), SessionState::Closed);
+}
+
+#[test]
+fn accepted_peer_revocation_cancels_stream_authority_and_closes_session() {
+    let pair = transport_pair();
+    let mut fixture = Fixture::new(&pair);
+    let revoked_sender = fixture.revoked_sender(0x7b);
+    let (sender_endpoint, receiver_endpoint) = pair.endpoints();
+    let operation = fixture.operation(UsePolicy::SingleStream);
+    let open = fixture.open(operation.id(), 0, 0x7c);
+    let (sender_session, receiver_session) = fixture.take_sessions();
+    let mut sender = SimStreamRuntime::new(
+        sender_session,
+        sender_endpoint,
+        NonZeroUsize::new(2).unwrap(),
+    )
+    .unwrap();
+    let mut receiver = SimStreamRuntime::new(
+        receiver_session,
+        receiver_endpoint,
+        NonZeroUsize::new(2).unwrap(),
+    )
+    .unwrap();
+    receiver.register_operation(operation).unwrap();
+
+    let mut send = sender.open_uni(&open).unwrap();
+    let stream_id = receiver
+        .accept_one(15, fixture.trust_revision, fixture.policy_revision)
+        .unwrap();
+
+    receiver.apply_peer_revocation(&revoked_sender).unwrap();
+    assert_eq!(receiver.session().state(), SessionState::Closed);
+    assert!(receiver_endpoint.is_closed());
+    assert!(send.try_send_chunk(vec![9]).is_err());
     assert!(matches!(
         receiver.try_receive_chunk(stream_id),
         Err(SimStreamError::StreamNotFound)
