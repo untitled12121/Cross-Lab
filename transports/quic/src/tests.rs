@@ -3,10 +3,13 @@ use std::{
     sync::Arc,
 };
 
-use quinn::{ClientConfig, Connection, Endpoint, ServerConfig};
+use quinn::{ClientConfig, Connection, Endpoint, RecvStream, SendStream, ServerConfig};
 use rustls::{RootCertStore, pki_types::PrivatePkcs8KeyDer};
 
-use crate::binding::derive_channel_binding;
+use crate::{
+    binding::derive_channel_binding,
+    record::{RecordError, read_record, write_record},
+};
 
 struct LoopbackConnectionPair {
     _client_endpoint: Endpoint,
@@ -28,6 +31,69 @@ async fn exporter_binding_matches_peer_and_changes_on_reconnect() {
     let second = loopback_connection_pair().await;
     let second_client = derive_channel_binding(&second.client).unwrap();
     assert_ne!(first_client.bytes(), second_client.bytes());
+}
+
+#[tokio::test]
+async fn record_round_trip_accepts_exact_limit() {
+    let pair = loopback_connection_pair().await;
+    let (mut send, mut recv) = open_test_bi(&pair).await;
+    let payload = vec![0x41; 8];
+
+    write_record(&mut send, &payload, 8).await.unwrap();
+    send.finish().unwrap();
+
+    assert_eq!(read_record(&mut recv, 8, false).await.unwrap(), payload);
+}
+
+#[tokio::test]
+async fn record_reader_rejects_declared_length_before_allocating_body() {
+    let pair = loopback_connection_pair().await;
+    let (mut send, mut recv) = open_test_bi(&pair).await;
+    send.write_all(&9_u32.to_be_bytes()).await.unwrap();
+    send.write_all(&[0_u8]).await.unwrap();
+    send.finish().unwrap();
+
+    assert_eq!(
+        read_record(&mut recv, 8, false).await,
+        Err(RecordError::TooLarge {
+            declared: 9,
+            max: 8,
+        })
+    );
+}
+
+#[tokio::test]
+async fn record_reader_rejects_empty_when_not_allowed() {
+    let pair = loopback_connection_pair().await;
+    let (mut send, mut recv) = open_test_bi(&pair).await;
+    send.write_all(&0_u32.to_be_bytes()).await.unwrap();
+    send.finish().unwrap();
+
+    assert_eq!(
+        read_record(&mut recv, 8, false).await,
+        Err(RecordError::Empty)
+    );
+}
+
+#[tokio::test]
+async fn record_reader_rejects_truncated_body() {
+    let pair = loopback_connection_pair().await;
+    let (mut send, mut recv) = open_test_bi(&pair).await;
+    send.write_all(&4_u32.to_be_bytes()).await.unwrap();
+    send.write_all(&[0x51, 0x52]).await.unwrap();
+    send.finish().unwrap();
+
+    assert!(matches!(
+        read_record(&mut recv, 8, false).await,
+        Err(RecordError::Read)
+    ));
+}
+
+async fn open_test_bi(pair: &LoopbackConnectionPair) -> (SendStream, RecvStream) {
+    let (client, server) = tokio::join!(pair.client.open_bi(), pair.server.accept_bi());
+    let (send, _) = client.unwrap();
+    let (_, recv) = server.unwrap();
+    (send, recv)
 }
 
 async fn loopback_connection_pair() -> LoopbackConnectionPair {
