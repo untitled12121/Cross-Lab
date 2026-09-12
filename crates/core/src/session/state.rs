@@ -110,6 +110,7 @@ pub enum SessionError {
     PeerNotRevoked,
     PeerTrustMismatch,
     PeerCredentialEpochMismatch,
+    PeerTrustRevisionNotAdvanced,
     Protocol(VersionNegotiationError),
     Feature(FeatureNegotiationError),
     Auth(SessionAuthError),
@@ -129,6 +130,8 @@ impl fmt::Display for SessionError {
             }
             Self::PeerCredentialEpochMismatch => formatter
                 .write_str("peer credential epoch does not match the locally accepted trust epoch"),
+            Self::PeerTrustRevisionNotAdvanced => formatter
+                .write_str("peer trust revision does not advance the authenticated snapshot"),
             Self::Protocol(error) => fmt::Display::fmt(error, formatter),
             Self::Feature(error) => fmt::Display::fmt(error, formatter),
             Self::Auth(error) => fmt::Display::fmt(error, formatter),
@@ -325,6 +328,9 @@ impl LogicalSession {
         }
         if peer_trust.accepted_credential_epoch() != context.peer_credential_epoch() {
             return Err(SessionError::PeerCredentialEpochMismatch);
+        }
+        if peer_trust.trust_revision() <= context.peer_trust_revision() {
+            return Err(SessionError::PeerTrustRevisionNotAdvanced);
         }
 
         self.state = SessionState::Revoked;
