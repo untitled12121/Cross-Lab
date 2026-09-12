@@ -4,9 +4,7 @@ use crosslab_core::{
     ControlDispatchError, ControlDispatcher, ControlReceiveError, ControlSendError, InboundControl,
     LogicalSession, SessionError, SessionState, TransportConnection,
 };
-use crosslab_policy::{
-    DecisionReason, LocalCapability, NetworkClass, PolicyState, TrustRecord,
-};
+use crosslab_policy::{DecisionReason, LocalCapability, NetworkClass, PolicyState, TrustRecord};
 use crosslab_protocol::{
     CancelRequest, CapabilityAdvertisement, ControlRequest, ControlResponse, ControlResponseResult,
     EnvelopeBody, Event, ProtocolFailure, ProtocolWireError, RequestId, SessionClose,

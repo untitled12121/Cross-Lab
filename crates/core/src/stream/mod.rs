@@ -254,7 +254,10 @@ impl StreamAdmission {
         else {
             return;
         };
-        if self.operations[position].operation.stream_budget_exhausted() {
+        if self.operations[position]
+            .operation
+            .stream_budget_exhausted()
+        {
             self.operations[position].operation.consume();
         }
         if self.operations[position].operation.state() != OperationState::Active {
