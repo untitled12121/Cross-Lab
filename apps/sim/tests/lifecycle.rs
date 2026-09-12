@@ -341,19 +341,24 @@ fn request(byte: u8) -> ControlRequest {
     )
 }
 
-fn exchange_capabilities(node_a: &mut SimNode<'_>, node_b: &mut SimNode<'_>) {
+fn exchange_capabilities(
+    node_a: &mut SimNode<'_>,
+    node_b: &mut SimNode<'_>,
+    responder_trust: &TrustRecord,
+    initiator_trust: &TrustRecord,
+) {
     node_a
         .send_capability_advertisement(Fixture::advertisement())
         .unwrap();
     assert_eq!(
-        node_b.receive_one().unwrap(),
+        node_b.receive_one(initiator_trust).unwrap(),
         NodeEvent::CapabilitiesUpdated
     );
     node_b
         .send_capability_advertisement(Fixture::advertisement())
         .unwrap();
     assert_eq!(
-        node_a.receive_one().unwrap(),
+        node_a.receive_one(responder_trust).unwrap(),
         NodeEvent::CapabilitiesUpdated
     );
 }
@@ -371,6 +376,7 @@ fn s008_disconnect_reconnect_creates_fresh_session_and_capability_state() {
         old_endpoint_a,
         PolicyState::new(),
         vec![local_capability.clone()],
+        NetworkClass::Local,
         NonZeroUsize::new(CAPACITY).unwrap(),
     )
     .unwrap();
@@ -379,11 +385,17 @@ fn s008_disconnect_reconnect_creates_fresh_session_and_capability_state() {
         old_endpoint_b,
         PolicyState::new(),
         vec![local_capability.clone()],
+        NetworkClass::Local,
         NonZeroUsize::new(CAPACITY).unwrap(),
     )
     .unwrap();
 
-    exchange_capabilities(&mut old_node_a, &mut old_node_b);
+    exchange_capabilities(
+        &mut old_node_a,
+        &mut old_node_b,
+        &fixture.responder_trust,
+        &fixture.initiator_trust,
+    );
     assert_eq!(
         old_node_a
             .session()
@@ -398,7 +410,7 @@ fn s008_disconnect_reconnect_creates_fresh_session_and_capability_state() {
 
     old_pair.faults().disconnect_now();
     assert!(matches!(
-        old_node_a.receive_one(),
+        old_node_a.receive_one(&fixture.responder_trust),
         Err(NodeError::Receive(
             crosslab_core::ControlReceiveError::Closed
         ))
@@ -433,6 +445,7 @@ fn s008_disconnect_reconnect_creates_fresh_session_and_capability_state() {
         new_endpoint_a,
         PolicyState::new(),
         vec![local_capability.clone()],
+        NetworkClass::Local,
         NonZeroUsize::new(CAPACITY).unwrap(),
     )
     .unwrap();
@@ -441,13 +454,19 @@ fn s008_disconnect_reconnect_creates_fresh_session_and_capability_state() {
         new_endpoint_b,
         PolicyState::new(),
         vec![local_capability],
+        NetworkClass::Local,
         NonZeroUsize::new(CAPACITY).unwrap(),
     )
     .unwrap();
 
     assert_eq!(new_node_a.next_send_sequence(), Some(0));
     assert_eq!(new_node_a.expected_receive_sequence(), Some(0));
-    exchange_capabilities(&mut new_node_a, &mut new_node_b);
+    exchange_capabilities(
+        &mut new_node_a,
+        &mut new_node_b,
+        &fixture.responder_trust,
+        &fixture.initiator_trust,
+    );
     assert_eq!(
         new_node_a
             .session()
@@ -483,6 +502,7 @@ fn s008_old_control_envelope_is_rejected_by_new_session() {
         new_endpoint_b,
         PolicyState::new(),
         vec![Fixture::local_capability()],
+        NetworkClass::Local,
         NonZeroUsize::new(CAPACITY).unwrap(),
     )
     .unwrap();
@@ -504,7 +524,7 @@ fn s008_old_control_envelope_is_rejected_by_new_session() {
         .unwrap();
 
     assert!(matches!(
-        new_node_b.receive_one(),
+        new_node_b.receive_one(&fixture.initiator_trust),
         Err(NodeError::Dispatch(ControlDispatchError::InvalidSession))
     ));
     assert_eq!(new_node_b.session().state(), SessionState::Closed);
@@ -561,6 +581,7 @@ fn s009_active_control_revocation_terminates_local_authority() {
         endpoint_a,
         PolicyState::new(),
         vec![local_capability.clone()],
+        NetworkClass::Local,
         NonZeroUsize::new(CAPACITY).unwrap(),
     )
     .unwrap();
@@ -569,11 +590,17 @@ fn s009_active_control_revocation_terminates_local_authority() {
         endpoint_b,
         PolicyState::new(),
         vec![local_capability],
+        NetworkClass::Local,
         NonZeroUsize::new(CAPACITY).unwrap(),
     )
     .unwrap();
 
-    exchange_capabilities(&mut node_a, &mut node_b);
+    exchange_capabilities(
+        &mut node_a,
+        &mut node_b,
+        &fixture.responder_trust,
+        &fixture.initiator_trust,
+    );
     node_b.send_request(request(0xa4)).unwrap();
     assert_eq!(node_b.pending_request_count(), 1);
 
@@ -586,7 +613,7 @@ fn s009_active_control_revocation_terminates_local_authority() {
         Err(NodeError::Session(SessionError::InvalidState))
     ));
     assert!(matches!(
-        node_b.receive_one(),
+        node_b.receive_one(&revoked_initiator),
         Err(NodeError::Receive(
             crosslab_core::ControlReceiveError::Closed
         ))
@@ -677,6 +704,7 @@ fn s009_unrelated_or_unrevoked_trust_cannot_kill_active_session() {
         endpoint_b,
         PolicyState::new(),
         vec![Fixture::local_capability()],
+        NetworkClass::Local,
         NonZeroUsize::new(CAPACITY).unwrap(),
     )
     .unwrap();
