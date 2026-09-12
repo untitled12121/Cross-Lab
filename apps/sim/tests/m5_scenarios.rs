@@ -2,9 +2,9 @@ use std::num::NonZeroUsize;
 
 use crosslab_core::{
     ChannelBinding, LogicalSession, PairingFlowError, PairingId, PairingInvitation,
-    PairingInvitationState, PairingInviterFlow, PairingJoinerFlow, PairingSecret, SessionActivation,
-    SessionAuthProof, SessionAuthRole, SessionAuthTranscriptV1, SessionError, SessionHandshakeSide,
-    SessionState, TransportConnection, TransportSecurityClass,
+    PairingInvitationState, PairingInviterFlow, PairingJoinerFlow, PairingSecret,
+    SessionActivation, SessionAuthProof, SessionAuthRole, SessionAuthTranscriptV1, SessionError,
+    SessionHandshakeSide, SessionState, TransportConnection, TransportSecurityClass,
 };
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
@@ -148,12 +148,7 @@ impl M5Fixture {
             )
             .unwrap();
         let accepted = joiner
-            .accept_credential(
-                &self.root,
-                &self.delegation,
-                &credential,
-                &self.joiner_key,
-            )
+            .accept_credential(&self.root, &self.delegation, &credential, &self.joiner_key)
             .unwrap();
         let trust = inviter
             .commit_trust(&accepted, TransitionId::from_bytes([0x1b; 32]))
@@ -262,12 +257,8 @@ impl M5Fixture {
             &ranges,
             &features,
         );
-        let responder = SessionHandshakeSide::new(
-            joiner_credential,
-            &self.delegation,
-            &ranges,
-            &features,
-        );
+        let responder =
+            SessionHandshakeSide::new(joiner_credential, &self.delegation, &ranges, &features);
         let mut session = LogicalSession::new();
         let result = session.authenticate(SessionActivation::new(
             &self.root,
@@ -422,9 +413,12 @@ fn m5_end_to_end_pairing_session_capability_and_control_flow() {
 #[test]
 fn wrong_pairing_secret_fails_before_trust_commit() {
     let fixture = M5Fixture::new();
-    let mut inviter =
-        PairingInviterFlow::new(fixture.invitation(), fixture.inviter_hello, fixture.joiner_hello)
-            .unwrap();
+    let mut inviter = PairingInviterFlow::new(
+        fixture.invitation(),
+        fixture.inviter_hello,
+        fixture.joiner_hello,
+    )
+    .unwrap();
     let wrong_joiner = PairingJoinerFlow::new(
         PairingSecret::from_bytes([0xee; 32]),
         fixture.inviter_hello,
