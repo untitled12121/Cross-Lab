@@ -2,7 +2,7 @@ use std::num::NonZeroUsize;
 
 use crosslab_core::{
     ControlReceiveError, ControlSendError, LogicalSession, SessionActivation, SessionAuthRole,
-    SessionAuthTranscriptV1, SessionHandshakeSide, SessionState, TransportConnection,
+    SessionAuthTranscriptV1, SessionError, SessionHandshakeSide, SessionState, TransportConnection,
     TransportSecurityClass,
 };
 use crosslab_crypto::SigningKey;
@@ -11,6 +11,7 @@ use crosslab_identity::{
 };
 use crosslab_policy::{
     CapabilityId, CapabilityVersion, OperationName, PolicyState, TransitionId, TrustRecord,
+    TrustTransition,
 };
 use crosslab_protocol::{
     ControlRequest, FeatureSet, ProtocolRange, ProtocolVersion, RequestId, RetryClass,
@@ -24,6 +25,7 @@ const CAPACITY: usize = 4;
 
 struct Fixture {
     owner_id: OwnerId,
+    root_key: SigningKey,
     root: OwnerRootRecord,
     delegation: AuthorityDelegation,
     initiator_key: SigningKey,
@@ -84,6 +86,7 @@ impl Fixture {
 
         Self {
             owner_id,
+            root_key,
             root,
             delegation,
             initiator_key,
@@ -166,6 +169,19 @@ impl Fixture {
 
         (a, b)
     }
+
+    fn revoke(&self, record: TrustRecord, transition_byte: u8) -> TrustRecord {
+        let transition = TrustTransition::issue_root_revocation(
+            &record,
+            TransitionId::from_bytes([transition_byte; 32]),
+            &self.root,
+            &self.root_key,
+        )
+        .unwrap();
+        let mut revoked = record;
+        transition.apply_root(&mut revoked, &self.root).unwrap();
+        revoked
+    }
 }
 
 fn pair() -> MemoryTransportPair {
@@ -231,4 +247,84 @@ fn receive_side_transport_loss_closes_active_session() {
         Err(NodeError::Receive(ControlReceiveError::Closed))
     ));
     assert_eq!(node.session().state(), SessionState::Closed);
+}
+
+#[test]
+fn accepted_peer_revocation_closes_session_transport_and_pending_authority() {
+    let fixture = Fixture::new();
+    let revoked_initiator = fixture.revoke(fixture.initiator_trust, 0xc2);
+    let pair = pair();
+    let (_, session_b) = fixture.sessions(&pair);
+    let (_, endpoint_b) = pair.endpoints();
+    let mut node = SimNode::new(
+        session_b,
+        endpoint_b,
+        PolicyState::new(),
+        Vec::new(),
+        NonZeroUsize::new(CAPACITY).unwrap(),
+    )
+    .unwrap();
+
+    node.send_request(request(0xc3)).unwrap();
+    assert_eq!(node.pending_request_count(), 1);
+
+    node.apply_peer_revocation(&revoked_initiator).unwrap();
+    assert_eq!(node.session().state(), SessionState::Closed);
+    assert_eq!(node.pending_request_count(), 0);
+    assert!(endpoint_b.is_closed());
+}
+
+#[test]
+fn wrong_peer_revocation_cannot_terminate_an_unrelated_session() {
+    let fixture = Fixture::new();
+    let wrong = TrustRecord::trusted(
+        fixture.owner_id,
+        DeviceId::from_bytes([0xc4; 32]),
+        fixture.initiator_credential.credential_epoch(),
+        TransitionId::from_bytes([0xc5; 32]),
+    );
+    let wrong = fixture.revoke(wrong, 0xc6);
+    let pair = pair();
+    let (_, session_b) = fixture.sessions(&pair);
+    let (_, endpoint_b) = pair.endpoints();
+    let mut node = SimNode::new(
+        session_b,
+        endpoint_b,
+        PolicyState::new(),
+        Vec::new(),
+        NonZeroUsize::new(CAPACITY).unwrap(),
+    )
+    .unwrap();
+
+    assert!(matches!(
+        node.apply_peer_revocation(&wrong),
+        Err(NodeError::Session(SessionError::PeerTrustMismatch))
+    ));
+    assert_eq!(node.session().state(), SessionState::Active);
+    assert!(!endpoint_b.is_closed());
+}
+
+#[test]
+fn shutdown_is_idempotent_and_discards_pending_authority() {
+    let fixture = Fixture::new();
+    let pair = pair();
+    let (session_a, _) = fixture.sessions(&pair);
+    let (endpoint_a, _) = pair.endpoints();
+    let mut node = SimNode::new(
+        session_a,
+        endpoint_a,
+        PolicyState::new(),
+        Vec::new(),
+        NonZeroUsize::new(CAPACITY).unwrap(),
+    )
+    .unwrap();
+
+    node.send_request(request(0xc7)).unwrap();
+    assert_eq!(node.pending_request_count(), 1);
+
+    node.shutdown();
+    node.shutdown();
+    assert_eq!(node.session().state(), SessionState::Closed);
+    assert_eq!(node.pending_request_count(), 0);
+    assert!(endpoint_a.is_closed());
 }
