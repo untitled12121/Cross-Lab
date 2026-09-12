@@ -8,7 +8,7 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 ## Current Milestone
 
-**M7 — Failure and Security Lifecycle: planning complete; Tasks 1–4 GREEN; Tasks 5–7 pending.**
+**M7 — Failure and Security Lifecycle: planning complete; Tasks 1–5 GREEN; Tasks 6–7 pending.**
 
 M1–M6 are complete, verified, and integrated into canonical `main`.
 
@@ -17,7 +17,7 @@ M1–M6 are complete, verified, and integrated into canonical `main`.
 - `main` — exact verified M6 integration-record head `d419f0fd410f0d2da69cc9bf2e4c20600033b7fb`; CI `34671802373` passed locked metadata, rustfmt, workspace check, Clippy `-D warnings`, and all tests.
 - `m7-failure-security-lifecycle` — active M7 branch created exactly from that verified `main` head.
 - PR #17 — draft, `feat: implement M7 failure and security lifecycle`; keep draft until the exact final documentation-inclusive head passes CI and Fuzz Smoke.
-- Current verified M7 production/test head: `29762639d6c6054aa3996b3429437e7c00469966`.
+- Current verified M7 production/test head: `f50eb7da92f783b863725994c79643aef675e939`.
 
 ## Architecture Baseline
 
@@ -120,25 +120,41 @@ Evidence:
 - initial acceptance head `9eff524c0473f13a41578f4dc82c198ed6414779`, CI `34676322835` — stopped only at rustfmt;
 - formatting-only final GREEN `29762639d6c6054aa3996b3429437e7c00469966`, CI `34676386066` — locked metadata, rustfmt, workspace check, Clippy `-D warnings`, and all tests passed.
 
+## M7 Task 5 — S-009 Active Revocation and Reconnect Denial
+
+Delivered in `apps/sim/tests/lifecycle.rs` only; trust verification/transition ownership remains in policy and runtime reaction remains in core/simulator.
+
+Coverage proves:
+
+- a real owner-root-signed `TrustTransition` is verified/applied to local trust state before ordinary runtime revocation reaction;
+- accepted matching peer revocation terminates active control authority locally, clears pending request state, closes transport/session, and rejects later ordinary work;
+- accepted matching peer revocation terminates an active admitted data stream, cancels stream/admission authority, closes transport/session, and removes the runtime stream;
+- a completely fresh transport/binding/nonces/proofs using the same still-cryptographically-valid credential is denied when local peer trust is revoked: `SessionError::PeerNotTrusted`, fail-closed `SessionState::Closed`;
+- a still-trusted unchanged record returns `SessionError::PeerNotRevoked` without killing the session;
+- a revoked record for an unrelated device returns `SessionError::PeerTrustMismatch` without killing the intended session.
+
+Evidence:
+
+- initial acceptance head `7408ed5e0ca2258dcc0c208517bf06f87289d49b`, CI `34676515865` — locked metadata passed and CI stopped only at rustfmt;
+- formatting-only final GREEN `f50eb7da92f783b863725994c79643aef675e939`, CI `34676614329` — locked metadata, rustfmt, workspace check, Clippy `-D warnings`, and all tests passed.
+
 ## Exact Next Task
 
-Begin **M7 Task 5 — S-009 active revocation and reconnect-after-revocation denial**.
+Begin **M7 Task 6 — failure/resource/shutdown closeout without duplicate coverage**.
 
 Execution contract:
 
-1. extend `apps/sim/tests/lifecycle.rs`; no new production API is expected;
-2. use a real root-signed `TrustTransition` and apply it locally before runtime reaction;
-3. prove active control authority closes locally, clears pending requests, closes transport, and rejects further ordinary work;
-4. prove active stream authority and admitted stream state terminate locally on accepted peer revocation;
-5. build a completely fresh transport/binding/nonces/proofs with the same still-valid credential but revoked local trust and require `SessionError::PeerNotTrusted` plus terminal closed authentication state;
-6. prove an unrelated revoked record and a still-trusted record return typed errors without killing the intended active session;
-7. run focused lifecycle tests and full workspace gates before Task 6.
+1. inventory existing control/stream/memory-transport tests for replay, malformed input, sequence failures, duplicate requests, bounded saturation/backpressure, cancellation, stream setup failure, and shutdown before adding anything;
+2. add only the missing control backpressure transaction proof: on `ControlSendError::Full`, send sequence and pending-request bookkeeping stay unchanged, session remains active, then retry succeeds after capacity drains;
+3. strengthen fatal-input cleanup only where existing tests do not already prove closed session + cleared pending authority + closed transport;
+4. strengthen idempotent control/stream shutdown assertions only where still missing;
+5. do not duplicate parser boundary/fuzz coverage and do not edit memory transport tests unless the inventory finds a real missing transport invariant;
+6. run locked metadata, rustfmt, workspace check, Clippy `-D warnings`, all workspace tests, then require exact-head GitHub CI and existing Fuzz Smoke.
 
-Do not introduce recovery/reauthorization, credential rotation, peer acknowledgement, or resumable-session semantics.
+No new production abstraction or parser is expected in Task 6.
 
 ## Remaining M7 Tasks
 
-- Task 6 — fill only missing N-042..N-046 resource/cancellation/shutdown lifecycle assertions;
 - Task 7 — scope review, final CI/fuzz, merge exact verified head to `main`, post-merge verification, final `CURRENT.md`, then M8 handoff.
 
 ## Resume Procedure
