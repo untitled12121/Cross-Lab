@@ -8,15 +8,15 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 ## Current Milestone
 
-**M5 — Pairing + Authenticated Logical Session Simulator: implementation complete and exact-code verified; canonical integration pending.**
+**M5 — Pairing + Authenticated Logical Session Simulator: complete, verified, and integrated.**
 
-M1–M4 and M5 Tasks 1–8 are integrated into canonical `main`. M5 Task 9 is complete on `m5-closeout`, with exact code verification recorded below. PR #15 must be documentation-inclusive verified and merged before M6 begins.
+M1–M5 are integrated into canonical `main`. The next milestone is **M6 — Authorized Data Streams**, which has not started. M6 implementation must begin only after this final M5 integration-record commit is verified on `main` and an approved M6 implementation plan is created/read from the architecture baseline.
 
 ## Branch State
 
-- `main` — canonical branch through verified M5 Task 8; final Task 8 integration-record head `3d7789868431eaae11cd9dee2053c7f6976e0989` passed CI `34661243555`.
-- `m5-closeout` — active M5 Task 9 branch; PR #15.
-- `m5-session`, `m5-session-auth`, `m5-memory-transport`, `m5-session-state`, `m5-control-sim` — historical M5 branches fully contained in `main`; safe to delete after human convenience checks.
+- `main` — canonical branch through complete M5; Task 9 PR #15 merged at `e9ddec90b9ad232c917c302188400abb23a39c54`, and post-merge CI `34662096131` passed.
+- `m5-closeout` — historical M5 Task 9 branch, fully contained in `main`; safe to delete.
+- `m5-session`, `m5-session-auth`, `m5-memory-transport`, `m5-session-state`, `m5-control-sim` — historical M5 branches fully contained in `main`; safe to delete.
 - `planning`, `protocol`, `trust-policy` — historical branches with zero commits ahead of `main`; safe to delete if their names are not wanted for archival navigation.
 
 Deleting merged branch refs does not delete commits or pull-request history. The connected GitHub tool does not expose branch-ref deletion, so branch cleanup is a GitHub UI/CLI action.
@@ -69,43 +69,47 @@ Complete, verified, and integrated through PR #14. Includes a focused bounded `C
 
 Valid RED head `1bfaabc763f63b53e378aedf44cd3a1318084058` failed only for missing Task 8 APIs after lockfile/rustfmt passed in CI `34659510366`. Exact code head `af5a535e4531a480f85ea91f79503f852f842009` passed CI `34659955291`; documentation-inclusive head `212212e4a353abf7d4b505dd633c9f95a04e3027` passed CI `34660116960`; PR #14 merged at `b14f4c4a7b42b22c1c8de23be4c8c518e24dbc34`; post-merge CI `34660239776` passed; final integration-record head `3d7789868431eaae11cd9dee2053c7f6976e0989` passed CI `34661243555`.
 
-## M5 Task 9 — end-to-end scenarios, parser fuzz expansion, and closeout
+### Task 9 — end-to-end scenarios, parser fuzz expansion, and closeout
 
-Implementation complete and exact-code verified on `m5-closeout`.
+Complete, verified, and integrated through PR #15.
 
 Implemented:
 
 - `apps/sim/tests/m5_scenarios.rs` composes the existing production-domain slices instead of adding parallel security logic;
 - positive composed path: pairing confirmations -> joiner credential issuance/proof -> trust commit -> fresh memory channel binding -> authenticated logical sessions -> bidirectional capability exchange -> policy-authorized sequenced request/response/event;
 - integration negatives for wrong pairing secret, replayed session proof under a fresh nonce, proof bound to another channel, stale locally accepted credential epoch, and owner-mismatched peer trust;
-- new decoder-only fuzz targets for `decode_pairing_bootstrap` and `decode_session_auth_bootstrap`;
+- decoder-only fuzz targets for `decode_pairing_bootstrap` and `decode_session_auth_bootstrap`;
 - both targets registered in `fuzz/Cargo.toml` and added to the existing bounded 256-run Fuzz Smoke workflow;
-- final scope diff from verified Task 8 base contains only the composed simulator test plus fuzz manifest/targets/workflow; no production code or M6 functionality changed.
+- final Task 9 code diff contains only the composed simulator test plus fuzz manifest/targets/workflow; no production behavior or M6 functionality changed.
 
-Verification evidence:
+Verification and integration evidence:
 
 - initial scenario head `b70bf41c2f32b8d4812cdfa114264d19b6727354` stopped at rustfmt and is not semantic verification evidence;
-- formatted scenario head `3bdd5e46831158a8b48d018630d4c8445a886e67` passed lockfile, rustfmt, workspace check, Clippy with warnings denied, and full tests in CI `34661728554`;
-- exact Task 9 code head `8a4ae668d6cbfd329d72914d8b47279263cf14d7` passed full workspace CI `34661829192`;
-- the same exact code head passed Fuzz Smoke `34661829233`, including `control_frame`, `data_stream_open`, `identifiers`, `pairing_bootstrap`, and `session_auth`, each bounded to 256 runs;
-- compare `3d7789868431eaae11cd9dee2053c7f6976e0989..8a4ae668d6cbfd329d72914d8b47279263cf14d7` contains exactly five Task 9 code/test-infrastructure files and no production/M6 changes.
+- formatted scenario head `3bdd5e46831158a8b48d018630d4c8445a886e67` passed full CI `34661728554`;
+- exact Task 9 code head `8a4ae668d6cbfd329d72914d8b47279263cf14d7` passed full workspace CI `34661829192` and Fuzz Smoke `34661829233`;
+- documentation-inclusive PR head `654683b62cde22cdd528920fcebeec64d6ca3119` passed full CI `34661982660` and Fuzz Smoke `34661982649`;
+- Fuzz Smoke covers `control_frame`, `data_stream_open`, `identifiers`, `pairing_bootstrap`, and `session_auth`, each bounded to 256 runs;
+- PR #15 merged with preserved history at `e9ddec90b9ad232c917c302188400abb23a39c54`;
+- the merge commit tree `bd2a00f42833f1f970fcb0ba77e03104b874f9a6` is exactly the same tree as the fuzz-verified documentation-inclusive PR head;
+- post-merge canonical `main` CI `34662096131` passed lockfile, Rustfmt, workspace check, Clippy with warnings denied, and the full workspace test suite;
+- Fuzz Smoke has `pull_request`/manual triggers but no `push` trigger, so no redundant post-merge fuzz run was emitted; the merged tree is exactly the tree already verified by Fuzz Smoke `34661982649`.
 
 ## Exact Next Task
 
-Finish **M5 canonical integration** before starting M6:
+Prepare **M6 — Authorized Data Streams** before implementation.
 
-1. verify this documentation-inclusive PR #15 head with the normal full workspace CI; the previously verified `8a4ae668...` fuzz result remains exact for the unchanged fuzz/code surface;
-2. update PR #15 with final scope/evidence and mark it ready;
-3. merge only the exact verified documentation-inclusive head into `main` with preserved history;
-4. verify post-merge canonical `main` CI and the path-triggered Fuzz Smoke result;
-5. write the final M5 integration record on `main`, then verify that documentation-only head;
-6. only then begin **M6 — Authorized Data Streams**.
+1. verify this final M5 integration-record commit on canonical `main`;
+2. create an approved M6 implementation plan derived from `docs/architecture/MASTER-ARCHITECTURE.md`, `docs/architecture/CORE-SIMULATOR.md`, the existing M3 authorized-operation lifecycle, M4 `DataStreamOpen` contract, and M5 bounded transport/session seams;
+3. inspect relevant existing Cross-Lab code and uploaded research repositories before choosing implementation details;
+4. design M6 as small feature-first vertical slices with operation-bound stream admission, bounded stream-open/data queues, bounded byte chunks, explicit backpressure/cancellation, and single/multistream use semantics;
+5. keep real networking out of M6; Quinn remains M8 after the in-memory simulator exit criteria;
+6. branch M6 only from the verified final M5 `main` head and follow test-first implementation/verification/integration.
 
 ## M6 Handoff
 
-Per `docs/architecture/CORE-SIMULATOR.md`, M6 delivers operation-bound stream admission, bounded data queues/chunks, backpressure, cancellation, and single/multistream use semantics needed by tests. The existing M4 `DataStreamOpen` protocol header and M3 authorized-operation lifecycle should be reused rather than replaced.
+Per `docs/architecture/CORE-SIMULATOR.md`, M6 delivers operation-bound stream admission, bounded data queues/chunks, backpressure, cancellation, and single/multistream use semantics needed by tests. The existing M4 `DataStreamOpen` protocol header and M3 authorized-operation lifecycle must be reused rather than replaced.
 
-Before implementing M6, create/read an approved M6 implementation plan derived from the Master Architecture and `CORE-SIMULATOR.md`, inspect the existing operation/data-stream contracts and relevant research repositories, and branch from the verified final M5 `main` head. Do not introduce real networking; Quinn remains M8 after the in-memory simulator exit criteria.
+M6 is not yet started. No M6 production code should be added until its implementation plan is approved and the final M5 integration-record head is green.
 
 ## Resume Procedure
 
@@ -114,5 +118,5 @@ Before continuing in a new chat:
 1. inspect `main`, recent commits, branch/PR state, and workflow results;
 2. read `docs/architecture/MASTER-ARCHITECTURE.md`, this file, `docs/architecture/CORE-SIMULATOR.md`, and the active milestone plan/ADRs;
 3. reconcile documentation with actual code before editing;
-4. complete any integration step listed above before starting the next milestone;
+4. if the final M5 integration-record CI has not passed, finish that verification first; otherwise begin M6 planning from the verified canonical `main` head;
 5. never rely on chat history or stash as the only copy of incomplete work.
