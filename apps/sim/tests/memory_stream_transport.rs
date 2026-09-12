@@ -153,7 +153,10 @@ fn connection_close_cancels_pending_and_active_streams() {
 
     a.close();
 
-    assert_eq!(b.try_accept_uni_stream().unwrap_err(), StreamAcceptError::Closed);
+    assert_eq!(
+        b.try_accept_uni_stream().unwrap_err(),
+        StreamAcceptError::Closed
+    );
     assert_eq!(
         active_receive.try_receive_chunk().unwrap_err(),
         StreamReceiveError::Cancelled
@@ -178,7 +181,10 @@ fn connection_close_cancels_pending_and_active_streams() {
 fn empty_accept_is_nonblocking() {
     let pair = pair(1, 1, 8);
     let (_, b) = pair.endpoints();
-    assert_eq!(b.try_accept_uni_stream().unwrap_err(), StreamAcceptError::Empty);
+    assert_eq!(
+        b.try_accept_uni_stream().unwrap_err(),
+        StreamAcceptError::Empty
+    );
 }
 
 #[test]
