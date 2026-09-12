@@ -199,7 +199,12 @@ impl Fixture {
         AuthorizedOperation::issue(self.grant.clone(), 10, 20, use_policy).unwrap()
     }
 
-    fn open(&self, operation_id: OperationId, stream_index: u32, stream_byte: u8) -> DataStreamOpen {
+    fn open(
+        &self,
+        operation_id: OperationId,
+        stream_index: u32,
+        stream_byte: u8,
+    ) -> DataStreamOpen {
         DataStreamOpen::new(
             self.sender_session.context().unwrap().session_id(),
             StreamId::from_bytes([stream_byte; 16]),
