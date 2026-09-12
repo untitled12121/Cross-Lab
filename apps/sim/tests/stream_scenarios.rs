@@ -409,10 +409,8 @@ fn authenticated_peer_mismatch_is_rejected_and_cancelled() {
     let pair = transport_pair();
     let fixture = Fixture::new(&pair);
     let (sender_endpoint, receiver_endpoint) = pair.endpoints();
-    let operation = fixture.operation_for_source(
-        DeviceId::from_bytes([0x77; 32]),
-        UsePolicy::SingleStream,
-    );
+    let operation =
+        fixture.operation_for_source(DeviceId::from_bytes([0x77; 32]), UsePolicy::SingleStream);
     let open = fixture.open(operation.id(), 0, 0x78);
     let sender = SimStreamRuntime::new(
         &fixture.sender_session,
