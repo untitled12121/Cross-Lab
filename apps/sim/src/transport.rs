@@ -473,8 +473,10 @@ impl MemoryTransportPair {
         Self::with_config(
             MemoryTransportConfig::new(
                 control_capacity,
-                NonZeroUsize::new(DEFAULT_STREAM_CAPACITY).expect("default stream capacity is nonzero"),
-                NonZeroUsize::new(DEFAULT_CHUNK_CAPACITY).expect("default chunk capacity is nonzero"),
+                NonZeroUsize::new(DEFAULT_STREAM_CAPACITY)
+                    .expect("default stream capacity is nonzero"),
+                NonZeroUsize::new(DEFAULT_CHUNK_CAPACITY)
+                    .expect("default chunk capacity is nonzero"),
                 NonZeroUsize::new(DEFAULT_MAX_CHUNK_BYTES).expect("default chunk size is nonzero"),
             ),
             binding,
