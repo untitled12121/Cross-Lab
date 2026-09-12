@@ -3,7 +3,9 @@ use core::fmt;
 #[cfg_attr(not(test), allow(dead_code))]
 mod binding;
 mod config;
+#[cfg_attr(not(test), allow(dead_code))]
 mod connection;
+#[cfg_attr(not(test), allow(dead_code))]
 mod record;
 
 pub use config::QuicTransportConfig;
