@@ -8,9 +8,21 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 ## Current Milestone
 
-**M8 — Quinn Transport: implementation and architecture reconciliation complete on `m8-quinn-transport`; final exact-head CI and integration to `main` are the only remaining M8 steps.**
+**M9 — Remote Networking ADR**
 
-M1–M7 are already integrated into canonical `main`. M8 remains isolated in PR #18 until the documentation-closeout head passes the full gate.
+M1–M8 are complete and integrated into canonical `main`. M9 is the next Phase 1 milestone; M10 remains the first Linux + Android platform vertical slice after the remote-networking architecture is selected.
+
+## Canonical M8 Integration
+
+M8 — Quinn Transport is integrated and independently verified on `main`.
+
+- final feature head: `a93c6367be3174241cbab65b870f16f1543971f9`;
+- exact feature-head CI: `34688453044` — locked metadata, rustfmt, workspace check, Clippy `-D warnings`, and full workspace tests passed;
+- PR #18: `feat: implement M8 Quinn transport` — merged;
+- canonical merge commit: `4a225976a16f34d7485fd259cacf767c84a60706`;
+- post-merge canonical-main CI: `34688527098` — the same full required gate passed.
+
+The merged result is the factual M8 baseline for M9.
 
 ## M8 Result
 
@@ -24,7 +36,7 @@ Implemented and verified behavior includes:
 - ownership-preserving `TooLarge`, `Full`, and `Closed` transport outcomes;
 - bounded ordered control bridge with local backpressure and terminal remote-close propagation;
 - bounded unidirectional data-stream bridge with opening-frame admission, chunk backpressure, FIN, RESET, STOP, cancellation, connection-loss propagation, and joined connection-owned tasks;
-- the existing Cross-Lab session-auth hello/proof flow running over the Quinn TLS-exporter binding without a second authentication transcript or certificate-to-`DeviceId` mapping;
+- existing Cross-Lab session-auth hello/proof flow over the Quinn TLS-exporter binding without a second authentication transcript or certificate-to-`DeviceId` mapping;
 - ordinary capability advertisement, control request/response/event behavior through the existing `SimNode` path over Quinn;
 - operation-bound data streams through the existing `SimStreamRuntime` path over Quinn;
 - reconnect using a fresh Quinn connection, exporter binding, nonces/proofs, `SessionId`, sequence state, capability state, and operation authority;
@@ -36,7 +48,7 @@ No Quinn/Tokio/rustls/socket/TLS-certificate type entered the public/domain stat
 
 ## M8 Resource Defaults
 
-`QuicTransportConfig::default()` currently uses explicit nonzero bounds:
+`QuicTransportConfig::default()` uses explicit nonzero bounds:
 
 - control queue: 8 records;
 - incoming stream queue: 8 streams;
@@ -55,38 +67,16 @@ These are adapter defaults, not protocol permission or capability authority.
 
 ## Dependency and Research State
 
-Production baseline:
+M8 production baseline:
 
 - Quinn `0.11.11`, pinned with only `runtime-tokio` + `rustls-ring`;
 - Tokio `1.53.1`;
 - rustls `0.23.44` only where concrete loopback trust construction requires its public types;
 - rcgen `0.14.10` dev-only for ephemeral loopback certificates.
 
-The uploaded Quinn repository was inspected as research/reference material, and behavior that matters to the adapter was reconciled against the pinned `quinn-0.11.11` API. No Iroh or rust-libp2p dependency entered M8.
+The uploaded Quinn repository was inspected as research/reference material, and behavior relevant to the adapter was reconciled against the pinned `quinn-0.11.11` API. No Iroh or rust-libp2p dependency entered M8.
 
-## Verification Evidence
-
-Task 6 — Cross-Lab session authentication over Quinn:
-
-- verified head `7a1294bd96f600af56e76e550ed853621c047e3b`;
-- CI `34687210505` — locked metadata, rustfmt, workspace check, Clippy `-D warnings`, and full workspace tests passed.
-
-Task 7 — Quinn-backed control/data/reconnect/revocation/failure lifecycle:
-
-- verified head `f01378f1fe579149db1b4c5edd05d0e68a88d39b`;
-- CI `34687943523` — full required gate passed;
-- `crosslab-transport-quic` ran 27 tests at this checkpoint, including the new M8 lifecycle scenarios.
-
-Task 8 architecture/documentation reconciliation before this `CURRENT.md` closeout:
-
-- verified head `d1b44e32aca5219ec9b2cd8c86e599524bbae870`;
-- CI `34688112428` — `cargo metadata --locked`, `cargo fmt --check`, workspace check, Clippy `-D warnings`, and `cargo test --workspace --all-features` all passed;
-- ADR-0008 is indexed as Accepted;
-- the M8 design status/research notes are reconciled with implemented reality;
-- dependency review confirms Quinn/Tokio/rustls remain outside identity/policy/protocol/core;
-- `.github/workflows/fuzz.yml` is not applicable to M8 because M8 does not change its watched protocol/policy/fuzz paths; no fuzz pass is claimed.
-
-This `CURRENT.md` update is documentation-only. Its resulting exact branch head must pass the same full CI gate before PR #18 is merged.
+`.github/workflows/fuzz.yml` was not applicable to M8 because M8 did not change its watched protocol/policy/fuzz paths; no fuzz pass is claimed.
 
 ## Intentional M8 Limits
 
@@ -94,25 +84,30 @@ M8 does not implement discovery, NAT traversal, relay selection, Iroh, rust-libp
 
 Those exclusions are deliberate milestone boundaries, not missing M8 requirements.
 
-## Integration Procedure
-
-1. verify the exact documentation-closeout head of `m8-quinn-transport` with the full repository CI gate;
-2. mark PR #18 ready and merge only that exact verified head to `main`;
-3. verify canonical `main` after merge;
-4. update this file on `main` with the canonical M8 integration commit/CI if needed for an unambiguous durable checkpoint;
-5. do not delete valuable branch state until canonical `main` is verified.
-
 ## Exact Next Development Task
 
-After M8 is integrated and canonical `main` is green, begin **M9 — Remote Networking ADR**.
+Begin **M9 — Remote Networking ADR**.
 
 Per the Master Architecture, M9 must prototype and measure Iroh and, where justified, rust-libp2p approaches against the verified Quinn baseline, then select the remote connectivity/NAT/relay architecture through an ADR.
 
-M9 starts with research/design and benchmarks. Do not introduce Iroh/libp2p production dependencies, remote relay authority, or a second transport/session domain model before that decision is approved.
+Start M9 by:
+
+1. reading the Master Architecture, M8 design/ADR, and current transport/session contracts;
+2. inspecting the uploaded Quinn, Iroh, and rust-libp2p research repositories, including versions, licenses, platform/runtime constraints, NAT traversal/relay behavior, identity coupling, resource model, and maintenance surface;
+3. defining explicit evaluation criteria and benchmark/scenario coverage before choosing a library or architecture;
+4. prototyping only the smallest isolated candidates needed to gather evidence;
+5. measuring candidates against the M8 Quinn baseline for connection establishment, direct-path behavior, relay/fallback behavior where testable, reconnect/failure semantics, resource cost, integration complexity, and preservation of Cross-Lab identity/session boundaries;
+6. recording the selected remote connectivity architecture in an ADR before introducing production Iroh/libp2p dependencies or remote relay authority.
+
+M9 must not create a second Cross-Lab session/authentication model or make third-party endpoint/peer identifiers authoritative Cross-Lab identity.
+
+## Phase 1 Completion Boundary
+
+Phase 1 is not complete yet. After M9 selects the remote networking architecture, M10 must deliver the first platform vertical slice described by the Master Architecture before Phase 1 can be closed for real-device testing.
 
 ## Resume Procedure
 
-1. inspect `main`, active branches/PRs, recent commits/workflows, and this file;
+1. inspect canonical `main`, active branches/PRs, recent commits/workflows, and this file;
 2. read the Master Architecture, active plan, relevant ADRs, and focused transport/session specifications;
 3. reconcile documentation with actual code before changing behavior;
 4. inspect relevant uploaded research repositories before implementing related systems;
