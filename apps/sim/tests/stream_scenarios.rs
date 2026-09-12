@@ -102,18 +102,10 @@ impl Fixture {
         let receiver_proof = transcript
             .create_proof(SessionAuthRole::Responder, &receiver_key)
             .unwrap();
-        let sender_side = SessionHandshakeSide::new(
-            &sender_credential,
-            &delegation,
-            &ranges,
-            &features,
-        );
-        let receiver_side = SessionHandshakeSide::new(
-            &receiver_credential,
-            &delegation,
-            &ranges,
-            &features,
-        );
+        let sender_side =
+            SessionHandshakeSide::new(&sender_credential, &delegation, &ranges, &features);
+        let receiver_side =
+            SessionHandshakeSide::new(&receiver_credential, &delegation, &ranges, &features);
 
         let mut sender_session = LogicalSession::new();
         sender_session
@@ -270,15 +262,13 @@ fn s007_authorized_single_stream_flows_in_order_and_cannot_be_reused() {
         Err(SimStreamError::Receive(StreamReceiveError::Finished))
     ));
 
-    let second = fixture.open(
-        &fixture.operation(UsePolicy::SingleStream),
-        0,
-        0x72,
-    );
+    let second = fixture.open(&fixture.operation(UsePolicy::SingleStream), 0, 0x72);
     let mut second_send = sender.open_uni(&second).unwrap();
     assert!(matches!(
         receiver.accept_one(15, fixture.trust_revision, fixture.policy_revision),
-        Err(SimStreamError::Admission(StreamAdmissionError::OperationNotFound))
+        Err(SimStreamError::Admission(
+            StreamAdmissionError::OperationNotFound
+        ))
     ));
     assert!(second_send.try_send_chunk(vec![9]).is_err());
 }
