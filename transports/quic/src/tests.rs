@@ -207,10 +207,8 @@ async fn promoted_loopback_transport_pair(
         vec![0xA5]
     );
 
-    let config = QuicTransportConfig::default().with_control_limits(
-        nonzero(control_capacity),
-        nonzero(max_control_frame_bytes),
-    );
+    let config = QuicTransportConfig::default()
+        .with_control_limits(nonzero(control_capacity), nonzero(max_control_frame_bytes));
     let client = QuicTransportConnection::new(
         raw.client.clone(),
         client_send,
