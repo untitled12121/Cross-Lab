@@ -6,7 +6,7 @@ use std::{
 use quinn::{ClientConfig, Connection, Endpoint, ServerConfig};
 use rustls::{RootCertStore, pki_types::PrivatePkcs8KeyDer};
 
-use crate::derive_channel_binding;
+use crate::binding::derive_channel_binding;
 
 struct LoopbackConnectionPair {
     _client_endpoint: Endpoint,
