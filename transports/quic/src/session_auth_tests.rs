@@ -188,6 +188,7 @@ impl AuthenticatedLoopbackSessionPair {
     }
 }
 
+#[derive(Debug)]
 struct RejectedAuthentication {
     client_session: LogicalSession,
     server_session: LogicalSession,
