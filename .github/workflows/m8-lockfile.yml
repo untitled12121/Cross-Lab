@@ -1,0 +1,24 @@
+name: M8 Lockfile
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lockfile:
+    name: Generate lockfile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust
+        run: rustup toolchain install 1.98.1 --profile minimal
+      - name: Generate lockfile
+        run: cargo generate-lockfile
+      - name: Upload lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: m8-cargo-lock
+          path: Cargo.lock
+          if-no-files-found: error
