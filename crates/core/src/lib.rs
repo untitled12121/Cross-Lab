@@ -3,6 +3,7 @@
 mod control;
 mod pairing;
 mod session;
+mod stream;
 mod transport;
 
 pub use control::{ControlDispatchError, ControlDispatcher, InboundControl};
@@ -16,6 +17,7 @@ pub use session::{
     SessionAuthRole, SessionAuthTranscriptV1, SessionContext, SessionError, SessionHandshakeSide,
     SessionState,
 };
+pub use stream::{AdmittedStream, StreamAdmission, StreamAdmissionError};
 pub use transport::{
     ChannelBinding, ConnectionMetadata, ControlReceiveError, ControlSendError, TransportConnection,
     TransportSecurityClass,
