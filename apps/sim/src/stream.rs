@@ -33,7 +33,9 @@ impl fmt::Display for SimStreamError {
             Self::Accept(error) => fmt::Display::fmt(error, formatter),
             Self::Receive(error) => fmt::Display::fmt(error, formatter),
             Self::StreamNotFound => formatter.write_str("simulator data stream was not found"),
-            Self::ResourceLimit => formatter.write_str("simulator data stream capacity is exhausted"),
+            Self::ResourceLimit => {
+                formatter.write_str("simulator data stream capacity is exhausted")
+            }
         }
     }
 }
@@ -170,7 +172,9 @@ impl<'a> SimStreamRuntime<'a> {
         let result = self.inbound[position].stream.try_receive_chunk();
         match result {
             Ok(chunk) => Ok(chunk),
-            Err(StreamReceiveError::Empty) => Err(SimStreamError::Receive(StreamReceiveError::Empty)),
+            Err(StreamReceiveError::Empty) => {
+                Err(SimStreamError::Receive(StreamReceiveError::Empty))
+            }
             Err(StreamReceiveError::Finished) => {
                 self.admission.finish_stream(stream_id)?;
                 self.inbound.remove(position);
