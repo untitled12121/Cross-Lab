@@ -236,14 +236,24 @@ async fn run_control_writer(
         };
 
         let Some(frame) = frame else {
-            terminate_shared(&connection, &shared, CONTROL_FAILURE_CODE, b"control sender dropped");
+            terminate_shared(
+                &connection,
+                &shared,
+                CONTROL_FAILURE_CODE,
+                b"control sender dropped",
+            );
             return;
         };
         if write_record(&mut send, &frame, max_control_frame_bytes)
             .await
             .is_err()
         {
-            terminate_shared(&connection, &shared, CONTROL_FAILURE_CODE, b"control write failed");
+            terminate_shared(
+                &connection,
+                &shared,
+                CONTROL_FAILURE_CODE,
+                b"control write failed",
+            );
             return;
         }
     }
