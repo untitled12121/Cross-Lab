@@ -197,10 +197,7 @@ impl Fixture {
         .unwrap()
     }
 
-    fn old_operation(
-        &self,
-        session: &LogicalSession,
-    ) -> (AuthorizedOperation, u64, u64) {
+    fn old_operation(&self, session: &LogicalSession) -> (AuthorizedOperation, u64, u64) {
         let capability = CapabilityId::parse("files.transfer").unwrap();
         let version = CapabilityVersion::new(1, 0);
         let operation_name = OperationName::parse("send").unwrap();
@@ -238,10 +235,7 @@ impl Fixture {
 }
 
 fn pair(binding_byte: u8) -> MemoryTransportPair {
-    MemoryTransportPair::new(
-        NonZeroUsize::new(CAPACITY).unwrap(),
-        [binding_byte; 32],
-    )
+    MemoryTransportPair::new(NonZeroUsize::new(CAPACITY).unwrap(), [binding_byte; 32])
 }
 
 fn request(byte: u8) -> ControlRequest {
@@ -259,11 +253,17 @@ fn exchange_capabilities(node_a: &mut SimNode<'_>, node_b: &mut SimNode<'_>) {
     node_a
         .send_capability_advertisement(Fixture::advertisement())
         .unwrap();
-    assert_eq!(node_b.receive_one().unwrap(), NodeEvent::CapabilitiesUpdated);
+    assert_eq!(
+        node_b.receive_one().unwrap(),
+        NodeEvent::CapabilitiesUpdated
+    );
     node_b
         .send_capability_advertisement(Fixture::advertisement())
         .unwrap();
-    assert_eq!(node_a.receive_one().unwrap(), NodeEvent::CapabilitiesUpdated);
+    assert_eq!(
+        node_a.receive_one().unwrap(),
+        NodeEvent::CapabilitiesUpdated
+    );
 }
 
 #[test]
@@ -307,7 +307,9 @@ fn s008_disconnect_reconnect_creates_fresh_session_and_capability_state() {
     old_pair.faults().disconnect_now();
     assert!(matches!(
         old_node_a.receive_one(),
-        Err(NodeError::Receive(crosslab_core::ControlReceiveError::Closed))
+        Err(NodeError::Receive(
+            crosslab_core::ControlReceiveError::Closed
+        ))
     ));
     assert_eq!(old_node_a.session().state(), SessionState::Closed);
     assert_eq!(old_node_a.pending_request_count(), 0);
@@ -318,8 +320,20 @@ fn s008_disconnect_reconnect_creates_fresh_session_and_capability_state() {
     assert_ne!(new_session_id, old_session_id);
     assert_eq!(new_a.context().unwrap().next_send_sequence(), 0);
     assert_eq!(new_a.context().unwrap().next_receive_sequence(), 0);
-    assert!(new_a.context().unwrap().negotiated_capabilities().is_empty());
-    assert!(new_b.context().unwrap().negotiated_capabilities().is_empty());
+    assert!(
+        new_a
+            .context()
+            .unwrap()
+            .negotiated_capabilities()
+            .is_empty()
+    );
+    assert!(
+        new_b
+            .context()
+            .unwrap()
+            .negotiated_capabilities()
+            .is_empty()
+    );
 
     let (new_endpoint_a, new_endpoint_b) = new_pair.endpoints();
     let mut new_node_a = SimNode::new(
@@ -416,10 +430,7 @@ fn s008_old_operation_cannot_authorize_reconnected_session() {
     let new_pair = pair(0xf1);
     let (_, mut new_b) = fixture.sessions(&new_pair, [0xf2; 32], [0xf3; 32]);
     new_b
-        .negotiate_capabilities(
-            &[Fixture::local_capability()],
-            &Fixture::advertisement(),
-        )
+        .negotiate_capabilities(&[Fixture::local_capability()], &Fixture::advertisement())
         .unwrap();
     let new_session_id = new_b.context().unwrap().session_id();
     assert_ne!(new_session_id, old_b.context().unwrap().session_id());
@@ -438,13 +449,9 @@ fn s008_old_operation_cannot_authorize_reconnected_session() {
     );
 
     assert_eq!(
-        admission.admit_inbound(
-            &new_b,
-            &open,
-            15,
-            trust_revision,
-            policy_revision,
-        ),
-        Err(StreamAdmissionError::Operation(OperationError::BindingMismatch))
+        admission.admit_inbound(&new_b, &open, 15, trust_revision, policy_revision,),
+        Err(StreamAdmissionError::Operation(
+            OperationError::BindingMismatch
+        ))
     );
 }
