@@ -40,7 +40,10 @@ pub async fn run_quinn_loopback_sample(config: EvalConfig) -> Result<Report, Eva
     Ok(report)
 }
 
-async fn run_sample(sample: usize, bulk_payload_bytes: usize) -> Result<Vec<Measurement>, EvalError> {
+async fn run_sample(
+    sample: usize,
+    bulk_payload_bytes: usize,
+) -> Result<Vec<Measurement>, EvalError> {
     let (pair, protected_connect_us) = loopback_connection_pair().await?;
     let control_rtt_us = measure_control_rtt(&pair).await?;
     let bulk_bytes_per_second = measure_bulk_transfer(&pair, bulk_payload_bytes).await?;
@@ -79,8 +82,14 @@ async fn measure_control_rtt(pair: &RawLoopbackPair) -> Result<u128, EvalError> 
     let started = Instant::now();
 
     let client = async {
-        let (mut send, mut recv) = pair.client.open_bi().await.map_err(|_| EvalError::Control)?;
-        send.write_all(&ping).await.map_err(|_| EvalError::Control)?;
+        let (mut send, mut recv) = pair
+            .client
+            .open_bi()
+            .await
+            .map_err(|_| EvalError::Control)?;
+        send.write_all(&ping)
+            .await
+            .map_err(|_| EvalError::Control)?;
         send.finish().map_err(|_| EvalError::Control)?;
 
         let mut echo = [0; CONTROL_BYTES];
@@ -94,7 +103,11 @@ async fn measure_control_rtt(pair: &RawLoopbackPair) -> Result<u128, EvalError> 
     };
 
     let server = async {
-        let (mut send, mut recv) = pair.server.accept_bi().await.map_err(|_| EvalError::Control)?;
+        let (mut send, mut recv) = pair
+            .server
+            .accept_bi()
+            .await
+            .map_err(|_| EvalError::Control)?;
         let mut request = [0; CONTROL_BYTES];
         recv.read_exact(&mut request)
             .await
@@ -121,13 +134,19 @@ async fn measure_bulk_transfer(
 
     let client = async {
         let mut send = pair.client.open_uni().await.map_err(|_| EvalError::Bulk)?;
-        send.write_all(&payload).await.map_err(|_| EvalError::Bulk)?;
+        send.write_all(&payload)
+            .await
+            .map_err(|_| EvalError::Bulk)?;
         send.finish().map_err(|_| EvalError::Bulk)?;
         Ok(())
     };
 
     let server = async {
-        let mut recv = pair.server.accept_uni().await.map_err(|_| EvalError::Bulk)?;
+        let mut recv = pair
+            .server
+            .accept_uni()
+            .await
+            .map_err(|_| EvalError::Bulk)?;
         let mut received = vec![0; bulk_payload_bytes];
         recv.read_exact(&mut received)
             .await
@@ -162,11 +181,10 @@ async fn loopback_connection_pair() -> Result<(RawLoopbackPair, u128), EvalError
 
     let mut roots = RootCertStore::empty();
     roots.add(certificate).map_err(|_| EvalError::Setup)?;
-    let mut client_endpoint =
-        Endpoint::client(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
-            .map_err(|_| EvalError::Setup)?;
-    let client_config = ClientConfig::with_root_certificates(Arc::new(roots))
+    let mut client_endpoint = Endpoint::client(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
         .map_err(|_| EvalError::Setup)?;
+    let client_config =
+        ClientConfig::with_root_certificates(Arc::new(roots)).map_err(|_| EvalError::Setup)?;
     client_endpoint.set_default_client_config(client_config);
 
     let started = Instant::now();
