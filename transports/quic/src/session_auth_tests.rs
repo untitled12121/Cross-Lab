@@ -31,6 +31,8 @@ use crate::{
 const BOOTSTRAP_RECORD_MAX: usize = FrameLimit::BootstrapHello.max_payload_len() + 4;
 const TEST_CLOSE_CODE: VarInt = VarInt::from_u32(0);
 
+mod lifecycle_tests;
+
 struct AuthFixture {
     owner_id: OwnerId,
     root: OwnerRootRecord,
