@@ -8,7 +8,7 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 ## Current Milestone
 
-**M9 — Remote Networking ADR: Tasks 1–3 are GREEN; implementation is paused for manual review before Task 4.**
+**M9 — Remote Networking ADR: Tasks 1–3 and the foundation security hardening gate are GREEN; implementation is paused for manual review before Task 4.**
 
 M1–M8 are complete on canonical `main`. M9 is isolated on `m9-remote-networking` in draft PR #19. M10 remains the first Linux + Android platform vertical slice after the remote-networking architecture is selected.
 
@@ -25,6 +25,10 @@ M1–M8 are complete on canonical `main`. M9 is isolated on `m9-remote-networkin
 Design: `docs/plans/phase-1/M9-remote-networking-design.md`.
 
 Plan: `docs/plans/phase-1/M9-remote-networking.md`.
+
+Foundation hardening plan: `docs/plans/phase-1/M9-foundation-security-hardening.md`.
+
+Security assessment: `security/M9-FOUNDATION-HARDENING-ASSESSMENT.md`.
 
 Durable plan checkpoint: `9add4d7e809d5579fed71b5b279ac9bc7481fc90`, CI `34691111935` — lockfile, rustfmt, workspace check, Clippy `-D warnings`, and full workspace tests passed.
 
@@ -134,6 +138,31 @@ GREEN:
 - CI `34694599723` passed lockfile verification, rustfmt, workspace check, Clippy `-D warnings`, and the complete workspace test suite;
 - all eight Task 3 tests passed: config-limit parity, exact-limit record round trip, hostile declared-length rejection before body allocation, truncated-body rejection, oversize ownership-preserving rejection, ordered bounded backpressure, peer-close propagation, and joined shutdown.
 
+### Foundation security hardening gate
+
+The owner-requested pre-Task-4 hardening pass is complete. It tightened existing invariants without changing the approved M9 architecture.
+
+Completed work:
+
+- made simulator network classification explicit and locally authoritative;
+- validated inbound peer trust provenance, trust state, and authenticated trust revision before policy dispatch;
+- added fail-closed regressions for `Remote + LocalOnly`, local revocation, and wrong-device trust records;
+- reclaimed terminal `StreamAdmission` operation authority so bounded registration capacity is reusable after completion, expiry, or cancellation;
+- made experiment task admission runtime-enforced so post-close futures are dropped instead of detached and owned tasks are joined;
+- redacted connection endpoint descriptions from ordinary `Debug` output;
+- pinned mutable CI/fuzz inputs, committed the fuzz lockfile, and added a required RustSec audit gate;
+- reconciled the simulator's single-stream reuse expectation with the now-retired terminal operation contract.
+
+Verification:
+
+- exact code head `26b9ecd8abf8f7386e440bc4862a6e259d1654fe`;
+- Rust CI `34724799407` passed lockfile verification, `cargo audit`, rustfmt, workspace check, Clippy `-D warnings`, and all workspace tests;
+- Fuzz Smoke `34724799451` passed fuzz lockfile verification, formatting, and all five bounded fuzz targets;
+- focused reconciliation run `34724713810` passed the affected `s007` stream scenario before the complete gate;
+- `cargo audit` found no vulnerability failure and one unsuppressed maintenance warning: `paste 1.0.15` / `RUSTSEC-2024-0436`, traced transitively through the isolated Iroh candidate networking stack. Re-evaluate it with candidate upgrades and before ADR-0009 promotes an architecture.
+
+The technical hardening gate is satisfied. The separate manual-review hold below still applies before Task 4.
+
 ## Required Evidence Still Outstanding
 
 M9 still must prove bounded uni-stream semantics, the experiment-only `TransportConnection` implementation, existing Cross-Lab session authentication over Iroh, lifecycle/reconnect/revocation behavior, owner-controlled relay-only operation, relay/direct path invariants, controlled NAT traversal/recovery evidence, comparable resource/performance measurements, and the ADR-0009 decision.
@@ -142,7 +171,7 @@ Loopback relay tests alone are not NAT evidence. Real Android/mobile lifecycle r
 
 ## Review Hold and Exact Next Task
 
-**Do not begin Task 4 until the current Tasks 1–3 implementation has been manually reviewed and approved.**
+**Do not begin Task 4 until the current Tasks 1–3 implementation and completed foundation hardening checkpoint have been manually reviewed and explicitly approved.**
 
 After approval, the exact next task is **Task 4 — bounded uni-stream bridge and experiment-only `TransportConnection`** from `docs/plans/phase-1/M9-remote-networking.md`.
 
@@ -152,10 +181,12 @@ Task 4 must cover ordered opening/chunks, exact limits, stream-slot and chunk-qu
 
 Two empty temporary refs, `m9-task3-red-temp` and `m9-task3-work`, were accidentally created from Task 2 checkpoint `d28cae010745feae038067ed3f83584809fbe495` while preparing Task 3. No work was committed to them. They are not part of PR #19 and are safe to delete.
 
+`main` branch protection is currently disabled. This is an external repository-administration setting. When administration capability is available, enable protection with force-push/deletion disabled and require the Rust CI check.
+
 ## Resume Procedure
 
 1. verify `main`, `m9-remote-networking`, PR #19, recent commits/workflows, and this file;
-2. read the Master Architecture, approved M9 design/plan, ADR-0008, and existing transport/session contracts;
+2. read the Master Architecture, approved M9 design/plan, ADR-0008, the hardening assessment, and existing transport/session contracts;
 3. inspect relevant Iroh/Quinn research/API behavior before related implementation;
 4. preserve the current manual-review hold until explicitly approved;
 5. after approval, execute each remaining task RED -> verified failure -> minimal GREEN -> full gate;
