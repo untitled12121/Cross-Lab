@@ -4,6 +4,7 @@ use core::fmt;
 pub enum EvalError {
     Setup,
     Connect,
+    ChannelBinding,
     Control,
     Bulk,
     Timeout,
@@ -14,6 +15,7 @@ impl fmt::Display for EvalError {
         formatter.write_str(match self {
             Self::Setup => "failed to set up networking evaluation fixture",
             Self::Connect => "failed to establish protected transport connection",
+            Self::ChannelBinding => "failed to derive protected transport channel binding",
             Self::Control => "control round trip failed",
             Self::Bulk => "bulk transfer failed",
             Self::Timeout => "networking evaluation timed out",
