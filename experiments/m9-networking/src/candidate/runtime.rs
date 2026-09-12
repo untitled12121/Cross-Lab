@@ -275,3 +275,28 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+
+    use super::TaskRegistry;
+
+    #[tokio::test]
+    async fn task_registry_rejects_spawn_after_shutdown_admission_closes() {
+        let registry = TaskRegistry::new();
+        assert!(registry.close_and_take().is_empty());
+
+        let ran = Arc::new(AtomicBool::new(false));
+        let ran_task = Arc::clone(&ran);
+        assert!(!registry.spawn(async move {
+            ran_task.store(true, Ordering::Release);
+        }));
+        tokio::task::yield_now().await;
+
+        assert!(!ran.load(Ordering::Acquire));
+    }
+}
