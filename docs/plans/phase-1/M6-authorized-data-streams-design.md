@@ -1,6 +1,6 @@
 # M6 Authorized Data Streams — Design
 
-**Status:** Draft for written review  
+**Status:** Draft for written review; self-reviewed  
 **Milestone:** Phase 1 / M6  
 **Baseline:** canonical `main` after M5 final integration (`c24f68342709efc72549f0bf8f3ea8df2ef6de48`)
 
@@ -53,9 +53,9 @@ It will continue to own:
 - capability/version/operation;
 - trust and policy revision snapshots;
 - expiry and terminal state;
-- use policy and reserved stream-use count.
+- use policy and monotonically reserved stream-use count.
 
-It does not parse stream headers or own transport handles.
+It does not parse stream headers, interpret `stream_index`, or own transport handles.
 
 ### `crosslab-protocol`
 
@@ -65,7 +65,7 @@ M6 should not change the wire schema unless implementation discovers a concrete 
 
 ### `crosslab-core`
 
-Owns session-bound stream admission and bounded local operation/stream tracking.
+Owns session-bound stream admission, stream-index semantics, and bounded local operation/active-stream tracking.
 
 Core validates the decoded open request against the active session and locally held operation before the simulator may deliver payload bytes.
 
@@ -90,14 +90,14 @@ There is no unlimited/reusable stream policy in M6.
 Semantics:
 
 - `SingleAction` cannot admit a data stream;
-- `SingleStream` permits exactly one reserved stream use and requires `stream_index == 0`;
-- `MultiStream { max_streams }` permits indices in `0..max_streams`;
+- `SingleStream` permits exactly one reserved stream use and core requires `stream_index == 0`;
+- `MultiStream { max_streams }` permits core stream indices in `0..max_streams`;
 - indices need not arrive in order;
-- an index can be reserved only once;
-- a successfully admitted stream permanently spends its stream-use slot;
+- an index can be admitted only once for an operation;
+- a successfully admitted stream permanently spends one stream-use slot;
 - cancellation after admission does not refund that slot.
 
-`AuthorizedOperation` tracks the count of successfully reserved stream uses. Reservation validates the existing operation binding/expiry/revisions before incrementing the count.
+`AuthorizedOperation` tracks only the count of successfully reserved stream uses. Reservation validates the existing operation binding/expiry/revisions before incrementing the count. The policy API has no refund operation; the reserved count is monotonic.
 
 Reservation does **not** immediately change the operation to `Consumed`. This allows cancellation/revocation to remain meaningful while an admitted stream is active. Core marks an operation consumed when its allowed stream budget is exhausted and all admitted streams using that operation are terminal. If fewer than the maximum multi-stream uses are opened, the operation remains active until explicit cancellation, revocation, expiry, or later completion logic.
 
@@ -118,7 +118,7 @@ StreamAdmission
   active session/context
   exact SessionId
   negotiated capability/version
-  unique StreamId
+  unique active StreamId
   known local OperationId
   source/destination peer binding
   operation/capability/version/name match
@@ -150,7 +150,7 @@ The resulting `OperationUseContext` is passed through the existing `AuthorizedOp
 
 ### Atomicity
 
-Admission uses one exclusive mutable core state transition. The operation budget and the used `StreamId` / `(OperationId, stream_index)` records are committed only after every validation succeeds.
+Admission uses one exclusive mutable core state transition. The operation budget, used index, active `StreamId`, and active admitted-stream record are committed only after every validation succeeds.
 
 No partially admitted state is left behind after a rejected open.
 
@@ -158,12 +158,14 @@ No partially admitted state is left behind after a rejected open.
 
 Each logical session owns a bounded stream-admission registry containing:
 
-- locally issued/accepted `AuthorizedOperation` records available for stream use;
-- used `StreamId` history;
-- used `(OperationId, stream_index)` history;
-- active admitted stream records.
+- locally held `AuthorizedOperation` records available for stream use;
+- for each operation, a bounded used-index set whose maximum is the operation's stream-use budget;
+- bounded active `StreamId` records;
+- bounded active admitted-stream records.
 
-The registry never silently evicts security-relevant replay state. If its configured capacity is exhausted, new registration/admission returns a typed resource-limit error rather than growing without bound or forgetting prior use.
+Security-relevant operation/index state is never silently evicted while the operation can still authorize work. If configured operation/active-stream capacity is exhausted, new registration/admission returns a typed resource-limit error rather than growing without bound.
+
+A session-wide permanent `StreamId` history is intentionally unnecessary. `StreamId` is kept unique among active streams; replay of an old opening remains rejected because its `OperationId` is terminal/missing or its `(OperationId, stream_index)` use is already spent. When a terminal operation has no active admitted streams, its operation-local replay state may be removed with that operation.
 
 An operation registered into a per-session registry must belong to that session. Wrong-session operations are rejected at registration or admission and can never authorize payload.
 
@@ -284,7 +286,7 @@ M6 returns typed failures for at least:
 - unsupported/not-negotiated capability or version;
 - capability/operation/direction mismatch;
 - invalid/duplicate/out-of-range stream index;
-- duplicate `StreamId`;
+- duplicate active `StreamId`;
 - `SingleAction` used for a stream;
 - stream-use budget exhausted;
 - expired/cancelled/revoked/consumed operation;
@@ -301,25 +303,26 @@ A rejected stream open is never exposed to the capability handler. M6 does not a
 
 Prove:
 
-- `SingleAction` cannot reserve a stream;
+- `SingleAction` cannot reserve a stream use;
 - `SingleStream` reserves one use only;
-- bounded multi-stream accepts unique indices only within its limit;
+- bounded multi-stream reserves no more than its nonzero maximum;
 - reservation is denied after terminal state/expiry/revision change;
-- spent slots are not refunded after cancellation;
-- consumption occurs only after exhausted budget has no active admitted streams.
+- reserved-use count is monotonic and has no refund path.
 
 ### Core tests
 
-Prove N-035..N-039-style admission failures:
+Prove N-035..N-039-style admission failures and lifecycle:
 
 - missing `OperationId`;
 - wrong session/peer/capability/version/operation/direction;
 - expired/cancelled/revoked/consumed operation;
-- duplicate `StreamId` or stream index;
+- duplicate active `StreamId` or duplicate operation stream index;
 - out-of-range index;
 - policy/trust revision change;
 - bounded registry exhaustion;
-- no payload-visible admission token on failure.
+- no payload-visible admission token on failure;
+- stream-local cancellation does not refund a reserved use;
+- an exhausted-budget operation becomes consumed only after its active admitted streams are terminal.
 
 ### Memory transport tests
 
