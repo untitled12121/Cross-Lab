@@ -216,7 +216,6 @@ async fn m8_reconnect_reauthenticates_with_fresh_authority() {
         client_transport,
         server_transport,
         mut client_session,
-        server_session: _,
         ..
     } = first;
     let first_binding = client_transport.channel_binding().bytes().to_vec();
