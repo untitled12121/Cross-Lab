@@ -75,6 +75,7 @@ impl ConnectionMetadata {
 #[derive(PartialEq, Eq)]
 pub enum ControlSendError {
     Full(Vec<u8>),
+    TooLarge(Vec<u8>),
     Closed(Vec<u8>),
 }
 
@@ -82,6 +83,7 @@ impl fmt::Debug for ControlSendError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Full(frame) => redact_bytes(formatter, "Full", frame),
+            Self::TooLarge(frame) => redact_bytes(formatter, "TooLarge", frame),
             Self::Closed(frame) => redact_bytes(formatter, "Closed", frame),
         }
     }
@@ -91,6 +93,7 @@ impl fmt::Display for ControlSendError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::Full(_) => "transport control queue is full",
+            Self::TooLarge(_) => "transport control frame exceeds its size limit",
             Self::Closed(_) => "transport control channel is closed",
         })
     }
@@ -118,13 +121,14 @@ impl std::error::Error for ControlReceiveError {}
 #[derive(PartialEq, Eq)]
 pub enum StreamOpenError {
     Full(Vec<u8>),
+    TooLarge(Vec<u8>),
     Closed(Vec<u8>),
 }
 
 impl StreamOpenError {
     pub fn into_opening_frame(self) -> Vec<u8> {
         match self {
-            Self::Full(frame) | Self::Closed(frame) => frame,
+            Self::Full(frame) | Self::TooLarge(frame) | Self::Closed(frame) => frame,
         }
     }
 }
@@ -133,6 +137,7 @@ impl fmt::Debug for StreamOpenError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Full(frame) => redact_bytes(formatter, "Full", frame),
+            Self::TooLarge(frame) => redact_bytes(formatter, "TooLarge", frame),
             Self::Closed(frame) => redact_bytes(formatter, "Closed", frame),
         }
     }
@@ -142,6 +147,7 @@ impl fmt::Display for StreamOpenError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::Full(_) => "transport data stream capacity is full",
+            Self::TooLarge(_) => "transport data stream opening frame exceeds its size limit",
             Self::Closed(_) => "transport data stream direction is closed",
         })
     }

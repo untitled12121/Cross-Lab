@@ -69,6 +69,31 @@ fn pending_open_saturation_preserves_frame_and_failed_open_leaves_no_stream() {
 }
 
 #[test]
+fn oversized_opening_frame_is_rejected_without_allocating_stream_state() {
+    let config = MemoryTransportConfig::new(nonzero(4), nonzero(1), nonzero(1), nonzero(8))
+        .with_frame_limits(nonzero(8), nonzero(4));
+    let pair = MemoryTransportPair::with_config(config, [0x52; 32]);
+    let (a, b) = pair.endpoints();
+
+    let opening = vec![0x31; 5];
+    let error = match a.try_open_uni_stream(opening.clone()) {
+        Err(error) => error,
+        Ok(_) => panic!("oversized opening frame unexpectedly allocated a stream"),
+    };
+    assert_eq!(error, StreamOpenError::TooLarge(opening));
+    assert_eq!(
+        b.try_accept_uni_stream().unwrap_err(),
+        StreamAcceptError::Empty
+    );
+
+    let _stream = a.try_open_uni_stream(vec![0x32; 4]).unwrap();
+    assert_eq!(
+        b.try_accept_uni_stream().unwrap().opening_frame(),
+        &[0x32; 4]
+    );
+}
+
+#[test]
 fn oversized_and_full_chunks_preserve_unsent_bytes() {
     let pair = pair(2, 1, 2);
     let (a, b) = pair.endpoints();
