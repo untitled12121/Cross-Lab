@@ -8,7 +8,7 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 ## Current Milestone
 
-**M7 — Failure and Security Lifecycle: planning complete; Tasks 1–2 GREEN; Tasks 3–7 pending.**
+**M7 — Failure and Security Lifecycle: planning complete; Tasks 1–3 GREEN; Tasks 4–7 pending.**
 
 M1–M6 are complete, verified, and integrated into canonical `main`.
 
@@ -17,7 +17,7 @@ M1–M6 are complete, verified, and integrated into canonical `main`.
 - `main` — exact verified M6 integration-record head `d419f0fd410f0d2da69cc9bf2e4c20600033b7fb`; CI `34671802373` passed locked metadata, rustfmt, workspace check, Clippy `-D warnings`, and all tests.
 - `m7-failure-security-lifecycle` — active M7 branch created exactly from that verified `main` head.
 - PR #17 — draft, `feat: implement M7 failure and security lifecycle`; keep draft until the exact final documentation-inclusive head passes CI and Fuzz Smoke.
-- Current verified M7 production/test head: `3b52f75ec2cef774225c814a3bd04d4072d5f29b`.
+- Current verified M7 production/test head: `08515dd3bb2a93476a2004ee3f6b6e6ec8ad85e9`.
 
 ## Architecture Baseline
 
@@ -83,24 +83,44 @@ Evidence:
 - revocation/shutdown RED `57cddc7a883b199f7721fdd2ec5ee9d1df34e74b`, CI `34675821698` — lockfile/rustfmt passed and check failed only on missing `SimNode::apply_peer_revocation` / `shutdown`;
 - final Task 2 GREEN `3b52f75ec2cef774225c814a3bd04d4072d5f29b`, CI `34675870576` — locked metadata, rustfmt, workspace check, Clippy `-D warnings`, and all tests passed.
 
+## M7 Task 3 — Stream Runtime Terminal Lifecycle
+
+Delivered:
+
+- refactored `apps/sim/tests/stream_scenarios.rs` so authenticated sessions are moved exactly once into stream runtimes without cloning authority or shared mutable session handles;
+- `SimStreamRuntime` now owns its `LogicalSession` and exposes read-only `session()` state;
+- `open_uni` reacts to `StreamOpenError::Closed` as transport loss while preserving `Full(frame)` as nonterminal backpressure;
+- `accept_one` reacts to `StreamAcceptError::Closed` as transport loss;
+- an active admitted stream that reports `Cancelled` only terminates the logical session when the parent transport is actually closed; stream-local cancellation on an open transport remains stream-local;
+- terminal transport loss cancels active inbound streams and all admission authority before closing the logical session;
+- `apply_peer_revocation()` validates through the core session API, cancels stream/admission authority, closes transport, and completes `Revoked -> Closed`;
+- `shutdown()` is idempotent and terminates stream authority, logical session, and transport.
+
+Evidence:
+
+- RED `0cb5d2e16a7454910eedba46862e083fa3fb68fc`, CI `34675990614` — lockfile/rustfmt passed and workspace check failed exactly on the old borrowed-session constructor plus missing `session()` / `apply_peer_revocation()` APIs;
+- implementation `231542b548626df9a00c7a63e30702274009744c`, CI `34676120524` — stopped only at rustfmt on the revocation method signature;
+- formatting-only final GREEN `08515dd3bb2a93476a2004ee3f6b6e6ec8ad85e9`, CI `34676159053` — locked metadata, rustfmt, workspace check, Clippy `-D warnings`, and all tests passed.
+
 ## Exact Next Task
 
-Begin **M7 Task 3 — stream runtime owns and terminates its logical session**.
+Begin **M7 Task 4 — S-008 fresh reconnect and stale-authority rejection**.
 
-Test-first execution:
+Execution contract:
 
-1. refactor the stream-scenario fixture cleanly so sessions can be moved without partial-move test bugs (prefer `Option<LogicalSession>` + stored `SessionId`, or an equivalent focused fixture API);
-2. define RED for `SimStreamRuntime::new(LogicalSession, ...)`, `session()`, transport-loss reaction, matching peer revocation, and idempotent shutdown;
-3. keep stream-local cancellation stream-local when the parent transport remains open;
-4. when the transport is closed, cancel inbound streams/admission authority and call the Task 1 terminal session API;
-5. revocation order: validate session peer revocation -> stop/cancel streams -> `StreamAdmission::cancel_all()` -> close transport -> finish session closure;
-6. run focused memory-stream + scenario tests and full workspace gates before Task 4.
+1. add `apps/sim/tests/lifecycle.rs` only; no new production API is expected;
+2. build a deterministic fixture that creates fresh proofs from each pair's channel binding and supplied fresh nonces;
+3. prove disconnect closes the old node and clears pending request state;
+4. reconnect only through a new `MemoryTransportPair`, fresh binding, fresh nonces/proofs, and therefore a different `SessionId` with zeroed control sequences and no negotiated capabilities;
+5. prove capabilities must be exchanged again on the new session;
+6. inject an old-session control envelope into the new transport and require `ControlDispatchError::InvalidSession` plus fail-closed cleanup;
+7. prove an `AuthorizedOperation` issued under the old session cannot authorize a stream on the new session (`OperationError::BindingMismatch`);
+8. run focused lifecycle tests and full workspace gates before Task 5.
 
-Do not begin Task 4 until Task 3 is verified.
+Do not add resumable-session authority, reconnect timers/backoff, or real networking.
 
 ## Remaining M7 Tasks
 
-- Task 4 — S-008 fresh reconnect + stale request/sequence/operation rejection;
 - Task 5 — S-009 active revocation + N-040/N-041 reconnect-after-revocation denial;
 - Task 6 — fill only missing N-042..N-046 resource/cancellation/shutdown lifecycle assertions;
 - Task 7 — scope review, final CI/fuzz, merge exact verified head to `main`, post-merge verification, final `CURRENT.md`, then M8 handoff.
