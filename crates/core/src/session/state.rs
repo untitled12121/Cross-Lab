@@ -310,10 +310,7 @@ impl LogicalSession {
         }
     }
 
-    pub fn apply_peer_revocation(
-        &mut self,
-        peer_trust: &TrustRecord,
-    ) -> Result<(), SessionError> {
+    pub fn apply_peer_revocation(&mut self, peer_trust: &TrustRecord) -> Result<(), SessionError> {
         if self.state != SessionState::Active {
             return Err(SessionError::InvalidState);
         }
