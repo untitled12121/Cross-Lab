@@ -225,7 +225,10 @@ impl<'a> SimStreamRuntime<'a> {
         Ok(())
     }
 
-    pub fn apply_peer_revocation(&mut self, peer_trust: &TrustRecord) -> Result<(), SimStreamError> {
+    pub fn apply_peer_revocation(
+        &mut self,
+        peer_trust: &TrustRecord,
+    ) -> Result<(), SimStreamError> {
         self.session.apply_peer_revocation(peer_trust)?;
         self.cancel_session_authority();
         self.transport.close();
