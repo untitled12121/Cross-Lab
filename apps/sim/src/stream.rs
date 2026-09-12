@@ -128,7 +128,8 @@ impl<'a> SimStreamRuntime<'a> {
         let frame = encode_data_stream_open(open)?;
         match self.transport.try_open_uni_stream(frame) {
             Ok(stream) => Ok(stream),
-            Err(error @ StreamOpenError::Full(_)) => Err(error.into()),
+            Err(error @ StreamOpenError::Full(_))
+            | Err(error @ StreamOpenError::TooLarge(_)) => Err(error.into()),
             Err(error @ StreamOpenError::Closed(_)) => {
                 self.transport_lost();
                 Err(error.into())
