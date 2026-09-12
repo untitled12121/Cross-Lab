@@ -12,3 +12,9 @@ workspace = true
 
 [dependencies]
 crosslab-core = { path = "../../crates/core" }
+crosslab-policy = { path = "../../crates/policy" }
+crosslab-protocol = { path = "../../crates/protocol" }
+
+[dev-dependencies]
+crosslab-crypto = { path = "../../crates/crypto" }
+crosslab-identity = { path = "../../crates/identity" }
