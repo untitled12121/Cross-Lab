@@ -30,7 +30,12 @@ async fn minimal_endpoint_requires_explicit_address_data() {
         .await
         .expect("minimal Iroh endpoints");
 
-    assert!(pair.client().connect(pair.server().id(), M9_ALPN).await.is_err());
+    assert!(
+        pair.client()
+            .connect(pair.server().id(), M9_ALPN)
+            .await
+            .is_err()
+    );
 
     pair.shutdown().await;
 }
