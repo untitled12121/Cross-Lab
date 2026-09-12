@@ -1,4 +1,5 @@
 use std::{
+    future::Future,
     mem,
     sync::{
         Arc, Mutex, MutexGuard,
@@ -13,19 +14,21 @@ use crosslab_core::{
 };
 use quinn::{Connection, RecvStream, SendStream, VarInt};
 use tokio::{
-    sync::{mpsc, watch},
+    sync::{Semaphore, mpsc, watch},
     task::JoinHandle,
 };
 
 use crate::{
     config::QuicTransportConfig,
     record::{read_record, write_record},
+    stream::{new_outgoing_uni_stream, run_outgoing_uni_stream, run_uni_acceptor},
 };
 
 const CONTROL_FAILURE_CODE: VarInt = VarInt::from_u32(1);
+const STREAM_FAILURE_CODE: VarInt = VarInt::from_u32(2);
 const LOCAL_CLOSE_CODE: VarInt = VarInt::from_u32(0);
 
-struct SharedState {
+pub(crate) struct SharedState {
     terminal: AtomicBool,
     terminal_tx: watch::Sender<bool>,
 }
@@ -39,7 +42,7 @@ impl SharedState {
         }
     }
 
-    fn mark_terminal(&self) -> bool {
+    pub(crate) fn mark_terminal(&self) -> bool {
         if self.terminal.swap(true, Ordering::AcqRel) {
             return false;
         }
@@ -47,12 +50,60 @@ impl SharedState {
         true
     }
 
-    fn is_terminal(&self) -> bool {
+    pub(crate) fn is_terminal(&self) -> bool {
         self.terminal.load(Ordering::Acquire)
     }
 
-    fn subscribe(&self) -> watch::Receiver<bool> {
+    pub(crate) fn subscribe(&self) -> watch::Receiver<bool> {
         self.terminal_tx.subscribe()
+    }
+}
+
+struct TaskRegistryState {
+    accepting: bool,
+    handles: Vec<JoinHandle<()>>,
+}
+
+pub(crate) struct TaskRegistry {
+    state: Mutex<TaskRegistryState>,
+}
+
+impl TaskRegistry {
+    fn new() -> Self {
+        Self {
+            state: Mutex::new(TaskRegistryState {
+                accepting: true,
+                handles: Vec::new(),
+            }),
+        }
+    }
+
+    fn spawn<Fut>(&self, future: Fut)
+    where
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        let mut state = lock(&self.state);
+        debug_assert!(state.accepting);
+        state.handles.push(tokio::spawn(future));
+    }
+
+    pub(crate) fn spawn_if_open<Factory, Fut>(&self, factory: Factory) -> bool
+    where
+        Factory: FnOnce() -> Fut,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        let mut state = lock(&self.state);
+        if !state.accepting {
+            return false;
+        }
+        state.handles.push(tokio::spawn(factory()));
+        true
+    }
+
+    fn close_and_take(&self) -> Vec<JoinHandle<()>> {
+        let mut state = lock(&self.state);
+        state.accepting = false;
+        mem::take(&mut state.handles)
     }
 }
 
@@ -64,7 +115,9 @@ pub struct QuicTransportConnection {
     shared: Arc<SharedState>,
     outbound_control: mpsc::Sender<Vec<u8>>,
     inbound_control: Mutex<mpsc::Receiver<Vec<u8>>>,
-    tasks: Mutex<Vec<JoinHandle<()>>>,
+    outgoing_stream_slots: Arc<Semaphore>,
+    incoming_streams: Mutex<mpsc::Receiver<IncomingUniStream>>,
+    tasks: Arc<TaskRegistry>,
 }
 
 impl QuicTransportConnection {
@@ -77,11 +130,18 @@ impl QuicTransportConnection {
         config: QuicTransportConfig,
     ) -> Self {
         let shared = Arc::new(SharedState::new());
+        let tasks = Arc::new(TaskRegistry::new());
         let (outbound_control, outbound_rx) = mpsc::channel(config.control_queue_capacity());
         let (inbound_tx, inbound_control) = mpsc::channel(config.control_queue_capacity());
+        let (incoming_tx, incoming_streams) =
+            mpsc::channel(config.incoming_stream_queue_capacity());
+        let outgoing_stream_slots = Arc::new(Semaphore::new(config.outgoing_stream_capacity()));
+        let incoming_stream_slots = Arc::new(Semaphore::new(
+            config.max_concurrent_remote_uni_streams() as usize,
+        ));
         let max_control_frame_bytes = config.max_control_frame_bytes();
 
-        let writer = tokio::spawn(run_control_writer(
+        tasks.spawn(run_control_writer(
             connection.clone(),
             Arc::clone(&shared),
             shared.subscribe(),
@@ -89,7 +149,7 @@ impl QuicTransportConnection {
             control_send,
             max_control_frame_bytes,
         ));
-        let reader = tokio::spawn(run_control_reader(
+        tasks.spawn(run_control_reader(
             connection.clone(),
             Arc::clone(&shared),
             shared.subscribe(),
@@ -97,7 +157,16 @@ impl QuicTransportConnection {
             control_recv,
             max_control_frame_bytes,
         ));
-        let monitor = tokio::spawn(monitor_connection_close(
+        let acceptor_tasks = Arc::clone(&tasks);
+        tasks.spawn(run_uni_acceptor(
+            connection.clone(),
+            Arc::clone(&shared),
+            incoming_tx,
+            incoming_stream_slots,
+            acceptor_tasks,
+            config,
+        ));
+        tasks.spawn(monitor_connection_close(
             connection.clone(),
             Arc::clone(&shared),
         ));
@@ -110,17 +179,15 @@ impl QuicTransportConnection {
             shared,
             outbound_control,
             inbound_control: Mutex::new(inbound_control),
-            tasks: Mutex::new(vec![writer, reader, monitor]),
+            outgoing_stream_slots,
+            incoming_streams: Mutex::new(incoming_streams),
+            tasks,
         }
     }
 
     pub async fn shutdown(&self) {
         self.close();
-        let tasks = {
-            let mut tasks = lock(&self.tasks);
-            mem::take(&mut *tasks)
-        };
-        for task in tasks {
+        for task in self.tasks.close_and_take() {
             let _ = task.await;
         }
     }
@@ -192,14 +259,62 @@ impl TransportConnection for QuicTransportConnection {
         if opening_frame.len() > self.config.max_opening_frame_bytes() {
             return Err(StreamOpenError::TooLarge(opening_frame));
         }
-        Err(StreamOpenError::Full(opening_frame))
+
+        let permit = match Arc::clone(&self.outgoing_stream_slots).try_acquire_owned() {
+            Ok(permit) => permit,
+            Err(_) => return Err(StreamOpenError::Full(opening_frame)),
+        };
+        let connection = self.connection.clone();
+        let shared = Arc::clone(&self.shared);
+        let chunk_capacity = self.config.stream_chunk_queue_capacity();
+        let max_chunk_bytes = self.config.max_chunk_bytes();
+        let mut opening_frame = Some(opening_frame);
+        let mut permit = Some(permit);
+        let mut handle = None;
+
+        let spawned = self.tasks.spawn_if_open(|| {
+            let (send, driver) = new_outgoing_uni_stream(
+                Arc::clone(&shared),
+                chunk_capacity,
+                max_chunk_bytes,
+            );
+            handle = Some(Box::new(send) as Box<dyn TransportSendStream>);
+            run_outgoing_uni_stream(
+                connection.clone(),
+                Arc::clone(&shared),
+                opening_frame
+                    .take()
+                    .expect("opening frame is available while spawning"),
+                driver,
+                permit
+                    .take()
+                    .expect("outgoing stream permit is available while spawning"),
+            )
+        });
+
+        if !spawned {
+            return Err(StreamOpenError::Closed(
+                opening_frame.expect("opening frame remains when spawning is closed"),
+            ));
+        }
+        Ok(handle.expect("send handle is created with its driver"))
     }
 
     fn try_accept_uni_stream(&self) -> Result<IncomingUniStream, StreamAcceptError> {
         if self.shared.is_terminal() {
-            Err(StreamAcceptError::Closed)
-        } else {
-            Err(StreamAcceptError::Empty)
+            return Err(StreamAcceptError::Closed);
+        }
+
+        match lock(&self.incoming_streams).try_recv() {
+            Ok(stream) => Ok(stream),
+            Err(mpsc::error::TryRecvError::Empty) if self.shared.is_terminal() => {
+                Err(StreamAcceptError::Closed)
+            }
+            Err(mpsc::error::TryRecvError::Empty) => Err(StreamAcceptError::Empty),
+            Err(mpsc::error::TryRecvError::Disconnected) => {
+                self.terminate(STREAM_FAILURE_CODE, b"stream bridge disconnected");
+                Err(StreamAcceptError::Closed)
+            }
         }
     }
 
