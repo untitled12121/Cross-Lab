@@ -3,10 +3,14 @@ use std::num::NonZeroUsize;
 use crosslab_core::{
     ControlReceiveError, ControlSendError, TransportConnection, TransportSecurityClass,
 };
-use crosslab_sim::transport::{MemorySide, MemoryTransportPair};
+use crosslab_sim::transport::{MemorySide, MemoryTransportConfig, MemoryTransportPair};
 
 fn pair(capacity: usize, binding: u8) -> MemoryTransportPair {
     MemoryTransportPair::new(NonZeroUsize::new(capacity).unwrap(), [binding; 32])
+}
+
+fn nonzero(value: usize) -> NonZeroUsize {
+    NonZeroUsize::new(value).unwrap()
 }
 
 #[test]
@@ -38,6 +42,24 @@ fn saturated_control_queue_applies_backpressure_without_losing_the_frame() {
     assert_eq!(b.try_receive_control().unwrap(), vec![1]);
     a.try_send_control(frame).unwrap();
     assert_eq!(b.try_receive_control().unwrap(), vec![2]);
+}
+
+#[test]
+fn oversized_control_frame_is_rejected_without_consuming_capacity() {
+    let config = MemoryTransportConfig::new(nonzero(1), nonzero(1), nonzero(1), nonzero(8))
+        .with_frame_limits(nonzero(4), nonzero(8));
+    let pair = MemoryTransportPair::with_config(config, [0x26; 32]);
+    let (a, b) = pair.endpoints();
+
+    let frame = vec![0x11; 5];
+    assert_eq!(
+        a.try_send_control(frame.clone()),
+        Err(ControlSendError::TooLarge(frame))
+    );
+    assert_eq!(b.try_receive_control(), Err(ControlReceiveError::Empty));
+
+    a.try_send_control(vec![0x22; 4]).unwrap();
+    assert_eq!(b.try_receive_control().unwrap(), vec![0x22; 4]);
 }
 
 #[test]
