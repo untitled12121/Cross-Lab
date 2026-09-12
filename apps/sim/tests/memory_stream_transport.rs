@@ -54,10 +54,16 @@ fn pending_open_saturation_preserves_frame_and_failed_open_leaves_no_stream() {
     let (a, b) = pair.endpoints();
     let _first = a.try_open_uni_stream(vec![1]).unwrap();
     let second_frame = vec![2];
-    let error = a.try_open_uni_stream(second_frame.clone()).unwrap_err();
+    let error = match a.try_open_uni_stream(second_frame.clone()) {
+        Err(error) => error,
+        Ok(_) => panic!("second open unexpectedly bypassed stream capacity"),
+    };
     assert_eq!(error.into_opening_frame(), second_frame);
 
-    let _accepted = b.try_accept_uni_stream().unwrap();
+    let accepted = b.try_accept_uni_stream().unwrap();
+    let (_, mut first_receive) = accepted.into_parts();
+    first_receive.cancel();
+
     let _second = a.try_open_uni_stream(vec![3]).unwrap();
     assert_eq!(b.try_accept_uni_stream().unwrap().opening_frame(), &[3]);
 }
@@ -169,12 +175,11 @@ fn connection_close_cancels_pending_and_active_streams() {
         vec![3]
     );
     let closed_frame = vec![4];
-    assert_eq!(
-        a.try_open_uni_stream(closed_frame.clone())
-            .unwrap_err()
-            .into_opening_frame(),
-        closed_frame
-    );
+    let error = match a.try_open_uni_stream(closed_frame.clone()) {
+        Err(error) => error,
+        Ok(_) => panic!("stream opened after connection close"),
+    };
+    assert_eq!(error.into_opening_frame(), closed_frame);
 }
 
 #[test]
