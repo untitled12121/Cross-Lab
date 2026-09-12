@@ -117,10 +117,8 @@ impl<'a> SimNode<'a> {
         let frame = match self.transport.try_receive_control() {
             Ok(frame) => frame,
             Err(error) => {
-                if error == ControlReceiveError::Closed
-                    && self.session.state() == SessionState::Closing
-                {
-                    let _ = self.session.finish_close();
+                if error == ControlReceiveError::Closed {
+                    self.terminate_transport_loss();
                 }
                 return Err(NodeError::Receive(error));
             }
@@ -190,11 +188,19 @@ impl<'a> SimNode<'a> {
                 .map_err(NodeError::Dispatch)?
         };
         let frame = encode_control_envelope(&envelope).map_err(NodeError::Wire)?;
-        self.transport
-            .try_send_control(frame)
-            .map_err(NodeError::Send)?;
+        if let Err(error) = self.transport.try_send_control(frame) {
+            if matches!(&error, ControlSendError::Closed(_)) {
+                self.terminate_transport_loss();
+            }
+            return Err(NodeError::Send(error));
+        }
         self.dispatcher.commit_outbound(&envelope);
         Ok(())
+    }
+
+    fn terminate_transport_loss(&mut self) {
+        self.dispatcher.cancel_session_state();
+        let _ = self.session.transport_lost();
     }
 
     fn close_received(&mut self) -> Result<(), NodeError> {
