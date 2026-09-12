@@ -1,6 +1,6 @@
 # M8 Quinn Transport — Design
 
-**Status:** Proposed for review; no M8 production code may begin until this design is approved and the implementation plan is committed.  
+**Status:** Implemented; M8 completion and verification are recorded in `docs/development/CURRENT.md`.  
 **Milestone:** Phase 1 / M8 — Quinn Transport  
 **Baseline:** verified canonical `main` documentation checkpoint `b2e16f27a5c6d8307c58f4c6a4c760bb867ff223`  
 **Primary contracts:** `docs/architecture/MASTER-ARCHITECTURE.md`, `docs/architecture/SESSION-TRANSPORT.md`, `docs/architecture/CORE-SIMULATOR.md`, M5–M7 implementation seams
@@ -55,7 +55,7 @@ The M8 dependency baseline is:
 ```text
 quinn  = 0.11.11
 tokio  = 1.53.1
-rustls = 0.23.x through Quinn unless a direct API requirement appears
+rustls = 0.23.44 where concrete loopback trust construction requires it
 rcgen  = 0.14.10 as a dev dependency for loopback certificate fixtures
 ```
 
@@ -73,7 +73,7 @@ Tokio is the one async runtime for this adapter. Cross-Lab core remains runtime-
 
 ### 3.2 Uploaded Quinn reference
 
-The uploaded Quinn source archive is the preferred research reference, but the current execution environment could not reliably enumerate that archive. The design was therefore cross-checked against the maintained upstream Quinn 0.11.11 API/source documentation. Before production implementation, the implementation branch should inspect the uploaded archive in a normal local checkout if available and reconcile any relevant API/test patterns with the version pinned here.
+The uploaded Quinn source archive was inspected as research/reference material. It represents Quinn `main` at package version `0.12.0`, so it is not used as the production dependency. Implementation behavior was reconciled against the exact pinned Quinn `0.11.11` API/tag for connection exporters and stream FIN/RESET/STOP behavior before the adapter was completed. Production remains pinned to published stable Quinn `0.11.11`; Cross-Lab reuses Quinn APIs and proven behavior without copying its architecture.
 
 ### 3.3 Iroh and rust-libp2p
 
@@ -158,7 +158,7 @@ M8 does not define production certificate provisioning, certificate persistence,
 
 M8 resolves the deferred channel-binding mechanism using the TLS exporter exposed by Quinn's established `Connection`.
 
-Proposed profile:
+Accepted profile from ADR-0008:
 
 ```text
 profile_id = "quic-tls-exporter-v1"
@@ -177,9 +177,9 @@ Properties:
 - Cross-Lab session proofs already hash the binding profile/value into the authentication transcript;
 - TLS transport identity does not become Cross-Lab identity authority.
 
-M8 must not call `Connecting::into_0rtt` and must not expose or accept 0-RTT application/session authority. A connection becomes eligible for Cross-Lab authentication only after the full Quinn handshake completes and exporter material is available.
+M8 does not call `Connecting::into_0rtt` and does not expose or accept 0-RTT application/session authority. A connection becomes eligible for Cross-Lab authentication only after the full Quinn handshake completes and exporter material is available.
 
-Because this profile affects security and cross-version compatibility, the first implementation task must record it in proposed `ADR-0008-quinn-channel-binding-profile-v1.md`. The ADR becomes accepted only with the M8 design approval; changing label/context/output semantics later requires an ADR update/supersession.
+Because this profile affects security and cross-version compatibility, it is recorded as accepted ADR-0008. Changing label/context/output semantics later requires a new or superseding ADR/profile rather than silently changing `quic-tls-exporter-v1`.
 
 ## 8. One QUIC Connection, Separate Logical Traffic Roles
 
@@ -231,7 +231,7 @@ The adapter applies separate configured maximums for:
 - data-stream opening-frame bytes;
 - data chunk bytes.
 
-The receiver validates the length before allocating the record buffer. Zero-length records are rejected for control/bootstrap/opening frames. Data chunk zero-length behavior follows the current stream contract and should be rejected unless an existing test proves it is meaningful.
+The receiver validates the length before allocating the record buffer. Zero-length records are rejected for control/bootstrap/opening frames. Data chunk zero-length behavior follows the current stream contract and is rejected unless an existing test proves it is meaningful.
 
 A truncated prefix, truncated body, over-limit length, QUIC reset, or connection error terminates the affected stream; bootstrap/control framing failure is fatal to the logical session/connection.
 
@@ -288,16 +288,16 @@ Dropping/cancelling the receive handle calls Quinn `RecvStream::stop()` through 
 
 ## 11. Small Core Contract Tightening
 
-Real network adapters must reject oversized outbound buffers before queuing them. The in-memory adapter currently has `TooLarge` only for data chunks.
+Real network adapters must reject oversized outbound buffers before queuing them. The in-memory adapter previously had `TooLarge` only for data chunks.
 
-M8 should add ownership-preserving variants:
+M8 adds ownership-preserving variants:
 
 ```rust
 ControlSendError::TooLarge(Vec<u8>)
 StreamOpenError::TooLarge(Vec<u8>)
 ```
 
-The memory transport gains matching configurable limits/tests so both transports preserve the same semantic contract. Existing `Full` and `Closed` behavior remains unchanged.
+The memory transport has matching configurable limits/tests so both transports preserve the same semantic contract. Existing `Full` and `Closed` behavior remains unchanged.
 
 This is a transport-neutral strengthening of an existing bound, not a Quinn-specific domain leak. It requires no new crate dependency or session architecture.
 
@@ -322,11 +322,11 @@ connection_receive_window
 idle_timeout
 ```
 
-Initial defaults should be conservative and derived from existing protocol/frame bounds where possible rather than chosen as effectively unlimited values.
+Initial defaults are conservative and derived from existing protocol/frame bounds where possible rather than chosen as effectively unlimited values.
 
 The adapter configures Quinn's concurrent stream and receive-window limits explicitly. Queue capacity and window size are separate controls: queue bounds limit local application memory, while QUIC windows limit transport buffering/flow-control exposure.
 
-M8 must not use unbounded MPSC channels, unlimited `read_to_end`, infinite stream concurrency, infinite idle timeout, or a busy polling loop.
+M8 does not use unbounded MPSC channels, unlimited attacker-controlled `read_to_end`, infinite stream concurrency, infinite idle timeout, or a busy polling loop.
 
 ## 13. Connection State and Failure Mapping
 
@@ -358,7 +358,7 @@ Transport errors never mutate trust or policy directly.
 
 ## 14. Session Authentication Over QUIC
 
-M8 adds an integration orchestration layer outside domain crates to prove that the existing authentication protocol actually crosses the protected connection.
+M8 adds integration orchestration in tests outside domain crates to prove that the existing authentication protocol actually crosses the protected connection.
 
 The flow is:
 
@@ -378,7 +378,7 @@ The flow is:
 
 The transport adapter owns bytes and protected stream mechanics. `crosslab-protocol` continues to own hello/proof encoding. `crosslab-core` continues to own transcript/proof/session authentication. Test/application orchestration composes them without importing Quinn types into the domain crates.
 
-A peer that sends ordinary control before successful authentication is rejected. A proof from another connection fails because the exporter binding differs.
+A peer that attempts ordinary control before successful authentication is not promoted into the ordinary control bridge. A proof from another connection fails because the exporter binding differs.
 
 ## 15. Reconnect and Revocation
 
@@ -432,17 +432,17 @@ Prove:
 
 ### End-to-end Cross-Lab scenarios
 
-Add Quinn-backed integration scenarios that reuse production identity, trust, policy, protocol, session, control, and stream code:
+Quinn-backed integration scenarios reuse production identity, trust, policy, protocol, session, control, and stream code and prove:
 
 1. trusted devices exchange session-auth hello/proofs over QUIC and become `Active` with `AuthenticatedConfidentialChannel`;
 2. capability advertisement, control request/response/event flow behaves the same as the memory transport;
 3. authorized unidirectional data stream is accepted only with the active session/operation binding;
 4. abrupt transport loss closes the logical session and cancels session-scoped authority;
-5. reconnect creates a fresh binding and different `SessionId`, resets control sequencing, renegotiates capabilities, and rejects old operation authority;
+5. reconnect creates a fresh binding and different `SessionId`, resets control sequencing, and rejects old operation authority;
 6. a proof captured from the old connection fails on the new binding;
 7. active signed peer revocation cancels work and closes the connection;
 8. reconnect after revocation fails before `Active`;
-9. cancellation during bootstrap/stream open and shutdown with active streams terminates cleanly.
+9. stream-slot saturation, cancellation cleanup, and shutdown with active streams terminate cleanly under explicit timeout bounds.
 
 ### Network faults
 
@@ -450,7 +450,7 @@ M8 network fault coverage uses real Quinn loopback connection close, endpoint sh
 
 ## 17. Verification Gates
 
-Every green implementation checkpoint runs focused tests plus the repository baseline. Final M8 verification must include:
+Every green implementation checkpoint runs focused tests plus the repository baseline. Final M8 verification includes:
 
 ```text
 cargo metadata --locked --no-deps --format-version 1
@@ -460,16 +460,16 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 ```
 
-If M8 does not change `crates/protocol/**`, `crates/policy/**`, `fuzz/**`, or the fuzz workflow, the existing path-filtered fuzz job is not claimed as a fuzz pass. If protocol wire code changes, the relevant fuzz smoke becomes required.
+M8 does not change `crates/protocol/**`, `crates/policy/**`, `fuzz/**`, or the fuzz workflow, so the existing path-filtered fuzz job is not claimed as a fuzz pass for this milestone.
 
-Final review also verifies that no Quinn/Tokio/rustls type appears in `crosslab-identity`, `crosslab-policy`, `crosslab-protocol`, or `crosslab-core` public domain state.
+Final review verifies that no Quinn/Tokio/rustls type appears in `crosslab-identity`, `crosslab-policy`, `crosslab-protocol`, or `crosslab-core` public domain state.
 
 ## 18. Milestone Checkpoints
 
-M8 should progress as small durable checkpoints:
+M8 progressed as small durable checkpoints:
 
 ```text
-A. approved design + implementation plan + proposed ADR
+A. approved design + implementation plan + accepted ADR
 B. transport-neutral size-bound strengthening
 C. Quinn crate + TLS exporter binding + loopback connection
 D. bounded control/bootstrap bridge
@@ -480,7 +480,7 @@ H. final verification + review + CURRENT.md closeout
 I. exact verified branch merge to main + canonical main CI
 ```
 
-`docs/development/CURRENT.md` is updated after meaningful checkpoints and before any interruption-prone handoff.
+`docs/development/CURRENT.md` records the exact verified completion and integration checkpoints.
 
 ## 19. Alternatives Considered
 
@@ -494,7 +494,7 @@ Rejected. It violates the architecture invariant that transport libraries do not
 
 ### Create a second Quinn-specific session runtime
 
-Rejected. M5–M7 already implement the security/session/control/stream lifecycle. M8 must prove reuse, not fork it.
+Rejected. M5–M7 already implement the security/session/control/stream lifecycle. M8 proves reuse rather than forking it.
 
 ### Use certificate fingerprint as channel binding
 
@@ -516,10 +516,10 @@ Rejected. M9 explicitly evaluates remote connectivity only after Quinn is measur
 
 The overall Master Architecture does not change. M8 implements its already-selected Quinn transport milestone and preserves the approved transport/session boundary.
 
-One deferred security compatibility detail is resolved: the Quinn channel-binding profile. That exact exporter profile is proposed for ADR-0008 because its label/context/output semantics become security-sensitive compatibility data.
+The deferred security compatibility detail is resolved by accepted ADR-0008: `quic-tls-exporter-v1` fixes the TLS exporter profile ID, label, context, and output length used by the first real IP transport.
 
-No other ADR is required by this design unless implementation evidence forces a material change to the approved transport/session abstraction.
+No other ADR was required by M8 because implementation evidence did not force a material change to the approved transport/session abstraction.
 
-## 21. Approval Gate
+## 21. Completion Boundary
 
-Approval of this design authorizes writing the detailed M8 implementation plan and proposed ADR-0008. It does not authorize widening M8 into discovery, relay/NAT, transport migration, platform integration, persistence, or other later milestones.
+M8 completion authorizes moving to M9 remote-networking evaluation. It does not widen the completed milestone into discovery, relay/NAT, transport migration, platform integration, persistence, or other later milestones. M9 must evaluate remote-connectivity options against the measured Quinn baseline and record the selected architecture through an ADR before production remote-networking implementation proceeds.
