@@ -11,8 +11,9 @@ use crosslab_identity::{
 };
 use crosslab_policy::{
     AuthorizationContext, AuthorizedOperation, CapabilityId, CapabilityVersion,
-    CapabilityVersionRange, LocalCapability, NetworkClass, OperationId, OperationName, PolicyRule,
-    PolicyState, RuleEffect, RuleId, TransitionId, TrustRecord, TrustState, UsePolicy,
+    CapabilityVersionRange, LocalCapability, NetworkClass, OperationError, OperationId,
+    OperationName, PolicyRule, PolicyState, RuleEffect, RuleId, TransitionId, TrustRecord,
+    TrustState, UsePolicy,
 };
 use crosslab_protocol::{
     CapabilityAdvertisement, CapabilityAdvertisementEntry, DataStreamOpen, FeatureSet,
@@ -199,6 +200,40 @@ impl Fixture {
         AuthorizedOperation::issue(self.grant.clone(), 10, 20, use_policy).unwrap()
     }
 
+    fn operation_for_source(&self, source: DeviceId, use_policy: UsePolicy) -> AuthorizedOperation {
+        let local_capability = LocalCapability::new(
+            self.capability.clone(),
+            CapabilityVersionRange::new(1, 0, 0).unwrap(),
+            true,
+        );
+        let mut policy = PolicyState::new();
+        policy
+            .insert(PolicyRule::new(
+                RuleId::from_bytes([0x6c; 32]),
+                source,
+                self.capability.clone(),
+                self.operation_name.clone(),
+                RuleEffect::Allow,
+            ))
+            .unwrap();
+        let session = self.receiver_session.context().unwrap();
+        let context = AuthorizationContext::new(
+            source,
+            session.local_device_id(),
+            session.session_id(),
+            self.capability.clone(),
+            self.version,
+            self.operation_name.clone(),
+            TrustState::Trusted,
+            self.trust_revision,
+            local_capability,
+            NetworkClass::Local,
+        );
+        let grant = policy.evaluate(&context).into_grant().unwrap();
+        assert_eq!(policy.revision(), self.policy_revision);
+        AuthorizedOperation::issue(grant, 10, 20, use_policy).unwrap()
+    }
+
     fn open(
         &self,
         operation_id: OperationId,
@@ -332,4 +367,132 @@ fn saturated_runtime_leaves_pending_stream_and_operation_budget_unspent() {
             .unwrap(),
         multi_second.stream_id()
     );
+}
+
+#[test]
+fn unregistered_operation_is_rejected_before_payload_exposure() {
+    let pair = transport_pair();
+    let fixture = Fixture::new(&pair);
+    let (sender_endpoint, receiver_endpoint) = pair.endpoints();
+    let operation = fixture.operation(UsePolicy::SingleStream);
+    let open = fixture.open(operation.id(), 0, 0x76);
+    let sender = SimStreamRuntime::new(
+        &fixture.sender_session,
+        sender_endpoint,
+        NonZeroUsize::new(2).unwrap(),
+    )
+    .unwrap();
+    let mut receiver = SimStreamRuntime::new(
+        &fixture.receiver_session,
+        receiver_endpoint,
+        NonZeroUsize::new(2).unwrap(),
+    )
+    .unwrap();
+
+    let mut send = sender.open_uni(&open).unwrap();
+    send.try_send_chunk(vec![0xaa]).unwrap();
+    assert!(matches!(
+        receiver.accept_one(15, fixture.trust_revision, fixture.policy_revision),
+        Err(SimStreamError::Admission(
+            StreamAdmissionError::OperationNotFound
+        ))
+    ));
+    assert!(matches!(
+        receiver.try_receive_chunk(open.stream_id()),
+        Err(SimStreamError::StreamNotFound)
+    ));
+    assert!(send.try_send_chunk(vec![0xbb]).is_err());
+}
+
+#[test]
+fn authenticated_peer_mismatch_is_rejected_and_cancelled() {
+    let pair = transport_pair();
+    let fixture = Fixture::new(&pair);
+    let (sender_endpoint, receiver_endpoint) = pair.endpoints();
+    let operation = fixture.operation_for_source(
+        DeviceId::from_bytes([0x77; 32]),
+        UsePolicy::SingleStream,
+    );
+    let open = fixture.open(operation.id(), 0, 0x78);
+    let sender = SimStreamRuntime::new(
+        &fixture.sender_session,
+        sender_endpoint,
+        NonZeroUsize::new(2).unwrap(),
+    )
+    .unwrap();
+    let mut receiver = SimStreamRuntime::new(
+        &fixture.receiver_session,
+        receiver_endpoint,
+        NonZeroUsize::new(2).unwrap(),
+    )
+    .unwrap();
+    receiver.register_operation(operation).unwrap();
+
+    let mut send = sender.open_uni(&open).unwrap();
+    assert!(matches!(
+        receiver.accept_one(15, fixture.trust_revision, fixture.policy_revision),
+        Err(SimStreamError::Admission(StreamAdmissionError::Operation(
+            OperationError::BindingMismatch
+        )))
+    ));
+    assert!(send.try_send_chunk(vec![1]).is_err());
+}
+
+#[test]
+fn malformed_open_is_cancelled_without_dangling_runtime_state() {
+    let pair = transport_pair();
+    let fixture = Fixture::new(&pair);
+    let (sender_endpoint, receiver_endpoint) = pair.endpoints();
+    let mut receiver = SimStreamRuntime::new(
+        &fixture.receiver_session,
+        receiver_endpoint,
+        NonZeroUsize::new(2).unwrap(),
+    )
+    .unwrap();
+
+    let mut send = sender_endpoint.try_open_uni_stream(vec![0xff]).unwrap();
+    send.try_send_chunk(vec![1]).unwrap();
+    assert!(matches!(
+        receiver.accept_one(15, fixture.trust_revision, fixture.policy_revision),
+        Err(SimStreamError::Wire(_))
+    ));
+    assert!(send.try_send_chunk(vec![2]).is_err());
+}
+
+#[test]
+fn shutdown_cancels_active_streams_and_closes_transport() {
+    let pair = transport_pair();
+    let fixture = Fixture::new(&pair);
+    let (sender_endpoint, receiver_endpoint) = pair.endpoints();
+    let operation = fixture.operation(UsePolicy::SingleStream);
+    let open = fixture.open(operation.id(), 0, 0x79);
+    let sender = SimStreamRuntime::new(
+        &fixture.sender_session,
+        sender_endpoint,
+        NonZeroUsize::new(2).unwrap(),
+    )
+    .unwrap();
+    let mut receiver = SimStreamRuntime::new(
+        &fixture.receiver_session,
+        receiver_endpoint,
+        NonZeroUsize::new(2).unwrap(),
+    )
+    .unwrap();
+    receiver.register_operation(operation).unwrap();
+
+    let mut send = sender.open_uni(&open).unwrap();
+    let stream_id = receiver
+        .accept_one(15, fixture.trust_revision, fixture.policy_revision)
+        .unwrap();
+    send.try_send_chunk(vec![1]).unwrap();
+
+    receiver.shutdown();
+
+    assert!(sender_endpoint.is_closed());
+    assert!(receiver_endpoint.is_closed());
+    assert!(send.try_send_chunk(vec![2]).is_err());
+    assert!(matches!(
+        receiver.try_receive_chunk(stream_id),
+        Err(SimStreamError::StreamNotFound)
+    ));
 }
