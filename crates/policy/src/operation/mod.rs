@@ -1,4 +1,4 @@
-use core::fmt;
+use core::{fmt, num::NonZeroU32};
 
 use crosslab_crypto::random_bytes;
 use crosslab_identity::DeviceId;
@@ -28,6 +28,7 @@ impl OperationId {
 pub enum UsePolicy {
     SingleAction,
     SingleStream,
+    MultiStream { max_streams: NonZeroU32 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,6 +47,8 @@ pub enum OperationError {
     BindingMismatch,
     TrustRevisionChanged,
     PolicyRevisionChanged,
+    StreamUseNotAllowed,
+    StreamBudgetExhausted,
     Inactive(OperationState),
 }
 
@@ -57,6 +60,8 @@ impl fmt::Display for OperationError {
             Self::BindingMismatch => "authorized operation binding does not match",
             Self::TrustRevisionChanged => "trust revision changed",
             Self::PolicyRevisionChanged => "policy revision changed",
+            Self::StreamUseNotAllowed => "authorized operation does not permit data streams",
+            Self::StreamBudgetExhausted => "authorized operation stream budget is exhausted",
             Self::Inactive(_) => "authorized operation is not active",
         })
     }
@@ -109,6 +114,7 @@ pub struct AuthorizedOperation {
     created_at: u64,
     expires_at: u64,
     use_policy: UsePolicy,
+    reserved_stream_uses: u32,
     state: OperationState,
 }
 
@@ -139,6 +145,7 @@ impl AuthorizedOperation {
             created_at,
             expires_at,
             use_policy,
+            reserved_stream_uses: 0,
             state: OperationState::Active,
         })
     }
@@ -174,6 +181,31 @@ impl AuthorizedOperation {
         {
             return Err(OperationError::BindingMismatch);
         }
+        Ok(())
+    }
+
+    pub fn reserve_stream_use(
+        &mut self,
+        context: &OperationUseContext,
+        now: u64,
+        current_trust_revision: u64,
+        current_policy_revision: u64,
+    ) -> Result<(), OperationError> {
+        self.validate(
+            context,
+            now,
+            current_trust_revision,
+            current_policy_revision,
+        )?;
+
+        let Some(budget) = stream_budget(self.use_policy) else {
+            return Err(OperationError::StreamUseNotAllowed);
+        };
+        if self.reserved_stream_uses >= budget {
+            return Err(OperationError::StreamBudgetExhausted);
+        }
+
+        self.reserved_stream_uses += 1;
         Ok(())
     }
 
@@ -217,5 +249,24 @@ impl AuthorizedOperation {
 
     pub const fn use_policy(&self) -> UsePolicy {
         self.use_policy
+    }
+
+    pub const fn reserved_stream_uses(&self) -> u32 {
+        self.reserved_stream_uses
+    }
+
+    pub const fn stream_budget_exhausted(&self) -> bool {
+        match stream_budget(self.use_policy) {
+            Some(budget) => self.reserved_stream_uses >= budget,
+            None => true,
+        }
+    }
+}
+
+const fn stream_budget(use_policy: UsePolicy) -> Option<u32> {
+    match use_policy {
+        UsePolicy::SingleAction => None,
+        UsePolicy::SingleStream => Some(1),
+        UsePolicy::MultiStream { max_streams } => Some(max_streams.get()),
     }
 }
