@@ -11,8 +11,8 @@ use crosslab_identity::{
     AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
 };
 use crosslab_policy::{
-    CapabilityId, CapabilityVersion, CapabilityVersionRange, LocalCapability, OperationName,
-    PolicyRule, PolicyState, RuleEffect, RuleId, TransitionId, TrustRecord,
+    CapabilityId, CapabilityVersion, CapabilityVersionRange, LocalCapability, NetworkClass,
+    OperationName, PolicyRule, PolicyState, RuleEffect, RuleId, TransitionId, TrustRecord,
 };
 use crosslab_protocol::{
     CapabilityAdvertisement, CapabilityAdvertisementEntry, ControlRequest, ControlResponseResult,
@@ -353,6 +353,7 @@ fn m5_end_to_end_pairing_session_capability_and_control_flow() {
         endpoint_a,
         PolicyState::new(),
         local_caps.clone(),
+        NetworkClass::Local,
         NonZeroUsize::new(STATE_CAPACITY).unwrap(),
     )
     .unwrap();
@@ -361,6 +362,7 @@ fn m5_end_to_end_pairing_session_capability_and_control_flow() {
         endpoint_b,
         fixture.allow_write_policy(),
         local_caps,
+        NetworkClass::Local,
         NonZeroUsize::new(STATE_CAPACITY).unwrap(),
     )
     .unwrap();
@@ -369,20 +371,20 @@ fn m5_end_to_end_pairing_session_capability_and_control_flow() {
         .send_capability_advertisement(M5Fixture::advertisement())
         .unwrap();
     assert!(matches!(
-        node_b.receive_one().unwrap(),
+        node_b.receive_one(&inviter_trust).unwrap(),
         NodeEvent::CapabilitiesUpdated
     ));
     node_b
         .send_capability_advertisement(M5Fixture::advertisement())
         .unwrap();
     assert!(matches!(
-        node_a.receive_one().unwrap(),
+        node_a.receive_one(&joiner_trust).unwrap(),
         NodeEvent::CapabilitiesUpdated
     ));
 
     let request_id = RequestId::from_bytes([0x50; 16]);
     node_a.send_request(request(request_id, b"hello")).unwrap();
-    let NodeEvent::RequestDispatched(received) = node_b.receive_one().unwrap() else {
+    let NodeEvent::RequestDispatched(received) = node_b.receive_one(&inviter_trust).unwrap() else {
         panic!("expected authorized request dispatch");
     };
     assert_eq!(received.request_id(), request_id);
@@ -391,14 +393,14 @@ fn m5_end_to_end_pairing_session_capability_and_control_flow() {
     node_b
         .send_response(request_id, ControlResponseResult::Success(b"ok".to_vec()))
         .unwrap();
-    let NodeEvent::Response(response) = node_a.receive_one().unwrap() else {
+    let NodeEvent::Response(response) = node_a.receive_one(&joiner_trust).unwrap() else {
         panic!("expected correlated response");
     };
     assert_eq!(response.request_id(), request_id);
 
     let event_id = EventId::from_bytes([0x51; 16]);
     node_a.send_event(event(event_id, b"changed")).unwrap();
-    let NodeEvent::Event(received) = node_b.receive_one().unwrap() else {
+    let NodeEvent::Event(received) = node_b.receive_one(&inviter_trust).unwrap() else {
         panic!("expected negotiated capability event");
     };
     assert_eq!(received.event_id(), event_id);
