@@ -1,4 +1,4 @@
-use std::{num::NonZeroU32, num::NonZeroUsize};
+use std::num::{NonZeroU32, NonZeroUsize};
 
 use crosslab_core::{
     ChannelBinding, LogicalSession, SessionActivation, SessionAuthRole, SessionAuthTranscriptV1,
@@ -15,14 +15,12 @@ use crosslab_policy::{
     TrustRecord, TrustState, UsePolicy,
 };
 use crosslab_protocol::{
-    CapabilityAdvertisement, CapabilityAdvertisementEntry, DataStreamOpen, FeatureSet, ProtocolRange,
-    StreamDirection, StreamId,
+    CapabilityAdvertisement, CapabilityAdvertisementEntry, DataStreamOpen, FeatureSet,
+    ProtocolRange, StreamDirection, StreamId,
 };
 
 struct Fixture {
     session: LogicalSession,
-    source: DeviceId,
-    destination: DeviceId,
     capability: CapabilityId,
     version: CapabilityVersion,
     operation: OperationName,
@@ -95,18 +93,8 @@ impl Fixture {
             .unwrap();
         let activation = SessionActivation::new(
             &root,
-            SessionHandshakeSide::new(
-                &initiator_credential,
-                &delegation,
-                &ranges,
-                &features,
-            ),
-            SessionHandshakeSide::new(
-                &responder_credential,
-                &delegation,
-                &ranges,
-                &features,
-            ),
+            SessionHandshakeSide::new(&initiator_credential, &delegation, &ranges, &features),
+            SessionHandshakeSide::new(&responder_credential, &delegation, &ranges, &features),
             SessionAuthRole::Initiator,
             &peer_trust,
             [0x19; 32],
@@ -128,13 +116,7 @@ impl Fixture {
             true,
         );
         let advertisement = CapabilityAdvertisement::new(vec![
-            CapabilityAdvertisementEntry::new(
-                capability.clone(),
-                version,
-                version,
-                true,
-            )
-            .unwrap(),
+            CapabilityAdvertisementEntry::new(capability.clone(), version, version, true).unwrap(),
         ])
         .unwrap();
         session
@@ -170,8 +152,6 @@ impl Fixture {
 
         Self {
             session,
-            source,
-            destination,
             capability,
             version,
             operation,
@@ -313,9 +293,30 @@ fn capability_operation_direction_and_index_are_validated_before_reservation() {
         Err(StreamAdmissionError::CapabilityNotNegotiated)
     );
 
-    let wrong_operation = DataStreamOpen::new(
+    let unsupported_version = DataStreamOpen::new(
         fixture.session.context().unwrap().session_id(),
         StreamId::from_bytes([0x26; 16]),
+        operation_id,
+        fixture.capability.clone(),
+        CapabilityVersion::new(1, 1),
+        fixture.operation.clone(),
+        StreamDirection::SourceToDestination,
+        0,
+    );
+    assert_eq!(
+        admission.admit_inbound(
+            &fixture.session,
+            &unsupported_version,
+            15,
+            fixture.trust_revision,
+            fixture.policy_revision,
+        ),
+        Err(StreamAdmissionError::CapabilityNotNegotiated)
+    );
+
+    let wrong_operation = DataStreamOpen::new(
+        fixture.session.context().unwrap().session_id(),
+        StreamId::from_bytes([0x27; 16]),
         operation_id,
         fixture.capability.clone(),
         fixture.version,
@@ -331,15 +332,12 @@ fn capability_operation_direction_and_index_are_validated_before_reservation() {
             fixture.trust_revision,
             fixture.policy_revision,
         ),
-        Err(StreamAdmissionError::Operation(OperationError::BindingMismatch))
+        Err(StreamAdmissionError::Operation(
+            OperationError::BindingMismatch
+        ))
     );
 
-    let wrong_direction = fixture.open(
-        operation_id,
-        StreamDirection::DestinationToSource,
-        0,
-        0x27,
-    );
+    let wrong_direction = fixture.open(operation_id, StreamDirection::DestinationToSource, 0, 0x28);
     assert_eq!(
         admission.admit_inbound(
             &fixture.session,
@@ -348,10 +346,12 @@ fn capability_operation_direction_and_index_are_validated_before_reservation() {
             fixture.trust_revision,
             fixture.policy_revision,
         ),
-        Err(StreamAdmissionError::Operation(OperationError::BindingMismatch))
+        Err(StreamAdmissionError::Operation(
+            OperationError::BindingMismatch
+        ))
     );
 
-    let bad_index = fixture.open(operation_id, StreamDirection::SourceToDestination, 1, 0x28);
+    let bad_index = fixture.open(operation_id, StreamDirection::SourceToDestination, 1, 0x29);
     assert_eq!(
         admission.admit_inbound(
             &fixture.session,
@@ -365,13 +365,13 @@ fn capability_operation_direction_and_index_are_validated_before_reservation() {
 }
 
 #[test]
-fn terminal_and_revision_invalid_operations_are_rejected() {
+fn terminal_expired_and_revision_invalid_operations_are_rejected() {
     let fixture = Fixture::new();
 
-    for expected_state in [
-        OperationState::Cancelled,
-        OperationState::Revoked,
-        OperationState::Consumed,
+    for (expected_state, stream_byte) in [
+        (OperationState::Cancelled, 0x30),
+        (OperationState::Revoked, 0x31),
+        (OperationState::Consumed, 0x32),
     ] {
         let mut operation = fixture.operation(UsePolicy::SingleStream);
         match expected_state {
@@ -384,7 +384,7 @@ fn terminal_and_revision_invalid_operations_are_rejected() {
             operation.id(),
             StreamDirection::SourceToDestination,
             0,
-            expected_state as u8 + 0x30,
+            stream_byte,
         );
         let mut admission = StreamAdmission::new(NonZeroUsize::new(4).unwrap());
         admission.register_operation(operation).unwrap();
@@ -403,12 +403,7 @@ fn terminal_and_revision_invalid_operations_are_rejected() {
     }
 
     let expired = fixture.operation(UsePolicy::SingleStream);
-    let expired_open = fixture.open(
-        expired.id(),
-        StreamDirection::SourceToDestination,
-        0,
-        0x34,
-    );
+    let expired_open = fixture.open(expired.id(), StreamDirection::SourceToDestination, 0, 0x33);
     let mut expired_admission = StreamAdmission::new(NonZeroUsize::new(4).unwrap());
     expired_admission.register_operation(expired).unwrap();
     assert_eq!(
@@ -429,7 +424,7 @@ fn terminal_and_revision_invalid_operations_are_rejected() {
         trust_changed.id(),
         StreamDirection::SourceToDestination,
         0,
-        0x35,
+        0x34,
     );
     let mut trust_admission = StreamAdmission::new(NonZeroUsize::new(4).unwrap());
     trust_admission.register_operation(trust_changed).unwrap();
@@ -451,7 +446,7 @@ fn terminal_and_revision_invalid_operations_are_rejected() {
         policy_changed.id(),
         StreamDirection::SourceToDestination,
         0,
-        0x36,
+        0x35,
     );
     let mut policy_admission = StreamAdmission::new(NonZeroUsize::new(4).unwrap());
     policy_admission.register_operation(policy_changed).unwrap();
@@ -470,7 +465,7 @@ fn terminal_and_revision_invalid_operations_are_rejected() {
 }
 
 #[test]
-fn duplicate_ids_indices_and_capacity_are_bounded() {
+fn multi_stream_indices_are_unique_bounded_and_need_not_arrive_in_order() {
     let fixture = Fixture::new();
     let operation = fixture.operation(UsePolicy::MultiStream {
         max_streams: NonZeroU32::new(2).unwrap(),
