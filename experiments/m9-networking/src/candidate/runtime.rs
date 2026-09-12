@@ -187,13 +187,16 @@ impl TaskRegistry {
         }
     }
 
-    pub(crate) fn spawn<Fut>(&self, future: Fut)
+    pub(crate) fn spawn<Fut>(&self, future: Fut) -> bool
     where
         Fut: Future<Output = ()> + Send + 'static,
     {
         let mut state = lock(&self.state);
-        debug_assert!(state.accepting);
+        if !state.accepting {
+            return false;
+        }
         state.handles.push(tokio::spawn(future));
+        true
     }
 
     pub(crate) fn close_and_take(&self) -> Vec<JoinHandle<()>> {
@@ -230,11 +233,11 @@ impl CandidateRuntime {
         self.shared.subscribe()
     }
 
-    pub(crate) fn spawn<Fut>(&self, future: Fut)
+    pub(crate) fn spawn<Fut>(&self, future: Fut) -> bool
     where
         Fut: Future<Output = ()> + Send + 'static,
     {
-        self.tasks.spawn(future);
+        self.tasks.spawn(future)
     }
 
     pub(crate) fn is_terminal(&self) -> bool {

@@ -2,7 +2,8 @@ use core::fmt;
 use std::num::NonZeroUsize;
 
 use crosslab_policy::{
-    AuthorizedOperation, OperationError, OperationId, OperationUseContext, UsePolicy,
+    AuthorizedOperation, OperationError, OperationId, OperationState, OperationUseContext,
+    UsePolicy,
 };
 use crosslab_protocol::{DataStreamOpen, StreamDirection, StreamId};
 
@@ -180,14 +181,23 @@ impl StreamAdmission {
             ),
         };
 
-        let registered = &mut self.operations[operation_position];
-        registered.operation.reserve_stream_use(
-            &use_context,
-            now,
-            current_trust_revision,
-            current_policy_revision,
-        )?;
-        registered.used_indices.push(open.stream_index());
+        let reservation = self.operations[operation_position]
+            .operation
+            .reserve_stream_use(
+                &use_context,
+                now,
+                current_trust_revision,
+                current_policy_revision,
+            );
+        if let Err(error) = reservation {
+            if self.operations[operation_position].operation.state() != OperationState::Active {
+                self.operations.remove(operation_position);
+            }
+            return Err(error.into());
+        }
+        self.operations[operation_position]
+            .used_indices
+            .push(open.stream_index());
 
         let admitted = AdmittedStream {
             stream_id: open.stream_id(),
@@ -211,6 +221,7 @@ impl StreamAdmission {
         for registered in &mut self.operations {
             registered.operation.cancel();
         }
+        self.operations.clear();
     }
 
     pub fn active_stream_count(&self) -> usize {
@@ -224,11 +235,11 @@ impl StreamAdmission {
             .position(|stream| stream.stream_id == stream_id)
             .ok_or(StreamAdmissionError::StreamNotFound)?;
         let admitted = self.active_streams.remove(position);
-        self.consume_if_exhausted(admitted.operation_id);
+        self.reap_operation_if_terminal(admitted.operation_id);
         Ok(())
     }
 
-    fn consume_if_exhausted(&mut self, operation_id: OperationId) {
+    fn reap_operation_if_terminal(&mut self, operation_id: OperationId) {
         if self
             .active_streams
             .iter()
@@ -236,13 +247,18 @@ impl StreamAdmission {
         {
             return;
         }
-        if let Some(registered) = self
+        let Some(position) = self
             .operations
-            .iter_mut()
-            .find(|registered| registered.operation.id() == operation_id)
-            && registered.operation.stream_budget_exhausted()
-        {
-            registered.operation.consume();
+            .iter()
+            .position(|registered| registered.operation.id() == operation_id)
+        else {
+            return;
+        };
+        if self.operations[position].operation.stream_budget_exhausted() {
+            self.operations[position].operation.consume();
+        }
+        if self.operations[position].operation.state() != OperationState::Active {
+            self.operations.remove(position);
         }
     }
 }
