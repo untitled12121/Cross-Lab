@@ -8,7 +8,7 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 ## Current Milestone
 
-**M9 — Remote Networking ADR: architecture design approved; detailed implementation/evaluation plan committed; prototype execution is next.**
+**M9 — Remote Networking ADR: Task 1 Quinn baseline is GREEN; Task 2 Iroh exporter proof is next.**
 
 M1–M8 are complete and integrated into canonical `main`. M9 remains isolated on `m9-remote-networking`. M10 is the first Linux + Android platform vertical slice after M9 selects the remote-networking architecture.
 
@@ -34,6 +34,8 @@ Uploaded/current research baseline:
 - Iroh exposes full-handshake TLS exporter material, direct/relay path observability, explicit relay modes, and self-hosted relay support;
 - Iroh `presets::Minimal` is the required M9 baseline so required tests do not silently depend on n0 address lookup/default relay infrastructure;
 - rust-libp2p provides Relay v2/DCUtR/AutoNAT but its current public QUIC wrapper keeps the underlying Quinn connection private and brings a broader PeerId/Multiaddr/Swarm model.
+
+No Iroh or libp2p dependency has been added to a Cross-Lab production/domain crate.
 
 Approved design:
 
@@ -74,7 +76,8 @@ Required invariants:
 Committed plan:
 
 - `docs/plans/phase-1/M9-remote-networking.md`;
-- refined self-reviewed plan head: `c4fb6ec48a3325ede82d536051f6e145d9f8808d` (`docs: tighten M9 evaluation plan`).
+- refined self-reviewed plan head: `c4fb6ec48a3325ede82d536051f6e145d9f8808d` (`docs: tighten M9 evaluation plan`);
+- durable plan checkpoint: `9add4d7e809d5579fed71b5b279ac9bc7481fc90`, CI `34691111935` — full required gate passed.
 
 The plan contains ten reviewer-sized gates:
 
@@ -89,7 +92,30 @@ The plan contains ten reviewer-sized gates:
 9. conditional rust-libp2p probe only if the evidence trigger is satisfied;
 10. ADR-0009, Master Architecture reconciliation, exact-head verification/merge, and M10 handoff.
 
-The plan self-review maps every M9 design section to an implementation/evidence task, removes placeholder helper APIs, keeps candidate dependencies isolated, and preserves existing domain signatures.
+## M9 Completed Work
+
+### Task 1 — Reproducible Quinn baseline and typed metrics
+
+Added the non-publishable `experiments/m9-networking` workspace crate without adding Iroh/libp2p. The experiment currently provides:
+
+- typed `EvalConfig` with one-sample/64 KiB test defaults and five-sample/4 MiB measurement defaults;
+- typed `TransportKind`, `MetricKind`, `Measurement`, and deterministic TSV `Report` output;
+- a raw Quinn `0.11.11` loopback baseline that measures full protected connection establishment, bounded 32-byte control ping/echo RTT, bounded unidirectional bulk throughput, and connection/endpoint shutdown;
+- the baseline deliberately does not call or expose the crate-private production `QuicTransportConnection::new` constructor;
+- Task 1 Tokio features were trimmed to `macros`, `rt-multi-thread`, `sync`, and `time`; unused `process`/`net` feature expansion was not retained.
+
+RED evidence:
+
+- RED head: `6ce81462d3489a8b5855f39978a81224f841fa09`;
+- CI `34692635013` passed lockfile/format and failed workspace check only because the intended `config`, `metrics`, and `baseline` APIs were absent.
+
+GREEN evidence:
+
+- verified implementation head: `785f93f914f454b1c902c76fe101c31d1db14e2a`;
+- CI `34692865511` passed lockfile verification, rustfmt, workspace check, Clippy `-D warnings`, and `cargo test --workspace --all-features`;
+- `quinn_baseline_records_connect_control_bulk_and_shutdown` passed;
+- `report_tsv_schema_is_stable` passed;
+- no Iroh/libp2p dependency is present at this checkpoint.
 
 ## Required Evidence Before ADR-0009
 
@@ -108,11 +134,11 @@ NAT traversal requires the controlled Linux translated-network gate from the pla
 
 ## Exact Next Task
 
-Begin **Task 1 — Reproducible Quinn baseline and typed measurement schema** from `docs/plans/phase-1/M9-remote-networking.md` after selecting an execution workflow.
+Begin **Task 2 — Direct Iroh endpoints and exact ADR-0008 exporter proof** from `docs/plans/phase-1/M9-remote-networking.md`.
 
-Task 1 must create only the isolated `experiments/m9-networking` workspace package and the Quinn baseline/metrics surface. It must not add Iroh or libp2p yet.
+Task 2 may add Iroh `1.2.0` only to `experiments/m9-networking`, with default features disabled and only the reviewed experiment features. Required tests must use `presets::Minimal`, explicit address data, relay disabled, normal full handshakes, and the exact ADR-0008 exporter profile.
 
-Use RED -> verified failure -> minimal GREEN, then run the full repository gate and record the exact commit/CI before Task 2.
+Do not add Iroh to production/domain crates, do not use `N0` defaults/public infrastructure, do not use 0-RTT authority, and do not substitute another channel-binding scheme if exporter compatibility fails.
 
 ## Resume Procedure
 
