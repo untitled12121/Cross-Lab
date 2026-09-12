@@ -9,7 +9,7 @@ use crosslab_crypto::SigningKey;
 use crosslab_policy::{
     AuthorizationContext, AuthorizedOperation, CapabilityId, CapabilityVersion,
     CapabilityVersionRange, LocalCapability, NetworkClass, OperationId, OperationName, PolicyRule,
-    PolicyState, RuleEffect, RuleId, TrustRecord, TrustState, TrustTransition, TransitionId,
+    PolicyState, RuleEffect, RuleId, TransitionId, TrustRecord, TrustState, TrustTransition,
     UsePolicy,
 };
 use crosslab_protocol::{
@@ -58,7 +58,10 @@ async fn m8_authenticated_quinn_carries_capabilities_control_response_and_event(
         client_transport.security_class(),
         TransportSecurityClass::AuthenticatedConfidentialChannel
     );
-    assert_eq!(client_transport.channel_binding(), server_transport.channel_binding());
+    assert_eq!(
+        client_transport.channel_binding(),
+        server_transport.channel_binding()
+    );
 
     let local_capabilities = clipboard_local_capabilities();
     let mut client = SimNode::new(
@@ -104,10 +107,7 @@ async fn m8_authenticated_quinn_carries_capabilities_control_response_and_event(
     assert_eq!(request.body(), b"network-control");
 
     server
-        .send_response(
-            request_id,
-            ControlResponseResult::Success(b"ok".to_vec()),
-        )
+        .send_response(request_id, ControlResponseResult::Success(b"ok".to_vec()))
         .unwrap();
     let NodeEvent::Response(response) = eventually_node_event(&mut client).await else {
         panic!("expected correlated control response");
@@ -150,7 +150,9 @@ async fn m8_operation_bound_stream_flows_and_unknown_operation_is_rejected() {
         SimStreamRuntime::new(client_session, &client_transport, nonzero(STREAM_CAPACITY)).unwrap();
     let mut receiver =
         SimStreamRuntime::new(server_session, &server_transport, nonzero(STREAM_CAPACITY)).unwrap();
-    receiver.register_operation(authority.operation.clone()).unwrap();
+    receiver
+        .register_operation(authority.operation.clone())
+        .unwrap();
 
     let open = stream_open(
         &authority,
@@ -190,7 +192,9 @@ async fn m8_operation_bound_stream_flows_and_unknown_operation_is_rejected() {
             authority.policy_revision,
         )
         .await,
-        Err(SimStreamError::Admission(StreamAdmissionError::OperationNotFound))
+        Err(SimStreamError::Admission(
+            StreamAdmissionError::OperationNotFound
+        ))
     ));
     eventually_sender_closed(unknown_send.as_mut()).await;
 
@@ -248,7 +252,10 @@ async fn m8_reconnect_reauthenticates_with_fresh_authority() {
     let reconnect = authenticate_loopback_session_pair(&fixture, AuthAttempt::Normal)
         .await
         .expect("fresh authentication should succeed");
-    assert_ne!(first_binding, reconnect.client_transport.channel_binding().bytes());
+    assert_ne!(
+        first_binding,
+        reconnect.client_transport.channel_binding().bytes()
+    );
     assert_ne!(
         first_session_id,
         reconnect.client_session.context().unwrap().session_id()
@@ -307,7 +314,9 @@ async fn m8_old_operation_state_is_rejected_after_reconnect() {
     let mut send = sender.open_uni(&open).unwrap();
     assert!(matches!(
         eventually_accept(&mut receiver, 15, 0, 0).await,
-        Err(SimStreamError::Admission(StreamAdmissionError::InvalidSession))
+        Err(SimStreamError::Admission(
+            StreamAdmissionError::InvalidSession
+        ))
     ));
     eventually_sender_closed(send.as_mut()).await;
 
@@ -337,7 +346,9 @@ async fn m8_active_revocation_cancels_stream_authority_and_fresh_reconnect_is_de
         SimStreamRuntime::new(client_session, &client_transport, nonzero(STREAM_CAPACITY)).unwrap();
     let mut receiver =
         SimStreamRuntime::new(server_session, &server_transport, nonzero(STREAM_CAPACITY)).unwrap();
-    receiver.register_operation(authority.operation.clone()).unwrap();
+    receiver
+        .register_operation(authority.operation.clone())
+        .unwrap();
     let open = stream_open(
         &authority,
         authority.operation.id(),
@@ -445,16 +456,19 @@ async fn m8_saturation_cancellation_and_shutdown_remain_bounded() {
         );
     }
     let opening = b"owned-on-full".to_vec();
-    let error = pair
-        .client_transport
-        .try_open_uni_stream(opening.clone())
-        .expect_err("outgoing stream slots must remain bounded");
+    let error = match pair.client_transport.try_open_uni_stream(opening.clone()) {
+        Err(error) => error,
+        Ok(_) => panic!("outgoing stream slots must remain bounded"),
+    };
     assert_eq!(error, crosslab_core::StreamOpenError::Full(opening));
 
     for stream in &mut streams {
         stream.cancel();
     }
-    let mut active = pair.client_transport.try_open_uni_stream(vec![0x99]).unwrap();
+    let mut active = pair
+        .client_transport
+        .try_open_uni_stream(vec![0x99])
+        .unwrap();
     timeout(WAIT, pair.client_transport.shutdown())
         .await
         .expect("client shutdown should join active stream tasks");
@@ -548,11 +562,12 @@ fn prepare_stream_authority(
         CapabilityAdvertisementEntry::new(capability.clone(), version, version, true).unwrap(),
     ])
     .unwrap();
-    for session in [client_session, server_session] {
-        session
-            .negotiate_capabilities(std::slice::from_ref(&local_capability), &advertisement)
-            .unwrap();
-    }
+    client_session
+        .negotiate_capabilities(std::slice::from_ref(&local_capability), &advertisement)
+        .unwrap();
+    server_session
+        .negotiate_capabilities(std::slice::from_ref(&local_capability), &advertisement)
+        .unwrap();
 
     let session_id = server_session.context().unwrap().session_id();
     let trust_revision = fixture.initiator_trust.trust_revision();
@@ -629,7 +644,9 @@ async fn eventually_node_event(node: &mut SimNode<'_>) -> NodeEvent {
         loop {
             match node.receive_one() {
                 Ok(event) => return event,
-                Err(NodeError::Receive(ControlReceiveError::Empty)) => tokio::task::yield_now().await,
+                Err(NodeError::Receive(ControlReceiveError::Empty)) => {
+                    tokio::task::yield_now().await
+                }
                 Err(error) => panic!("node failed before expected event: {error:?}"),
             }
         }
@@ -643,7 +660,9 @@ async fn eventually_node_transport_loss(node: &mut SimNode<'_>) {
         loop {
             match node.receive_one() {
                 Err(NodeError::Receive(ControlReceiveError::Closed)) => return,
-                Err(NodeError::Receive(ControlReceiveError::Empty)) => tokio::task::yield_now().await,
+                Err(NodeError::Receive(ControlReceiveError::Empty)) => {
+                    tokio::task::yield_now().await
+                }
                 Ok(_) => tokio::task::yield_now().await,
                 Err(error) => panic!("unexpected node error while waiting for close: {error:?}"),
             }
