@@ -300,7 +300,7 @@ async fn session_auth_control_bridge_requires_active_sessions() {
 async fn authenticate_loopback_session_pair(
     fixture: &AuthFixture,
     attempt: AuthAttempt,
-) -> Result<AuthenticatedLoopbackSessionPair, RejectedAuthentication> {
+) -> Result<AuthenticatedLoopbackSessionPair, Box<RejectedAuthentication>> {
     let mut bootstrap = bootstrap_loopback_session_pair(fixture).await;
 
     let initiator_hello = expect_hello(receive_bootstrap(&mut bootstrap.server_recv).await);
@@ -425,11 +425,11 @@ async fn authenticate_loopback_session_pair(
                 server_session,
                 ..
             } = bootstrap;
-            Err(RejectedAuthentication {
+            Err(Box::new(RejectedAuthentication {
                 client_session,
                 server_session,
                 error: client_error,
-            })
+            }))
         }
         _ => panic!("peers disagreed on session authentication outcome"),
     }
