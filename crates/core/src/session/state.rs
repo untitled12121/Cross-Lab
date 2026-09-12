@@ -412,3 +412,60 @@ fn authenticate(activation: SessionActivation<'_>) -> Result<SessionContext, Ses
         next_receive_sequence: 0,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use crosslab_crypto::SigningKey;
+    use crosslab_policy::{TransitionId, TrustTransition};
+
+    use super::*;
+
+    #[test]
+    fn peer_revocation_requires_revision_newer_than_authenticated_snapshot() {
+        let owner_id = OwnerId::from_bytes([0xf0; 32]);
+        let root_key = SigningKey::from_secret_bytes([0xf1; 32]);
+        let root = OwnerRootRecord::new(owner_id, &root_key, 0);
+        let peer_device_id = DeviceId::from_bytes([0xf2; 32]);
+        let peer_credential_epoch = 7;
+        let trusted = TrustRecord::trusted(
+            owner_id,
+            peer_device_id,
+            peer_credential_epoch,
+            TransitionId::from_bytes([0xf3; 32]),
+        );
+        let transition = TrustTransition::issue_root_revocation(
+            &trusted,
+            TransitionId::from_bytes([0xf4; 32]),
+            &root,
+            &root_key,
+        )
+        .unwrap();
+        let mut revoked = trusted;
+        transition.apply_root(&mut revoked, &root).unwrap();
+
+        let context = SessionContext {
+            session_id: SessionId::from_bytes([0xf5; 32]),
+            local_device_id: DeviceId::from_bytes([0xf6; 32]),
+            peer_device_id,
+            owner_id,
+            peer_credential_epoch,
+            peer_trust_revision: revoked.trust_revision(),
+            protocol_version: ProtocolVersion::new(1, 0),
+            negotiated_features: Vec::new(),
+            negotiated_capabilities: Vec::new(),
+            transport_security_class: TransportSecurityClass::InProcessTest,
+            next_send_sequence: 0,
+            next_receive_sequence: 0,
+        };
+        let mut session = LogicalSession {
+            state: SessionState::Active,
+            context: Some(context),
+        };
+
+        assert_eq!(
+            session.apply_peer_revocation(&revoked),
+            Err(SessionError::PeerTrustRevisionNotAdvanced)
+        );
+        assert_eq!(session.state(), SessionState::Active);
+    }
+}
