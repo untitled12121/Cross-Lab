@@ -273,11 +273,8 @@ impl TransportConnection for QuicTransportConnection {
         let mut handle = None;
 
         let spawned = self.tasks.spawn_if_open(|| {
-            let (send, driver) = new_outgoing_uni_stream(
-                Arc::clone(&shared),
-                chunk_capacity,
-                max_chunk_bytes,
-            );
+            let (send, driver) =
+                new_outgoing_uni_stream(Arc::clone(&shared), chunk_capacity, max_chunk_bytes);
             handle = Some(Box::new(send) as Box<dyn TransportSendStream>);
             run_outgoing_uni_stream(
                 connection.clone(),
