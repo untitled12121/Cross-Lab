@@ -6,8 +6,9 @@ use std::{
 };
 
 use crosslab_core::{
-    ConnectionMetadata, ControlReceiveError, ControlSendError, TransportConnection,
-    TransportSecurityClass,
+    ConnectionMetadata, ControlReceiveError, ControlSendError, IncomingUniStream,
+    StreamAcceptError, StreamOpenError, StreamReceiveError, StreamSendError, TransportConnection,
+    TransportReceiveStream, TransportSecurityClass, TransportSendStream,
 };
 use quinn::{ClientConfig, Connection, Endpoint, RecvStream, SendStream, ServerConfig};
 use rustls::{RootCertStore, pki_types::PrivatePkcs8KeyDer};
@@ -189,9 +190,182 @@ async fn shutdown_closes_connection_and_owned_tasks() {
     pair.server.shutdown().await;
 }
 
+#[tokio::test]
+async fn uni_stream_carries_opening_frame_and_chunks_in_order() {
+    let pair = promoted_loopback_transport_pair_with_config(QuicTransportConfig::default()).await;
+    let mut send = pair.client.try_open_uni_stream(vec![0x10]).unwrap();
+
+    send.try_send_chunk(vec![0x20]).unwrap();
+    send.try_send_chunk(vec![0x21]).unwrap();
+    send.finish();
+
+    let incoming = eventually_accept(&pair.server).await;
+    assert_eq!(incoming.opening_frame(), &[0x10]);
+    let (_, mut recv) = incoming.into_parts();
+    assert_eq!(eventually_receive_chunk(recv.as_mut()).await, vec![0x20]);
+    assert_eq!(eventually_receive_chunk(recv.as_mut()).await, vec![0x21]);
+    eventually_finished(recv.as_mut()).await;
+
+    pair.client.shutdown().await;
+    pair.server.shutdown().await;
+}
+
+#[tokio::test]
+async fn uni_stream_open_saturation_preserves_opening_frame() {
+    let config = QuicTransportConfig::default();
+    let pair = promoted_loopback_transport_pair_with_config(config).await;
+    let mut streams = Vec::with_capacity(config.outgoing_stream_capacity());
+
+    for index in 0..config.outgoing_stream_capacity() {
+        streams.push(
+            pair.client
+                .try_open_uni_stream(vec![u8::try_from(index).unwrap()])
+                .unwrap(),
+        );
+    }
+
+    let opening = vec![0xF1];
+    let error = match pair.client.try_open_uni_stream(opening.clone()) {
+        Err(error) => error,
+        Ok(_) => panic!("outgoing stream capacity was not enforced"),
+    };
+    assert_eq!(error, StreamOpenError::Full(opening));
+
+    for stream in &mut streams {
+        stream.cancel();
+    }
+    pair.client.shutdown().await;
+    pair.server.shutdown().await;
+}
+
+#[tokio::test]
+async fn uni_stream_rejects_oversized_opening_without_consuming_slot() {
+    let config = QuicTransportConfig::default();
+    let pair = promoted_loopback_transport_pair_with_config(config).await;
+    let opening = vec![0x31; config.max_opening_frame_bytes() + 1];
+
+    let error = match pair.client.try_open_uni_stream(opening.clone()) {
+        Err(error) => error,
+        Ok(_) => panic!("oversized opening frame unexpectedly allocated a stream"),
+    };
+    assert_eq!(error, StreamOpenError::TooLarge(opening));
+
+    let mut send = pair.client.try_open_uni_stream(vec![0x32]).unwrap();
+    send.cancel();
+    pair.client.shutdown().await;
+    pair.server.shutdown().await;
+}
+
+#[tokio::test]
+async fn uni_stream_chunk_limits_preserve_unsent_bytes() {
+    let config = QuicTransportConfig::default();
+    let pair = promoted_loopback_transport_pair_with_config(config).await;
+    let mut send = pair.client.try_open_uni_stream(vec![0x40]).unwrap();
+
+    let oversized = vec![0x41; config.max_chunk_bytes() + 1];
+    assert_eq!(
+        send.try_send_chunk(oversized.clone()).unwrap_err(),
+        StreamSendError::TooLarge(oversized)
+    );
+
+    for index in 0..config.stream_chunk_queue_capacity() {
+        send.try_send_chunk(vec![u8::try_from(index).unwrap()])
+            .unwrap();
+    }
+    let full = vec![0x42];
+    assert_eq!(
+        send.try_send_chunk(full.clone()).unwrap_err(),
+        StreamSendError::Full(full)
+    );
+
+    send.cancel();
+    pair.client.shutdown().await;
+    pair.server.shutdown().await;
+}
+
+#[tokio::test]
+async fn uni_stream_sender_cancel_resets_receiver() {
+    let pair = promoted_loopback_transport_pair_with_config(QuicTransportConfig::default()).await;
+    let mut send = pair.client.try_open_uni_stream(vec![0x50]).unwrap();
+    let incoming = eventually_accept(&pair.server).await;
+    let (_, mut recv) = incoming.into_parts();
+
+    send.cancel();
+    eventually_cancelled(recv.as_mut()).await;
+
+    pair.client.shutdown().await;
+    pair.server.shutdown().await;
+}
+
+#[tokio::test]
+async fn uni_stream_sender_drop_resets_receiver() {
+    let pair = promoted_loopback_transport_pair_with_config(QuicTransportConfig::default()).await;
+    let send = pair.client.try_open_uni_stream(vec![0x51]).unwrap();
+    let incoming = eventually_accept(&pair.server).await;
+    let (_, mut recv) = incoming.into_parts();
+
+    drop(send);
+    eventually_cancelled(recv.as_mut()).await;
+
+    pair.client.shutdown().await;
+    pair.server.shutdown().await;
+}
+
+#[tokio::test]
+async fn uni_stream_receiver_cancel_stops_sender() {
+    let pair = promoted_loopback_transport_pair_with_config(QuicTransportConfig::default()).await;
+    let mut send = pair.client.try_open_uni_stream(vec![0x60]).unwrap();
+    let incoming = eventually_accept(&pair.server).await;
+    let (_, mut recv) = incoming.into_parts();
+
+    recv.cancel();
+    eventually_sender_closed(send.as_mut()).await;
+
+    pair.client.shutdown().await;
+    pair.server.shutdown().await;
+}
+
+#[tokio::test]
+async fn uni_stream_connection_close_cancels_live_and_future_streams() {
+    let pair = promoted_loopback_transport_pair_with_config(QuicTransportConfig::default()).await;
+    let mut send = pair.client.try_open_uni_stream(vec![0x70]).unwrap();
+    let incoming = eventually_accept(&pair.server).await;
+    let (_, mut recv) = incoming.into_parts();
+
+    pair.server.close();
+    eventually_closed(&pair.client).await;
+    eventually_cancelled(recv.as_mut()).await;
+
+    assert_eq!(
+        send.try_send_chunk(vec![0x71]).unwrap_err(),
+        StreamSendError::Closed(vec![0x71])
+    );
+    let opening = vec![0x72];
+    let error = match pair.client.try_open_uni_stream(opening.clone()) {
+        Err(error) => error,
+        Ok(_) => panic!("stream opened after connection became terminal"),
+    };
+    assert_eq!(error, StreamOpenError::Closed(opening));
+    assert_eq!(
+        pair.server.try_accept_uni_stream().unwrap_err(),
+        StreamAcceptError::Closed
+    );
+
+    pair.client.shutdown().await;
+    pair.server.shutdown().await;
+}
+
 async fn promoted_loopback_transport_pair(
     control_capacity: usize,
     max_control_frame_bytes: usize,
+) -> LoopbackTransportPair {
+    let config = QuicTransportConfig::default()
+        .with_control_limits(nonzero(control_capacity), nonzero(max_control_frame_bytes));
+    promoted_loopback_transport_pair_with_config(config).await
+}
+
+async fn promoted_loopback_transport_pair_with_config(
+    config: QuicTransportConfig,
 ) -> LoopbackTransportPair {
     let raw = loopback_connection_pair().await;
     let client_binding = derive_channel_binding(&raw.client).unwrap();
@@ -207,8 +381,6 @@ async fn promoted_loopback_transport_pair(
         vec![0xA5]
     );
 
-    let config = QuicTransportConfig::default()
-        .with_control_limits(nonzero(control_capacity), nonzero(max_control_frame_bytes));
     let client = QuicTransportConnection::new(
         raw.client.clone(),
         client_send,
@@ -256,6 +428,92 @@ async fn eventually_receive_control(connection: &QuicTransportConnection) -> Vec
     })
     .await
     .expect("control frame was not delivered before timeout")
+}
+
+async fn eventually_accept(connection: &QuicTransportConnection) -> IncomingUniStream {
+    timeout(Duration::from_secs(2), async {
+        loop {
+            match connection.try_accept_uni_stream() {
+                Ok(stream) => return stream,
+                Err(StreamAcceptError::Empty) => tokio::task::yield_now().await,
+                Err(StreamAcceptError::Closed) => {
+                    panic!("transport closed before accepting the expected stream")
+                }
+            }
+        }
+    })
+    .await
+    .expect("incoming stream was not published before timeout")
+}
+
+async fn eventually_receive_chunk(stream: &mut dyn TransportReceiveStream) -> Vec<u8> {
+    timeout(Duration::from_secs(2), async {
+        loop {
+            match stream.try_receive_chunk() {
+                Ok(chunk) => return chunk,
+                Err(StreamReceiveError::Empty) => tokio::task::yield_now().await,
+                Err(StreamReceiveError::Finished) => {
+                    panic!("stream finished before delivering the expected chunk")
+                }
+                Err(StreamReceiveError::Cancelled) => {
+                    panic!("stream was cancelled before delivering the expected chunk")
+                }
+            }
+        }
+    })
+    .await
+    .expect("stream chunk was not delivered before timeout")
+}
+
+async fn eventually_finished(stream: &mut dyn TransportReceiveStream) {
+    timeout(Duration::from_secs(2), async {
+        loop {
+            match stream.try_receive_chunk() {
+                Err(StreamReceiveError::Empty) => tokio::task::yield_now().await,
+                Err(StreamReceiveError::Finished) => return,
+                Err(StreamReceiveError::Cancelled) => {
+                    panic!("stream was cancelled instead of finishing")
+                }
+                Ok(chunk) => panic!("unexpected trailing stream chunk: {chunk:?}"),
+            }
+        }
+    })
+    .await
+    .expect("stream did not finish before timeout");
+}
+
+async fn eventually_cancelled(stream: &mut dyn TransportReceiveStream) {
+    timeout(Duration::from_secs(2), async {
+        loop {
+            match stream.try_receive_chunk() {
+                Err(StreamReceiveError::Empty) => tokio::task::yield_now().await,
+                Err(StreamReceiveError::Cancelled) => return,
+                Err(StreamReceiveError::Finished) => {
+                    panic!("stream finished instead of being cancelled")
+                }
+                Ok(_) => tokio::task::yield_now().await,
+            }
+        }
+    })
+    .await
+    .expect("stream was not cancelled before timeout");
+}
+
+async fn eventually_sender_closed(stream: &mut dyn TransportSendStream) {
+    timeout(Duration::from_secs(2), async {
+        loop {
+            let chunk = vec![0x91];
+            match stream.try_send_chunk(chunk) {
+                Err(StreamSendError::Closed(_)) => return,
+                Err(StreamSendError::Full(_)) | Ok(()) => tokio::task::yield_now().await,
+                Err(StreamSendError::TooLarge(_)) => {
+                    panic!("one-byte chunk unexpectedly exceeded the stream limit")
+                }
+            }
+        }
+    })
+    .await
+    .expect("sender did not observe peer stop before timeout");
 }
 
 async fn eventually_closed(connection: &QuicTransportConnection) {
