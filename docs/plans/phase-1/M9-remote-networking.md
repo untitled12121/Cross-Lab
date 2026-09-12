@@ -4,109 +4,107 @@
 
 **Goal:** Produce reproducible evidence for Cross-Lab remote connectivity, validate Iroh against the verified Quinn baseline without weakening identity/session/policy boundaries, and close M9 with an evidence-backed remote-networking ADR.
 
-**Architecture:** Keep the verified M8 Quinn adapter unchanged as the local/LAN production baseline. Add one non-publishable `experiments/m9-networking` workspace crate that owns candidate dependencies, measurements, local relay fixtures, and controlled-network tooling. The Iroh candidate implements the existing `TransportConnection` semantics only inside the experiment; no candidate dependency graduates into production until ADR-0009 is accepted.
+**Architecture:** Keep the verified M8 Quinn adapter unchanged as the local/LAN production baseline. Add one non-publishable `experiments/m9-networking` workspace crate that owns candidate dependencies, measurements, self-hosted relay fixtures, and controlled-network tooling. The Iroh adapter exists only inside the experiment until ADR-0009 selects it; no candidate type or dependency enters Cross-Lab domain crates during M9.
 
-**Tech Stack:** Rust 2024 / Rust 1.98.x, Quinn `0.11.11`, Tokio `1.53.1`, Iroh `1.2.0`, Iroh Relay `1.2.0` for experiment-only self-hosted relay fixtures, rustls `0.23.44`, rcgen `0.14.10`; rust-libp2p `0.57.0` only if the explicit conditional comparison gate is triggered.
+**Tech Stack:** Rust 2024 / repository Rust 1.98 baseline, Quinn `0.11.11`, Tokio `1.53.1`, Iroh `1.2.0`, Iroh Relay `1.2.0`, rustls `0.23.44`, rcgen `0.14.10`; rust-libp2p `0.57.0` only when Task 9's recorded trigger is satisfied.
 
 **Spec:** `docs/plans/phase-1/M9-remote-networking-design.md`
 
 ## Global Constraints
 
 - Preserve `docs/architecture/SESSION-TRANSPORT.md`, ADR-0008, and all verified M8 session/control/stream/reconnect/revocation semantics.
-- Required M9 tests must use no public infrastructure. Use `Endpoint::builder(presets::Minimal)` and explicit addresses/relay maps; never silently use the Iroh `N0` preset or default n0 relay map.
-- Iroh `EndpointId`, Iroh `SecretKey`, relay URLs/tokens, path IDs, libp2p `PeerId`, `Multiaddr`, and `Swarm` state remain transport/routing metadata only. They never become Cross-Lab identity, trust, policy, capability, or operation authority.
-- Reuse ADR-0008 exactly for the Iroh candidate after a full handshake: profile `quic-tls-exporter-v1`, 32 bytes, label `EXPORTER-Cross-Lab-QUIC-Channel-Binding-v1`, context `crosslab.quic.transport.v1`.
-- Do not use Iroh or libp2p 0-RTT/early-data paths for Cross-Lab authority.
-- Every Iroh-backed Cross-Lab session is `NetworkClass::Remote` for its entire lifetime, including relay-to-direct and direct-to-relay path changes.
-- Path changes inside one live Iroh protected connection are observability/performance events only. They do not change `SessionId`, channel binding, sequence state, policy classification, or operation grants.
-- A closed Iroh connection followed by a new connection is a Cross-Lab reconnect: fresh exporter binding, nonces/proofs, `SessionId`, capability state, sequence state, and authorization are mandatory.
-- Begin candidate resource limits from the M8 semantic defaults: control queue 8, incoming stream queue 8, outgoing stream slots 8, chunk queue 8, max control `256 KiB + 4`, max opening `4 KiB + 4`, max chunk `64 KiB`, remote uni streams 32, remote bi streams 1, stream receive window `512 KiB`, connection receive window `4 MiB`, idle timeout 30 seconds.
-- No unbounded Tokio channels, `read_to_end` with attacker-controlled lengths, detached tasks, infinite reconnect loops, or unbounded relay retry loops.
-- Candidate crates must remain isolated under `experiments/m9-networking`; do not add Iroh/libp2p dependencies to `crosslab-core`, protocol, identity, policy, simulator, or `transports/quic`.
-- Do not extract a generic transport framework crate during M9 unless measured prototype duplication proves a concrete reusable boundary and the ADR explicitly approves it.
-- Iroh production selection happens only through ADR-0009 after required deterministic tests and the controlled networking evidence are recorded.
-- A libp2p prototype is conditional. Do not add `libp2p` until Task 9's trigger rule is satisfied and recorded in the evidence document.
-- All behavior changes follow RED -> verified failure -> minimal GREEN -> focused verification -> full gate -> commit.
-
----
+- Required tests use no public infrastructure: use `Endpoint::builder(presets::Minimal)` plus explicit addresses and explicit relay maps; never silently use the Iroh `N0` preset or default n0 relay map.
+- Iroh `EndpointId`, Iroh `SecretKey`, relay URLs/tokens, path IDs, libp2p `PeerId`, `Multiaddr`, and `Swarm` state remain routing metadata only.
+- Reuse ADR-0008 exactly after a full Iroh handshake: `quic-tls-exporter-v1`, 32 bytes, label `EXPORTER-Cross-Lab-QUIC-Channel-Binding-v1`, context `crosslab.quic.transport.v1`.
+- Do not use Iroh/libp2p 0-RTT or early-data paths for Cross-Lab authority.
+- Every Iroh-backed Cross-Lab session is `NetworkClass::Remote` for its entire lifetime, including relay/direct path changes.
+- Path changes inside one live Iroh connection do not change exporter binding, `SessionId`, sequence state, policy class, or operation grants.
+- A new Iroh connection requires fresh Cross-Lab authentication and authority.
+- Candidate bounds start from M8 defaults: control queue 8; incoming queue 8; outgoing slots 8; chunk queue 8; max control `256 KiB + 4`; max opening `4 KiB + 4`; max chunk `64 KiB`; remote uni 32; remote bi 1; stream window `512 KiB`; connection window `4 MiB`; idle timeout 30 seconds.
+- No unbounded channels, attacker-sized allocation before validation, detached tasks, infinite reconnect loops, or unconstrained relay retry loops.
+- Candidate dependencies stay under `experiments/m9-networking`; do not add them to `crosslab-core`, protocol, identity, policy, simulator, or `transports/quic`.
+- Do not extract a generic transport framework crate during M9.
+- Iroh is selected only by ADR-0009 after deterministic and controlled-network evidence is recorded.
+- Do not add libp2p unless Task 9's trigger is recorded in the evidence document.
+- Each behavior slice follows RED -> verified failure -> minimal GREEN -> focused tests -> full gate -> commit.
 
 ## File Structure
 
 ```text
 experiments/m9-networking/
 ├── Cargo.toml
-├── scripts/
-│   └── netns.sh                  # manual controlled-NAT gate; Linux only
+├── scripts/netns.sh
 ├── src/
-│   ├── lib.rs                    # experiment-only module exports
-│   ├── config.rs                 # common evaluation limits/timeouts
-│   ├── error.rs                  # focused experiment error type
-│   ├── metrics.rs                # typed samples and stable TSV rendering
-│   ├── baseline.rs               # raw Quinn measurement baseline
+│   ├── lib.rs
+│   ├── config.rs
+│   ├── error.rs
+│   ├── metrics.rs
+│   ├── baseline.rs
+│   ├── relay.rs
+│   ├── netprobe.rs
 │   ├── candidate/
 │   │   ├── mod.rs
-│   │   ├── endpoint.rs           # Minimal Iroh endpoint/direct pair helpers
-│   │   ├── binding.rs            # ADR-0008 exporter derivation
-│   │   ├── record.rs             # bounded private u32-BE records
-│   │   ├── runtime.rs            # terminal state + owned task registry
-│   │   ├── control.rs            # bounded reserved control bridge
-│   │   ├── stream.rs             # bounded uni-stream bridge
-│   │   └── connection.rs         # experiment-only TransportConnection impl
+│   │   ├── endpoint.rs
+│   │   ├── binding.rs
+│   │   ├── record.rs
+│   │   ├── runtime.rs
+│   │   ├── control.rs
+│   │   ├── stream.rs
+│   │   └── connection.rs
 │   ├── scenarios/
 │   │   ├── mod.rs
-│   │   ├── auth.rs               # deterministic Cross-Lab auth fixture/orchestration
-│   │   ├── lifecycle.rs          # SimNode/SimStreamRuntime scenarios
-│   │   └── relay.rs              # owner-relay + path observation scenarios
-│   ├── relay.rs                  # self-hosted relay fixture/server wrapper
-│   ├── netprobe.rs               # cross-process controlled-network roles
-│   └── bin/
-│       └── m9-networking.rs       # benchmark/netprobe CLI using std::env parsing
+│   │   ├── auth.rs
+│   │   ├── lifecycle.rs
+│   │   └── relay.rs
+│   └── bin/m9-networking.rs
 └── tests/
+    ├── metrics.rs
     ├── baseline.rs
     ├── exporter.rs
     ├── control.rs
     ├── stream.rs
     ├── session.rs
     ├── lifecycle.rs
-    ├── relay.rs
-    └── metrics.rs
+    └── relay.rs
 
-docs/research/
-└── M9-networking-evidence.md      # machine/environment/results + decision matrix
-
-docs/adr/
-└── ADR-0009-remote-networking.md  # Proposed only after evidence exists
+docs/research/M9-networking-evidence.md
+docs/adr/ADR-0009-remote-networking.md
 ```
 
-The experiment crate is intentionally in the normal workspace so CI compiles and tests deterministic M9 code. Manual namespace/NAT measurements are not hard CI assertions because they require Linux network privileges and environment-sensitive timing.
+The experiment is a normal workspace member so deterministic code is checked by CI. Privileged namespace/NAT measurements are a documented manual gate, not timing assertions in hosted CI.
 
 ---
 
-### Task 1: Add the experiment crate and a reproducible Quinn measurement baseline
+### Task 1: Reproducible Quinn baseline and typed measurement schema
 
 **Files:**
 - Modify: `Cargo.toml`
 - Create: `experiments/m9-networking/Cargo.toml`
-- Create: `experiments/m9-networking/src/lib.rs`
-- Create: `experiments/m9-networking/src/config.rs`
-- Create: `experiments/m9-networking/src/error.rs`
-- Create: `experiments/m9-networking/src/metrics.rs`
-- Create: `experiments/m9-networking/src/baseline.rs`
-- Create: `experiments/m9-networking/tests/metrics.rs`
-- Create: `experiments/m9-networking/tests/baseline.rs`
+- Create: `experiments/m9-networking/src/{lib.rs,config.rs,error.rs,metrics.rs,baseline.rs}`
+- Create: `experiments/m9-networking/tests/{metrics.rs,baseline.rs}`
 - Modify: `docs/development/CURRENT.md`
 
 **Interfaces:**
-- Produces `EvalConfig`, `TransportKind`, `MetricKind`, `Measurement`, `Report`, and `baseline::run_quinn_loopback_sample`.
-- No Iroh dependency exists at the end of this task; this is the verified M8 comparison harness.
-
-- [ ] **Step 1: Write RED tests for stable measurement output and Quinn baseline coverage**
-
-Create `tests/metrics.rs`:
 
 ```rust
-use crosslab_m9_networking::metrics::{Measurement, MetricKind, Report, TransportKind};
+pub struct EvalConfig { /* private typed fields */ }
+pub enum TransportKind { Quinn, IrohDirect, IrohRelay, IrohRelayThenDirect }
+pub enum MetricKind {
+    ProtectedConnectMicros,
+    SessionAuthMicros,
+    ControlRttMicros,
+    BulkBytesPerSecond,
+    RelayUpgradeMicros,
+    ShutdownMicros,
+}
+pub struct Measurement { /* typed transport/metric/sample/value */ }
+pub struct Report { /* Vec<Measurement> */ }
+pub async fn run_quinn_loopback_sample(config: EvalConfig) -> Result<Report, EvalError>;
+```
 
+- [ ] **Step 1: Write RED tests**
+
+```rust
 #[test]
 fn report_tsv_schema_is_stable() {
     let report = Report::new(vec![Measurement::new(
@@ -115,56 +113,36 @@ fn report_tsv_schema_is_stable() {
         0,
         42,
     )]);
-
-    assert_eq!(
-        report.to_tsv(),
-        "transport\tmetric\tsample\tvalue\nquinn\tprotected_connect_us\t0\t42\n"
-    );
+    assert_eq!(report.to_tsv(),
+        "transport\tmetric\tsample\tvalue\nquinn\tprotected_connect_us\t0\t42\n");
 }
-```
-
-Create `tests/baseline.rs`:
-
-```rust
-use crosslab_m9_networking::{config::EvalConfig, metrics::MetricKind};
 
 #[tokio::test]
-async fn quinn_baseline_records_connect_control_bulk_and_shutdown() {
-    let report = crosslab_m9_networking::baseline::run_quinn_loopback_sample(EvalConfig::test())
-        .await
-        .expect("Quinn baseline should complete");
-
+async fn quinn_baseline_records_required_transport_metrics() {
+    let report = baseline::run_quinn_loopback_sample(EvalConfig::test()).await.unwrap();
     for metric in [
         MetricKind::ProtectedConnectMicros,
         MetricKind::ControlRttMicros,
         MetricKind::BulkBytesPerSecond,
         MetricKind::ShutdownMicros,
     ] {
-        assert!(report.contains(metric), "missing {metric:?}");
+        assert!(report.contains(metric));
     }
 }
 ```
 
-- [ ] **Step 2: Run focused tests and verify RED**
-
-Run:
+- [ ] **Step 2: Verify RED**
 
 ```bash
 cargo test -p crosslab-m9-networking --test metrics
 cargo test -p crosslab-m9-networking --test baseline
 ```
 
-Expected: failure because the workspace member/package and measurement interfaces do not exist.
+Expected: package/interfaces absent.
 
-- [ ] **Step 3: Add the workspace member and experiment manifest**
+- [ ] **Step 3: Add the experiment member and manifest**
 
-Append only the experiment member to the root workspace:
-
-```toml
-"experiments/m9-networking",
-```
-
-Create `experiments/m9-networking/Cargo.toml`:
+Root workspace gains only `"experiments/m9-networking"`.
 
 ```toml
 [package]
@@ -193,63 +171,13 @@ rustls.workspace = true
 tokio = { workspace = true, features = ["io-util", "macros", "net", "process", "rt-multi-thread", "sync", "time"] }
 ```
 
-Do not add Iroh yet.
+- [ ] **Step 4: Implement metrics/config and raw Quinn fixture**
 
-- [ ] **Step 4: Implement typed evaluation configuration and metrics**
+`EvalConfig::test()` = one sample, 64 KiB payload, 5-second timeout. Default = five samples, 4 MiB payload, 15-second timeout.
 
-Use typed enums rather than stringly-typed metric names:
+`run_quinn_loopback_sample` creates fresh loopback endpoints/certificates for each sample, measures full protected connection establishment, one bounded 32-byte bidirectional ping/echo, one fixed-size unidirectional transfer with an explicit receive limit, and endpoint shutdown. Do not change `QuicTransportConnection::new` visibility.
 
-```rust
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TransportKind {
-    Quinn,
-    IrohDirect,
-    IrohRelay,
-    IrohRelayThenDirect,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MetricKind {
-    ProtectedConnectMicros,
-    SessionAuthMicros,
-    ControlRttMicros,
-    BulkBytesPerSecond,
-    RelayUpgradeMicros,
-    ShutdownMicros,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Measurement {
-    transport: TransportKind,
-    metric: MetricKind,
-    sample: usize,
-    value: u128,
-}
-```
-
-`EvalConfig::test()` must use one sample, 64 KiB bulk payload, and a 5-second timeout. `EvalConfig::default()` must use five samples, 4 MiB bulk payload, and a 15-second timeout. Keep the TSV formatter deterministic with the exact header from the RED test.
-
-- [ ] **Step 5: Implement the raw Quinn baseline harness without changing `transports/quic` visibility**
-
-Use the same pinned Quinn/rustls/rcgen family as M8. The experiment owns a local fixture:
-
-```rust
-pub async fn run_quinn_loopback_sample(config: EvalConfig) -> Result<Report, EvalError>;
-```
-
-For each sample:
-
-1. create fresh loopback endpoints and ephemeral test certificate;
-2. measure full protected connection establishment;
-3. open one bidirectional stream and measure a bounded 32-byte ping/echo RTT;
-4. open one unidirectional stream and transfer exactly `config.bulk_payload_bytes()` bytes with a fixed receive limit;
-5. close both endpoints and measure shutdown completion.
-
-Do not call `QuicTransportConnection::new`; its crate-private visibility is an intentional production boundary.
-
-- [ ] **Step 6: Run focused tests and dependency audit**
-
-Run:
+- [ ] **Step 5: Verify focused tests and dependency tree**
 
 ```bash
 cargo test -p crosslab-m9-networking --test metrics --test baseline
@@ -257,63 +185,53 @@ cargo tree -p crosslab-m9-networking -e features
 cargo metadata --locked --format-version 1 >/dev/null
 ```
 
-Expected: tests PASS; dependency tree contains no Iroh/libp2p yet.
+No Iroh/libp2p should be present yet.
 
-- [ ] **Step 7: Run the normal repository gate and checkpoint CURRENT.md**
-
-Run:
+- [ ] **Step 6: Full gate, CURRENT checkpoint, commit**
 
 ```bash
 cargo fmt --all -- --check
 cargo check --workspace --all-targets --all-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
-```
-
-Update `CURRENT.md` with the exact GREEN commit/CI once available and record Task 2 as next.
-
-- [ ] **Step 8: Commit**
-
-```bash
 git add Cargo.toml Cargo.lock experiments/m9-networking docs/development/CURRENT.md
 git commit -m "test(networking): add M9 Quinn baseline harness"
 ```
 
 ---
 
-### Task 2: Add direct Iroh endpoints and prove exact ADR-0008 exporter compatibility
+### Task 2: Direct Iroh endpoints and exact ADR-0008 exporter proof
 
 **Files:**
 - Modify: `experiments/m9-networking/Cargo.toml`
-- Create: `experiments/m9-networking/src/candidate/mod.rs`
-- Create: `experiments/m9-networking/src/candidate/endpoint.rs`
-- Create: `experiments/m9-networking/src/candidate/binding.rs`
-- Create: `experiments/m9-networking/tests/exporter.rs`
+- Create: `src/candidate/{mod.rs,endpoint.rs,binding.rs}`
+- Create: `tests/exporter.rs`
 - Modify: `docs/development/CURRENT.md`
 
 **Interfaces:**
-- Produces `candidate::endpoint::DirectPair` and `direct_pair()`.
-- Produces `candidate::binding::derive_channel_binding(&iroh::endpoint::Connection) -> Result<ChannelBinding, EvalError>`.
-- Consumes no public address lookup or default relay service.
 
-- [ ] **Step 1: Add Iroh to the experiment only**
+```rust
+pub const M9_ALPN: &[u8] = b"crosslab-m9-networking-eval";
+pub struct DirectPair { /* endpoints, established connections, bindings */ }
+pub async fn direct_pair() -> Result<DirectPair, EvalError>;
+pub async fn unconnected_direct_endpoints() -> Result<UnconnectedDirectPair, EvalError>;
+pub fn derive_channel_binding(
+    connection: &iroh::endpoint::Connection,
+) -> Result<ChannelBinding, EvalError>;
+```
 
-Pin the reviewed source/version and explicitly disable defaults:
+- [ ] **Step 1: Add Iroh only to the experiment**
 
 ```toml
 iroh = { version = "=1.2.0", default-features = false, features = ["portmapper", "test-utils", "tls-ring"] }
 ```
 
-Do not add Iroh to `[workspace.dependencies]` or any production crate.
-
-- [ ] **Step 2: Write RED exporter/direct-address tests**
-
-Create `tests/exporter.rs`:
+- [ ] **Step 2: Write RED tests**
 
 ```rust
 #[tokio::test]
-async fn direct_iroh_pair_uses_explicit_addressing_and_matching_exporter() {
-    let pair = direct_pair().await.expect("direct Iroh pair");
+async fn direct_pair_has_matching_exporter() {
+    let pair = direct_pair().await.unwrap();
     assert_eq!(pair.client_binding(), pair.server_binding());
     assert_eq!(pair.client_binding().profile_id(), "quic-tls-exporter-v1");
     assert_eq!(pair.client_binding().bytes().len(), 32);
@@ -321,128 +239,110 @@ async fn direct_iroh_pair_uses_explicit_addressing_and_matching_exporter() {
 }
 
 #[tokio::test]
-async fn fresh_iroh_connection_has_fresh_exporter() {
+async fn reconnect_changes_exporter() {
     let first = direct_pair().await.unwrap();
-    let first_binding = first.client_binding().bytes().to_vec();
+    let old = first.client_binding().bytes().to_vec();
     first.shutdown().await;
-
     let second = direct_pair().await.unwrap();
-    assert_ne!(first_binding, second.client_binding().bytes());
+    assert_ne!(old, second.client_binding().bytes());
     second.shutdown().await;
 }
 
 #[tokio::test]
-async fn minimal_endpoint_does_not_resolve_endpoint_id_without_explicit_address() {
+async fn minimal_endpoint_requires_explicit_address_data() {
     let pair = unconnected_direct_endpoints().await.unwrap();
-    assert!(pair.client.connect(pair.server.id(), M9_ALPN).await.is_err());
+    assert!(pair.client().connect(pair.server().id(), M9_ALPN).await.is_err());
     pair.shutdown().await;
 }
 ```
 
 - [ ] **Step 3: Verify RED**
 
-Run:
-
 ```bash
 cargo test -p crosslab-m9-networking --test exporter
 ```
 
-Expected: compile failure because candidate endpoint/binding helpers are absent.
-
-- [ ] **Step 4: Implement Minimal direct endpoints**
-
-Use the exact Iroh configuration shape:
+- [ ] **Step 4: Implement Minimal direct endpoints and binding**
 
 ```rust
-const M9_ALPN: &[u8] = b"crosslab-m9-networking-eval";
-
 fn direct_builder() -> iroh::endpoint::Builder {
     iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
         .relay_mode(iroh::RelayMode::Disabled)
         .alpns(vec![M9_ALPN.to_vec()])
 }
-```
 
-`direct_pair()` must connect with the server's explicit `EndpointAddr` (`server.addr()`), never by `EndpointId` alone. The server side accepts the normal full-handshake `Incoming`; do not call `into_0rtt`/`into_0_5rtt` or equivalent early-data APIs.
-
-- [ ] **Step 5: Implement ADR-0008 exporter derivation exactly**
-
-```rust
 const PROFILE_ID: &str = "quic-tls-exporter-v1";
 const LABEL: &[u8] = b"EXPORTER-Cross-Lab-QUIC-Channel-Binding-v1";
 const CONTEXT: &[u8] = b"crosslab.quic.transport.v1";
-const OUTPUT_LEN: usize = 32;
 
-pub fn derive_channel_binding(
-    connection: &iroh::endpoint::Connection,
-) -> Result<ChannelBinding, EvalError> {
-    let mut bytes = vec![0u8; OUTPUT_LEN];
-    connection
-        .export_keying_material(&mut bytes, LABEL, CONTEXT)
+pub fn derive_channel_binding(connection: &iroh::endpoint::Connection)
+    -> Result<ChannelBinding, EvalError>
+{
+    let mut bytes = vec![0u8; 32];
+    connection.export_keying_material(&mut bytes, LABEL, CONTEXT)
         .map_err(|_| EvalError::ChannelBinding)?;
     Ok(ChannelBinding::new(PROFILE_ID, bytes))
 }
 ```
 
-- [ ] **Step 6: Run tests and dependency review**
+Connect using `server.addr()`, not `EndpointId` alone. Await the normal full handshake; never call Iroh early-data conversion APIs.
 
-Run:
+- [ ] **Step 5: Verify version/features and full gate**
 
 ```bash
 cargo test -p crosslab-m9-networking --test exporter
-cargo tree -p crosslab-m9-networking -e features | tee /tmp/m9-features.txt
+cargo tree -p crosslab-m9-networking -e features
 cargo metadata --locked --format-version 1 >/dev/null
-```
-
-Verify the experiment resolves Iroh `1.2.0`, no second async runtime, and no libp2p dependency.
-
-**Decision gate:** if exact exporter semantics cannot be achieved after a full Iroh handshake, do not invent a substitute binding. Record the failure in `docs/research/M9-networking-evidence.md` and stop Iroh promotion work until the architecture decision is revisited.
-
-- [ ] **Step 7: Full gate, CURRENT.md checkpoint, commit**
-
-```bash
 cargo fmt --all -- --check
 cargo check --workspace --all-targets --all-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
+```
 
-git add experiments/m9-networking Cargo.lock docs/development/CURRENT.md
+If exact ADR-0008 semantics fail, do not substitute another binding. Create `docs/research/M9-networking-evidence.md` immediately with the exact command, environment, failure, and `Libp2p trigger: no` unless source evidence shows libp2p plausibly solves that same problem.
+
+- [ ] **Step 6: Checkpoint and commit**
+
+```bash
+git add experiments/m9-networking Cargo.lock docs/development/CURRENT.md docs/research
 git commit -m "test(networking): prove Iroh exporter compatibility"
 ```
 
 ---
 
-### Task 3: Build bounded record framing and reserved control bridge over Iroh
+### Task 3: Bounded record framing and reserved control bridge
 
 **Files:**
-- Create: `experiments/m9-networking/src/candidate/record.rs`
-- Create: `experiments/m9-networking/src/candidate/runtime.rs`
-- Create: `experiments/m9-networking/src/candidate/control.rs`
-- Create: `experiments/m9-networking/tests/control.rs`
+- Create: `src/candidate/{record.rs,runtime.rs,control.rs}`
+- Create: `tests/control.rs`
 
 **Interfaces:**
-- Produces `CandidateConfig` with M8-equivalent bounds.
-- Produces `CandidateRuntime` with shared terminal state and a joinable task registry.
-- Produces `ControlBridge::{spawn, try_send, try_receive, shutdown}`.
-- Does not implement `TransportConnection` yet.
 
-- [ ] **Step 1: Write RED bounded framing/control tests**
+```rust
+pub(crate) struct CandidateConfig { /* M8-equivalent typed limits */ }
+pub(crate) struct CandidateRuntime { /* terminal + TaskRegistry */ }
+pub(crate) struct ControlBridge { /* bounded tx/rx */ }
+impl ControlBridge {
+    pub(crate) fn try_send(&self, frame: Vec<u8>) -> Result<(), ControlSendError>;
+    pub(crate) fn try_receive(&self) -> Result<Vec<u8>, ControlReceiveError>;
+    pub(crate) async fn shutdown(self);
+}
+```
 
-Cover exact-limit round trip, oversized declared length rejected before allocation, truncated record failure, ordered controls, queue saturation, oversize ownership return, and peer close -> terminal.
+- [ ] **Step 1: Write RED tests for framing/order/backpressure/close**
 
 ```rust
 #[tokio::test]
 async fn oversized_control_returns_original_frame_without_queueing() {
-    let pair = connected_control_pair(test_config().with_control_limit(nz(4))).await.unwrap();
+    let pair = connected_control_pair(test_config_with_control_limit(4)).await.unwrap();
     let frame = vec![0x55; 5];
-    assert_eq!(
-        pair.client.try_send(frame.clone()),
-        Err(ControlSendError::TooLarge(frame))
-    );
+    assert_eq!(pair.client.try_send(frame.clone()), Err(ControlSendError::TooLarge(frame)));
     assert_eq!(pair.server.try_receive(), Err(ControlReceiveError::Empty));
     pair.shutdown().await;
 }
 ```
+
+Also test exact-limit success, declared length > limit rejected before allocation, truncated body failure, ordered frames, queue `Full`, and peer close -> `Closed`.
 
 - [ ] **Step 2: Verify RED**
 
@@ -450,38 +350,17 @@ async fn oversized_control_returns_original_frame_without_queueing() {
 cargo test -p crosslab-m9-networking --test control
 ```
 
-Expected: compile failure because candidate record/runtime/control modules do not exist.
+- [ ] **Step 3: Implement private u32-BE framing and owned runtime**
 
-- [ ] **Step 3: Implement private record framing**
+Record layout is `[4-byte big-endian length][body]`. Validate declared length before allocation, then `read_exact` only the validated body. `TaskRegistry::close_and_take()` stops accepting new child tasks before returning handles to join.
 
-Use the same private shape as M8 without extracting a shared crate:
+Add a test asserting every `CandidateConfig::default()` semantic limit equals `crosslab_transport_quic::QuicTransportConfig::default()`.
 
-```text
-[u32 big-endian body length][body bytes]
-```
+- [ ] **Step 4: Implement bounded writer/reader/close tasks**
 
-Read exactly four prefix bytes, validate declared length against the supplied maximum before allocating the body, then `read_exact` the body. Never use unbounded `read_to_end`.
+Use bounded Tokio mpsc queues sized by `CandidateConfig`. The synchronous bridge returns existing core `Full`, `TooLarge`, and `Closed` errors without blocking.
 
-- [ ] **Step 4: Implement candidate config and runtime ownership**
-
-`CandidateConfig::default()` must equal the M8 semantic limits. Add a unit test comparing every corresponding getter to `crosslab_transport_quic::QuicTransportConfig::default()`.
-
-`CandidateRuntime` owns:
-
-```rust
-pub(crate) struct CandidateRuntime {
-    terminal: Arc<AtomicBool>,
-    tasks: Arc<TaskRegistry>,
-}
-```
-
-`TaskRegistry::close_and_take()` must atomically stop accepting child tasks before shutdown joins the existing handles.
-
-- [ ] **Step 5: Implement the control bridge**
-
-`ControlBridge::spawn` takes an established Iroh connection plus the already-opened reserved bidirectional control stream. It owns bounded Tokio mpsc queues sized from `CandidateConfig`, one writer task, one reader task, and one connection-close monitor. The synchronous surface returns existing core errors (`Full`, `TooLarge`, `Closed`) without blocking.
-
-- [ ] **Step 6: Run focused + full gate and commit**
+- [ ] **Step 5: Full verification and commit**
 
 ```bash
 cargo test -p crosslab-m9-networking --test control
@@ -489,46 +368,29 @@ cargo fmt --all -- --check
 cargo check --workspace --all-targets --all-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
-
-git add experiments/m9-networking Cargo.lock
+git add experiments/m9-networking
 git commit -m "test(networking): add bounded Iroh control bridge"
 ```
 
 ---
 
-### Task 4: Add bounded unidirectional streams and the experiment-only TransportConnection
+### Task 4: Bounded uni-stream bridge and experiment-only TransportConnection
 
 **Files:**
-- Create: `experiments/m9-networking/src/candidate/stream.rs`
-- Create: `experiments/m9-networking/src/candidate/connection.rs`
-- Modify: `experiments/m9-networking/src/candidate/mod.rs`
-- Create: `experiments/m9-networking/tests/stream.rs`
+- Create: `src/candidate/{stream.rs,connection.rs}`
+- Modify: `src/candidate/mod.rs`
+- Create: `tests/stream.rs`
 
 **Interfaces:**
-- Produces `IrohTransportConnection`, implementing `crosslab_core::TransportConnection` only inside the experiment package.
-- Consumes `CandidateRuntime`, `ControlBridge`, `CandidateConfig`, and ADR-0008 `ChannelBinding`.
-
-- [ ] **Step 1: Write RED stream lifecycle tests**
-
-Mirror the M8 semantic matrix, not Quinn APIs:
 
 ```rust
-#[tokio::test]
-async fn iroh_uni_stream_preserves_opening_chunks_fin_and_backpressure() {
-    let pair = promoted_transport_pair(test_config()).await.unwrap();
-    let mut send = pair.client.try_open_uni_stream(b"open".to_vec()).unwrap();
-    let incoming = eventually_accept(&pair.server).await;
-    let (_, mut recv) = incoming.into_parts();
-
-    send.try_send_chunk(b"one".to_vec()).unwrap();
-    assert_eq!(eventually_receive(recv.as_mut()).await, b"one");
-    send.finish();
-    eventually_finished(recv.as_mut()).await;
-    pair.shutdown().await;
-}
+pub(crate) struct IrohTransportConnection { /* iroh connection + bridges/runtime */ }
+impl TransportConnection for IrohTransportConnection { /* existing semantic seam */ }
 ```
 
-Also cover stream-slot saturation, oversized opening/chunk ownership return, chunk queue saturation, sender RESET/drop -> receiver `Cancelled`, receiver STOP/cancel -> sender closed, connection close cancelling active streams, and joined shutdown.
+- [ ] **Step 1: Write RED stream tests**
+
+Cover ordered opening/chunks, exact limits, stream-slot saturation, chunk queue saturation, sender reset/drop -> `Cancelled`, receiver stop/cancel -> sender `Closed`, clean FIN -> `Finished`, connection close cancelling active streams, and joined shutdown.
 
 - [ ] **Step 2: Verify RED**
 
@@ -536,38 +398,24 @@ Also cover stream-slot saturation, oversized opening/chunk ownership return, chu
 cargo test -p crosslab-m9-networking --test stream
 ```
 
-Expected: missing `IrohTransportConnection`/stream driver API.
+- [ ] **Step 3: Implement stream drivers**
 
-- [ ] **Step 3: Implement bounded outgoing/incoming uni-stream drivers**
+Reserve outgoing slots synchronously with a semaphore permit before returning a send handle. Validate inbound opening frames before exposing `IncomingUniStream`. Keep per-stream chunk queues bounded. Map FIN/reset/stop/connection-loss to existing Cross-Lab stream outcomes; do not add Iroh-specific domain errors.
 
-Use synchronous semaphore reservation before `try_open_uni_stream` returns. Each outgoing stream owns a bounded chunk queue and the permit until finish/cancel/drop. Each incoming stream validates the bounded opening record before becoming visible and feeds chunks into a bounded queue.
-
-Map Iroh QUIC semantics exactly:
-
-```text
-clean FIN       -> StreamReceiveError::Finished after queued chunks drain
-sender reset    -> StreamReceiveError::Cancelled
-receiver stop   -> future sender sends fail Closed
-connection loss -> all stream authority terminal/Cancelled
-```
-
-- [ ] **Step 4: Implement `TransportConnection`**
-
-Required semantic surface:
+- [ ] **Step 4: Implement the semantic connection surface**
 
 ```rust
 impl TransportConnection for IrohTransportConnection {
     fn security_class(&self) -> TransportSecurityClass {
         TransportSecurityClass::AuthenticatedConfidentialChannel
     }
-    // channel_binding, metadata, try_send/receive_control,
-    // try_open/accept_uni_stream, close, is_closed
+    // existing channel_binding/metadata/control/uni-stream/close/is_closed methods only
 }
 ```
 
-Do not expose Iroh types through `crosslab-core` or another production crate.
+No Iroh type appears in a production/domain public API.
 
-- [ ] **Step 5: Focused + full verification and commit**
+- [ ] **Step 5: Verify and commit**
 
 ```bash
 cargo test -p crosslab-m9-networking --test control --test stream
@@ -575,41 +423,48 @@ cargo fmt --all -- --check
 cargo check --workspace --all-targets --all-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
-
 git add experiments/m9-networking
 git commit -m "test(networking): adapt bounded Iroh transport semantics"
 ```
 
 ---
 
-### Task 5: Prove the existing Cross-Lab session-auth protocol over Iroh
+### Task 5: Existing Cross-Lab session authentication over Iroh
 
 **Files:**
-- Create: `experiments/m9-networking/src/scenarios/mod.rs`
-- Create: `experiments/m9-networking/src/scenarios/auth.rs`
-- Create: `experiments/m9-networking/tests/session.rs`
+- Create: `src/scenarios/{mod.rs,auth.rs}`
+- Create: `tests/session.rs`
 - Modify: `docs/development/CURRENT.md`
 
 **Interfaces:**
-- Produces deterministic `AuthFixture`, `AuthAttempt`, and `AuthenticatedIrohPair` test/evaluation helpers.
-- Promotes the same reserved bidirectional stream from bootstrap framing into `IrohTransportConnection` only after both `LogicalSession`s are `Active`.
 
-- [ ] **Step 1: Write RED authentication scenarios**
+```rust
+pub(crate) struct AuthFixture { /* deterministic Cross-Lab owner/device credentials */ }
+pub(crate) enum AuthAttempt { Normal, WrongBinding, ReplayInitiator(ReplayProof) }
+pub(crate) struct AuthenticatedIrohPair {
+    pub(crate) client_transport: IrohTransportConnection,
+    pub(crate) server_transport: IrohTransportConnection,
+    pub(crate) client_session: LogicalSession,
+    pub(crate) server_session: LogicalSession,
+    pub(crate) network_class: NetworkClass,
+}
+pub(crate) async fn authenticate_direct_pair(
+    fixture: &AuthFixture,
+    attempt: AuthAttempt,
+) -> Result<AuthenticatedIrohPair, RejectedAuthentication>;
+```
 
-Required tests:
+- [ ] **Step 1: Write RED tests**
 
 ```rust
 #[tokio::test]
 async fn trusted_peers_activate_over_iroh_exporter() { /* assert both Active */ }
-
 #[tokio::test]
-async fn proof_bound_to_wrong_iroh_connection_is_rejected() { /* assert Closed */ }
-
+async fn wrong_connection_binding_fails_before_active() { /* assert Closed */ }
 #[tokio::test]
-async fn proof_replay_after_iroh_reconnect_is_rejected() { /* old proof fails */ }
-
+async fn replay_after_reconnect_fails() { /* old proof rejected */ }
 #[tokio::test]
-async fn ordinary_control_cannot_promote_before_both_sessions_are_active() { /* fail closed */ }
+async fn promotion_is_refused_before_both_sessions_are_active() { /* fail closed */ }
 ```
 
 - [ ] **Step 2: Verify RED**
@@ -618,28 +473,21 @@ async fn ordinary_control_cannot_promote_before_both_sessions_are_active() { /* 
 cargo test -p crosslab-m9-networking --test session
 ```
 
-Expected: missing auth fixture/orchestration.
+- [ ] **Step 3: Implement the existing hello/proof bootstrap unchanged**
 
-- [ ] **Step 3: Implement deterministic credentials and existing bootstrap messages**
+Use `OwnerRootRecord`, `AuthorityDelegation`, `DeviceCredential`, `TrustRecord`, `SessionAuthTranscriptV1`, `SessionActivation`, `SessionAuthHello`, `SessionAuthProofMessage`, `encode_session_auth_bootstrap`, and `decode_session_auth_bootstrap`. Use deterministic test keys/IDs only. Never treat Iroh endpoint identity as a Cross-Lab credential.
 
-Use the public APIs already exercised by M8: `OwnerRootRecord`, `AuthorityDelegation`, `DeviceCredential`, `TrustRecord`, `SessionAuthTranscriptV1`, `SessionActivation`, `SessionAuthHello`, `SessionAuthProofMessage`, `encode_session_auth_bootstrap`, and `decode_session_auth_bootstrap`.
-
-Derive deterministic fixture keys/IDs from fixed test byte arrays only. Do not construct a new signature transcript or use Iroh endpoint identity as a Cross-Lab credential.
-
-- [ ] **Step 4: Promote only after both sessions are active**
-
-The orchestration sequence is:
+Sequence:
 
 ```text
-full Iroh handshake
--> ADR-0008 exporter
--> reserved bi stream
--> existing hello/proof exchange
--> LogicalSession::Active on both peers
--> consume same bi stream into IrohTransportConnection
+full Iroh handshake -> ADR-0008 exporter -> reserved bi stream
+-> existing hello/proof exchange -> both LogicalSession::Active
+-> same bi stream promoted into IrohTransportConnection
 ```
 
-- [ ] **Step 5: Full verification, durable checkpoint, commit**
+Set `AuthenticatedIrohPair::network_class` to `NetworkClass::Remote` at construction and expose no setter.
+
+- [ ] **Step 4: Full gate, CURRENT checkpoint, commit**
 
 ```bash
 cargo test -p crosslab-m9-networking --test session
@@ -647,37 +495,37 @@ cargo fmt --all -- --check
 cargo check --workspace --all-targets --all-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
-
 git add experiments/m9-networking docs/development/CURRENT.md
 git commit -m "test(networking): authenticate Cross-Lab sessions over Iroh"
 ```
 
 ---
 
-### Task 6: Re-run Cross-Lab control/data/reconnect/revocation semantics over direct Iroh
+### Task 6: Direct-Iroh control/data/reconnect/revocation semantics
 
 **Files:**
-- Create: `experiments/m9-networking/src/scenarios/lifecycle.rs`
-- Create: `experiments/m9-networking/tests/lifecycle.rs`
+- Create: `src/scenarios/lifecycle.rs`
+- Create: `tests/lifecycle.rs`
 
-**Interfaces:**
-- Consumes `AuthenticatedIrohPair`.
-- Reuses production `SimNode`, `SimStreamRuntime`, `PolicyState`, operation authorization, stream admission, and revocation APIs unchanged.
+**Interfaces:** consumes `AuthenticatedIrohPair` and existing `SimNode`, `SimStreamRuntime`, policy/trust/operation APIs. Produces no new domain API.
 
-- [ ] **Step 1: Write RED lifecycle scenarios**
+- [ ] **Step 1: Write RED lifecycle tests**
 
-Port the semantic assertions, not the Quinn fixture, from M8:
+Cover capability advertisement + request/response/event; authorized operation-bound uni stream; unknown operation rejection; fresh reconnect changing binding and `SessionId`; old proof/session/operation authority rejection; signed revocation terminating authority; reconnect-after-revocation denial; saturation/cancellation/shutdown.
 
-1. capability advertisement + request/response/event;
-2. authorized operation-bound uni stream;
-3. unknown operation rejected;
-4. fresh reconnect changes exporter + `SessionId` and clears old request/operation authority;
-5. old proof/session/operation authority rejected after reconnect;
-6. signed peer revocation terminates active authority;
-7. reconnect after revocation cannot reach `Active`;
-8. transport saturation/cancellation/shutdown fail closed.
+Add the LocalOnly regression using real existing policy types:
 
-Use `NetworkClass::Remote` in every Iroh authorization context.
+```rust
+let rule = PolicyRule::new(rule_id, source, capability.clone(), operation.clone(), RuleEffect::Allow)
+    .with_constraint(Constraint::LocalOnly);
+let mut policy = PolicyState::new();
+policy.insert(rule).unwrap();
+let context = AuthorizationContext::new(
+    source, destination, session_id, capability, version, operation,
+    TrustState::Trusted, trust_revision, local_capability, NetworkClass::Remote,
+);
+assert_eq!(policy.evaluate(&context).reason(), DecisionReason::ConstraintFailed);
+```
 
 - [ ] **Step 2: Verify RED**
 
@@ -685,22 +533,11 @@ Use `NetworkClass::Remote` in every Iroh authorization context.
 cargo test -p crosslab-m9-networking --test lifecycle
 ```
 
-Expected: lifecycle helpers/scenarios missing.
+- [ ] **Step 3: Implement only test orchestration**
 
-- [ ] **Step 3: Implement only orchestration/helpers needed by the tests**
+`SimNode` and `SimStreamRuntime` remain behavior owners. Do not add Iroh-specific policy exceptions or operation state.
 
-Do not add new policy exceptions or transport-specific operation logic. Existing `SimNode::new` and `SimStreamRuntime::new` remain the behavior owners.
-
-Add an explicit LocalOnly regression:
-
-```rust
-assert_eq!(
-    remote_context_with_local_only_rule().decision().reason(),
-    DecisionReason::ConstraintFailed
-);
-```
-
-- [ ] **Step 4: Focused + full gate and commit**
+- [ ] **Step 4: Verify and commit**
 
 ```bash
 cargo test -p crosslab-m9-networking --test lifecycle
@@ -708,56 +545,65 @@ cargo fmt --all -- --check
 cargo check --workspace --all-targets --all-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
-
 git add experiments/m9-networking
 git commit -m "test(networking): prove Cross-Lab lifecycle over Iroh"
 ```
 
 ---
 
-### Task 7: Add owner-controlled relay fixtures, relay-only transport, and path-observation invariants
+### Task 7: Owner-controlled relay and path-change invariants
 
 **Files:**
 - Modify: `experiments/m9-networking/Cargo.toml`
-- Create: `experiments/m9-networking/src/relay.rs`
-- Create: `experiments/m9-networking/src/scenarios/relay.rs`
-- Create: `experiments/m9-networking/tests/relay.rs`
+- Create: `src/relay.rs`
+- Create: `src/scenarios/relay.rs`
+- Create: `tests/relay.rs`
 - Modify: `docs/development/CURRENT.md`
 
 **Interfaces:**
-- Produces `OwnerRelay` with explicit start/url/shutdown lifecycle.
-- Produces relay-only and relay-then-direct authenticated Iroh fixtures.
-- Exposes path observations only to metrics/tests; no policy mutator exists.
 
-- [ ] **Step 1: Add experiment-only relay server dependency**
+```rust
+pub(crate) struct OwnerRelay { /* iroh-relay Server + RelayUrl */ }
+impl OwnerRelay {
+    pub(crate) async fn start() -> Result<Self, EvalError>;
+    pub(crate) fn url(&self) -> RelayUrl;
+    pub(crate) async fn shutdown(self) -> Result<(), EvalError>;
+}
+
+pub(crate) struct RelayObservedPair { /* authenticated pair + immutable Remote class */ }
+impl RelayObservedPair {
+    pub(crate) fn network_class(&self) -> NetworkClass;
+    pub(crate) fn channel_binding(&self) -> &ChannelBinding;
+    pub(crate) fn session_id(&self) -> SessionId;
+    pub(crate) async fn wait_for_direct_path(&mut self, timeout: Duration) -> Result<(), EvalError>;
+}
+```
+
+- [ ] **Step 1: Add the self-hosted relay server dependency only to the experiment**
 
 ```toml
 iroh-relay = { version = "=1.2.0", default-features = false, features = ["server", "test-utils", "tls-ring"] }
 ```
 
-This dependency remains inside the experiment crate.
-
-- [ ] **Step 2: Write RED self-hosted-relay tests**
-
-Required cases:
+- [ ] **Step 2: Write RED tests**
 
 ```rust
 #[tokio::test]
-async fn relay_only_pair_uses_owner_relay_without_public_lookup() { /* authenticated control/data */ }
+async fn relay_only_pair_carries_authenticated_control_and_data() { /* owner relay only */ }
 
 #[tokio::test]
-async fn relay_connection_can_observe_direct_path_upgrade_without_reclassification() {
+async fn relay_to_direct_keeps_remote_class_binding_and_session() {
     let mut pair = relay_then_direct_pair().await.unwrap();
+    let binding = pair.channel_binding().bytes().to_vec();
+    let session_id = pair.session_id();
     assert_eq!(pair.network_class(), NetworkClass::Remote);
-    pair.wait_for_direct_path(TEST_TIMEOUT).await.unwrap();
+    pair.wait_for_direct_path(Duration::from_secs(10)).await.unwrap();
     assert_eq!(pair.network_class(), NetworkClass::Remote);
-    assert_eq!(pair.binding_before_path_change(), pair.current_binding());
-    assert_eq!(pair.session_id_before_path_change(), pair.current_session_id());
+    assert_eq!(binding, pair.channel_binding().bytes());
+    assert_eq!(session_id, pair.session_id());
     pair.shutdown().await;
 }
 ```
-
-Also assert that relay credentials/endpoint IDs are not accepted as Cross-Lab credentials by any fixture API.
 
 - [ ] **Step 3: Verify RED**
 
@@ -765,13 +611,11 @@ Also assert that relay credentials/endpoint IDs are not accepted as Cross-Lab cr
 cargo test -p crosslab-m9-networking --test relay
 ```
 
-- [ ] **Step 4: Implement an owned local relay wrapper**
+- [ ] **Step 4: Implement owned local relay lifecycle**
 
-Use `iroh_relay::server::Server::spawn` with `ServerConfig` containing `RelayConfig::new(bind_addr)` and no mandatory external TLS/ACME/public service. `OwnerRelay::shutdown(self)` must await server shutdown. Tests may bind port `0` and use `server.http_url()` from the `test-utils` feature.
+Start `iroh_relay::server::Server` with `ServerConfig { relay: Some(RelayConfig::new(bind_addr)), ..Default::default() }`, bind port 0, use `http_url()` from test-utils, and await `Server::shutdown` during fixture shutdown.
 
-- [ ] **Step 5: Implement relay-only and relay->direct endpoint modes**
-
-Relay-only endpoints:
+Relay-only endpoints use:
 
 ```rust
 Endpoint::builder(presets::Minimal)
@@ -780,15 +624,9 @@ Endpoint::builder(presets::Minimal)
     .alpns(vec![M9_ALPN.to_vec()])
 ```
 
-Relay-then-direct endpoints keep IP transports enabled but connect initially with:
+Relay-then-direct keeps IP transports enabled and initially dials `EndpointAddr::new(server.id()).with_relay_url(relay_url)`. Observe `paths_stream()`/`path_events()` until an IP path exists. A lagged path-event consumer reloads current path state; it does not alter policy/session authority.
 
-```rust
-EndpointAddr::new(server.id()).with_relay_url(relay_url)
-```
-
-Observe `paths_stream()`/`path_events()` until an IP path appears. Treat `Lagged` as a diagnostics event and recover current state from `connection.paths()` rather than dropping policy/session authority.
-
-- [ ] **Step 6: Run required semantic tests and full gate**
+- [ ] **Step 5: Verify full semantic gate**
 
 ```bash
 cargo test -p crosslab-m9-networking --test relay --test session --test lifecycle
@@ -798,9 +636,9 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 ```
 
-**Decision gate:** if owner-selected/self-hosted relay operation requires public n0 services or cannot preserve session/binding/policy semantics, record the exact failure. Do not silently switch to public infrastructure.
+If owner-controlled relay operation requires public n0 infrastructure, record the failure and do not switch required tests to public services.
 
-- [ ] **Step 7: Update CURRENT.md and commit**
+- [ ] **Step 6: CURRENT checkpoint and commit**
 
 ```bash
 git add experiments/m9-networking Cargo.lock docs/development/CURRENT.md
@@ -809,39 +647,43 @@ git commit -m "test(networking): validate owner relay and Iroh path changes"
 
 ---
 
-### Task 8: Add reproducible benchmark output and the controlled Linux NAT/relay gate
+### Task 8: Reproducible benchmarks and controlled Linux NAT/relay gate
 
 **Files:**
-- Modify: `experiments/m9-networking/src/metrics.rs`
-- Modify: `experiments/m9-networking/src/baseline.rs`
-- Create: `experiments/m9-networking/src/netprobe.rs`
-- Create: `experiments/m9-networking/src/bin/m9-networking.rs`
-- Create: `experiments/m9-networking/scripts/netns.sh`
+- Modify: `src/{metrics.rs,baseline.rs}`
+- Create: `src/netprobe.rs`
+- Create: `src/bin/m9-networking.rs`
+- Create: `scripts/netns.sh`
 - Create: `docs/research/M9-networking-evidence.md`
-- Create: `experiments/m9-networking/tests/baseline.rs` additions
-- Create: `experiments/m9-networking/tests/relay.rs` additions
+- Modify: `tests/{metrics.rs,baseline.rs,relay.rs}`
 
 **Interfaces:**
-- CLI produces stable TSV to stdout/file for local benchmark modes.
-- `netprobe` supports explicit relay/server/client roles for the privileged namespace script.
-- Evidence document records environment and raw/summary results; no WAN timing is turned into a hard correctness assertion.
+
+```rust
+pub enum Command {
+    LocalQuinn(EvalConfig),
+    LocalIrohDirect(EvalConfig),
+    LocalIrohRelay(EvalConfig),
+    LocalAll(EvalConfig),
+    NetprobeRelay(NetprobeRelayArgs),
+    NetprobeServer(NetprobePeerArgs),
+    NetprobeClient(NetprobePeerArgs),
+}
+impl Command { pub fn parse<I, S>(args: I) -> Result<Self, EvalError>; }
+```
 
 - [ ] **Step 1: Write RED CLI/report tests**
 
-Test argument parsing without adding Clap:
-
 ```rust
 #[test]
-fn parse_local_benchmark_args() {
-    let command = Command::parse([
-        "local", "--samples", "3", "--payload-bytes", "1048576"
-    ]).unwrap();
-    assert_eq!(command.samples(), 3);
-    assert_eq!(command.payload_bytes(), 1_048_576);
+fn local_command_parses_typed_sample_and_payload_limits() {
+    let command = Command::parse(["local-all", "--samples", "3", "--payload-bytes", "1048576"]).unwrap();
+    assert_eq!(command.eval_config().unwrap().samples(), 3);
+    assert_eq!(command.eval_config().unwrap().bulk_payload_bytes(), 1_048_576);
 }
 ```
 
-Test the report always includes environment metadata fields: Rust version, OS/arch, sample count, payload bytes, and dependency labels `quinn=0.11.11` / `iroh=1.2.0`.
+Report headers must record OS/arch, repository Rust version, sample count, payload bytes, and dependency labels `quinn=0.11.11`, `iroh=1.2.0`.
 
 - [ ] **Step 2: Verify RED**
 
@@ -851,50 +693,52 @@ cargo test -p crosslab-m9-networking --test metrics --test baseline --test relay
 
 - [ ] **Step 3: Implement local benchmark modes**
 
-CLI modes:
+`local-quinn`, `local-iroh-direct`, `local-iroh-relay`, and `local-all` record protected connect, Cross-Lab auth, control RTT, fixed-size uni throughput, and shutdown. On Linux, read RSS from `/proc/self/status` and FD count from `/proc/self/fd`; on unsupported OSes report no value rather than adding unsafe system calls.
+
+- [ ] **Step 4: Implement safe cross-process rendezvous**
+
+The rendezvous file contains only:
 
 ```text
-m9-networking local-quinn
-m9-networking local-iroh-direct
-m9-networking local-iroh-relay
-m9-networking local-all
-m9-networking netprobe-relay
-m9-networking netprobe-server
-m9-networking netprobe-client
+endpoint_id=public routing identifier
+relay_url=http://relay-host:port or relay_url=-
+ip=socket-address or ip=-
 ```
 
-Every local mode records protected-connect time, Cross-Lab session-auth time, control RTT, fixed-size uni throughput, shutdown time, and process RSS/FD observations where available. On Linux, collect RSS/FD counts from `/proc/self/status` and `/proc/self/fd`; return `None` on unsupported platforms rather than adding unsafe OS APIs.
+Reconstruct with `EndpointAddr::new(id)` plus `with_relay_url` / `with_ip_addr`. Never write private keys, relay tokens, Cross-Lab credentials/proofs, exporter bytes, or payloads.
 
-- [ ] **Step 4: Implement cross-process netprobe roles**
+- [ ] **Step 5: Implement the Linux namespace topology script**
 
-Use plain text rendezvous files with explicit fields, one per line:
+The script uses fixed names `cl-m9-ra`, `cl-m9-rb`, `cl-m9-a`, `cl-m9-b`, bridge `cl-m9-br`, transit `172.30.90.0/24`, peer A `10.90.1.0/24`, peer B `10.90.2.0/24`. It must refuse to run if a planned namespace/bridge already exists.
 
-```text
-endpoint_id=<hex/display EndpointId>
-relay_url=<RelayUrl or ->
-ip=<SocketAddr>
+Core setup commands are explicit:
+
+```bash
+ip netns add cl-m9-ra
+ip netns add cl-m9-rb
+ip netns add cl-m9-a
+ip netns add cl-m9-b
+ip link add cl-m9-br type bridge
+ip addr add 172.30.90.1/24 dev cl-m9-br
+ip link set cl-m9-br up
 ```
 
-Reconstruct `EndpointAddr` with `EndpointAddr::new(id).with_relay_url(...).with_ip_addr(...)`. Never serialize Cross-Lab credentials, Iroh secret keys, relay tokens, proofs, or exporter bytes into rendezvous files.
+Create router external veths into `cl-m9-br`, router internal veths to each peer namespace, assign `172.30.90.2/24` and `172.30.90.3/24` externally plus `10.90.1.1/24` and `10.90.2.1/24` internally, set peer default routes, and enable forwarding only inside router namespaces.
 
-- [ ] **Step 5: Implement `scripts/netns.sh` with fail-safe cleanup**
+Each router gets an nftables NAT table equivalent to:
 
-The script must:
+```nft
+table ip cl_m9_nat {
+  chain postrouting {
+    type nat hook postrouting priority srcnat;
+    oifname "ext0" masquerade
+  }
+}
+```
 
-1. require Linux root plus `ip`, `nft`, and the built `m9-networking` binary;
-2. create a transit bridge and two router namespaces;
-3. create one peer namespace behind each router;
-4. enable forwarding only in router namespaces;
-5. use nftables masquerade on each router external interface to produce two independent translated networks;
-6. launch the owner relay on the transit network;
-7. run a relay-only probe with direct UDP blocked between router external interfaces;
-8. enable direct UDP and run/observe relay->direct upgrade;
-9. force an endpoint restart/address change and record reconnect behavior;
-10. trap EXIT/INT/TERM and remove every namespace, bridge, nft table, process, and temporary rendezvous file.
+Run the relay on `172.30.90.1`; first block router-to-router direct UDP so relay fallback is mandatory, then allow direct UDP and observe the same live Iroh connection add/select an IP path. `trap cleanup EXIT INT TERM` kills child processes and deletes nft tables, namespaces, veths, bridge, and rendezvous files.
 
-Use fixed RFC1918 test ranges owned only by the script, for example transit `172.30.90.0/24`, peer A `10.90.1.0/24`, peer B `10.90.2.0/24`. Refuse to run if any planned namespace already exists.
-
-- [ ] **Step 6: Run deterministic CI-safe verification**
+- [ ] **Step 6: Deterministic full gate**
 
 ```bash
 cargo test -p crosslab-m9-networking
@@ -904,59 +748,29 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 ```
 
-- [ ] **Step 7: Run reproducible local measurements**
-
-On the same host, from a clean build:
+- [ ] **Step 7: Same-host measurements**
 
 ```bash
-cargo run -p crosslab-m9-networking --bin m9-networking -- local-all --samples 10 --payload-bytes 4194304 \
-  > /tmp/m9-local.tsv
-/usr/bin/time -v cargo run -p crosslab-m9-networking --bin m9-networking -- local-all --samples 10 --payload-bytes 4194304 \
-  > /tmp/m9-local-time.tsv 2> /tmp/m9-local-time.txt
+cargo run -p crosslab-m9-networking --bin m9-networking -- local-all --samples 10 --payload-bytes 4194304 > /tmp/m9-local.tsv
+/usr/bin/time -v cargo run -p crosslab-m9-networking --bin m9-networking -- local-all --samples 10 --payload-bytes 4194304 > /tmp/m9-local-time.tsv 2> /tmp/m9-local-time.txt
 ```
 
-Record CPU model, RAM, kernel, Rust version, power mode/VM/container status, and whether other traffic/load was present.
+Record CPU model, RAM, kernel, Rust version, VM/container state, and load conditions.
 
-- [ ] **Step 8: Run the controlled NAT/relay manual gate**
+- [ ] **Step 8: Controlled NAT/relay gate**
 
 ```bash
 cargo build -p crosslab-m9-networking --bin m9-networking
-sudo experiments/m9-networking/scripts/netns.sh \
-  target/debug/m9-networking \
-  /tmp/m9-netns.tsv
+sudo experiments/m9-networking/scripts/netns.sh target/debug/m9-networking /tmp/m9-netns.tsv
 ```
 
-Required recorded outcomes:
+Evidence must distinguish: relay fallback success; authenticated control/data over relay; direct-path appearance after UDP is enabled; unchanged Remote classification/binding/session through path change; fresh binding/session after forced reconnect; any hole-punch failure with preserved logs.
 
-- relay fallback succeeds with direct UDP blocked;
-- Cross-Lab auth/control/data work over relay;
-- when direct UDP is enabled, Iroh observes a direct IP path and the same live connection/session remains `NetworkClass::Remote`;
-- forced connection restart yields fresh exporter/session authority;
-- if direct hole punching fails, preserve logs/topology and record the failure rather than treating local relay success as NAT success.
+- [ ] **Step 9: Write the evidence report**
 
-- [ ] **Step 9: Populate the evidence report**
+`docs/research/M9-networking-evidence.md` sections: Environment; Dependency/feature tree; Security/owner-control eligibility; Quinn baseline; Iroh direct; Iroh relay; Controlled NAT; Recovery/path changes; Resource observations; Mobile/platform obligations; Failures/anomalies; Decision matrix; `Libp2p trigger: yes` or `Libp2p trigger: no` with a concrete reason.
 
-`docs/research/M9-networking-evidence.md` must contain:
-
-```text
-Environment
-Dependency/feature tree
-Security/owner-control eligibility
-Quinn baseline measurements
-Iroh direct measurements
-Iroh relay measurements
-Controlled NAT results
-Recovery/path-change results
-Resource observations
-Mobile/platform source-review obligations
-Failures/anomalies
-Decision matrix
-Libp2p trigger: yes/no + exact reason
-```
-
-Never paste secret keys, relay tokens, proofs, exporter bytes, or payload contents.
-
-- [ ] **Step 10: Commit the verified experiment/evidence checkpoint**
+- [ ] **Step 10: Commit evidence checkpoint**
 
 ```bash
 git add experiments/m9-networking docs/research/M9-networking-evidence.md Cargo.lock
@@ -965,71 +779,53 @@ git commit -m "test(networking): measure M9 remote connectivity candidates"
 
 ---
 
-### Task 9: Conditional focused rust-libp2p comparison only if the evidence trigger is satisfied
+### Task 9: Conditional rust-libp2p probe
 
-**Trigger rule:** execute this task only if `docs/research/M9-networking-evidence.md` records a failed Iroh decision criterion and explains why libp2p's Relay v2/DCUtR/AutoNAT architecture plausibly addresses that exact failure. A generic desire to compare libraries is not sufficient.
+**Trigger:** run this task only when the evidence report records an Iroh decision-criterion failure and explains why Relay v2/DCUtR/AutoNAT plausibly addresses that exact failure. Otherwise record `Libp2p trigger: no` and skip the dependency entirely.
 
 **Files if triggered:**
 - Modify: `experiments/m9-networking/Cargo.toml`
-- Create: `experiments/m9-networking/src/libp2p_candidate.rs`
-- Create: `experiments/m9-networking/tests/libp2p_candidate.rs`
+- Create: `src/libp2p_candidate.rs`
+- Create: `tests/libp2p_candidate.rs`
 - Modify: `docs/research/M9-networking-evidence.md`
 
-**Interfaces:**
-- Produces only a focused measurement/probe for the recorded failure criterion.
-- Does not implement a second Cross-Lab identity/session model and does not graduate libp2p into production.
+- [ ] **Step 1: Confirm the written trigger before changing dependencies**
 
-- [ ] **Step 1: Re-verify the trigger before changing Cargo.toml**
+The report must name the failed criterion, the observed Iroh evidence, and the specific libp2p capability expected to address it.
 
-The evidence report must contain one explicit line:
-
-```text
-Libp2p trigger: yes — <failed Iroh criterion> — <why relay/DCUtR/AutoNAT plausibly addresses it>
-```
-
-If this line cannot be written truthfully, skip Task 9 and do not add libp2p.
-
-- [ ] **Step 2: Add the smallest relevant libp2p feature set**
-
-For a NAT/relay trigger, use:
+- [ ] **Step 2: Add only NAT/relay features**
 
 ```toml
 libp2p = { version = "=0.57.0", default-features = false, features = ["autonat", "dcutr", "identify", "macros", "quic", "relay", "tokio"] }
 ```
 
-Do not enable `full`, Kademlia, gossip, mDNS, TCP, WebSocket, or unrelated behaviors.
+- [ ] **Step 3: Write and verify one focused RED probe**
 
-- [ ] **Step 3: Write a RED probe for the exact failed criterion**
-
-For example, if the trigger is relay->direct upgrade reliability, the test/probe must assert only connection establishment through Circuit Relay v2 and DCUtR direct upgrade observability in the controlled topology. Do not duplicate the full Iroh adapter.
-
-- [ ] **Step 4: Verify source-level channel-binding limitation before any Cross-Lab promotion**
-
-The uploaded libp2p `0.57.0` QUIC wrapper stores `quinn::Connection` privately. Unless the published API exposes a reviewed cryptographic binding equivalent during execution, the libp2p probe is **not eligible** to become a Cross-Lab protected transport. Record this explicitly; do not substitute `PeerId`, Noise identity, Multiaddr, or connection IDs for ADR-0008.
-
-- [ ] **Step 5: Run focused probe, dependency audit, and full gate**
+If the trigger concerns relay/direct upgrade, the probe tests Circuit Relay v2 establishment plus DCUtR direct-upgrade observability in the same controlled topology. It does not implement a second Cross-Lab adapter.
 
 ```bash
 cargo test -p crosslab-m9-networking --test libp2p_candidate
+```
+
+- [ ] **Step 4: Enforce the channel-binding eligibility rule**
+
+The uploaded libp2p `0.57.0` QUIC wrapper stores its `quinn::Connection` privately. Unless execution finds a reviewed public cryptographic channel-binding API, the libp2p probe is not eligible for Cross-Lab session promotion. Never substitute `PeerId`, Noise identity, Multiaddr, or connection IDs for ADR-0008.
+
+- [ ] **Step 5: Audit, verify, report, commit**
+
+```bash
 cargo tree -p crosslab-m9-networking -e features
 cargo fmt --all -- --check
 cargo check --workspace --all-targets --all-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
-```
-
-- [ ] **Step 6: Update evidence and commit**
-
-```bash
 git add experiments/m9-networking docs/research/M9-networking-evidence.md Cargo.lock
 git commit -m "test(networking): compare libp2p for M9 decision gap"
 ```
 
-If Task 9 is skipped, record `Libp2p trigger: no` with the passing Iroh criteria and source-level integration cost rationale.
-
 ---
 
-### Task 10: Write ADR-0009, reconcile architecture, verify exact head, merge, and hand off M10
+### Task 10: ADR-0009, architecture reconciliation, merge, and M10 handoff
 
 **Files:**
 - Create: `docs/adr/ADR-0009-remote-networking.md`
@@ -1037,31 +833,13 @@ If Task 9 is skipped, record `Libp2p trigger: no` with the passing Iroh criteria
 - Modify: `docs/architecture/MASTER-ARCHITECTURE.md`
 - Modify: `docs/plans/phase-1/M9-remote-networking-design.md`
 - Modify: `docs/development/CURRENT.md`
-- Modify or remove experiment candidate dependencies/code only as dictated by the ADR; do not graduate them automatically.
+- Retain/remove experiment code only as the reviewed ADR directs; do not auto-promote it into `transports/`.
 
-**Interfaces:**
-- Produces the durable remote-networking decision and exact M10 next task.
-- If Iroh is selected, the ADR selects the architecture, not a production endpoint manager or platform integration API.
+- [ ] **Step 1: Decide from the evidence matrix only**
 
-- [ ] **Step 1: Decide strictly from the evidence matrix**
+Iroh is eligible only when exact exporter semantics, existing Cross-Lab auth/control/data/reconnect/revocation, owner-controlled relay, Remote classification invariant, controlled NAT/recovery evidence, bounded lifecycle, and acceptable platform/maintenance cost all pass. If no candidate passes, ADR-0009 records no selection.
 
-Select **Quinn local/LAN + Iroh remote** only if every mandatory design criterion passed:
-
-```text
-ADR-0008 exporter exact: pass
-existing Cross-Lab auth/control/data/reconnect/revocation: pass
-owner-selected/self-hosted relay without mandatory public infra: pass
-path observation without policy reclassification: pass
-controlled NAT/relay/recovery evidence: acceptable
-bounded resources/shutdown: pass
-platform/maintenance cost: acceptable
-```
-
-If any mandatory criterion failed and no candidate passes, ADR-0009 must record no remote selection rather than pretending M9 succeeded.
-
-- [ ] **Step 2: Write ADR-0009 with required sections**
-
-Required structure:
+- [ ] **Step 2: Write the Proposed ADR**
 
 ```markdown
 # ADR-0009: Remote networking architecture
@@ -1078,43 +856,21 @@ Required structure:
 ## Consequences
 ```
 
-If Iroh passes, decision text must state:
+If Iroh passes, state that Quinn remains local/LAN; Iroh is the remote/NAT/relay architecture; EndpointId remains transport-only; `quic-tls-exporter-v1` is reused exactly after full handshake; Iroh sessions remain Remote; self-hosted relays are supported; no public service is mandatory; M10 still owns real Android/mobile lifecycle validation.
 
-- Quinn remains local/LAN baseline;
-- Iroh is selected for remote/NAT/relay connectivity;
-- Iroh endpoint identity remains transport-only;
-- `quic-tls-exporter-v1` is reused exactly after full Iroh handshake;
-- Iroh sessions are always `NetworkClass::Remote`;
-- owner-selected/self-hosted relays are supported and no n0/Cross-Lab public service is mandatory;
-- M10 must still prove Android/mobile lifecycle and platform integration before remote networking is production-ready.
+- [ ] **Step 3: Stop for ADR review before normative status changes**
 
-- [ ] **Step 3: Review/accept the ADR before changing normative architecture status**
+Do not mark ADR-0009 Accepted or edit Master Architecture candidate/selected status until the ADR/evidence is reviewed and approved.
 
-Do not mark the ADR `Accepted` or change the Master Architecture candidate/selected status until the evidence and ADR text are reviewed and approved.
+- [ ] **Step 4: After approval, reconcile docs**
 
-- [ ] **Step 4: After approval, reconcile normative docs**
+Index ADR-0009, update Master Architecture networking status/unresolved-decision table, mark the M9 design implemented/decision-complete, and keep intentional non-goals unchanged.
 
-Update the Master Architecture networking technology/status table and unresolved-decision table to match ADR-0009. Update the M9 design status to Implemented/Decision Complete. Index ADR-0009 in `docs/adr/README.md`.
+- [ ] **Step 5: Write durable M10 handoff**
 
-- [ ] **Step 5: Decide experiment retention**
+CURRENT.md records exact M9 evidence head, CI, manual namespace gate status/environment, ADR decision, libp2p trigger status, dependency-retention decision, and the exact M10 Linux + Android first-platform-vertical-slice task plus mobile validation obligations.
 
-If Iroh is selected, keep the experiment/evidence harness as reproducible research unless M10 immediately needs a production adapter. Do **not** move `IrohTransportConnection` into `transports/` during M9 solely because tests pass.
-
-If Iroh is rejected, remove unused candidate dependency/code only after the evidence report and ADR preserve the reasons/results. Keep enough benchmark tooling to reproduce the decision if useful.
-
-- [ ] **Step 6: Write the durable M10 handoff in CURRENT.md**
-
-Record:
-
-- exact M9 feature/evidence head;
-- CI IDs and manual controlled-network environment/result status;
-- ADR-0009 status/decision;
-- whether libp2p Task 9 was triggered;
-- production dependencies changed or intentionally unchanged;
-- exact next task: M10 Linux + Android first platform vertical slice from the Master Architecture;
-- explicit mobile validation obligations inherited from M9.
-
-- [ ] **Step 7: Run the exact final repository gate**
+- [ ] **Step 6: Exact final gate**
 
 ```bash
 cargo metadata --locked --format-version 1 >/dev/null
@@ -1122,50 +878,30 @@ cargo fmt --all -- --check
 cargo check --workspace --all-targets --all-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
-```
-
-Re-run the deterministic M9 suite explicitly:
-
-```bash
 cargo test -p crosslab-m9-networking
 ```
 
-The controlled namespace/NAT gate must already be recorded in the evidence report; do not replace it with loopback tests.
+The controlled NAT gate must already be recorded; loopback does not replace it.
 
-- [ ] **Step 8: Commit the exact reviewed M9 closeout head**
+- [ ] **Step 7: Commit, update PR #19, merge exact verified head, verify main**
 
 ```bash
 git add docs experiments/m9-networking Cargo.toml Cargo.lock
 git commit -m "docs: complete M9 remote networking decision"
 ```
 
-- [ ] **Step 9: Update draft PR #19 with exact evidence and mark ready only when complete**
-
-PR body must list the selected/rejected architecture, evidence report, controlled NAT status, dependency isolation, exact head SHA, and full CI run. Merge only that exact verified head.
-
-- [ ] **Step 10: Merge and verify canonical main**
-
-After the exact PR head is green and reviewed:
-
-1. merge with an expected-head SHA guard;
-2. confirm `main` points to the merge commit;
-3. wait for push CI on `main`;
-4. require the same full gate to pass;
-5. update `CURRENT.md` on `main` only if needed to record the canonical merge/CI checkpoint;
-6. verify that final documentation-only head too.
+Update PR #19 with the evidence/decision and exact head SHA. Mark ready only after full verification. Merge with expected-head guard, confirm `main`, require push CI to pass the same gate, then update/verify CURRENT.md on `main` if a canonical integration checkpoint is needed.
 
 ---
 
-## Plan Self-Review Checklist
+## Self-Review Mapping
 
-Before execution begins, verify these mappings:
-
-- Spec sections 7–9 (Minimal endpoint, identity separation, exporter) -> Tasks 2 and 5.
-- Spec sections 10–11 (Remote classification/path changes/reconnect) -> Tasks 6 and 7.
-- Spec sections 12–13 (control/data mapping and resource bounds) -> Tasks 3 and 4.
-- Spec sections 14–15 (semantic matrix, measurements, controlled NAT) -> Tasks 6–8.
-- Spec sections 16–17 (security/privacy/dependency review) -> Tasks 2, 7–10.
-- Spec sections 18–20 (decision rule, non-goals, deliverables) -> Tasks 9–10.
-- No production Iroh/libp2p dependency is introduced by this plan before ADR acceptance.
+- Spec §§7–9 -> Tasks 2 and 5.
+- Spec §§10–11 -> Tasks 6 and 7.
+- Spec §§12–13 -> Tasks 3 and 4.
+- Spec §§14–15 -> Tasks 6–8.
+- Spec §§16–17 -> Tasks 2, 7–10.
+- Spec §§18–20 -> Tasks 9–10.
+- No production Iroh/libp2p dependency is introduced before ADR acceptance.
 - No task changes Cross-Lab identity, policy, session transcript, or `TransportConnection` signatures.
-- No placeholder implementation step or unbounded network operation remains in the plan.
+- The plan contains no unresolved implementation placeholder; conditional Task 9 is governed by a concrete evidence trigger.
