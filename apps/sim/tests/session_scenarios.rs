@@ -320,7 +320,8 @@ fn s006_authorized_request_response_and_event_are_correlated_and_sequenced() {
     node_b
         .send_response(request_id, ControlResponseResult::Success(b"ok".to_vec()))
         .unwrap();
-    let NodeEvent::Response(response) = node_a.receive_one(&fixture.responder_trust).unwrap() else {
+    let NodeEvent::Response(response) = node_a.receive_one(&fixture.responder_trust).unwrap()
+    else {
         panic!("expected correlated response");
     };
     assert_eq!(response.request_id(), request_id);
