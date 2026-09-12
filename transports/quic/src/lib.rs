@@ -2,8 +2,12 @@ use core::fmt;
 
 #[cfg_attr(not(test), allow(dead_code))]
 mod binding;
-#[cfg_attr(not(test), allow(dead_code))]
+mod config;
+mod connection;
 mod record;
+
+pub use config::QuicTransportConfig;
+pub use connection::QuicTransportConnection;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuicTransportError {
