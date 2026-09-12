@@ -464,10 +464,7 @@ async fn m8_saturation_cancellation_and_shutdown_remain_bounded() {
     for stream in &mut streams {
         stream.cancel();
     }
-    let mut active = pair
-        .client_transport
-        .try_open_uni_stream(vec![0x99])
-        .unwrap();
+    let mut active = eventually_open_stream(&pair.client_transport, vec![0x99]).await;
     timeout(WAIT, pair.client_transport.shutdown())
         .await
         .expect("client shutdown should join active stream tasks");
@@ -748,6 +745,26 @@ async fn eventually_sender_closed(stream: &mut dyn crosslab_core::TransportSendS
     })
     .await
     .expect("sender did not observe peer cancellation before timeout");
+}
+
+async fn eventually_open_stream(
+    connection: &QuicTransportConnection,
+    opening: Vec<u8>,
+) -> Box<dyn crosslab_core::TransportSendStream> {
+    timeout(WAIT, async {
+        loop {
+            match connection.try_open_uni_stream(opening.clone()) {
+                Ok(stream) => return stream,
+                Err(crosslab_core::StreamOpenError::Full(returned)) => {
+                    assert_eq!(returned, opening);
+                    tokio::task::yield_now().await;
+                }
+                Err(error) => panic!("stream slot did not recover after cancellation: {error:?}"),
+            }
+        }
+    })
+    .await
+    .expect("cancelled stream slots were not released before timeout")
 }
 
 async fn eventually_transport_closed(connection: &QuicTransportConnection) {
