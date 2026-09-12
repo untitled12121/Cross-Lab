@@ -19,6 +19,7 @@ pub use session::{
 };
 pub use stream::{AdmittedStream, StreamAdmission, StreamAdmissionError};
 pub use transport::{
-    ChannelBinding, ConnectionMetadata, ControlReceiveError, ControlSendError, TransportConnection,
-    TransportSecurityClass,
+    ChannelBinding, ConnectionMetadata, ControlReceiveError, ControlSendError, IncomingUniStream,
+    StreamAcceptError, StreamOpenError, StreamReceiveError, StreamSendError, TransportConnection,
+    TransportReceiveStream, TransportSecurityClass, TransportSendStream,
 };
