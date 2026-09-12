@@ -107,6 +107,7 @@ pub enum SessionError {
     InvalidState,
     Identity(IdentityError),
     PeerNotTrusted,
+    PeerNotRevoked,
     PeerTrustMismatch,
     PeerCredentialEpochMismatch,
     Protocol(VersionNegotiationError),
@@ -122,6 +123,7 @@ impl fmt::Display for SessionError {
             }
             Self::Identity(error) => fmt::Display::fmt(error, formatter),
             Self::PeerNotTrusted => formatter.write_str("peer device is not trusted"),
+            Self::PeerNotRevoked => formatter.write_str("peer device is not revoked"),
             Self::PeerTrustMismatch => {
                 formatter.write_str("peer trust record does not match the authenticated identity")
             }
@@ -294,6 +296,41 @@ impl LogicalSession {
             return Err(SessionError::InvalidState);
         }
         self.state = SessionState::Closed;
+        Ok(())
+    }
+
+    pub fn transport_lost(&mut self) -> Result<(), SessionError> {
+        match self.state {
+            SessionState::Active | SessionState::Closing | SessionState::Revoked => {
+                self.state = SessionState::Closed;
+                Ok(())
+            }
+            SessionState::Closed => Ok(()),
+            SessionState::Created | SessionState::Authenticating => Err(SessionError::InvalidState),
+        }
+    }
+
+    pub fn apply_peer_revocation(
+        &mut self,
+        peer_trust: &TrustRecord,
+    ) -> Result<(), SessionError> {
+        if self.state != SessionState::Active {
+            return Err(SessionError::InvalidState);
+        }
+        let context = self.context.as_ref().ok_or(SessionError::InvalidState)?;
+        if peer_trust.state() != TrustState::Revoked {
+            return Err(SessionError::PeerNotRevoked);
+        }
+        if peer_trust.owner_id() != context.owner_id()
+            || peer_trust.device_id() != context.peer_device_id()
+        {
+            return Err(SessionError::PeerTrustMismatch);
+        }
+        if peer_trust.accepted_credential_epoch() != context.peer_credential_epoch() {
+            return Err(SessionError::PeerCredentialEpochMismatch);
+        }
+
+        self.state = SessionState::Revoked;
         Ok(())
     }
 
