@@ -13,6 +13,8 @@ use crosslab_core::{
 const CHANNEL_BINDING_PROFILE: &str = "in-process-test";
 const DEFAULT_STREAM_CAPACITY: usize = 8;
 const DEFAULT_CHUNK_CAPACITY: usize = 8;
+const DEFAULT_MAX_CONTROL_FRAME_BYTES: usize = 256 * 1024 + 4;
+const DEFAULT_MAX_OPENING_FRAME_BYTES: usize = 4 * 1024 + 4;
 const DEFAULT_MAX_CHUNK_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,6 +38,8 @@ pub struct MemoryTransportConfig {
     stream_capacity: NonZeroUsize,
     chunk_capacity: NonZeroUsize,
     max_chunk_bytes: NonZeroUsize,
+    max_control_frame_bytes: NonZeroUsize,
+    max_opening_frame_bytes: NonZeroUsize,
 }
 
 impl MemoryTransportConfig {
@@ -50,7 +54,21 @@ impl MemoryTransportConfig {
             stream_capacity,
             chunk_capacity,
             max_chunk_bytes,
+            max_control_frame_bytes: NonZeroUsize::new(DEFAULT_MAX_CONTROL_FRAME_BYTES)
+                .expect("default control frame size is nonzero"),
+            max_opening_frame_bytes: NonZeroUsize::new(DEFAULT_MAX_OPENING_FRAME_BYTES)
+                .expect("default opening frame size is nonzero"),
         }
+    }
+
+    pub const fn with_frame_limits(
+        mut self,
+        max_control_frame_bytes: NonZeroUsize,
+        max_opening_frame_bytes: NonZeroUsize,
+    ) -> Self {
+        self.max_control_frame_bytes = max_control_frame_bytes;
+        self.max_opening_frame_bytes = max_opening_frame_bytes;
+        self
     }
 }
 
@@ -149,6 +167,8 @@ struct MemoryState {
     control_b_to_a: ControlDirectionState,
     data_a_to_b: DataDirectionState,
     data_b_to_a: DataDirectionState,
+    max_control_frame_bytes: usize,
+    max_opening_frame_bytes: usize,
     closed: bool,
 }
 
@@ -167,6 +187,8 @@ impl MemoryState {
                 config.chunk_capacity.get(),
                 config.max_chunk_bytes.get(),
             ),
+            max_control_frame_bytes: config.max_control_frame_bytes.get(),
+            max_opening_frame_bytes: config.max_opening_frame_bytes.get(),
             closed: false,
         }
     }
@@ -264,6 +286,9 @@ impl TransportConnection for MemoryTransportEndpoint {
         if state.closed {
             return Err(ControlSendError::Closed(frame));
         }
+        if frame.len() > state.max_control_frame_bytes {
+            return Err(ControlSendError::TooLarge(frame));
+        }
 
         let outbound = state.control_outbound_mut(self.side);
         if !outbound.open {
@@ -301,6 +326,9 @@ impl TransportConnection for MemoryTransportEndpoint {
         let mut connection = self.lock_state();
         if connection.closed {
             return Err(StreamOpenError::Closed(opening_frame));
+        }
+        if opening_frame.len() > connection.max_opening_frame_bytes {
+            return Err(StreamOpenError::TooLarge(opening_frame));
         }
 
         let outbound = connection.data_outbound_mut(self.side);
