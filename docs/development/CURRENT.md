@@ -8,7 +8,7 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 ## Current Milestone
 
-**M7 — Failure and Security Lifecycle: planning complete; Tasks 1–3 GREEN; Tasks 4–7 pending.**
+**M7 — Failure and Security Lifecycle: planning complete; Tasks 1–4 GREEN; Tasks 5–7 pending.**
 
 M1–M6 are complete, verified, and integrated into canonical `main`.
 
@@ -17,7 +17,7 @@ M1–M6 are complete, verified, and integrated into canonical `main`.
 - `main` — exact verified M6 integration-record head `d419f0fd410f0d2da69cc9bf2e4c20600033b7fb`; CI `34671802373` passed locked metadata, rustfmt, workspace check, Clippy `-D warnings`, and all tests.
 - `m7-failure-security-lifecycle` — active M7 branch created exactly from that verified `main` head.
 - PR #17 — draft, `feat: implement M7 failure and security lifecycle`; keep draft until the exact final documentation-inclusive head passes CI and Fuzz Smoke.
-- Current verified M7 production/test head: `08515dd3bb2a93476a2004ee3f6b6e6ec8ad85e9`.
+- Current verified M7 production/test head: `29762639d6c6054aa3996b3429437e7c00469966`.
 
 ## Architecture Baseline
 
@@ -102,26 +102,42 @@ Evidence:
 - implementation `231542b548626df9a00c7a63e30702274009744c`, CI `34676120524` — stopped only at rustfmt on the revocation method signature;
 - formatting-only final GREEN `08515dd3bb2a93476a2004ee3f6b6e6ec8ad85e9`, CI `34676159053` — locked metadata, rustfmt, workspace check, Clippy `-D warnings`, and all tests passed.
 
+## M7 Task 4 — S-008 Fresh Reconnect and Stale Authority Rejection
+
+Delivered in `apps/sim/tests/lifecycle.rs` only; no production reconnect abstraction was added.
+
+Coverage proves:
+
+- disconnect is terminal for the old logical session and clears pending control request state;
+- reconnect constructs a distinct `MemoryTransportPair` with a different binding plus fresh nonces/proofs and therefore a different `SessionId`;
+- the fresh session starts with send/receive sequence zero and no negotiated capabilities;
+- capabilities return only after a new post-auth exchange on the fresh session;
+- an old-session control envelope injected into the new transport is rejected as `ControlDispatchError::InvalidSession` and closes the contaminated new session;
+- a separate fresh session rejects an old `AuthorizedOperation` with `OperationError::BindingMismatch`, proving operation authority does not transfer across `SessionId` boundaries.
+
+Evidence:
+
+- initial acceptance head `9eff524c0473f13a41578f4dc82c198ed6414779`, CI `34676322835` — stopped only at rustfmt;
+- formatting-only final GREEN `29762639d6c6054aa3996b3429437e7c00469966`, CI `34676386066` — locked metadata, rustfmt, workspace check, Clippy `-D warnings`, and all tests passed.
+
 ## Exact Next Task
 
-Begin **M7 Task 4 — S-008 fresh reconnect and stale-authority rejection**.
+Begin **M7 Task 5 — S-009 active revocation and reconnect-after-revocation denial**.
 
 Execution contract:
 
-1. add `apps/sim/tests/lifecycle.rs` only; no new production API is expected;
-2. build a deterministic fixture that creates fresh proofs from each pair's channel binding and supplied fresh nonces;
-3. prove disconnect closes the old node and clears pending request state;
-4. reconnect only through a new `MemoryTransportPair`, fresh binding, fresh nonces/proofs, and therefore a different `SessionId` with zeroed control sequences and no negotiated capabilities;
-5. prove capabilities must be exchanged again on the new session;
-6. inject an old-session control envelope into the new transport and require `ControlDispatchError::InvalidSession` plus fail-closed cleanup;
-7. prove an `AuthorizedOperation` issued under the old session cannot authorize a stream on the new session (`OperationError::BindingMismatch`);
-8. run focused lifecycle tests and full workspace gates before Task 5.
+1. extend `apps/sim/tests/lifecycle.rs`; no new production API is expected;
+2. use a real root-signed `TrustTransition` and apply it locally before runtime reaction;
+3. prove active control authority closes locally, clears pending requests, closes transport, and rejects further ordinary work;
+4. prove active stream authority and admitted stream state terminate locally on accepted peer revocation;
+5. build a completely fresh transport/binding/nonces/proofs with the same still-valid credential but revoked local trust and require `SessionError::PeerNotTrusted` plus terminal closed authentication state;
+6. prove an unrelated revoked record and a still-trusted record return typed errors without killing the intended active session;
+7. run focused lifecycle tests and full workspace gates before Task 6.
 
-Do not add resumable-session authority, reconnect timers/backoff, or real networking.
+Do not introduce recovery/reauthorization, credential rotation, peer acknowledgement, or resumable-session semantics.
 
 ## Remaining M7 Tasks
 
-- Task 5 — S-009 active revocation + N-040/N-041 reconnect-after-revocation denial;
 - Task 6 — fill only missing N-042..N-046 resource/cancellation/shutdown lifecycle assertions;
 - Task 7 — scope review, final CI/fuzz, merge exact verified head to `main`, post-merge verification, final `CURRENT.md`, then M8 handoff.
 
