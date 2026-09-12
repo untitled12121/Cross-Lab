@@ -20,6 +20,7 @@ crosslab-crypto = { path = "../../crates/crypto" }
 crosslab-identity = { path = "../../crates/identity" }
 crosslab-policy = { path = "../../crates/policy" }
 crosslab-protocol = { path = "../../crates/protocol" }
+crosslab-sim = { path = "../../apps/sim" }
 rcgen.workspace = true
 rustls.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }
