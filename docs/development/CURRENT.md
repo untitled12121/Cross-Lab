@@ -8,123 +8,147 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 ## Current Milestone
 
-**M8 — Quinn Transport: design checkpoint written; awaiting design review before implementation planning and production code.**
+**M8 — Quinn Transport: Tasks 1–3 are GREEN; Task 4 bounded control bridge is next.**
 
-M1–M7 are complete and integrated into canonical `main`. M8 work is isolated on `m8-quinn-transport` from the exact verified post-M7 documentation head.
+M1–M7 are complete and integrated into canonical `main`. M8 remains isolated on `m8-quinn-transport` and is not yet ready to merge.
 
 ## Canonical Main State
 
-- M7 verified branch head: `2d7ecebb7c785f1dfaaf825c0567ac78e1f7de71`.
-- Final branch CI: `34681524693` — locked metadata, rustfmt, workspace check, Clippy `-D warnings`, and all tests passed.
-- PR #17: `feat: implement M7 failure and security lifecycle` — merged with exact-head protection using merge method `merge`.
-- M7 merge commit on `main`: `2974108dcf48a9d606b094fea24a9e5da991c513`.
-- Post-merge canonical `main` CI: `34681576836` — locked metadata, rustfmt, workspace check, Clippy `-D warnings`, and all tests passed.
-- Final documentation-only canonical `main` head: `b2e16f27a5c6d8307c58f4c6a4c760bb867ff223` (`docs: record M7 integration`).
-- Final documentation-only `main` CI: `34681661930` — passed.
-- M7 Fuzz Smoke was not scheduled/applicable because `.github/workflows/fuzz.yml` only triggers for `crates/protocol/**`, `crates/policy/**`, `fuzz/**`, or the fuzz workflow itself, and M7 changed none of those paths. This is not recorded as a fuzz pass.
+- Canonical `main` documentation head before M8: `b2e16f27a5c6d8307c58f4c6a4c760bb867ff223` (`docs: record M7 integration`).
+- Post-M7 canonical CI: `34681661930` — passed.
+- M8 branch was created from that exact verified head.
 
-## M7 Delivered
+## M8 Planning and Architecture
 
-M7 proves failure cannot preserve stale authority:
+Approved/committed planning artifacts:
 
-- `LogicalSession::transport_lost()` makes transport loss terminal for active/closing/revoked sessions and idempotent for closed sessions.
-- accepted peer revocation requires local `TrustState::Revoked`, exact authenticated owner/device, exact credential epoch, and a trust revision strictly newer than the authenticated snapshot;
-- control terminal paths deterministically clear pending outgoing/inbound/replay state before close;
-- stream runtime owns its logical session and cancels admitted stream/operation authority on parent transport loss, revocation, or shutdown while keeping stream-local cancellation local;
-- reconnect uses a fresh transport/channel binding, fresh nonces/proofs, new `SessionId`, zeroed directional sequences, capability renegotiation, and fresh authorization;
-- old control envelopes/request state and old `AuthorizedOperation` authority cannot cross a reconnect boundary;
-- active signed revocation cancels ordinary control and stream authority locally and reconnect/authentication is denied while trust remains revoked;
-- bounded control backpressure is transactional and existing stream saturation/cancellation/shutdown coverage satisfies N-043..N-046;
-- malformed/fatal input and peer graceful close clear session-scoped dispatcher authority before terminal close;
-- no real networking, async runtime, reconnect timing/backoff, persistence, UI/platform, privileged service, recovery, session ticket, 0-RTT, or M8 implementation entered M7.
+- `docs/plans/phase-1/M8-quinn-transport-design.md`;
+- `docs/adr/ADR-0008-quinn-channel-binding-profile-v1.md`;
+- `docs/plans/phase-1/M8-quinn-transport.md`.
 
-## M7 Verification Highlights
+M8 preserves these boundaries:
 
-- Task 1 lifecycle RED `623f326efc4711b1991e7de24a6cd58c46d6a84c`, CI `34675402081`; GREEN `f763bd034d8ac15d44e11b4ef659d1d907c75126`, CI `34675522726`.
-- Task 2 final GREEN `3b52f75ec2cef774225c814a3bd04d4072d5f29b`, CI `34675870576`.
-- Task 3 RED `0cb5d2e16a7454910eedba46862e083fa3fb68fc`, CI `34675990614`; GREEN `08515dd3bb2a93476a2004ee3f6b6e6ec8ad85e9`, CI `34676159053`.
-- S-008 reconnect GREEN `29762639d6c6054aa3996b3429437e7c00469966`, CI `34676386066`.
-- S-009 revocation GREEN `f50eb7da92f783b863725994c79643aef675e939`, CI `34676614329`.
-- Task 6 RED `58eb0a914a9ca929ff48ccc25e481d51f43b4efb`, CI `34676901018`; GREEN `4026cc397fe63a54e5cc093e341cd1f37ca721d3`, CI `34676968464`.
-- Final-review trust-revision guard RED `ad0f5ee4cf33a22fa834e6bf45b0fae8923b6bc3`, CI `34681339461`; GREEN `f87c43fa4c5ed252fe30358406efbba3faba746f`, CI `34681410654`.
+- `crosslab-core` remains runtime/transport implementation neutral;
+- Quinn, Tokio, rustls, socket, endpoint, and TLS certificate types stay inside `transports/quic`;
+- Quinn/TLS provides confidentiality/integrity and channel-binding material, not Cross-Lab device identity authority;
+- the accepted binding profile is `quic-tls-exporter-v1`, 32 bytes, label `EXPORTER-Cross-Lab-QUIC-Channel-Binding-v1`, context `crosslab.quic.transport.v1`;
+- no `Connecting::into_0rtt` or 0-RTT authority is allowed;
+- reconnect means a fresh protected connection and therefore fresh binding/session/authentication/authorization state;
+- all application queues, record sizes, stream concurrency, windows, cancellation, and shutdown behavior remain explicitly bounded;
+- no discovery, NAT traversal, relay, Iroh, libp2p, datagram consumer, route migration, persistence, UI/platform, privileged-service, or production certificate-provisioning scope enters M8.
 
-## M8 Design Checkpoint
+## M8 Dependency and Research State
 
-Branch:
+Production dependency baseline:
 
-- `m8-quinn-transport`, created from exact verified `main` head `b2e16f27a5c6d8307c58f4c6a4c760bb867ff223`.
+- Quinn `0.11.11`, pinned with only `runtime-tokio` + `rustls-ring`;
+- Tokio `1.53.1`;
+- rustls `0.23.44` where concrete loopback trust construction requires it;
+- rcgen `0.14.10` dev-only for ephemeral loopback certificate fixtures.
 
-Written design:
+The uploaded Quinn repository has now been successfully inspected. It is Quinn `main` at package version `0.12.0`; it is research/reference material only. Production remains pinned to the latest separately verified published stable Quinn `0.11.11`. Relevant stream and connection behavior was reconciled against that uploaded source before implementation; architecture was not copied blindly.
 
-- `docs/plans/phase-1/M8-quinn-transport-design.md`.
-- Design commit: `9ef3e88886290ad2b43a3b0ae2fba0e74cefa338`.
+## M8 Completed Work
 
-Proposed design decisions:
+### Task 1 — Transport-neutral outbound bounds
 
-- add concrete `crosslab-transport-quic` under `transports/quic`; Quinn/Tokio/rustls types remain private to the adapter;
-- preserve the existing runtime-neutral `TransportConnection`/stream seam and bridge Quinn async I/O with bounded Tokio channels plus connection-owned tasks;
-- use one reserved QUIC bidirectional stream for bounded session-auth bootstrap and, only after authentication, ordinary ordered control frames;
-- map Cross-Lab unidirectional data streams to Quinn unidirectional streams with bounded transport-private record framing;
-- derive `ChannelBinding` from Quinn TLS exporter material after the full handshake, proposed profile `quic-tls-exporter-v1`; no 0-RTT path;
-- keep TLS certificate trust separate from Cross-Lab device identity; loopback tests may use explicitly trusted ephemeral self-signed certificates;
-- do not add datagrams, Iroh, libp2p, NAT/relay, discovery, route scoring, transport migration, persistence, UI/platform, or privileged scope;
-- strengthen the transport-neutral seam with ownership-preserving `TooLarge` errors for outbound control/opening frames before real network buffers are queued;
-- keep all queues, stream concurrency, record lengths, receive windows, and idle behavior explicitly bounded.
+Implemented:
 
-Verified current dependency/API research for the design:
+- ownership-preserving `ControlSendError::TooLarge(Vec<u8>)`;
+- ownership-preserving `StreamOpenError::TooLarge(Vec<u8>)`;
+- configurable memory-transport control/opening-frame limits;
+- oversize rejection before queue/stream capacity is consumed;
+- simulator stream runtime treats oversize as a local rejection rather than transport loss.
 
-- Quinn `0.11.11` with minimal `runtime-tokio` + `rustls-ring` features;
-- Tokio `1.53.1` as the one async runtime for the adapter/application boundary;
-- Quinn's compatible rustls `0.23.x` stack; avoid a direct rustls dependency unless concrete configuration APIs require it;
-- `rcgen 0.14.10` proposed dev-only for loopback certificate fixtures;
-- Quinn supports TLS exporter keying material, uni/bi stream open/accept, explicit connection close/closed state, send reset/finish, receive stop, and explicit transport stream/window limits required by M8.
+GREEN checkpoint:
 
-Research limitation:
+- head `691aa11f2c7a101a1cb65e1999e6da4a1fee2f4d`;
+- CI `34684023292` — lockfile, rustfmt, workspace check, Clippy `-D warnings`, and all tests passed.
 
-- the uploaded Quinn archive could not be reliably enumerated in the current execution environment after repeated archive-tool failures. The design was cross-checked against maintained upstream Quinn 0.11.11 source/API documentation. Before production implementation, inspect/reconcile the uploaded archive in a normal local checkout if available; do not copy architecture blindly.
+### Task 2 — Quinn crate and TLS-exporter binding
 
-No production code or dependency changes have entered M8 yet.
+Implemented:
 
-## Architecture Baseline for M8
+- workspace member `crosslab-transport-quic` under `transports/quic`;
+- exact dependency pins and generated lockfile;
+- private Quinn TLS-exporter binding derivation implementing ADR-0008;
+- real loopback Quinn/TLS test using an explicitly trusted ephemeral rcgen certificate;
+- proof that both peers derive identical binding bytes for one connection;
+- proof that a fresh reconnect derives different binding bytes.
 
-Primary contracts remain:
+GREEN checkpoint:
 
-- uploaded Cross-Lab Master Architecture & Development Plan;
-- `docs/architecture/MASTER-ARCHITECTURE.md`;
-- `docs/architecture/CORE-SIMULATOR.md`;
-- `docs/architecture/SESSION-TRANSPORT.md`;
-- `docs/architecture/PAIRING-TRUST-REVOCATION.md`;
-- M3 trust/operation authority, M5 authenticated logical sessions/control transport seam, M6 authorized streams, and M7 failure/revocation lifecycle.
+- head `a032189481fee095bdf683535b982972188469c1`;
+- CI `34684420001` — lockfile, rustfmt, workspace check, Clippy `-D warnings`, and all tests passed.
 
-M8 must preserve these boundaries:
+`QuicTransportConfig` was not introduced in this binding-only slice because it had no production consumer yet. It remains required by the approved plan and must enter with the first connection bridge slice rather than being omitted.
 
-- concrete Quinn types stay inside `transports/quic` and must not leak into core identity/policy/protocol/session domain state;
-- channel binding is authenticated context, not transport identity authority;
-- reconnect never resumes old session or operation authority without fresh approved authentication semantics;
-- bounded queues/backpressure/cancellation/shutdown remain explicit;
-- transport close/loss maps to the existing M7 terminal lifecycle contract;
-- no UI/platform/privileged/persistence scope is pulled into transport work.
+### Task 3 — Bounded private record framing
+
+Implemented private transport framing:
+
+```text
+u32 big-endian declared length
+[declared] record bytes
+```
+
+Properties now proven/implemented:
+
+- exact configured record limit succeeds;
+- declared oversize is rejected before body allocation;
+- forbidden zero-length records are rejected;
+- truncated bodies map to a bounded read failure;
+- writes reject empty and oversized payloads before sending;
+- no attacker-controlled `read_to_end` is used.
+
+During GREEN verification, the first loopback test helper deadlocked because Quinn bidirectional streams are lazy: the peer cannot `accept_bi()` until the opener writes data. The uploaded Quinn source explicitly documents this behavior. The helper was corrected to write first and accept afterward; production framing code was unchanged.
+
+GREEN checkpoint:
+
+- current branch head `fa1d35ca370b5ca75d6c55b41c21a56b4a0f2b75`;
+- CI `34684781173` — lockfile, rustfmt, workspace check, Clippy `-D warnings`, and all tests passed.
+
+## Active Pull Request
+
+- Draft PR #18: `feat: implement M8 Quinn transport`.
+- Base: `main` at the original verified M8 baseline.
+- Head branch: `m8-quinn-transport`.
+- Do not merge until the entire M8 milestone is complete, reviewed, and the exact final head passes all required gates.
+
+## Remaining M8 Work
+
+The approved implementation plan still requires:
+
+1. Task 4 — typed `QuicTransportConfig`, reserved control-stream bridge, bounded Tokio control queues, terminal connection state, connection-owned task shutdown/join semantics;
+2. Task 5 — bounded authorized unidirectional stream bridge with opening-frame/chunk limits, saturation, FIN/reset/stop/cancellation semantics;
+3. Task 6 — prove the existing Cross-Lab session-auth protocol over the Quinn exporter binding without creating a second authentication architecture;
+4. remaining reconnect/revocation/failure/shutdown integration scenarios from the M8 plan;
+5. final dependency/boundary/security review and full workspace verification;
+6. update architecture/docs for completed M8 factual state;
+7. only then merge the exact verified M8 head to `main` and verify canonical `main` after merge.
+
+Temporary `#[cfg_attr(not(test), allow(dead_code))]` on the private binding/record modules is allowed only while those helpers have no production connection consumer. Remove those allowances when Task 4 wires the real connection bridge.
 
 ## Exact Next Task
 
-Review and approve `docs/plans/phase-1/M8-quinn-transport-design.md`.
+Start **Task 4 RED** from `docs/plans/phase-1/M8-quinn-transport.md`.
 
-After approval, before production code:
+Write real loopback tests first for the reserved control bridge proving at minimum:
 
-1. write proposed `docs/adr/ADR-0008-quinn-channel-binding-profile-v1.md` recording the exact TLS-exporter label/context/output profile and full-handshake/no-0-RTT rule;
-2. write `docs/plans/phase-1/M8-quinn-transport.md` as the detailed TDD implementation plan;
-3. self-review the plan for complete design coverage, no placeholders, and type/interface consistency;
-4. checkpoint/push the planning documents on `m8-quinn-transport`;
-5. only then begin the first RED production slice from the approved plan.
+- ordered control delivery;
+- bounded local outbound queue saturation with ownership preservation;
+- configured oversize rejection before queueing;
+- remote connection close becomes terminal;
+- explicit adapter shutdown closes the connection and joins all connection-owned tasks.
 
-Do not start M8 production code until the design is approved and the implementation plan is written and reconciled with current code.
+The RED run must fail because `QuicTransportConnection`/its required config/bridge behavior does not yet exist. Only after that verified failure should the minimal bounded implementation be added.
 
 ## Resume Procedure
 
-1. inspect canonical `main`, current M8 branch, recent commits/workflows, and `docs/development/CURRENT.md`;
-2. read the Master Architecture, M8 design, relevant ADRs/contracts, and the implementation plan once approved;
-3. inspect relevant uploaded research repositories and reconcile them with the pinned upstream APIs;
-4. reconcile documentation with actual code before editing;
-5. execute small TDD milestones, verify full relevant gates, commit/push, and update this file after meaningful progress;
-6. merge only the exact verified M8 milestone head into `main` and verify canonical `main` after merge;
-7. never rely on chat history or stash as the only copy of incomplete work.
+1. inspect canonical `main`, `m8-quinn-transport`, PR #18, recent commits/workflows, and this file;
+2. read the Master Architecture, M8 design, ADR-0008, active implementation plan, and relevant transport/session contracts;
+3. inspect relevant existing Cross-Lab code and uploaded research source before implementing related behavior;
+4. execute small RED → verified failure → GREEN milestones;
+5. after meaningful progress, run the full gate, commit/push, and update this file;
+6. do not rely on chat history or stash as the only copy of valuable work;
+7. merge only the exact verified completed M8 head and verify canonical `main` after merge.
