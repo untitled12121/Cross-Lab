@@ -190,12 +190,7 @@ impl Fixture {
         admission: &mut StreamAdmission,
         open: &DataStreamOpen,
     ) -> Result<AdmittedStream, StreamAdmissionError> {
-        self.admit_with_revisions(
-            admission,
-            open,
-            self.trust_revision,
-            self.policy_revision,
-        )
+        self.admit_with_revisions(admission, open, self.trust_revision, self.policy_revision)
     }
 
     fn admit_with_revisions(
@@ -205,13 +200,7 @@ impl Fixture {
         trust_revision: u64,
         policy_revision: u64,
     ) -> Result<AdmittedStream, StreamAdmissionError> {
-        admission.admit_inbound(
-            &self.session,
-            open,
-            15,
-            trust_revision,
-            policy_revision,
-        )
+        admission.admit_inbound(&self.session, open, 15, trust_revision, policy_revision)
     }
 }
 
