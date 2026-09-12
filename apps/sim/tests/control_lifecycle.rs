@@ -14,8 +14,8 @@ use crosslab_policy::{
     TrustTransition,
 };
 use crosslab_protocol::{
-    ControlRequest, FeatureSet, ProtocolRange, ProtocolVersion, RequestId, RetryClass, SessionClose,
-    SessionCloseReason,
+    ControlRequest, FeatureSet, ProtocolRange, ProtocolVersion, RequestId, RetryClass,
+    SessionClose, SessionCloseReason,
 };
 use crosslab_sim::{
     node::{NodeError, NodeEvent, SimNode},
