@@ -8,9 +8,9 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 ## Current Milestone
 
-**M7 — Failure and Security Lifecycle: complete, verified, and integrated into canonical `main`.**
+**M8 — Quinn Transport: design checkpoint written; awaiting design review before implementation planning and production code.**
 
-M1–M7 are complete and integrated. The exact next milestone is **M8 — Quinn transport**.
+M1–M7 are complete and integrated into canonical `main`. M8 work is isolated on `m8-quinn-transport` from the exact verified post-M7 documentation head.
 
 ## Canonical Main State
 
@@ -19,6 +19,8 @@ M1–M7 are complete and integrated. The exact next milestone is **M8 — Quinn 
 - PR #17: `feat: implement M7 failure and security lifecycle` — merged with exact-head protection using merge method `merge`.
 - M7 merge commit on `main`: `2974108dcf48a9d606b094fea24a9e5da991c513`.
 - Post-merge canonical `main` CI: `34681576836` — locked metadata, rustfmt, workspace check, Clippy `-D warnings`, and all tests passed.
+- Final documentation-only canonical `main` head: `b2e16f27a5c6d8307c58f4c6a4c760bb867ff223` (`docs: record M7 integration`).
+- Final documentation-only `main` CI: `34681661930` — passed.
 - M7 Fuzz Smoke was not scheduled/applicable because `.github/workflows/fuzz.yml` only triggers for `crates/protocol/**`, `crates/policy/**`, `fuzz/**`, or the fuzz workflow itself, and M7 changed none of those paths. This is not recorded as a fuzz pass.
 
 ## M7 Delivered
@@ -46,6 +48,43 @@ M7 proves failure cannot preserve stale authority:
 - Task 6 RED `58eb0a914a9ca929ff48ccc25e481d51f43b4efb`, CI `34676901018`; GREEN `4026cc397fe63a54e5cc093e341cd1f37ca721d3`, CI `34676968464`.
 - Final-review trust-revision guard RED `ad0f5ee4cf33a22fa834e6bf45b0fae8923b6bc3`, CI `34681339461`; GREEN `f87c43fa4c5ed252fe30358406efbba3faba746f`, CI `34681410654`.
 
+## M8 Design Checkpoint
+
+Branch:
+
+- `m8-quinn-transport`, created from exact verified `main` head `b2e16f27a5c6d8307c58f4c6a4c760bb867ff223`.
+
+Written design:
+
+- `docs/plans/phase-1/M8-quinn-transport-design.md`.
+- Design commit: `9ef3e88886290ad2b43a3b0ae2fba0e74cefa338`.
+
+Proposed design decisions:
+
+- add concrete `crosslab-transport-quic` under `transports/quic`; Quinn/Tokio/rustls types remain private to the adapter;
+- preserve the existing runtime-neutral `TransportConnection`/stream seam and bridge Quinn async I/O with bounded Tokio channels plus connection-owned tasks;
+- use one reserved QUIC bidirectional stream for bounded session-auth bootstrap and, only after authentication, ordinary ordered control frames;
+- map Cross-Lab unidirectional data streams to Quinn unidirectional streams with bounded transport-private record framing;
+- derive `ChannelBinding` from Quinn TLS exporter material after the full handshake, proposed profile `quic-tls-exporter-v1`; no 0-RTT path;
+- keep TLS certificate trust separate from Cross-Lab device identity; loopback tests may use explicitly trusted ephemeral self-signed certificates;
+- do not add datagrams, Iroh, libp2p, NAT/relay, discovery, route scoring, transport migration, persistence, UI/platform, or privileged scope;
+- strengthen the transport-neutral seam with ownership-preserving `TooLarge` errors for outbound control/opening frames before real network buffers are queued;
+- keep all queues, stream concurrency, record lengths, receive windows, and idle behavior explicitly bounded.
+
+Verified current dependency/API research for the design:
+
+- Quinn `0.11.11` with minimal `runtime-tokio` + `rustls-ring` features;
+- Tokio `1.53.1` as the one async runtime for the adapter/application boundary;
+- Quinn's compatible rustls `0.23.x` stack; avoid a direct rustls dependency unless concrete configuration APIs require it;
+- `rcgen 0.14.10` proposed dev-only for loopback certificate fixtures;
+- Quinn supports TLS exporter keying material, uni/bi stream open/accept, explicit connection close/closed state, send reset/finish, receive stop, and explicit transport stream/window limits required by M8.
+
+Research limitation:
+
+- the uploaded Quinn archive could not be reliably enumerated in the current execution environment after repeated archive-tool failures. The design was cross-checked against maintained upstream Quinn 0.11.11 source/API documentation. Before production implementation, inspect/reconcile the uploaded archive in a normal local checkout if available; do not copy architecture blindly.
+
+No production code or dependency changes have entered M8 yet.
+
 ## Architecture Baseline for M8
 
 Primary contracts remain:
@@ -68,27 +107,24 @@ M8 must preserve these boundaries:
 
 ## Exact Next Task
 
-Begin **M8 — Quinn transport design and implementation planning** from this exact verified `main` state after the integration-record CI passes.
+Review and approve `docs/plans/phase-1/M8-quinn-transport-design.md`.
 
-Execution contract:
+After approval, before production code:
 
-1. verify the final documentation-only `main` head and CI;
-2. create a fresh M8 branch from that exact verified head;
-3. re-read `SESSION-TRANSPORT.md`, relevant Master Architecture transport/security sections, M5–M7 seams, and current workspace dependency direction;
-4. inspect the uploaded Quinn repository in detail for maintained APIs covering endpoint/connection lifecycle, bidirectional/unidirectional streams, datagrams if needed, close/cancellation, TLS/exporter/channel-binding options, backpressure, and platform/runtime implications;
-5. inspect relevant Iroh/rust-libp2p references only where they clarify abstractions; do not copy their architecture;
-6. verify the latest stable compatible Quinn/Tokio/rustls dependency versions before choosing dependencies;
-7. write and checkpoint `docs/plans/phase-1/M8-quinn-transport-design.md` plus an implementation plan before production code;
-8. keep the first implementation slice transport-neutral and test-driven, preserving the existing `TransportConnection`/stream seam rather than creating a second session architecture.
+1. write proposed `docs/adr/ADR-0008-quinn-channel-binding-profile-v1.md` recording the exact TLS-exporter label/context/output profile and full-handshake/no-0-RTT rule;
+2. write `docs/plans/phase-1/M8-quinn-transport.md` as the detailed TDD implementation plan;
+3. self-review the plan for complete design coverage, no placeholders, and type/interface consistency;
+4. checkpoint/push the planning documents on `m8-quinn-transport`;
+5. only then begin the first RED production slice from the approved plan.
 
-Do not start M8 production code until its design and implementation plan are written and reconciled with current code.
+Do not start M8 production code until the design is approved and the implementation plan is written and reconciled with current code.
 
 ## Resume Procedure
 
-1. inspect canonical `main`, recent commits, workflows, and `docs/development/CURRENT.md`;
-2. read the Master Architecture and relevant ADRs/contracts;
-3. inspect the active milestone plan and relevant uploaded research repositories;
+1. inspect canonical `main`, current M8 branch, recent commits/workflows, and `docs/development/CURRENT.md`;
+2. read the Master Architecture, M8 design, relevant ADRs/contracts, and the implementation plan once approved;
+3. inspect relevant uploaded research repositories and reconcile them with the pinned upstream APIs;
 4. reconcile documentation with actual code before editing;
 5. execute small TDD milestones, verify full relevant gates, commit/push, and update this file after meaningful progress;
-6. merge only exact verified milestone heads into `main` and verify canonical `main` after merge;
+6. merge only the exact verified M8 milestone head into `main` and verify canonical `main` after merge;
 7. never rely on chat history or stash as the only copy of incomplete work.
