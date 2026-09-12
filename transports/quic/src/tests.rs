@@ -34,7 +34,8 @@ async fn loopback_connection_pair() -> LoopbackConnectionPair {
     let certified = rcgen::generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
     let certificate = certified.cert.der().clone();
     let key = PrivatePkcs8KeyDer::from(certified.signing_key.serialize_der());
-    let server_config = ServerConfig::with_single_cert(vec![certificate.clone()], key.into()).unwrap();
+    let server_config =
+        ServerConfig::with_single_cert(vec![certificate.clone()], key.into()).unwrap();
     let server_endpoint = Endpoint::server(
         server_config,
         SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
@@ -44,14 +45,10 @@ async fn loopback_connection_pair() -> LoopbackConnectionPair {
 
     let mut roots = RootCertStore::empty();
     roots.add(certificate).unwrap();
-    let mut client_endpoint = Endpoint::client(SocketAddr::new(
-        IpAddr::V4(Ipv4Addr::LOCALHOST),
-        0,
-    ))
-    .unwrap();
-    client_endpoint.set_default_client_config(
-        ClientConfig::with_root_certificates(Arc::new(roots)).unwrap(),
-    );
+    let mut client_endpoint =
+        Endpoint::client(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0)).unwrap();
+    client_endpoint
+        .set_default_client_config(ClientConfig::with_root_certificates(Arc::new(roots)).unwrap());
 
     let client_connecting = client_endpoint.connect(server_addr, "localhost").unwrap();
     let server_incoming = server_endpoint.accept().await.unwrap();
