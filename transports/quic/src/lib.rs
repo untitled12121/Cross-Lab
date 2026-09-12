@@ -28,4 +28,6 @@ impl fmt::Display for QuicTransportError {
 impl std::error::Error for QuicTransportError {}
 
 #[cfg(test)]
+mod session_auth_tests;
+#[cfg(test)]
 mod tests;
