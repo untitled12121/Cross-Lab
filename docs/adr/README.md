@@ -15,6 +15,7 @@ Cross-Lab has accepted the following ADRs:
 | ADR-0005 | TUF-style update trust with separated roles and production root thresholding | Accepted |
 | ADR-0006 | Focused shared `crosslab-crypto` crate boundary | Accepted |
 | ADR-0007 | Protocol v1 event namespace and session-close wire registry | Accepted |
+| ADR-0008 | Quinn channel-binding profile v1: TLS exporter bound to each protected QUIC connection | Accepted |
 
 The governing architecture is `docs/architecture/MASTER-ARCHITECTURE.md`, Revision 2.1.
 
