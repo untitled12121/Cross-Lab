@@ -5,8 +5,8 @@ use std::{
 
 use crosslab_core::{
     ChannelBinding, ConnectionMetadata, LogicalSession, SessionActivation, SessionAuthError,
-    SessionAuthProof, SessionAuthRole as CoreSessionAuthRole, SessionAuthTranscriptV1, SessionError,
-    SessionHandshakeSide, SessionState, TransportConnection, TransportSecurityClass,
+    SessionAuthProof, SessionAuthRole as CoreSessionAuthRole, SessionAuthTranscriptV1,
+    SessionError, SessionHandshakeSide, SessionState, TransportConnection, TransportSecurityClass,
 };
 use crosslab_crypto::{SigningKey, blake3_256};
 use crosslab_identity::{
@@ -326,8 +326,7 @@ async fn authenticate_loopback_session_pair(
         AuthAttempt::WrongBinding => {
             let mut bytes = bootstrap.client_binding.bytes().to_vec();
             bytes[0] ^= 0xFF;
-            let wrong_binding =
-                ChannelBinding::new(bootstrap.client_binding.profile_id(), bytes);
+            let wrong_binding = ChannelBinding::new(bootstrap.client_binding.profile_id(), bytes);
             transcript_for(fixture, &initiator_hello, &responder_hello, &wrong_binding)
         }
         AuthAttempt::Normal | AuthAttempt::ReplayInitiator(_) => actual_transcript.clone(),
@@ -383,37 +382,40 @@ async fn authenticate_loopback_session_pair(
         responder_hello.features(),
     );
 
-    let client_result = bootstrap.client_session.authenticate(SessionActivation::new(
-        &fixture.root,
-        initiator_side,
-        responder_side,
-        CoreSessionAuthRole::Initiator,
-        &fixture.responder_trust,
-        initiator_hello.nonce(),
-        responder_hello.nonce(),
-        &bootstrap.client_binding,
-        TransportSecurityClass::AuthenticatedConfidentialChannel,
-        &initiator_replay.proof,
-        &responder_proof,
-    ));
-    let server_result = bootstrap.server_session.authenticate(SessionActivation::new(
-        &fixture.root,
-        initiator_side,
-        responder_side,
-        CoreSessionAuthRole::Responder,
-        &fixture.initiator_trust,
-        initiator_hello.nonce(),
-        responder_hello.nonce(),
-        &bootstrap.server_binding,
-        TransportSecurityClass::AuthenticatedConfidentialChannel,
-        &initiator_replay.proof,
-        &responder_proof,
-    ));
+    let client_result = bootstrap
+        .client_session
+        .authenticate(SessionActivation::new(
+            &fixture.root,
+            initiator_side,
+            responder_side,
+            CoreSessionAuthRole::Initiator,
+            &fixture.responder_trust,
+            initiator_hello.nonce(),
+            responder_hello.nonce(),
+            &bootstrap.client_binding,
+            TransportSecurityClass::AuthenticatedConfidentialChannel,
+            &initiator_replay.proof,
+            &responder_proof,
+        ));
+    let server_result = bootstrap
+        .server_session
+        .authenticate(SessionActivation::new(
+            &fixture.root,
+            initiator_side,
+            responder_side,
+            CoreSessionAuthRole::Responder,
+            &fixture.initiator_trust,
+            initiator_hello.nonce(),
+            responder_hello.nonce(),
+            &bootstrap.server_binding,
+            TransportSecurityClass::AuthenticatedConfidentialChannel,
+            &initiator_replay.proof,
+            &responder_proof,
+        ));
 
     match (client_result, server_result) {
-        (Ok(()), Ok(())) => promote_authenticated(bootstrap, initiator_replay).map_err(|_| {
-            unreachable!("active authenticated sessions must be promotable")
-        }),
+        (Ok(()), Ok(())) => promote_authenticated(bootstrap, initiator_replay)
+            .map_err(|_| unreachable!("active authenticated sessions must be promotable")),
         (Err(client_error), Err(server_error)) => {
             assert_eq!(client_error, server_error);
             bootstrap.close_connections().await;
