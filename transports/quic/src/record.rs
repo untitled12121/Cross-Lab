@@ -1,9 +1,10 @@
-use quinn::{RecvStream, SendStream};
+use quinn::{ReadExactError, RecvStream, SendStream};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RecordError {
     Empty,
     TooLarge { declared: usize, max: usize },
+    Finished,
     Read,
     Write,
 }
@@ -42,9 +43,11 @@ pub(crate) async fn read_record(
     allow_empty: bool,
 ) -> Result<Vec<u8>, RecordError> {
     let mut prefix = [0_u8; 4];
-    recv.read_exact(&mut prefix)
-        .await
-        .map_err(|_| RecordError::Read)?;
+    match recv.read_exact(&mut prefix).await {
+        Ok(()) => {}
+        Err(ReadExactError::FinishedEarly(0)) => return Err(RecordError::Finished),
+        Err(_) => return Err(RecordError::Read),
+    }
 
     let declared = u32::from_be_bytes(prefix) as usize;
     if declared > max {
