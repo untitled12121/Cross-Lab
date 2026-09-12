@@ -8,8 +8,8 @@ pub const M9_ALPN: &[u8] = b"crosslab-m9-networking-eval";
 pub struct DirectPair {
     client_endpoint: Endpoint,
     server_endpoint: Endpoint,
-    client_connection: Connection,
-    server_connection: Connection,
+    _client_connection: Connection,
+    _server_connection: Connection,
     client_binding: ChannelBinding,
     server_binding: ChannelBinding,
 }
@@ -21,14 +21,6 @@ impl DirectPair {
 
     pub fn server_binding(&self) -> &ChannelBinding {
         &self.server_binding
-    }
-
-    pub(crate) fn client_connection(&self) -> &Connection {
-        &self.client_connection
-    }
-
-    pub(crate) fn server_connection(&self) -> &Connection {
-        &self.server_connection
     }
 
     pub async fn shutdown(self) {
@@ -79,8 +71,8 @@ pub async fn direct_pair() -> Result<DirectPair, EvalError> {
     Ok(DirectPair {
         client_endpoint,
         server_endpoint,
-        client_connection,
-        server_connection,
+        _client_connection: client_connection,
+        _server_connection: server_connection,
         client_binding,
         server_binding,
     })
