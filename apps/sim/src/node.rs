@@ -228,6 +228,7 @@ impl<'a> SimNode<'a> {
     }
 
     fn close_received(&mut self) -> Result<(), NodeError> {
+        self.dispatcher.cancel_session_state();
         match self.session.state() {
             SessionState::Active => {
                 self.session.begin_close().map_err(NodeError::Session)?;
@@ -246,6 +247,7 @@ impl<'a> SimNode<'a> {
     }
 
     fn fail_closed(&mut self) {
+        self.dispatcher.cancel_session_state();
         match self.session.state() {
             SessionState::Active => {
                 let _ = self.session.begin_close();
