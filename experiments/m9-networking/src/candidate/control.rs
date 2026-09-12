@@ -162,13 +162,9 @@ pub async fn connected_control_pair(config: CandidateConfig) -> Result<ControlPa
         .accept_bi()
         .await
         .map_err(|_| EvalError::Control)?;
-    let marker = read_record(
-        &mut server_recv,
-        CONTROL_STREAM_MARKER.len(),
-        false,
-    )
-    .await
-    .map_err(|_| EvalError::Control)?;
+    let marker = read_record(&mut server_recv, CONTROL_STREAM_MARKER.len(), false)
+        .await
+        .map_err(|_| EvalError::Control)?;
     if marker != CONTROL_STREAM_MARKER {
         return Err(EvalError::Control);
     }
