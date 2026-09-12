@@ -14,10 +14,11 @@ use crosslab_policy::{
     TrustTransition,
 };
 use crosslab_protocol::{
-    ControlRequest, FeatureSet, ProtocolRange, ProtocolVersion, RequestId, RetryClass,
+    ControlRequest, FeatureSet, ProtocolRange, ProtocolVersion, RequestId, RetryClass, SessionClose,
+    SessionCloseReason,
 };
 use crosslab_sim::{
-    node::{NodeError, SimNode},
+    node::{NodeError, NodeEvent, SimNode},
     transport::MemoryTransportPair,
 };
 
@@ -327,4 +328,99 @@ fn shutdown_is_idempotent_and_discards_pending_authority() {
     assert_eq!(node.session().state(), SessionState::Closed);
     assert_eq!(node.pending_request_count(), 0);
     assert!(endpoint_a.is_closed());
+}
+
+#[test]
+fn bounded_control_backpressure_preserves_dispatch_state_until_retry() {
+    let fixture = Fixture::new();
+    let pair = MemoryTransportPair::new(NonZeroUsize::new(1).unwrap(), [0xbc; 32]);
+    let (session_a, _) = fixture.sessions(&pair);
+    let (endpoint_a, endpoint_b) = pair.endpoints();
+    let mut node = SimNode::new(
+        session_a,
+        endpoint_a,
+        PolicyState::new(),
+        Vec::new(),
+        NonZeroUsize::new(CAPACITY).unwrap(),
+    )
+    .unwrap();
+
+    node.send_request(request(0xc8)).unwrap();
+    let sequence_before = node.next_send_sequence();
+    let pending_before = node.pending_request_count();
+    assert!(matches!(
+        node.send_request(request(0xc9)),
+        Err(NodeError::Send(ControlSendError::Full(_)))
+    ));
+    assert_eq!(node.next_send_sequence(), sequence_before);
+    assert_eq!(node.pending_request_count(), pending_before);
+    assert_eq!(node.session().state(), SessionState::Active);
+
+    endpoint_b.try_receive_control().unwrap();
+    node.send_request(request(0xc9)).unwrap();
+    assert_eq!(node.next_send_sequence(), Some(2));
+    assert_eq!(node.pending_request_count(), 2);
+}
+
+#[test]
+fn malformed_control_input_discards_pending_authority_and_closes_transport() {
+    let fixture = Fixture::new();
+    let pair = pair();
+    let (_, session_b) = fixture.sessions(&pair);
+    let (endpoint_a, endpoint_b) = pair.endpoints();
+    let mut node = SimNode::new(
+        session_b,
+        endpoint_b,
+        PolicyState::new(),
+        Vec::new(),
+        NonZeroUsize::new(CAPACITY).unwrap(),
+    )
+    .unwrap();
+
+    node.send_request(request(0xca)).unwrap();
+    assert_eq!(node.pending_request_count(), 1);
+    endpoint_a.try_send_control(vec![0, 0, 0, 1, 0xff]).unwrap();
+
+    assert!(matches!(node.receive_one(), Err(NodeError::Wire(_))));
+    assert_eq!(node.session().state(), SessionState::Closed);
+    assert_eq!(node.pending_request_count(), 0);
+    assert!(endpoint_b.is_closed());
+}
+
+#[test]
+fn peer_close_discards_pending_authority_and_closes_transport() {
+    let fixture = Fixture::new();
+    let pair = pair();
+    let (session_a, session_b) = fixture.sessions(&pair);
+    let (endpoint_a, endpoint_b) = pair.endpoints();
+    let mut node_a = SimNode::new(
+        session_a,
+        endpoint_a,
+        PolicyState::new(),
+        Vec::new(),
+        NonZeroUsize::new(CAPACITY).unwrap(),
+    )
+    .unwrap();
+    let mut node_b = SimNode::new(
+        session_b,
+        endpoint_b,
+        PolicyState::new(),
+        Vec::new(),
+        NonZeroUsize::new(CAPACITY).unwrap(),
+    )
+    .unwrap();
+
+    node_b.send_request(request(0xcb)).unwrap();
+    assert_eq!(node_b.pending_request_count(), 1);
+    node_a
+        .send_close(SessionClose::new(SessionCloseReason::Normal, None))
+        .unwrap();
+
+    assert!(matches!(
+        node_b.receive_one().unwrap(),
+        NodeEvent::SessionClosed(SessionCloseReason::Normal)
+    ));
+    assert_eq!(node_b.session().state(), SessionState::Closed);
+    assert_eq!(node_b.pending_request_count(), 0);
+    assert!(endpoint_b.is_closed());
 }
