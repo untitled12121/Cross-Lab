@@ -8,91 +8,94 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 ## Current Milestone
 
-**M6 — Authorized Data Streams: design drafted and self-reviewed; awaiting written design approval.**
+**M6 — Authorized Data Streams: design approved; implementation plan complete and self-reviewed; implementation not started.**
 
-M1–M5 are complete, verified, and integrated into canonical `main`. No M6 production code has been written.
+M1–M5 are complete, verified, and integrated into canonical `main`. No M6 production source, dependency, protocol schema, or workflow behavior has been changed yet.
 
 ## Branch State
 
-- `main` — canonical branch through complete M5; final integration-record head `c24f68342709efc72549f0bf8f3ea8df2ef6de48` passed CI `34662220773`.
+- `main` — canonical through complete M5; final integration-record head `c24f68342709efc72549f0bf8f3ea8df2ef6de48` passed CI `34662220773`.
 - `m6-authorized-streams` — active M6 design/planning branch created exactly from `c24f68342709efc72549f0bf8f3ea8df2ef6de48`.
-- Historical M5/planning/protocol/trust-policy branches were verified as fully contained in `main` and removed by the repository owner before M6 planning began.
+- Historical M5/planning/protocol/trust-policy branches were verified as fully contained in `main` and removed by the repository owner before M6 planning.
 
 ## Architecture Baseline
 
 - uploaded Cross-Lab Master Architecture & Development Plan — primary architectural source of truth;
 - `docs/architecture/MASTER-ARCHITECTURE.md` — approved evolved repository architecture, Revision 2.1;
-- `docs/architecture/CORE-SIMULATOR.md` — Phase 1 simulator specification and milestone staging;
-- `docs/architecture/SESSION-TRANSPORT.md` — logical-session/data-stream admission and transport contract;
-- `docs/protocol/PROTOCOL-V1.md` — existing `DataStreamOpenV1` and framing contract;
-- M3 `AuthorizedOperation` / `UsePolicy` implementation;
-- M5 `LogicalSession`, `SessionContext`, `TransportConnection`, `MemoryTransportPair`, and `SimNode` implementation.
+- `docs/architecture/CORE-SIMULATOR.md` — Phase 1 scenarios/milestone staging including S-007 and N-035..N-045;
+- `docs/architecture/SESSION-TRANSPORT.md` — stream admission/transport contract;
+- `docs/protocol/PROTOCOL-V1.md` — existing bounded `DataStreamOpenV1` wire contract;
+- M3 `AuthorizedOperation` / `UsePolicy`;
+- M5 `LogicalSession`, `SessionContext`, `TransportConnection`, `MemoryTransportPair`, and simulator composition.
 
 ## Completed M5 Baseline
 
-M5 proves pairing, trust commit, bounded in-memory control transport, channel-bound authenticated logical sessions, capability exchange, and sequenced policy-authorized control request/response/event simulation.
+M5 final Task 9 PR head `654683b62cde22cdd528920fcebeec64d6ca3119` passed CI `34661982660` and Fuzz Smoke `34661982649`; PR #15 merged at `e9ddec90b9ad232c917c302188400abb23a39c54`; post-merge CI `34662096131` passed; final integration-record head `c24f68342709efc72549f0bf8f3ea8df2ef6de48` passed CI `34662220773`.
 
-Key integration evidence:
+The merged M5 code tree is the exact tree fuzz-verified on the PR head.
 
-- Tasks 1–4 PR #10: final head `588366d69dcd89d3a9a4f709fbca833eb263be57`; CI `34643647466`; fuzz `34643647458`; merged at `b54395109b8fe7ed49862f7f8c508659a2fd7a36`.
-- Task 5 PR #11: final head `8ad7c79eca6e8aa70c887d27d3a66aa713df9d9f`; CI `34653899890`; fuzz `34653899783`; merged at `8cb6f013055a4f05ff599cc0d31adac45d2756b4`.
-- Task 6 PR #12: final head `9f2fcaf157245b6dd1f1ab1083e9507961cc7e8a`; CI `34654964311`; merged at `32bf75951c0e0e768efac80c4320059e04550483`.
-- Task 7 PR #13: documentation-inclusive head `94f418469a24dcd0d9598311a1d20bfda1bbef3a`; CI `34658806668`; fuzz `34658806735`; merged at `e17075245b566522bb4c822cc22b3ee2245fe7a7`.
-- Task 8 PR #14: documentation-inclusive head `212212e4a353abf7d4b505dd633c9f95a04e3027`; CI `34660116960`; merged at `b14f4c4a7b42b22c1c8de23be4c8c518e24dbc34`.
-- Task 9 PR #15: exact code head `8a4ae668d6cbfd329d72914d8b47279263cf14d7` passed CI `34661829192` and fuzz `34661829233`; documentation-inclusive head `654683b62cde22cdd528920fcebeec64d6ca3119` passed CI `34661982660` and fuzz `34661982649`; merged at `e9ddec90b9ad232c917c302188400abb23a39c54`; post-merge CI `34662096131` passed.
-- Final M5 integration-record head `c24f68342709efc72549f0bf8f3ea8df2ef6de48` passed CI `34662220773`.
-
-The M5 merged tree is the exact fuzz-verified PR tree; Fuzz Smoke is PR/manual-triggered rather than push-triggered.
-
-## M6 Approved Direction
-
-The repository owner approved the M6 direction in chat before the written spec was created:
+## M6 Approved Architecture
 
 - control-plane authorization remains separate from data-plane bytes;
-- every stream requires a locally held valid `AuthorizedOperation`;
-- reuse existing M4 `DataStreamOpen` rather than invent a parallel header;
-- add bounded multi-stream authority as `MultiStream { max_streams: NonZeroU32 }`, never unlimited reuse;
-- policy owns only operation authority and monotonic stream-use budget;
-- core owns session-bound stream admission, direction/index semantics, operation registry, and active stream lifecycle;
-- transport carries opaque opening bytes and bounded chunks without interpreting protocol authority;
-- simulator provides bounded pending-open/chunk queues, backpressure, graceful finish, cancellation, and deterministic shutdown;
-- no general async runtime, real networking, filesystem transfer, UI/platform, persistence, or M7 lifecycle work enters M6.
+- every accepted stream requires a locally held valid `AuthorizedOperation`;
+- reuse existing M4 `DataStreamOpen` rather than inventing another header;
+- add `MultiStream { max_streams: NonZeroU32 }`, never unlimited reuse;
+- policy owns authority plus monotonic stream-use budget only;
+- core owns session-bound stream admission, direction/index/replay state, operation registry, and admitted-stream lifecycle;
+- transport carries opaque opening bytes and bounded chunks without interpreting authorization;
+- simulator provides bounded stream opens/chunks, ownership-preserving backpressure, graceful finish, cancellation, and deterministic shutdown;
+- no async runtime, real network transport, real files, UI/platform, persistence, or M7 reconnect/revocation work enters M6.
 
-## M6 Design Checkpoint
+## M6 Planning Checkpoints
 
 Written design:
 
 `docs/plans/phase-1/M6-authorized-data-streams-design.md`
 
-Design commits on `m6-authorized-streams`:
-
 - `1af29c57ff68b449ed991f8e372736da9ba9da42` — initial written design;
-- `5a2bb9c3bbf5e9aa85d93dfc55b1599d4caa15ee` — self-review refinement separating policy stream-use budget from core stream-index/replay ownership and avoiding permanent session-wide `StreamId` history.
+- `5a2bb9c3bbf5e9aa85d93dfc55b1599d4caa15ee` — self-review refinement separating policy budget from core index/replay ownership.
 
-No production source, Cargo dependency, protocol schema, or workflow file changed in these commits.
+Implementation plan:
+
+`docs/plans/phase-1/M6-authorized-data-streams.md`
+
+- `9805347a4aad0da788554d40b371c4657cc7e37c` — initial implementation plan;
+- `8faf3da38e57159dbbebd73611f958aba61e8376` — plan self-review refinement: transport seam + memory adapter made one atomic task; simulator capacity checked before dequeue/admission so saturation cannot spend operation authority.
+
+Research inspected before planning:
+
+- uploaded Quinn: graceful send `finish`, abortive send `reset`, receive-side `stop` lifecycle semantics;
+- uploaded Iroh: uni-stream `open_uni` / `accept_uni` and graceful finish patterns;
+- reuse is semantic only; no external transport type/code/dependency is introduced in M6.
+
+## M6 Implementation Plan
+
+Five TDD tasks:
+
+1. bounded stream-use authority in `crosslab-policy`;
+2. session-bound `StreamAdmission` in `crosslab-core`;
+3. transport-neutral stream seam plus bounded `MemoryTransportPair` streams as one atomic compile-safe slice;
+4. feature-focused simulator stream runtime plus S-007;
+5. N-035..N-039/N-043/N-045, shutdown, fuzz/baseline, scope review, merge, and M7 handoff.
 
 ## Exact Next Task
 
-Do **not** implement M6 yet.
+Begin **M6 Task 1 — bounded stream-use authority** only after selecting the implementation execution mode.
 
-1. repository owner reviews `docs/plans/phase-1/M6-authorized-data-streams-design.md` and explicitly approves it or requests changes;
-2. after written design approval, invoke the planning workflow and create the detailed M6 implementation plan in `docs/plans/phase-1/`;
-3. self-review the implementation plan against the Master Architecture, `CORE-SIMULATOR.md`, `SESSION-TRANSPORT.md`, current code, and relevant uploaded research repositories;
-4. only after plan approval begin TDD implementation on `m6-authorized-streams`;
-5. use small verifiable slices, update this file after meaningful progress, and merge only exact verified work into `main`.
+Task 1 starts test-first in `crates/policy/tests/operations.rs`, verifies RED for the missing `MultiStream`/reservation APIs, implements the smallest policy budget state in `crates/policy/src/operation/mod.rs`, runs focused plus full workspace gates, commits the green slice, and updates this file with exact evidence.
+
+Do not start Task 2 until Task 1 is verified.
 
 ## M6 Acceptance Guardrails
 
-M6 must prove operation-bound stream admission, single-stream and bounded multi-stream budgets, no payload visibility before admission, bounded open/chunk queues, ownership-preserving backpressure, cancellation/shutdown, S-007 and applicable N-035..N-039/N-043/N-045 behavior, and the full Rust/fuzz baseline.
+M6 must prove operation-bound admission, single-stream and bounded multi-stream budgets, no payload visibility before admission, bounded open/live/chunk state, ownership-preserving backpressure, cancellation/shutdown, S-007, applicable N-035..N-039/N-043/N-045 behavior, and full Rust/fuzz verification.
 
-M6 explicitly excludes Quinn/Iroh/libp2p, real sockets/TLS, real files/resume/sync, UI/platform adapters, persistence, plugins, privileged services, and M7 reconnect/revocation orchestration.
+M6 excludes Quinn/Iroh/libp2p integration, sockets/TLS, real files/resume/sync, UI/platform adapters, persistence, plugins, privileged services, and M7 reconnect/revocation orchestration.
 
 ## Resume Procedure
 
-Before continuing in a new chat:
-
 1. inspect `main`, `m6-authorized-streams`, recent commits, PR/workflow state, and repository cleanliness;
-2. read the Master Architecture, this file, the M6 design, `CORE-SIMULATOR.md`, and `SESSION-TRANSPORT.md`;
+2. read the Master Architecture, this file, M6 design, M6 implementation plan, `CORE-SIMULATOR.md`, and `SESSION-TRANSPORT.md`;
 3. reconcile docs with actual code before editing;
-4. respect the current written-design review gate before producing the implementation plan or code;
+4. execute M6 task-by-task with TDD and exact-head verification; merge only verified work to `main`;
 5. never rely on chat history or stash as the only copy of incomplete work.
