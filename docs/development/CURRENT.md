@@ -8,134 +8,197 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 ## Current Milestone
 
-**M6 — Authorized Data Streams: complete, verified, and integrated into canonical `main`.**
+**M7 — Failure and Security Lifecycle: Tasks 1–6 GREEN; Task 7 final integration closeout in progress.**
 
-M1–M6 are complete and integrated. The next milestone is **M7 — disconnect/reconnect/revocation/failure simulator**. Do not begin M7 implementation before reading the current architecture, existing code, and M7-relevant contracts and writing or confirming its implementation plan.
+M1–M6 are complete, verified, and integrated into canonical `main`.
 
 ## Branch State
 
-- `main` — canonical M6 merge commit `4d73528329fdae5d3eb1c25279778973168c87bd` passed post-merge CI `34671715166`.
-- M6 exact verified PR head `b429c3e853477b874d1f7b8ec366f7acfa1248e7` passed CI `34671648182` and Fuzz Smoke `34671648146` before merge.
-- PR #16 merged with preserved history and expected-head protection into `main` at `4d73528329fdae5d3eb1c25279778973168c87bd`.
-- The verified PR head and merge commit have the identical Git tree `a5992db1c6ffd6f1b7335f465fdd76dd48943880`, so canonical M6 code is byte-identical to the fuzz-verified PR tree.
-- `m6-authorized-streams` still exists at `b429c3e853477b874d1f7b8ec366f7acfa1248e7`; no branch-cleanup claim is implied by this record.
+- `main` — exact verified M6 integration-record head `d419f0fd410f0d2da69cc9bf2e4c20600033b7fb`; CI `34671802373` passed locked metadata, rustfmt, workspace check, Clippy `-D warnings`, and all tests.
+- `m7-failure-security-lifecycle` — active M7 branch created exactly from that verified `main` head.
+- PR #17 — draft, `feat: implement M7 failure and security lifecycle`; mark ready only after the exact documentation-inclusive final head passes CI.
+- Current verified M7 production/test head: `f87c43fa4c5ed252fe30358406efbba3faba746f`; CI `34681410654` passed locked metadata, rustfmt, workspace check, Clippy `-D warnings`, and all tests.
+- Fuzz Smoke is not scheduled for this PR because `.github/workflows/fuzz.yml` is path-filtered to `crates/protocol/**`, `crates/policy/**`, `fuzz/**`, or the workflow itself, and M7 changes none of those paths. This is recorded as not applicable to the M7 diff, not as a fuzz pass.
 
 ## Architecture Baseline
 
-- uploaded Cross-Lab Master Architecture & Development Plan — primary architectural source of truth;
-- `docs/architecture/MASTER-ARCHITECTURE.md` — approved evolved repository architecture, Revision 2.1;
-- `docs/architecture/CORE-SIMULATOR.md` — Phase 1 scenarios/milestone staging;
-- `docs/architecture/SESSION-TRANSPORT.md` — session, stream admission, transport, and failure-boundary contract;
-- `docs/protocol/PROTOCOL-V1.md` — bounded protocol wire contract including `DataStreamOpenV1`;
-- M3 `AuthorizedOperation` / `UsePolicy`;
-- M5 authenticated `LogicalSession`, `SessionContext`, control runtime, and bounded memory transport;
-- M6 bounded operation stream budgets, session-bound stream admission, transport-neutral data streams, and simulator stream runtime.
+Primary contracts:
 
-## M6 Approved Architecture
+- uploaded Cross-Lab Master Architecture & Development Plan;
+- `docs/architecture/MASTER-ARCHITECTURE.md`;
+- `docs/architecture/CORE-SIMULATOR.md`;
+- `docs/architecture/SESSION-TRANSPORT.md`;
+- `docs/architecture/PAIRING-TRUST-REVOCATION.md`;
+- M3 signed trust/operation authority, M5 authenticated session/control/memory transport, and M6 stream admission/runtime.
 
-- control-plane authorization remains separate from data-plane bytes;
-- every accepted stream requires a locally held valid `AuthorizedOperation`;
-- existing M4 `DataStreamOpen` is reused rather than introducing another opening header;
-- `UsePolicy::MultiStream { max_streams: NonZeroU32 }` is bounded; there is no unlimited stream authorization;
-- policy owns authority plus monotonic stream-use budget only;
-- core owns session-bound stream admission, direction/index/replay state, operation registry, and admitted-stream lifecycle;
-- transport carries opaque opening bytes and bounded chunks without interpreting authorization;
-- simulator provides bounded stream opens/chunks, ownership-preserving backpressure, graceful finish, cancellation, and deterministic shutdown;
-- no Quinn/Iroh/libp2p integration, sockets/TLS, async runtime, real files, persistence, UI/platform, privileged services, or M7 reconnect/revocation implementation entered M6.
+M7 invariants:
 
-## M6 Planning Checkpoints
+- transport loss is terminal for the old logical session;
+- reconnect creates a new transport/binding/nonces/proofs/`SessionId` and fresh capability/authorization state;
+- old request/sequence/operation authority never transfers across sessions;
+- ordinary revocation is verified/applied through signed `TrustTransition` in policy before runtime reaction;
+- accepted matching local revocation must match authenticated owner/device/credential epoch and advance the authenticated trust-revision snapshot;
+- accepted matching local revocation cancels ordinary session-scoped authority and closes without peer acknowledgement;
+- revoked trust denies later ordinary authentication;
+- all simulator queues remain bounded and terminal paths deterministically cancel session-scoped authority;
+- no real networking, Quinn/Iroh/libp2p, async runtime, reconnect timers/backoff, persistence, UI/platform, privileged, recovery-reauthorization, ticket, or 0-RTT scope enters M7.
 
-Written design: `docs/plans/phase-1/M6-authorized-data-streams-design.md`
+No ADR is required because M7 implements the approved lifecycle contract without changing architecture.
 
-- `1af29c57ff68b449ed991f8e372736da9ba9da42` — initial written design;
-- `5a2bb9c3bbf5e9aa85d93dfc55b1599d4caa15ee` — refinement separating policy budget from core index/replay ownership.
+## M7 Planning
 
-Implementation plan: `docs/plans/phase-1/M6-authorized-data-streams.md`
+- Design: `docs/plans/phase-1/M7-failure-security-lifecycle-design.md`, checkpoint `281a4f724d23f2435cee0e69c10c1b13dc758ec1`.
+- Implementation plan: `docs/plans/phase-1/M7-failure-security-lifecycle.md`, checkpoint `f42e5a96aac4449bdf858869b114ae20bc08f401`.
+- Research inspected: uploaded Quinn connection close/loss semantics; Syncthing reconnect orchestration; RustDesk transient reconnect heuristics. Reuse is semantic only.
 
-- `9805347a4aad0da788554d40b371c4657cc7e37c` — initial implementation plan;
-- `8faf3da38e57159dbbebd73611f958aba61e8376` — refinement making transport seam + memory adapter one atomic task and requiring simulator capacity checks before dequeue/admission.
+## M7 Task 1 — Core Session Terminal Lifecycle
 
-Research inspected before implementation:
+Delivered:
 
-- uploaded Quinn — graceful send `finish`, abortive send `reset`, receive-side stop/cancellation lifecycle semantics;
-- uploaded Iroh — unidirectional stream open/accept and graceful finish patterns;
-- reuse was semantic only; no external transport type/code/dependency was introduced in M6.
+- focused `crates/core/tests/session_lifecycle.rs`;
+- `LogicalSession::transport_lost()` with active/closing/revoked terminal closure and closed-state idempotence;
+- `LogicalSession::apply_peer_revocation()` requiring an active session, local `TrustState::Revoked`, exact authenticated owner/device, exact credential epoch, and a trust revision strictly newer than the authenticated snapshot;
+- typed `SessionError::PeerNotRevoked` and `SessionError::PeerTrustRevisionNotAdvanced` failures;
+- trust-transition signature/issuer/revision validation stays in `crosslab-policy::TrustTransition`.
 
-## M6 Completed Implementation
+Evidence:
 
-### Task 1 — bounded stream-use authority
+- initial RED `623f326efc4711b1991e7de24a6cd58c46d6a84c`, CI `34675402081` — missing lifecycle APIs only;
+- initial GREEN `f763bd034d8ac15d44e11b4ef659d1d907c75126`, CI `34675522726` — all Rust gates passed;
+- final-review revision-guard RED `ad0f5ee4cf33a22fa834e6bf45b0fae8923b6bc3`, CI `34681339461` — lockfile/rustfmt passed and workspace check failed exactly on the missing `PeerTrustRevisionNotAdvanced` contract;
+- revision-guard GREEN `f87c43fa4c5ed252fe30358406efbba3faba746f`, CI `34681410654` — locked metadata, rustfmt, workspace check, Clippy `-D warnings`, and all tests passed.
 
-- Added bounded `MultiStream`, reservation accounting, stream-use rejection for `SingleAction`, budget exhaustion, and terminal/revision validation in `crosslab-policy`.
-- Valid RED: `aa14692a3f46f65bb541c6f24cd475977a36d78b`, CI `34663985161`.
-- GREEN: `9a508d0934c7d9bc76861d61ef26482c46f61ced`, CI `34664047097`, Fuzz Smoke `34664047042`.
+## M7 Task 2 — Control Runtime Terminal Cleanup
 
-### Task 2 — session-bound core stream admission
+Delivered:
 
-- Added bounded operation registry/active-stream state, session/capability/version/direction/index binding, duplicate protection, operation reservation, finish/cancel lifecycle, and bounded MultiStream index tracking.
-- Valid RED: `ecd08f358114eca6e0ab6f27ef703050e6870ed1`, CI `34664295772` passed lockfile/rustfmt and failed at workspace check for the intentionally missing admission implementation.
-- GREEN/refinement: `44ac89eb3b99ae3adba4f34c8526658eae763405`, CI `34664768007`, Fuzz Smoke `34664768009`.
+- focused `apps/sim/tests/control_lifecycle.rs` using normal session authentication and real signed trust revocation;
+- `ControlDispatcher::cancel_session_state()` clears pending outgoing, inbound request, and nonretryable replay bookkeeping for a dead session without resetting it for reuse;
+- send-side `ControlSendError::Closed(frame)` and receive-side `ControlReceiveError::Closed` terminate the active logical session and clear session-scoped dispatcher authority;
+- `ControlSendError::Full(frame)` remains nonterminal and does not commit dispatcher state;
+- `SimNode::apply_peer_revocation()` validates through the core session API, clears dispatcher authority, closes transport, and completes `Revoked -> Closed`;
+- `SimNode::shutdown()` is idempotent, clears session-scoped control state, terminates the logical session, and closes transport;
+- wrong-device/unrevoked records return typed errors without terminating the unrelated active session.
 
-### Task 3 — transport-neutral streams + bounded memory transport
+Evidence:
 
-- Extended the transport seam with unidirectional send/receive traits and explicit open/accept/send/receive errors while preserving unsent byte ownership and redacting payloads from `Debug`.
-- Extended `MemoryTransportPair` with explicit bounded stream/open/chunk capacities, ordered delivery, graceful finish, cancellation, close propagation, and deterministic reclamation using only `Arc<Mutex<_>>` plus bounded `VecDeque` state.
-- Valid RED: `d0615b88fc28951fb988435319d2a82b4ceab17d`, CI `34664820379` passed lockfile/rustfmt and failed at workspace check for the missing neutral stream APIs.
-- GREEN: `7c500cf23560a697c6d633443f613fac8afe0994`, CI `34670304564`, Fuzz Smoke `34670304596`.
+- transport-loss RED `ec7682a852c813da605586dc66f47ba1540813d8`, CI `34675642797`;
+- transport-loss GREEN `a959a58715ffc9270cfa7d2b290cc9161a6b0143`, CI `34675751139`;
+- revocation/shutdown RED `57cddc7a883b199f7721fdd2ec5ee9d1df34e74b`, CI `34675821698`;
+- final Task 2 GREEN `3b52f75ec2cef774225c814a3bd04d4072d5f29b`, CI `34675870576` — all Rust gates passed.
 
-### Task 4 — simulator stream runtime + S-007
+## M7 Task 3 — Stream Runtime Terminal Lifecycle
 
-- Added `apps/sim/src/stream.rs` as composition glue only: protocol encode/decode stays in protocol, authorization/admission stays in core/policy, and queues stay in transport.
-- S-007 proves `Allow -> AuthorizationGrant -> AuthorizedOperation(SingleStream) -> encoded open -> remote admission -> three ordered synthetic chunks -> graceful finish -> reuse rejection` with no real file I/O.
-- Runtime saturation is checked before transport dequeue so a pending stream and its operation budget remain untouched until capacity is available.
-- Valid RED: `3c0d8fb16cf0e543bd991b0577b8bcbe5f1d2287`, CI `34670774976` passed lockfile/rustfmt and failed at workspace check only because `crosslab_sim::stream` did not yet exist.
-- GREEN: `ecc07ed513b89229a8e61441010b8af1a7256912`, CI `34670944091`, Fuzz Smoke `34670944110`.
+Delivered:
 
-### Task 5 — security/lifecycle closeout
+- `SimStreamRuntime` owns its `LogicalSession` instead of borrowing it, avoiding cloned authority/shared mutable session handles;
+- stream open/accept closed-transport errors terminate session authority while `Full` remains nonterminal backpressure;
+- stream-local cancellation remains local while parent-transport cancellation terminates session authority;
+- transport loss/revocation/shutdown cancel active inbound streams and `StreamAdmission` authority before closing the logical session/transport;
+- `apply_peer_revocation()` and `shutdown()` are deterministic and synchronous with no background runtime.
 
-The completed test matrix explicitly covers:
+Evidence:
 
-- N-035 — no registered `OperationId` rejects before payload exposure;
-- N-036 — expired/cancelled/revoked/consumed operations reject;
-- N-037 — wrong session, authenticated peer binding, capability, version, operation, and direction reject;
-- N-038 — second `SingleStream` use rejects;
-- N-039 — trust/policy revision changes reject;
-- N-043 — pending-open, chunk, and simulator-runtime saturation produce bounded backpressure/resource errors;
-- N-045 — malformed setup and admission failure cancel the receive side without dangling admitted/runtime state;
-- shutdown — active memory streams are cancelled, admission authority is cancelled, and the memory transport closes;
-- `MultiStream(2)` — indices 1 then 0 succeed; duplicate index and index 2 fail.
+- RED `0cb5d2e16a7454910eedba46862e083fa3fb68fc`, CI `34675990614`;
+- implementation `231542b548626df9a00c7a63e30702274009744c`, CI `34676120524` — rustfmt-only stop;
+- final GREEN `08515dd3bb2a93476a2004ee3f6b6e6ec8ad85e9`, CI `34676159053` — all Rust gates passed.
 
-Final code/test head `71ad5a620ff9c1c7be397a81a6adfddd2fc3cd20` passed CI `34671218918` and Fuzz Smoke `34671218922`. No new parser was introduced, so no fuzz-target/workflow modification was justified.
+## M7 Task 4 — S-008 Fresh Reconnect and Stale Authority Rejection
 
-## M6 Final Verification and Integration
+Delivered in `apps/sim/tests/lifecycle.rs` without adding a reconnect abstraction.
 
-- Documentation-inclusive PR head: `b429c3e853477b874d1f7b8ec366f7acfa1248e7`.
-- Exact-head CI `34671648182` passed locked metadata, rustfmt, workspace check, Clippy `-D warnings`, and all workspace tests.
-- Exact-head Fuzz Smoke `34671648146` passed the bounded protocol parser suite.
-- Final PR review found 15 changed files, all limited to M6 policy/core/simulator/tests/docs scope; there were no submitted reviews or unresolved review threads.
-- PR #16 was marked ready only after exact-head CI/fuzz success and merged with expected-head protection.
-- Merge commit: `4d73528329fdae5d3eb1c25279778973168c87bd`.
-- Merge tree: `a5992db1c6ffd6f1b7335f465fdd76dd48943880`, identical to the verified PR-head tree.
-- Post-merge canonical `main` CI `34671715166` passed lockfile verification, rustfmt, workspace check, Clippy, and all tests.
-- Fuzz Smoke is PR-triggered here; canonical merge-tree equivalence to the exact fuzz-verified PR tree supplies the M6 merge fuzz evidence without inventing a push fuzz run.
+Coverage proves:
+
+- disconnect closes the old logical session and clears pending control state;
+- reconnect uses a distinct memory transport/binding plus fresh nonces/proofs and therefore a different `SessionId`;
+- fresh send/receive sequences start at zero and negotiated capabilities start empty;
+- capabilities must be exchanged again after fresh authentication;
+- old-session control envelopes fail closed on the new session;
+- old `AuthorizedOperation` authority is rejected on the new session with `OperationError::BindingMismatch`.
+
+Evidence:
+
+- initial acceptance `9eff524c0473f13a41578f4dc82c198ed6414779`, CI `34676322835` — rustfmt-only stop;
+- final GREEN `29762639d6c6054aa3996b3429437e7c00469966`, CI `34676386066` — all Rust gates passed.
+
+## M7 Task 5 — S-009 Active Revocation and Reconnect Denial
+
+Coverage proves:
+
+- a real owner-root-signed `TrustTransition` is verified/applied to local trust state before runtime reaction;
+- accepted matching peer revocation terminates active control authority, pending requests, admitted data streams, stream/admission authority, transport, and logical session locally;
+- a fresh transport/binding/nonces/proofs using the same still-cryptographically-valid credential is denied when local trust is revoked: `SessionError::PeerNotTrusted` and terminal closed authentication state;
+- still-trusted and unrelated revoked records return typed failures without killing the intended active session.
+
+Evidence:
+
+- initial acceptance `7408ed5e0ca2258dcc0c208517bf06f87289d49b`, CI `34676515865` — rustfmt-only stop;
+- final GREEN `f50eb7da92f783b863725994c79643aef675e939`, CI `34676614329` — all Rust gates passed.
+
+## M7 Task 6 — Resource, Cancellation, Malformed Input, and Shutdown Closeout
+
+Inventory confirmed existing coverage already satisfies:
+
+- N-043 bounded stream queue/chunk saturation and backpressure;
+- N-044 request cancellation state termination;
+- N-045 stream setup/admission cancellation without dangling admitted state;
+- N-046 idempotent control and stream runtime shutdown.
+
+Added only the missing behavior:
+
+- N-042 simulator-level bounded control backpressure proves `ControlSendError::Full` does not advance send sequence or commit pending-request bookkeeping and retry succeeds after capacity drains;
+- malformed/fatal control input and peer graceful close now clear pending dispatcher authority before terminal session/transport close.
+
+Evidence:
+
+- Task 6 RED `58eb0a914a9ca929ff48ccc25e481d51f43b4efb`, CI `34676901018` — locked metadata, rustfmt, workspace check, and Clippy passed; tests failed exactly because malformed-input and peer-close paths retained one pending request while the session was terminal;
+- Task 6 GREEN `4026cc397fe63a54e5cc093e341cd1f37ca721d3`, CI `34676968464` — locked metadata, rustfmt, workspace check, Clippy `-D warnings`, and all tests passed.
+
+## M7 Final Scope Review
+
+PR #17 changes exactly these 11 files:
+
+```text
+apps/sim/src/node.rs
+apps/sim/src/stream.rs
+apps/sim/tests/control_lifecycle.rs
+apps/sim/tests/lifecycle.rs
+apps/sim/tests/stream_scenarios.rs
+crates/core/src/control/mod.rs
+crates/core/src/session/state.rs
+crates/core/tests/session_lifecycle.rs
+docs/development/CURRENT.md
+docs/plans/phase-1/M7-failure-security-lifecycle-design.md
+docs/plans/phase-1/M7-failure-security-lifecycle.md
+```
+
+Review result:
+
+- no transport-library/networking dependency or async runtime introduced;
+- no policy/identity/protocol ownership boundary moved into simulator UI/runtime code;
+- no stale authority is intentionally transferable across reconnect;
+- no recovery, credential rotation, 0-RTT/tickets, reconnect timing/backoff, persistence, UI/platform, privileged, or M8 scope entered;
+- no submitted PR reviews or unresolved review threads are present at this checkpoint.
 
 ## Exact Next Task
 
-Begin **M7 — disconnect/reconnect/revocation/failure simulator** from the verified canonical `main` state only after this documentation-only integration record is itself CI-verified.
+Complete **M7 Task 7 — final integration**:
 
-M7 startup procedure:
+1. require exact documentation-inclusive branch head CI to pass locked metadata, rustfmt, workspace check, Clippy `-D warnings`, and all tests;
+2. update PR #17 body with final scope/evidence and record Fuzz Smoke as not applicable because its path filters exclude the M7 diff;
+3. mark PR #17 ready only after that exact head is green;
+4. merge exactly that verified PR head into `main` using the repository merge method, with expected-head protection;
+5. require post-merge canonical `main` CI to pass;
+6. update `CURRENT.md` on `main` with the M7 merge commit, post-merge verification, and **M8 — Quinn transport** as the exact next milestone;
+7. verify the final documentation-only `main` head before starting M8.
 
-1. inspect canonical `main`, recent commits, repository state, and this file;
-2. read the uploaded Master Architecture plus M7-relevant sections of `docs/architecture/CORE-SIMULATOR.md`, `SESSION-TRANSPORT.md`, trust/revocation architecture, and relevant ADRs;
-3. inspect the current M5/M6 session, control, stream, policy, trust, and memory-transport code before designing failure behavior;
-4. inspect relevant uploaded research repositories for reconnect/cancellation/revocation/failure semantics before implementation;
-5. write or confirm the smallest M7 design/implementation plan, preserve current architecture boundaries, and then execute test-first on a fresh M7 branch from the exact verified `main` head.
-
-Do not silently extend M7 into real networking, persistence, UI/platform, or unrelated capability work.
+Do not start M8 before M7 is merged and canonical `main` plus the final integration record are verified.
 
 ## Resume Procedure
 
-1. inspect `main`, active feature branches, recent commits, PR/workflow state, and repository cleanliness;
-2. read the Master Architecture, this file, the active milestone plan, and relevant ADRs/architecture contracts;
+1. inspect `main`, `m7-failure-security-lifecycle`, PR #17, recent commits, and workflows;
+2. read the Master Architecture, this file, M7 design/plan, and lifecycle contracts;
 3. reconcile docs with actual code before editing;
-4. work in small verified milestones and merge only exact verified heads to `main`;
-5. never rely on chat history or stash as the only copy of incomplete work.
+4. execute one TDD task at a time and preserve exact RED/GREEN evidence;
+5. merge only the exact verified final M7 head to `main`, verify canonical `main`, and verify the final integration record;
+6. never rely on chat history or stash as the only copy of incomplete work.

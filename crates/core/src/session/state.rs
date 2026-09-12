@@ -107,8 +107,10 @@ pub enum SessionError {
     InvalidState,
     Identity(IdentityError),
     PeerNotTrusted,
+    PeerNotRevoked,
     PeerTrustMismatch,
     PeerCredentialEpochMismatch,
+    PeerTrustRevisionNotAdvanced,
     Protocol(VersionNegotiationError),
     Feature(FeatureNegotiationError),
     Auth(SessionAuthError),
@@ -122,11 +124,14 @@ impl fmt::Display for SessionError {
             }
             Self::Identity(error) => fmt::Display::fmt(error, formatter),
             Self::PeerNotTrusted => formatter.write_str("peer device is not trusted"),
+            Self::PeerNotRevoked => formatter.write_str("peer device is not revoked"),
             Self::PeerTrustMismatch => {
                 formatter.write_str("peer trust record does not match the authenticated identity")
             }
             Self::PeerCredentialEpochMismatch => formatter
                 .write_str("peer credential epoch does not match the locally accepted trust epoch"),
+            Self::PeerTrustRevisionNotAdvanced => formatter
+                .write_str("peer trust revision does not advance the authenticated snapshot"),
             Self::Protocol(error) => fmt::Display::fmt(error, formatter),
             Self::Feature(error) => fmt::Display::fmt(error, formatter),
             Self::Auth(error) => fmt::Display::fmt(error, formatter),
@@ -297,6 +302,41 @@ impl LogicalSession {
         Ok(())
     }
 
+    pub fn transport_lost(&mut self) -> Result<(), SessionError> {
+        match self.state {
+            SessionState::Active | SessionState::Closing | SessionState::Revoked => {
+                self.state = SessionState::Closed;
+                Ok(())
+            }
+            SessionState::Closed => Ok(()),
+            SessionState::Created | SessionState::Authenticating => Err(SessionError::InvalidState),
+        }
+    }
+
+    pub fn apply_peer_revocation(&mut self, peer_trust: &TrustRecord) -> Result<(), SessionError> {
+        if self.state != SessionState::Active {
+            return Err(SessionError::InvalidState);
+        }
+        let context = self.context.as_ref().ok_or(SessionError::InvalidState)?;
+        if peer_trust.state() != TrustState::Revoked {
+            return Err(SessionError::PeerNotRevoked);
+        }
+        if peer_trust.owner_id() != context.owner_id()
+            || peer_trust.device_id() != context.peer_device_id()
+        {
+            return Err(SessionError::PeerTrustMismatch);
+        }
+        if peer_trust.accepted_credential_epoch() != context.peer_credential_epoch() {
+            return Err(SessionError::PeerCredentialEpochMismatch);
+        }
+        if peer_trust.trust_revision() <= context.peer_trust_revision() {
+            return Err(SessionError::PeerTrustRevisionNotAdvanced);
+        }
+
+        self.state = SessionState::Revoked;
+        Ok(())
+    }
+
     pub fn revoke(&mut self) -> Result<(), SessionError> {
         if self.state != SessionState::Active {
             return Err(SessionError::InvalidState);
@@ -377,4 +417,61 @@ fn authenticate(activation: SessionActivation<'_>) -> Result<SessionContext, Ses
         next_send_sequence: 0,
         next_receive_sequence: 0,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use crosslab_crypto::SigningKey;
+    use crosslab_policy::{TransitionId, TrustTransition};
+
+    use super::*;
+
+    #[test]
+    fn peer_revocation_requires_revision_newer_than_authenticated_snapshot() {
+        let owner_id = OwnerId::from_bytes([0xf0; 32]);
+        let root_key = SigningKey::from_secret_bytes([0xf1; 32]);
+        let root = OwnerRootRecord::new(owner_id, &root_key, 0);
+        let peer_device_id = DeviceId::from_bytes([0xf2; 32]);
+        let peer_credential_epoch = 7;
+        let trusted = TrustRecord::trusted(
+            owner_id,
+            peer_device_id,
+            peer_credential_epoch,
+            TransitionId::from_bytes([0xf3; 32]),
+        );
+        let transition = TrustTransition::issue_root_revocation(
+            &trusted,
+            TransitionId::from_bytes([0xf4; 32]),
+            &root,
+            &root_key,
+        )
+        .unwrap();
+        let mut revoked = trusted;
+        transition.apply_root(&mut revoked, &root).unwrap();
+
+        let context = SessionContext {
+            session_id: SessionId::from_bytes([0xf5; 32]),
+            local_device_id: DeviceId::from_bytes([0xf6; 32]),
+            peer_device_id,
+            owner_id,
+            peer_credential_epoch,
+            peer_trust_revision: revoked.trust_revision(),
+            protocol_version: ProtocolVersion::new(1, 0),
+            negotiated_features: Vec::new(),
+            negotiated_capabilities: Vec::new(),
+            transport_security_class: TransportSecurityClass::InProcessTest,
+            next_send_sequence: 0,
+            next_receive_sequence: 0,
+        };
+        let mut session = LogicalSession {
+            state: SessionState::Active,
+            context: Some(context),
+        };
+
+        assert_eq!(
+            session.apply_peer_revocation(&revoked),
+            Err(SessionError::PeerTrustRevisionNotAdvanced)
+        );
+        assert_eq!(session.state(), SessionState::Active);
+    }
 }

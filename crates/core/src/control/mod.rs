@@ -80,6 +80,12 @@ impl ControlDispatcher {
         self.pending_outgoing.len()
     }
 
+    pub fn cancel_session_state(&mut self) {
+        self.pending_outgoing.clear();
+        self.inbound_requests.clear();
+        self.seen_nonretryable.clear();
+    }
+
     pub fn prepare_outbound(
         &self,
         context: &SessionContext,

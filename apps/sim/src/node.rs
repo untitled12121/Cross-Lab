@@ -4,7 +4,7 @@ use crosslab_core::{
     ControlDispatchError, ControlDispatcher, ControlReceiveError, ControlSendError, InboundControl,
     LogicalSession, SessionError, SessionState, TransportConnection,
 };
-use crosslab_policy::{LocalCapability, NetworkClass, PolicyState};
+use crosslab_policy::{LocalCapability, NetworkClass, PolicyState, TrustRecord};
 use crosslab_protocol::{
     CancelRequest, CapabilityAdvertisement, ControlRequest, ControlResponse, ControlResponseResult,
     EnvelopeBody, Event, ProtocolFailure, ProtocolWireError, RequestId, SessionClose,
@@ -113,14 +113,36 @@ impl<'a> SimNode<'a> {
         self.session.begin_close().map_err(NodeError::Session)
     }
 
+    pub fn apply_peer_revocation(&mut self, peer_trust: &TrustRecord) -> Result<(), NodeError> {
+        self.session
+            .apply_peer_revocation(peer_trust)
+            .map_err(NodeError::Session)?;
+        self.dispatcher.cancel_session_state();
+        self.transport.close();
+        self.session.finish_close().map_err(NodeError::Session)
+    }
+
+    pub fn shutdown(&mut self) {
+        self.dispatcher.cancel_session_state();
+        match self.session.state() {
+            SessionState::Active => {
+                let _ = self.session.begin_close();
+                let _ = self.session.finish_close();
+            }
+            SessionState::Closing | SessionState::Revoked => {
+                let _ = self.session.finish_close();
+            }
+            SessionState::Created | SessionState::Authenticating | SessionState::Closed => {}
+        }
+        self.transport.close();
+    }
+
     pub fn receive_one(&mut self) -> Result<NodeEvent, NodeError> {
         let frame = match self.transport.try_receive_control() {
             Ok(frame) => frame,
             Err(error) => {
-                if error == ControlReceiveError::Closed
-                    && self.session.state() == SessionState::Closing
-                {
-                    let _ = self.session.finish_close();
+                if error == ControlReceiveError::Closed {
+                    self.terminate_transport_loss();
                 }
                 return Err(NodeError::Receive(error));
             }
@@ -190,14 +212,23 @@ impl<'a> SimNode<'a> {
                 .map_err(NodeError::Dispatch)?
         };
         let frame = encode_control_envelope(&envelope).map_err(NodeError::Wire)?;
-        self.transport
-            .try_send_control(frame)
-            .map_err(NodeError::Send)?;
+        if let Err(error) = self.transport.try_send_control(frame) {
+            if matches!(&error, ControlSendError::Closed(_)) {
+                self.terminate_transport_loss();
+            }
+            return Err(NodeError::Send(error));
+        }
         self.dispatcher.commit_outbound(&envelope);
         Ok(())
     }
 
+    fn terminate_transport_loss(&mut self) {
+        self.dispatcher.cancel_session_state();
+        let _ = self.session.transport_lost();
+    }
+
     fn close_received(&mut self) -> Result<(), NodeError> {
+        self.dispatcher.cancel_session_state();
         match self.session.state() {
             SessionState::Active => {
                 self.session.begin_close().map_err(NodeError::Session)?;
@@ -216,6 +247,7 @@ impl<'a> SimNode<'a> {
     }
 
     fn fail_closed(&mut self) {
+        self.dispatcher.cancel_session_state();
         match self.session.state() {
             SessionState::Active => {
                 let _ = self.session.begin_close();

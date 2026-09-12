@@ -6,7 +6,7 @@ use crosslab_core::{
     StreamAdmissionError, StreamOpenError, StreamReceiveError, TransportConnection,
     TransportReceiveStream, TransportSendStream,
 };
-use crosslab_policy::AuthorizedOperation;
+use crosslab_policy::{AuthorizedOperation, TrustRecord};
 use crosslab_protocol::{
     DataStreamOpen, ProtocolWireError, StreamId, decode_data_stream_open, encode_data_stream_open,
 };
@@ -84,7 +84,7 @@ struct InboundStream {
 }
 
 pub struct SimStreamRuntime<'a> {
-    session: &'a LogicalSession,
+    session: LogicalSession,
     transport: &'a dyn TransportConnection,
     admission: StreamAdmission,
     capacity: usize,
@@ -93,11 +93,11 @@ pub struct SimStreamRuntime<'a> {
 
 impl<'a> SimStreamRuntime<'a> {
     pub fn new(
-        session: &'a LogicalSession,
+        session: LogicalSession,
         transport: &'a dyn TransportConnection,
         capacity: NonZeroUsize,
     ) -> Result<Self, SimStreamError> {
-        ensure_active(session)?;
+        ensure_active(&session)?;
         Ok(Self {
             session,
             transport,
@@ -107,21 +107,33 @@ impl<'a> SimStreamRuntime<'a> {
         })
     }
 
+    pub const fn session(&self) -> &LogicalSession {
+        &self.session
+    }
+
     pub fn register_operation(
         &mut self,
         operation: AuthorizedOperation,
     ) -> Result<(), SimStreamError> {
+        ensure_active(&self.session)?;
         self.admission.register_operation(operation)?;
         Ok(())
     }
 
     pub fn open_uni(
-        &self,
+        &mut self,
         open: &DataStreamOpen,
     ) -> Result<Box<dyn TransportSendStream>, SimStreamError> {
-        ensure_active(self.session)?;
+        ensure_active(&self.session)?;
         let frame = encode_data_stream_open(open)?;
-        Ok(self.transport.try_open_uni_stream(frame)?)
+        match self.transport.try_open_uni_stream(frame) {
+            Ok(stream) => Ok(stream),
+            Err(error @ StreamOpenError::Full(_)) => Err(error.into()),
+            Err(error @ StreamOpenError::Closed(_)) => {
+                self.transport_lost();
+                Err(error.into())
+            }
+        }
     }
 
     pub fn accept_one(
@@ -130,12 +142,21 @@ impl<'a> SimStreamRuntime<'a> {
         current_trust_revision: u64,
         current_policy_revision: u64,
     ) -> Result<StreamId, SimStreamError> {
-        ensure_active(self.session)?;
+        ensure_active(&self.session)?;
         if self.inbound.len() >= self.capacity {
             return Err(SimStreamError::ResourceLimit);
         }
 
-        let incoming = self.transport.try_accept_uni_stream()?;
+        let incoming = match self.transport.try_accept_uni_stream() {
+            Ok(incoming) => incoming,
+            Err(StreamAcceptError::Empty) => {
+                return Err(SimStreamError::Accept(StreamAcceptError::Empty));
+            }
+            Err(StreamAcceptError::Closed) => {
+                self.transport_lost();
+                return Err(SimStreamError::Accept(StreamAcceptError::Closed));
+            }
+        };
         let (frame, mut stream) = incoming.into_parts();
         let open = match decode_data_stream_open(&frame) {
             Ok(open) => open,
@@ -145,7 +166,7 @@ impl<'a> SimStreamRuntime<'a> {
             }
         };
         let admitted = match self.admission.admit_inbound(
-            self.session,
+            &self.session,
             &open,
             now,
             current_trust_revision,
@@ -180,6 +201,10 @@ impl<'a> SimStreamRuntime<'a> {
                 self.inbound.remove(position);
                 Err(SimStreamError::Receive(StreamReceiveError::Finished))
             }
+            Err(StreamReceiveError::Cancelled) if self.transport.is_closed() => {
+                self.transport_lost();
+                Err(SimStreamError::Receive(StreamReceiveError::Cancelled))
+            }
             Err(StreamReceiveError::Cancelled) => {
                 self.admission.cancel_stream(stream_id)?;
                 self.inbound.remove(position);
@@ -200,13 +225,43 @@ impl<'a> SimStreamRuntime<'a> {
         Ok(())
     }
 
+    pub fn apply_peer_revocation(
+        &mut self,
+        peer_trust: &TrustRecord,
+    ) -> Result<(), SimStreamError> {
+        self.session.apply_peer_revocation(peer_trust)?;
+        self.cancel_session_authority();
+        self.transport.close();
+        self.session.finish_close()?;
+        Ok(())
+    }
+
     pub fn shutdown(&mut self) {
+        self.cancel_session_authority();
+        match self.session.state() {
+            SessionState::Active => {
+                let _ = self.session.begin_close();
+                let _ = self.session.finish_close();
+            }
+            SessionState::Closing | SessionState::Revoked => {
+                let _ = self.session.finish_close();
+            }
+            SessionState::Created | SessionState::Authenticating | SessionState::Closed => {}
+        }
+        self.transport.close();
+    }
+
+    fn transport_lost(&mut self) {
+        self.cancel_session_authority();
+        let _ = self.session.transport_lost();
+    }
+
+    fn cancel_session_authority(&mut self) {
         for inbound in &mut self.inbound {
             inbound.stream.cancel();
         }
         self.inbound.clear();
         self.admission.cancel_all();
-        self.transport.close();
     }
 }
 
