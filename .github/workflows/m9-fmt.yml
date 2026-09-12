@@ -1,0 +1,32 @@
+name: M9 Format Repair
+
+on:
+  push:
+    branches:
+      - m9-remote-networking
+
+permissions:
+  contents: write
+
+jobs:
+  fmt:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: m9-remote-networking
+      - name: Install Rust
+        run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt
+      - name: Format workspace
+        run: cargo fmt
+      - name: Commit formatting
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add --all
+          git commit -m "style: apply rustfmt after authority migration [skip ci]"
+          git push origin HEAD:m9-remote-networking
