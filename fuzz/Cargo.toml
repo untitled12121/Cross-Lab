@@ -34,5 +34,19 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "pairing_bootstrap"
+path = "fuzz_targets/pairing_bootstrap.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "session_auth"
+path = "fuzz_targets/session_auth.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]
 members = ["."]

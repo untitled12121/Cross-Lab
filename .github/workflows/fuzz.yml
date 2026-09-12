@@ -30,3 +30,5 @@ jobs:
           cargo +nightly fuzz run control_frame -- -runs=256
           cargo +nightly fuzz run data_stream_open -- -runs=256
           cargo +nightly fuzz run identifiers -- -runs=256
+          cargo +nightly fuzz run pairing_bootstrap -- -runs=256
+          cargo +nightly fuzz run session_auth -- -runs=256
