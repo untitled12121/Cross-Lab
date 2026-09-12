@@ -81,7 +81,10 @@ fn oversized_opening_frame_is_rejected_without_allocating_stream_state() {
         Ok(_) => panic!("oversized opening frame unexpectedly allocated a stream"),
     };
     assert_eq!(error, StreamOpenError::TooLarge(opening));
-    assert_eq!(b.try_accept_uni_stream(), Err(StreamAcceptError::Empty));
+    assert_eq!(
+        b.try_accept_uni_stream().unwrap_err(),
+        StreamAcceptError::Empty
+    );
 
     let _stream = a.try_open_uni_stream(vec![0x32; 4]).unwrap();
     assert_eq!(
