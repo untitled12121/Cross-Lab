@@ -2,6 +2,8 @@ use core::fmt;
 
 #[cfg_attr(not(test), allow(dead_code))]
 mod binding;
+#[cfg_attr(not(test), allow(dead_code))]
+mod record;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuicTransportError {
