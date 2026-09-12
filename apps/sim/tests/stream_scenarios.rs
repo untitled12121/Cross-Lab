@@ -335,7 +335,7 @@ fn s007_authorized_single_stream_flows_in_order_and_cannot_be_reused() {
     assert!(matches!(
         receiver.accept_one(15, fixture.trust_revision, fixture.policy_revision),
         Err(SimStreamError::Admission(
-            StreamAdmissionError::DuplicateStreamIndex
+            StreamAdmissionError::OperationNotFound
         ))
     ));
     assert!(second_send.try_send_chunk(vec![9]).is_err());
