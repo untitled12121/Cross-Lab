@@ -1,9 +1,9 @@
 use std::num::NonZeroUsize;
 
 use crosslab_core::{
-    ControlDispatchError, LogicalSession, SessionActivation, SessionAuthRole,
-    SessionAuthTranscriptV1, SessionHandshakeSide, SessionState, StreamAdmission,
-    StreamAdmissionError, TransportConnection, TransportSecurityClass,
+    ControlDispatchError, LogicalSession, SessionActivation, SessionAuthRole, SessionAuthTranscriptV1,
+    SessionError, SessionHandshakeSide, SessionState, StreamAdmission, StreamAdmissionError,
+    TransportConnection, TransportSecurityClass,
 };
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
@@ -12,7 +12,8 @@ use crosslab_identity::{
 use crosslab_policy::{
     AuthorizationContext, AuthorizedOperation, CapabilityId, CapabilityVersion,
     CapabilityVersionRange, LocalCapability, NetworkClass, OperationError, OperationName,
-    PolicyRule, PolicyState, RuleEffect, RuleId, TransitionId, TrustRecord, TrustState, UsePolicy,
+    PolicyRule, PolicyState, RuleEffect, RuleId, TransitionId, TrustRecord, TrustState,
+    TrustTransition, UsePolicy,
 };
 use crosslab_protocol::{
     CapabilityAdvertisement, CapabilityAdvertisementEntry, ControlEnvelope, ControlRequest,
@@ -21,6 +22,7 @@ use crosslab_protocol::{
 };
 use crosslab_sim::{
     node::{NodeError, NodeEvent, SimNode},
+    stream::{SimStreamError, SimStreamRuntime},
     transport::MemoryTransportPair,
 };
 
@@ -28,6 +30,7 @@ const CAPACITY: usize = 8;
 
 struct Fixture {
     owner_id: OwnerId,
+    root_key: SigningKey,
     root: OwnerRootRecord,
     delegation: AuthorityDelegation,
     initiator_key: SigningKey,
@@ -88,6 +91,7 @@ impl Fixture {
 
         Self {
             owner_id,
+            root_key,
             root,
             delegation,
             initiator_key,
@@ -176,6 +180,63 @@ impl Fixture {
         (session_a, session_b)
     }
 
+    fn responder_session_with_trust(
+        &self,
+        pair: &MemoryTransportPair,
+        initiator_nonce: [u8; 32],
+        responder_nonce: [u8; 32],
+        peer_trust: &TrustRecord,
+    ) -> (LogicalSession, Result<(), SessionError>) {
+        let ranges = [ProtocolRange::new(1, 0, 0).unwrap()];
+        let features = FeatureSet::new(&[], &[]).unwrap();
+        let binding = pair.endpoints().0.channel_binding();
+        let transcript = SessionAuthTranscriptV1::new(
+            self.owner_id,
+            &self.initiator_credential,
+            initiator_nonce,
+            &self.responder_credential,
+            responder_nonce,
+            ProtocolVersion::new(1, 0),
+            &[],
+            binding.profile_id().as_bytes(),
+            binding.bytes(),
+        )
+        .unwrap();
+        let initiator_proof = transcript
+            .create_proof(SessionAuthRole::Initiator, &self.initiator_key)
+            .unwrap();
+        let responder_proof = transcript
+            .create_proof(SessionAuthRole::Responder, &self.responder_key)
+            .unwrap();
+        let initiator = SessionHandshakeSide::new(
+            &self.initiator_credential,
+            &self.delegation,
+            &ranges,
+            &features,
+        );
+        let responder = SessionHandshakeSide::new(
+            &self.responder_credential,
+            &self.delegation,
+            &ranges,
+            &features,
+        );
+        let mut session = LogicalSession::new();
+        let result = session.authenticate(SessionActivation::new(
+            &self.root,
+            initiator,
+            responder,
+            SessionAuthRole::Responder,
+            peer_trust,
+            initiator_nonce,
+            responder_nonce,
+            binding,
+            TransportSecurityClass::InProcessTest,
+            &initiator_proof,
+            &responder_proof,
+        ));
+        (session, result)
+    }
+
     fn local_capability() -> LocalCapability {
         LocalCapability::new(
             CapabilityId::parse("files.transfer").unwrap(),
@@ -231,6 +292,37 @@ impl Fixture {
             self.initiator_trust.trust_revision(),
             policy.revision(),
         )
+    }
+
+    fn revoked_initiator(&self, transition_byte: u8) -> TrustRecord {
+        let mut revoked = self.initiator_trust;
+        let transition = TrustTransition::issue_root_revocation(
+            &revoked,
+            TransitionId::from_bytes([transition_byte; 32]),
+            &self.root,
+            &self.root_key,
+        )
+        .unwrap();
+        transition.apply_root(&mut revoked, &self.root).unwrap();
+        revoked
+    }
+
+    fn revoked_other(&self, transition_byte: u8) -> TrustRecord {
+        let mut other = TrustRecord::trusted(
+            self.owner_id,
+            DeviceId::from_bytes([0xfe; 32]),
+            1,
+            TransitionId::from_bytes([0xfd; 32]),
+        );
+        let transition = TrustTransition::issue_root_revocation(
+            &other,
+            TransitionId::from_bytes([transition_byte; 32]),
+            &self.root,
+            &self.root_key,
+        )
+        .unwrap();
+        transition.apply_root(&mut other, &self.root).unwrap();
+        other
     }
 }
 
@@ -454,4 +546,153 @@ fn s008_old_operation_cannot_authorize_reconnected_session() {
             OperationError::BindingMismatch
         ))
     );
+}
+
+#[test]
+fn s009_active_control_revocation_terminates_local_authority() {
+    let fixture = Fixture::new();
+    let revoked_initiator = fixture.revoked_initiator(0xa0);
+    let pair = pair(0xa1);
+    let (session_a, session_b) = fixture.sessions(&pair, [0xa2; 32], [0xa3; 32]);
+    let (endpoint_a, endpoint_b) = pair.endpoints();
+    let local_capability = Fixture::local_capability();
+    let mut node_a = SimNode::new(
+        session_a,
+        endpoint_a,
+        PolicyState::new(),
+        vec![local_capability.clone()],
+        NonZeroUsize::new(CAPACITY).unwrap(),
+    )
+    .unwrap();
+    let mut node_b = SimNode::new(
+        session_b,
+        endpoint_b,
+        PolicyState::new(),
+        vec![local_capability],
+        NonZeroUsize::new(CAPACITY).unwrap(),
+    )
+    .unwrap();
+
+    exchange_capabilities(&mut node_a, &mut node_b);
+    node_b.send_request(request(0xa4)).unwrap();
+    assert_eq!(node_b.pending_request_count(), 1);
+
+    node_b.apply_peer_revocation(&revoked_initiator).unwrap();
+    assert_eq!(node_b.session().state(), SessionState::Closed);
+    assert_eq!(node_b.pending_request_count(), 0);
+    assert!(endpoint_b.is_closed());
+    assert!(matches!(
+        node_b.send_request(request(0xa5)),
+        Err(NodeError::Session(SessionError::InvalidState))
+    ));
+    assert!(matches!(
+        node_b.receive_one(),
+        Err(NodeError::Receive(
+            crosslab_core::ControlReceiveError::Closed
+        ))
+    ));
+}
+
+#[test]
+fn s009_active_stream_revocation_terminates_local_authority() {
+    let fixture = Fixture::new();
+    let revoked_initiator = fixture.revoked_initiator(0xa6);
+    let pair = pair(0xa7);
+    let (mut sender_session, mut receiver_session) =
+        fixture.sessions(&pair, [0xa8; 32], [0xa9; 32]);
+    let local = Fixture::local_capability();
+    let advertisement = Fixture::advertisement();
+    for session in [&mut sender_session, &mut receiver_session] {
+        session
+            .negotiate_capabilities(std::slice::from_ref(&local), &advertisement)
+            .unwrap();
+    }
+    let (operation, trust_revision, policy_revision) = fixture.old_operation(&receiver_session);
+    let operation_id = operation.id();
+    let session_id = receiver_session.context().unwrap().session_id();
+    let open = DataStreamOpen::new(
+        session_id,
+        StreamId::from_bytes([0xaa; 16]),
+        operation_id,
+        CapabilityId::parse("files.transfer").unwrap(),
+        CapabilityVersion::new(1, 0),
+        OperationName::parse("send").unwrap(),
+        StreamDirection::SourceToDestination,
+        0,
+    );
+    let (sender_endpoint, receiver_endpoint) = pair.endpoints();
+    let mut sender = SimStreamRuntime::new(
+        sender_session,
+        sender_endpoint,
+        NonZeroUsize::new(CAPACITY).unwrap(),
+    )
+    .unwrap();
+    let mut receiver = SimStreamRuntime::new(
+        receiver_session,
+        receiver_endpoint,
+        NonZeroUsize::new(CAPACITY).unwrap(),
+    )
+    .unwrap();
+    receiver.register_operation(operation).unwrap();
+
+    let mut send = sender.open_uni(&open).unwrap();
+    let stream_id = receiver
+        .accept_one(15, trust_revision, policy_revision)
+        .unwrap();
+
+    receiver.apply_peer_revocation(&revoked_initiator).unwrap();
+    assert_eq!(receiver.session().state(), SessionState::Closed);
+    assert!(receiver_endpoint.is_closed());
+    assert!(send.try_send_chunk(vec![9]).is_err());
+    assert!(matches!(
+        receiver.try_receive_chunk(stream_id),
+        Err(SimStreamError::StreamNotFound)
+    ));
+}
+
+#[test]
+fn n041_fresh_authentication_rejects_revoked_local_trust() {
+    let fixture = Fixture::new();
+    let revoked_initiator = fixture.revoked_initiator(0xab);
+    let reconnect_pair = pair(0xac);
+    let (reconnect, result) = fixture.responder_session_with_trust(
+        &reconnect_pair,
+        [0xad; 32],
+        [0xae; 32],
+        &revoked_initiator,
+    );
+
+    assert_eq!(result, Err(SessionError::PeerNotTrusted));
+    assert_eq!(reconnect.state(), SessionState::Closed);
+}
+
+#[test]
+fn s009_unrelated_or_unrevoked_trust_cannot_kill_active_session() {
+    let fixture = Fixture::new();
+    let pair = pair(0xaf);
+    let (_, session_b) = fixture.sessions(&pair, [0xb0; 32], [0xb1; 32]);
+    let (_, endpoint_b) = pair.endpoints();
+    let mut node_b = SimNode::new(
+        session_b,
+        endpoint_b,
+        PolicyState::new(),
+        vec![Fixture::local_capability()],
+        NonZeroUsize::new(CAPACITY).unwrap(),
+    )
+    .unwrap();
+
+    assert!(matches!(
+        node_b.apply_peer_revocation(&fixture.initiator_trust),
+        Err(NodeError::Session(SessionError::PeerNotRevoked))
+    ));
+    assert_eq!(node_b.session().state(), SessionState::Active);
+    assert!(!endpoint_b.is_closed());
+
+    let unrelated = fixture.revoked_other(0xb2);
+    assert!(matches!(
+        node_b.apply_peer_revocation(&unrelated),
+        Err(NodeError::Session(SessionError::PeerTrustMismatch))
+    ));
+    assert_eq!(node_b.session().state(), SessionState::Active);
+    assert!(!endpoint_b.is_closed());
 }
