@@ -61,7 +61,7 @@ fn initial_pairing_credential_epoch_is_zero() {
     inviter.verify_joiner_confirmation(&confirmation).unwrap();
 
     let credential = inviter
-        .issue_joiner_credential(&root, &delegation, &issuer_key)
+        .issue_initial_joiner_credential(&root, &delegation, &issuer_key)
         .unwrap();
 
     assert_eq!(credential.credential_epoch(), 0);
