@@ -161,7 +161,15 @@ fn s002_pairing_commits_trust_only_after_final_joiner_proof() {
 
     let transition_id = TransitionId::from_bytes([0x1b; 32]);
     let trust = inviter
-        .commit_trust(&accepted, transition_id, PairingInstant::from_ticks(30))
+        .commit_trust(
+            &accepted,
+            transition_id,
+            &fixture.root,
+            &fixture.delegation,
+            &fixture.issuer_key,
+            fixture.delegation.delegation_epoch(),
+            PairingInstant::from_ticks(30),
+        )
         .unwrap();
 
     assert_eq!(trust.owner_id(), fixture.owner_id);
@@ -366,6 +374,10 @@ fn n015_wrong_credential_accepted_device_key_never_commits_trust() {
         inviter.commit_trust(
             &forged,
             TransitionId::from_bytes([0x24; 32]),
+            &fixture.root,
+            &fixture.delegation,
+            &fixture.issuer_key,
+            fixture.delegation.delegation_epoch(),
             PairingInstant::from_ticks(30),
         ),
         Err(PairingFlowError::InvalidCredentialAcceptance)
