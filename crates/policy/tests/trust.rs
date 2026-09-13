@@ -146,6 +146,25 @@ fn pairing_trust_transition_is_bound_to_the_exact_credential() {
 }
 
 #[test]
+fn pairing_trust_transition_rejects_non_initial_credential_epoch() {
+    let fixture = RotationFixture::new();
+    let credential = fixture.credential(fixture.device_id, 1);
+
+    assert_eq!(
+        PairingTrustTransition::issue(
+            &credential,
+            TransitionId::from_bytes([0x32; 32]),
+            [0x33; 32],
+            &fixture.root,
+            &fixture.delegation,
+            &fixture.issuer_key,
+            fixture.delegation.delegation_epoch(),
+        ),
+        Err(PairingTrustTransitionError::NonInitialCredentialEpoch)
+    );
+}
+
+#[test]
 fn trusted_record_starts_at_revision_zero() {
     let record = trusted_record();
 
