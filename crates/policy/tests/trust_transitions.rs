@@ -1,5 +1,7 @@
 use crosslab_crypto::{Signature, SigningKey};
-use crosslab_identity::{AuthorityDelegation, AuthorityRole, DeviceId, OwnerId, OwnerRootRecord};
+use crosslab_identity::{
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
+};
 use crosslab_policy::{
     TransitionId, TrustRecord, TrustState, TrustTransition, TrustTransitionError,
 };
@@ -172,7 +174,33 @@ fn transition_is_bound_to_the_credential_epoch_at_issue_time() {
         &root_key,
     )
     .unwrap();
-    record.advance_credential_epoch(5).unwrap();
+    let device_signing_key = SigningKey::from_secret_bytes([21; 32]);
+    let delegation = AuthorityDelegation::issue(
+        record.owner_id(),
+        AuthorityRole::DeviceSigning,
+        &device_signing_key,
+        0,
+        &root_key,
+    );
+    let successor = DeviceCredential::issue(
+        record.owner_id(),
+        record.device_id(),
+        &SigningKey::from_secret_bytes([22; 32]),
+        5,
+        &root,
+        &delegation,
+        &device_signing_key,
+    )
+    .unwrap();
+    record
+        .accept_successor_credential(
+            &successor,
+            &root,
+            &delegation,
+            delegation.delegation_epoch(),
+            TransitionId::from_bytes([23; 32]),
+        )
+        .unwrap();
 
     assert_eq!(
         transition.apply_root(&mut record, &root),
