@@ -4,8 +4,8 @@ use crosslab_identity::{
     OwnerRootRecord,
 };
 use crosslab_policy::{
-    CredentialRotationError, TransitionId, TrustRecord, TrustState, TrustTransition,
-    TrustTransitionError,
+    CredentialRotationError, PairingTrustTransition, PairingTrustTransitionError, TransitionId,
+    TrustRecord, TrustState, TrustTransition, TrustTransitionError,
 };
 
 fn trusted_record() -> TrustRecord {
@@ -69,6 +69,77 @@ impl RotationFixture {
         )
         .unwrap()
     }
+}
+
+#[test]
+fn pairing_trust_transition_establishes_initial_membership() {
+    let fixture = RotationFixture::new();
+    let credential = fixture.credential(fixture.device_id, 0);
+    let transition_id = TransitionId::from_bytes([0x2d; 32]);
+    let pairing_evidence_digest = [0x2e; 32];
+    let transition = PairingTrustTransition::issue(
+        &credential,
+        transition_id,
+        pairing_evidence_digest,
+        &fixture.root,
+        &fixture.delegation,
+        &fixture.issuer_key,
+        fixture.delegation.delegation_epoch(),
+    )
+    .unwrap();
+
+    let record = transition
+        .establish(
+            &credential,
+            &fixture.root,
+            &fixture.delegation,
+            fixture.delegation.delegation_epoch(),
+        )
+        .unwrap();
+
+    assert_eq!(record.owner_id(), fixture.owner_id);
+    assert_eq!(record.device_id(), fixture.device_id);
+    assert_eq!(record.state(), TrustState::Trusted);
+    assert_eq!(record.accepted_credential_epoch(), 0);
+    assert_eq!(record.trust_revision(), 0);
+    assert_eq!(record.last_transition_id(), transition_id);
+    assert_eq!(transition.pairing_evidence_digest(), pairing_evidence_digest);
+}
+
+#[test]
+fn pairing_trust_transition_is_bound_to_the_exact_credential() {
+    let fixture = RotationFixture::new();
+    let credential = fixture.credential(fixture.device_id, 0);
+    let transition = PairingTrustTransition::issue(
+        &credential,
+        TransitionId::from_bytes([0x2f; 32]),
+        [0x30; 32],
+        &fixture.root,
+        &fixture.delegation,
+        &fixture.issuer_key,
+        fixture.delegation.delegation_epoch(),
+    )
+    .unwrap();
+    let substituted = DeviceCredential::issue(
+        fixture.owner_id,
+        fixture.device_id,
+        &SigningKey::from_secret_bytes([0x31; 32]),
+        0,
+        &fixture.root,
+        &fixture.delegation,
+        &fixture.issuer_key,
+    )
+    .unwrap();
+
+    assert_eq!(
+        transition.establish(
+            &substituted,
+            &fixture.root,
+            &fixture.delegation,
+            fixture.delegation.delegation_epoch(),
+        ),
+        Err(PairingTrustTransitionError::CredentialMismatch)
+    );
 }
 
 #[test]
