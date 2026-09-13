@@ -6,14 +6,80 @@ use crosslab_crypto::SigningKey;
 use crosslab_identity::{
     AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
 };
-use crosslab_policy::{TransitionId, TrustRecord, TrustTransition};
+use crosslab_policy::{
+    PairingTrustTransition, TransitionId, TrustRecord, TrustTransition,
+};
 use crosslab_protocol::{FeatureSet, ProtocolRange, ProtocolVersion};
+
+fn establish_trust(
+    credential: &DeviceCredential,
+    root: &OwnerRootRecord,
+    delegation: &AuthorityDelegation,
+    issuer_key: &SigningKey,
+    transition_byte: u8,
+) -> TrustRecord {
+    let initial_credential = DeviceCredential::issue_for_public_key(
+        credential.owner_id(),
+        credential.device_id(),
+        credential.device_public_key(),
+        0,
+        root,
+        delegation,
+        issuer_key,
+    )
+    .unwrap();
+    let transition = PairingTrustTransition::issue(
+        &initial_credential,
+        TransitionId::from_bytes([transition_byte; 32]),
+        [transition_byte.wrapping_add(1); 32],
+        root,
+        delegation,
+        issuer_key,
+        delegation.delegation_epoch(),
+    )
+    .unwrap();
+    let mut trust = transition
+        .establish(
+            &initial_credential,
+            root,
+            delegation,
+            delegation.delegation_epoch(),
+        )
+        .unwrap();
+
+    for epoch in 1..=credential.credential_epoch() {
+        let successor = DeviceCredential::issue_for_public_key(
+            credential.owner_id(),
+            credential.device_id(),
+            credential.device_public_key(),
+            epoch,
+            root,
+            delegation,
+            issuer_key,
+        )
+        .unwrap();
+        let mut transition_id = [transition_byte; 32];
+        transition_id[..8].copy_from_slice(&epoch.to_be_bytes());
+        trust
+            .accept_successor_credential(
+                &successor,
+                root,
+                delegation,
+                delegation.delegation_epoch(),
+                TransitionId::from_bytes(transition_id),
+            )
+            .unwrap();
+    }
+
+    trust
+}
 
 struct Fixture {
     owner_id: OwnerId,
     root_key: SigningKey,
     root: OwnerRootRecord,
     delegation: AuthorityDelegation,
+    issuer_key: SigningKey,
     initiator_key: SigningKey,
     responder_key: SigningKey,
     initiator_credential: DeviceCredential,
@@ -56,11 +122,12 @@ impl Fixture {
             &issuer_key,
         )
         .unwrap();
-        let responder_trust = TrustRecord::trusted(
-            owner_id,
-            responder_credential.device_id(),
-            responder_credential.credential_epoch(),
-            TransitionId::from_bytes([0x97; 32]),
+        let responder_trust = establish_trust(
+            &responder_credential,
+            &root,
+            &delegation,
+            &issuer_key,
+            0x97,
         );
 
         Self {
@@ -68,6 +135,7 @@ impl Fixture {
             root_key,
             root,
             delegation,
+            issuer_key,
             initiator_key,
             responder_key,
             initiator_credential,
@@ -186,11 +254,22 @@ fn peer_revocation_rejects_unrevoked_mismatched_or_wrong_epoch_record() {
     );
     assert_eq!(active.state(), SessionState::Active);
 
-    let wrong_device = TrustRecord::trusted(
+    let wrong_device_credential = DeviceCredential::issue(
         fixture.owner_id,
         DeviceId::from_bytes([0xa1; 32]),
+        &fixture.responder_key,
         fixture.responder_credential.credential_epoch(),
-        TransitionId::from_bytes([0xa2; 32]),
+        &fixture.root,
+        &fixture.delegation,
+        &fixture.issuer_key,
+    )
+    .unwrap();
+    let wrong_device = establish_trust(
+        &wrong_device_credential,
+        &fixture.root,
+        &fixture.delegation,
+        &fixture.issuer_key,
+        0xa2,
     );
     let wrong_device = fixture.revoke(wrong_device, 0xa3);
     assert_eq!(
@@ -199,11 +278,22 @@ fn peer_revocation_rejects_unrevoked_mismatched_or_wrong_epoch_record() {
     );
     assert_eq!(active.state(), SessionState::Active);
 
-    let wrong_epoch = TrustRecord::trusted(
+    let wrong_epoch_credential = DeviceCredential::issue(
         fixture.owner_id,
         fixture.responder_credential.device_id(),
+        &fixture.responder_key,
         fixture.responder_credential.credential_epoch() + 1,
-        TransitionId::from_bytes([0xa4; 32]),
+        &fixture.root,
+        &fixture.delegation,
+        &fixture.issuer_key,
+    )
+    .unwrap();
+    let wrong_epoch = establish_trust(
+        &wrong_epoch_credential,
+        &fixture.root,
+        &fixture.delegation,
+        &fixture.issuer_key,
+        0xa4,
     );
     let wrong_epoch = fixture.revoke(wrong_epoch, 0xa5);
     assert_eq!(
