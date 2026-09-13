@@ -43,6 +43,7 @@ pub enum PairingFlowError {
     InvalidPairingContext,
     InvalidConfirmation,
     UnexpectedState,
+    InitialCredentialEpochMustBeZero,
     CredentialMismatch,
     JoinerKeyMismatch,
     InvalidCredentialAcceptance,
@@ -56,6 +57,9 @@ impl fmt::Display for PairingFlowError {
             Self::InvalidPairingContext => "pairing hello context is inconsistent",
             Self::InvalidConfirmation => "pairing confirmation verification failed",
             Self::UnexpectedState => "pairing flow received a message in an unexpected state",
+            Self::InitialCredentialEpochMustBeZero => {
+                "initial pairing credential epoch must be zero"
+            }
             Self::CredentialMismatch => "device credential does not match the confirmed pairing",
             Self::JoinerKeyMismatch => "joiner private key does not match the issued credential",
             Self::InvalidCredentialAcceptance => "credential acceptance proof verification failed",
@@ -204,7 +208,7 @@ impl PairingInviterFlow {
         ))
     }
 
-    pub fn issue_joiner_credential(
+    pub fn issue_initial_joiner_credential(
         &mut self,
         root: &OwnerRootRecord,
         issuer: &AuthorityDelegation,
@@ -230,6 +234,20 @@ impl PairingInviterFlow {
         self.issued_credential = Some(credential);
         self.state = PairingInviterState::AwaitingCredentialAcceptance;
         Ok(credential)
+    }
+
+    #[deprecated(note = "initial pairing credentials are fixed at epoch zero; use issue_initial_joiner_credential")]
+    pub fn issue_joiner_credential(
+        &mut self,
+        root: &OwnerRootRecord,
+        issuer: &AuthorityDelegation,
+        issuer_key: &SigningKey,
+        credential_epoch: u64,
+    ) -> Result<DeviceCredential, PairingFlowError> {
+        if credential_epoch != INITIAL_CREDENTIAL_EPOCH {
+            return self.fail(PairingFlowError::InitialCredentialEpochMustBeZero);
+        }
+        self.issue_initial_joiner_credential(root, issuer, issuer_key)
     }
 
     pub fn commit_trust(
