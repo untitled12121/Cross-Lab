@@ -11,8 +11,8 @@ use crosslab_identity::{
 use crosslab_policy::{
     AuthorizationContext, AuthorizedOperation, CapabilityId, CapabilityVersion,
     CapabilityVersionRange, LocalCapability, NetworkClass, OperationError, OperationName,
-    OperationState, PolicyRule, PolicyState, RuleEffect, RuleId, TransitionId, TrustRecord,
-    TrustState, UsePolicy,
+    OperationState, PairingTrustTransition, PolicyRule, PolicyState, RuleEffect, RuleId,
+    TransitionId, TrustState, UsePolicy,
 };
 use crosslab_protocol::{
     CapabilityAdvertisement, CapabilityAdvertisementEntry, DataStreamOpen, FeatureSet,
@@ -54,9 +54,20 @@ impl Fixture {
             &issuer_key,
         )
         .unwrap();
+        let responder_device_id = DeviceId::from_bytes([0xe9; 32]);
+        let responder_initial_credential = DeviceCredential::issue(
+            owner_id,
+            responder_device_id,
+            &responder_key,
+            0,
+            &root,
+            &delegation,
+            &issuer_key,
+        )
+        .unwrap();
         let responder_credential = DeviceCredential::issue(
             owner_id,
-            DeviceId::from_bytes([0xe9; 32]),
+            responder_device_id,
             &responder_key,
             1,
             &root,
@@ -64,12 +75,33 @@ impl Fixture {
             &issuer_key,
         )
         .unwrap();
-        let peer_trust = TrustRecord::trusted(
-            owner_id,
-            responder_credential.device_id(),
-            responder_credential.credential_epoch(),
+        let transition = PairingTrustTransition::issue(
+            &responder_initial_credential,
             TransitionId::from_bytes([0xea; 32]),
-        );
+            [0xf1; 32],
+            &root,
+            &delegation,
+            &issuer_key,
+            delegation.delegation_epoch(),
+        )
+        .unwrap();
+        let mut peer_trust = transition
+            .establish(
+                &responder_initial_credential,
+                &root,
+                &delegation,
+                delegation.delegation_epoch(),
+            )
+            .unwrap();
+        peer_trust
+            .accept_successor_credential(
+                &responder_credential,
+                &root,
+                &delegation,
+                delegation.delegation_epoch(),
+                TransitionId::from_bytes([0xf2; 32]),
+            )
+            .unwrap();
         let ranges = [ProtocolRange::new(1, 0, 0).unwrap()];
         let features = FeatureSet::new(&[], &[]).unwrap();
         let binding = ChannelBinding::new("in-process-test", vec![0xeb; 32]);
