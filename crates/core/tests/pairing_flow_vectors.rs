@@ -63,7 +63,7 @@ fn credential_acceptance_proof_matches_golden_vector() {
         .verify_inviter_confirmation(&inviter_confirmation)
         .unwrap();
     let credential = inviter
-        .issue_joiner_credential(&root, &delegation, &issuer_key, 7)
+        .issue_initial_joiner_credential(&root, &delegation, &issuer_key)
         .unwrap();
     let accepted = joiner
         .accept_credential(&root, &delegation, &credential, &joiner_key)
