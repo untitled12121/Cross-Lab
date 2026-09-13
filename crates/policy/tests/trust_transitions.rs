@@ -3,19 +3,77 @@ use crosslab_identity::{
     AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
 };
 use crosslab_policy::{
-    TransitionId, TrustRecord, TrustState, TrustTransition, TrustTransitionError,
+    PairingTrustTransition, TransitionId, TrustRecord, TrustState, TrustTransition,
+    TrustTransitionError,
 };
 
 fn fixture() -> (TrustRecord, SigningKey, OwnerRootRecord) {
     let owner_id = OwnerId::from_bytes([1; 32]);
     let root_key = SigningKey::from_secret_bytes([2; 32]);
     let root = OwnerRootRecord::new(owner_id, &root_key, 0);
-    let record = TrustRecord::trusted(
+    let issuer_key = SigningKey::from_secret_bytes([24; 32]);
+    let delegation = AuthorityDelegation::issue(
         owner_id,
-        DeviceId::from_bytes([3; 32]),
-        4,
-        TransitionId::from_bytes([4; 32]),
+        AuthorityRole::DeviceSigning,
+        &issuer_key,
+        0,
+        &root_key,
     );
+    let device_id = DeviceId::from_bytes([3; 32]);
+    let device_key = SigningKey::from_secret_bytes([25; 32]);
+    let initial_credential = DeviceCredential::issue(
+        owner_id,
+        device_id,
+        &device_key,
+        0,
+        &root,
+        &delegation,
+        &issuer_key,
+    )
+    .unwrap();
+    let pairing = PairingTrustTransition::issue(
+        &initial_credential,
+        TransitionId::from_bytes([4; 32]),
+        [26; 32],
+        &root,
+        &delegation,
+        &issuer_key,
+        delegation.delegation_epoch(),
+    )
+    .unwrap();
+    let mut record = pairing
+        .establish(
+            &initial_credential,
+            &root,
+            &delegation,
+            delegation.delegation_epoch(),
+        )
+        .unwrap();
+
+    for epoch in 1..=4 {
+        let successor = DeviceCredential::issue(
+            owner_id,
+            device_id,
+            &device_key,
+            epoch,
+            &root,
+            &delegation,
+            &issuer_key,
+        )
+        .unwrap();
+        let mut transition_id = [4; 32];
+        transition_id[..8].copy_from_slice(&epoch.to_be_bytes());
+        record
+            .accept_successor_credential(
+                &successor,
+                &root,
+                &delegation,
+                delegation.delegation_epoch(),
+                TransitionId::from_bytes(transition_id),
+            )
+            .unwrap();
+    }
+
     (record, root_key, root)
 }
 
@@ -29,7 +87,7 @@ fn owner_root_signed_revocation_applies_to_matching_trust_record() {
     transition.apply_root(&mut record, &root).unwrap();
 
     assert_eq!(record.state(), TrustState::Revoked);
-    assert_eq!(record.trust_revision(), 1);
+    assert_eq!(record.trust_revision(), 5);
     assert_eq!(record.last_transition_id(), transition_id);
 }
 
