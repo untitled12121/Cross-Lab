@@ -9,8 +9,8 @@ use crosslab_identity::{
 };
 use crosslab_policy::{
     AuthorizationContext, CapabilityId, CapabilityVersion, CapabilityVersionRange, DecisionEffect,
-    DecisionReason, LocalCapability, NetworkClass, OperationName, PolicyState, TransitionId,
-    TrustRecord, TrustState,
+    DecisionReason, LocalCapability, NetworkClass, OperationName, PairingTrustTransition,
+    PolicyState, TransitionId, TrustRecord, TrustState,
 };
 use crosslab_protocol::{
     CapabilityAdvertisement, CapabilityAdvertisementEntry, FeatureNegotiationError, FeatureSet,
@@ -18,10 +18,74 @@ use crosslab_protocol::{
     negotiate_protocol_version,
 };
 
+fn establish_trust(
+    credential: &DeviceCredential,
+    root: &OwnerRootRecord,
+    delegation: &AuthorityDelegation,
+    issuer_key: &SigningKey,
+    transition_byte: u8,
+) -> TrustRecord {
+    let initial_credential = DeviceCredential::issue_for_public_key(
+        credential.owner_id(),
+        credential.device_id(),
+        credential.device_public_key(),
+        0,
+        root,
+        delegation,
+        issuer_key,
+    )
+    .unwrap();
+    let transition = PairingTrustTransition::issue(
+        &initial_credential,
+        TransitionId::from_bytes([transition_byte; 32]),
+        [transition_byte.wrapping_add(1); 32],
+        root,
+        delegation,
+        issuer_key,
+        delegation.delegation_epoch(),
+    )
+    .unwrap();
+    let mut trust = transition
+        .establish(
+            &initial_credential,
+            root,
+            delegation,
+            delegation.delegation_epoch(),
+        )
+        .unwrap();
+
+    for epoch in 1..=credential.credential_epoch() {
+        let successor = DeviceCredential::issue_for_public_key(
+            credential.owner_id(),
+            credential.device_id(),
+            credential.device_public_key(),
+            epoch,
+            root,
+            delegation,
+            issuer_key,
+        )
+        .unwrap();
+        let mut transition_id = [transition_byte; 32];
+        transition_id[..8].copy_from_slice(&epoch.to_be_bytes());
+        trust
+            .accept_successor_credential(
+                &successor,
+                root,
+                delegation,
+                delegation.delegation_epoch(),
+                TransitionId::from_bytes(transition_id),
+            )
+            .unwrap();
+    }
+
+    trust
+}
+
 struct Fixture {
     owner_id: OwnerId,
     root: OwnerRootRecord,
     delegation: AuthorityDelegation,
+    issuer_key: SigningKey,
     initiator_key: SigningKey,
     responder_key: SigningKey,
     initiator_credential: DeviceCredential,
@@ -64,17 +128,19 @@ impl Fixture {
             &issuer_key,
         )
         .unwrap();
-        let responder_trust = TrustRecord::trusted(
-            owner_id,
-            responder_credential.device_id(),
-            responder_credential.credential_epoch(),
-            TransitionId::from_bytes([0x47; 32]),
+        let responder_trust = establish_trust(
+            &responder_credential,
+            &root,
+            &delegation,
+            &issuer_key,
+            0x47,
         );
 
         Self {
             owner_id,
             root,
             delegation,
+            issuer_key,
             initiator_key,
             responder_key,
             initiator_credential,
@@ -207,7 +273,10 @@ fn valid_authentication_activates_with_fresh_context_and_zero_sequences() {
         fixture.responder_credential.device_id()
     );
     assert_eq!(context.peer_credential_epoch(), 5);
-    assert_eq!(context.peer_trust_revision(), 0);
+    assert_eq!(
+        context.peer_trust_revision(),
+        fixture.responder_trust.trust_revision()
+    );
     assert_eq!(context.protocol_version(), ProtocolVersion::new(1, 2));
     assert_eq!(context.negotiated_features(), &[2, 3]);
     assert_eq!(
@@ -428,11 +497,22 @@ fn peer_trust_identity_and_accepted_credential_epoch_are_activation_gates() {
     );
     let (initiator_proof, responder_proof) = fixture.proofs(&transcript);
 
-    let wrong_device_trust = TrustRecord::trusted(
+    let wrong_device_credential = DeviceCredential::issue(
         fixture.owner_id,
         DeviceId::from_bytes([0xaa; 32]),
+        &fixture.responder_key,
         fixture.responder_credential.credential_epoch(),
-        TransitionId::from_bytes([0xab; 32]),
+        &fixture.root,
+        &fixture.delegation,
+        &fixture.issuer_key,
+    )
+    .unwrap();
+    let wrong_device_trust = establish_trust(
+        &wrong_device_credential,
+        &fixture.root,
+        &fixture.delegation,
+        &fixture.issuer_key,
+        0xab,
     );
     let mut session = LogicalSession::new();
     let activation = SessionActivation::new(
@@ -464,11 +544,22 @@ fn peer_trust_identity_and_accepted_credential_epoch_are_activation_gates() {
     );
     assert_eq!(session.state(), SessionState::Closed);
 
-    let stale_trust = TrustRecord::trusted(
+    let stale_credential = DeviceCredential::issue(
         fixture.owner_id,
         fixture.responder_credential.device_id(),
+        &fixture.responder_key,
         fixture.responder_credential.credential_epoch() - 1,
-        TransitionId::from_bytes([0xac; 32]),
+        &fixture.root,
+        &fixture.delegation,
+        &fixture.issuer_key,
+    )
+    .unwrap();
+    let stale_trust = establish_trust(
+        &stale_credential,
+        &fixture.root,
+        &fixture.delegation,
+        &fixture.issuer_key,
+        0xac,
     );
     let mut session = LogicalSession::new();
     let activation = SessionActivation::new(
