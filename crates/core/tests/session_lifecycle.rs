@@ -6,9 +6,7 @@ use crosslab_crypto::SigningKey;
 use crosslab_identity::{
     AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
 };
-use crosslab_policy::{
-    PairingTrustTransition, TransitionId, TrustRecord, TrustTransition,
-};
+use crosslab_policy::{PairingTrustTransition, TransitionId, TrustRecord, TrustTransition};
 use crosslab_protocol::{FeatureSet, ProtocolRange, ProtocolVersion};
 
 fn establish_trust(
@@ -122,13 +120,8 @@ impl Fixture {
             &issuer_key,
         )
         .unwrap();
-        let responder_trust = establish_trust(
-            &responder_credential,
-            &root,
-            &delegation,
-            &issuer_key,
-            0x97,
-        );
+        let responder_trust =
+            establish_trust(&responder_credential, &root, &delegation, &issuer_key, 0x97);
 
         Self {
             owner_id,
