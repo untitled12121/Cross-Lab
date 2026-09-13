@@ -1,7 +1,7 @@
 use std::num::NonZeroUsize;
 
 use crosslab_core::{
-    ChannelBinding, LogicalSession, PairingFlowError, PairingId, PairingInvitation,
+    ChannelBinding, LogicalSession, PairingFlowError, PairingId, PairingInstant, PairingInvitation,
     PairingInvitationState, PairingInviterFlow, PairingJoinerFlow, PairingSecret,
     SessionActivation, SessionAuthProof, SessionAuthRole, SessionAuthTranscriptV1, SessionError,
     SessionHandshakeSide, SessionState, TransportConnection, TransportSecurityClass,
@@ -117,14 +117,21 @@ impl M5Fixture {
             PairingSecret::from_bytes(self.pairing_secret),
             self.owner_id,
             self.inviter_device_id,
+            PairingInstant::from_ticks(0),
+            PairingInstant::from_ticks(100),
         )
+        .unwrap()
     }
 
     fn complete_pairing(&self, credential_epoch: u64) -> (DeviceCredential, TrustRecord) {
         assert_eq!(credential_epoch, JOINER_EPOCH);
-        let mut inviter =
-            PairingInviterFlow::new(self.invitation(), self.inviter_hello, self.joiner_hello)
-                .unwrap();
+        let mut inviter = PairingInviterFlow::new(
+            self.invitation(),
+            self.inviter_hello,
+            self.joiner_hello,
+            PairingInstant::from_ticks(0),
+        )
+        .unwrap();
         let mut joiner = PairingJoinerFlow::new(
             PairingSecret::from_bytes(self.pairing_secret),
             self.inviter_hello,
@@ -134,20 +141,29 @@ impl M5Fixture {
 
         let joiner_confirmation = joiner.joiner_confirmation().unwrap();
         let inviter_confirmation = inviter
-            .verify_joiner_confirmation(&joiner_confirmation)
+            .verify_joiner_confirmation(&joiner_confirmation, PairingInstant::from_ticks(10))
             .unwrap();
         joiner
             .verify_inviter_confirmation(&inviter_confirmation)
             .unwrap();
 
         let credential = inviter
-            .issue_initial_joiner_credential(&self.root, &self.delegation, &self.issuer_key)
+            .issue_initial_joiner_credential(
+                &self.root,
+                &self.delegation,
+                &self.issuer_key,
+                PairingInstant::from_ticks(20),
+            )
             .unwrap();
         let accepted = joiner
             .accept_credential(&self.root, &self.delegation, &credential, &self.joiner_key)
             .unwrap();
         let trust = inviter
-            .commit_trust(&accepted, TransitionId::from_bytes([0x1b; 32]))
+            .commit_trust(
+                &accepted,
+                TransitionId::from_bytes([0x1b; 32]),
+                PairingInstant::from_ticks(30),
+            )
             .unwrap();
 
         (credential, trust)
@@ -415,6 +431,7 @@ fn wrong_pairing_secret_fails_before_trust_commit() {
         fixture.invitation(),
         fixture.inviter_hello,
         fixture.joiner_hello,
+        PairingInstant::from_ticks(0),
     )
     .unwrap();
     let wrong_joiner = PairingJoinerFlow::new(
@@ -426,7 +443,7 @@ fn wrong_pairing_secret_fails_before_trust_commit() {
     let confirmation = wrong_joiner.joiner_confirmation().unwrap();
 
     assert_eq!(
-        inviter.verify_joiner_confirmation(&confirmation),
+        inviter.verify_joiner_confirmation(&confirmation, PairingInstant::from_ticks(10)),
         Err(PairingFlowError::InvalidConfirmation)
     );
     assert_eq!(inviter.invitation_state(), PairingInvitationState::Consumed);
