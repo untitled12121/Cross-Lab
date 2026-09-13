@@ -84,6 +84,21 @@ impl From<IdentityError> for CredentialRotationError {
     }
 }
 
+/// Locally authoritative trusted state must be established through verified pairing evidence.
+///
+/// Ordinary callers cannot mint trusted state directly:
+///
+/// ```compile_fail
+/// use crosslab_identity::{DeviceId, OwnerId};
+/// use crosslab_policy::{TransitionId, TrustRecord};
+///
+/// let _ = TrustRecord::trusted(
+///     OwnerId::from_bytes([0x11; 32]),
+///     DeviceId::from_bytes([0x22; 32]),
+///     0,
+///     TransitionId::from_bytes([0x33; 32]),
+/// );
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TrustRecord {
     owner_id: OwnerId,
