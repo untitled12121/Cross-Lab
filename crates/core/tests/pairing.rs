@@ -1,5 +1,5 @@
 use crosslab_core::{
-    PairingConfirmationRole, PairingId, PairingInvitation, PairingInvitationError,
+    PairingConfirmationRole, PairingId, PairingInstant, PairingInvitation, PairingInvitationError,
     PairingInvitationState, PairingSecret, PairingTranscript,
 };
 use crosslab_crypto::SigningKey;
@@ -20,6 +20,23 @@ fn transcript() -> PairingTranscript {
         joiner_key.verifying_key(),
         [0x88; 32],
     )
+}
+
+fn invitation(
+    pairing_id: [u8; 16],
+    secret: [u8; 32],
+    owner_id: [u8; 32],
+    inviter_device_id: [u8; 32],
+) -> PairingInvitation {
+    PairingInvitation::from_parts(
+        PairingId::from_bytes(pairing_id),
+        PairingSecret::from_bytes(secret),
+        OwnerId::from_bytes(owner_id),
+        DeviceId::from_bytes(inviter_device_id),
+        PairingInstant::from_ticks(0),
+        PairingInstant::from_ticks(100),
+    )
+    .unwrap()
 }
 
 #[test]
@@ -157,12 +174,7 @@ fn pairing_confirmation_rejects_security_field_substitution() {
 
 #[test]
 fn pairing_invitation_is_single_use() {
-    let mut invitation = PairingInvitation::from_parts(
-        PairingId::from_bytes([1; 16]),
-        PairingSecret::from_bytes([2; 32]),
-        OwnerId::from_bytes([3; 32]),
-        DeviceId::from_bytes([4; 32]),
-    );
+    let mut invitation = invitation([1; 16], [2; 32], [3; 32], [4; 32]);
 
     assert_eq!(invitation.state(), PairingInvitationState::Pending);
     assert_eq!(invitation.consume(), Ok(()));
@@ -173,22 +185,12 @@ fn pairing_invitation_is_single_use() {
 
 #[test]
 fn pairing_invitation_cancellation_and_expiry_are_terminal() {
-    let mut cancelled = PairingInvitation::from_parts(
-        PairingId::from_bytes([1; 16]),
-        PairingSecret::from_bytes([2; 32]),
-        OwnerId::from_bytes([3; 32]),
-        DeviceId::from_bytes([4; 32]),
-    );
+    let mut cancelled = invitation([1; 16], [2; 32], [3; 32], [4; 32]);
     assert_eq!(cancelled.cancel(), Ok(()));
     assert_eq!(cancelled.state(), PairingInvitationState::Cancelled);
     assert_eq!(cancelled.consume(), Err(PairingInvitationError::NotPending));
 
-    let mut expired = PairingInvitation::from_parts(
-        PairingId::from_bytes([5; 16]),
-        PairingSecret::from_bytes([6; 32]),
-        OwnerId::from_bytes([7; 32]),
-        DeviceId::from_bytes([8; 32]),
-    );
+    let mut expired = invitation([5; 16], [6; 32], [7; 32], [8; 32]);
     assert_eq!(expired.expire(), Ok(()));
     assert_eq!(expired.state(), PairingInvitationState::Expired);
     assert_eq!(expired.consume(), Err(PairingInvitationError::NotPending));
