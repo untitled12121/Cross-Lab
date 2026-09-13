@@ -97,8 +97,5 @@ fn final_joiner_proof_cannot_establish_trust_with_wrong_device_signing_key() {
         ))
     );
     assert_eq!(inviter.state(), PairingInviterState::Failed);
-    assert_eq!(
-        inviter.invitation_state(),
-        PairingInvitationState::Consumed
-    );
+    assert_eq!(inviter.invitation_state(), PairingInvitationState::Consumed);
 }
