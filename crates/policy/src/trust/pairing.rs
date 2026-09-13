@@ -26,7 +26,9 @@ impl fmt::Display for PairingTrustTransitionError {
             Self::CredentialMismatch => {
                 formatter.write_str("pairing trust transition credential does not match")
             }
-            Self::UnknownIssuer => formatter.write_str("pairing trust transition issuer is unknown"),
+            Self::UnknownIssuer => {
+                formatter.write_str("pairing trust transition issuer is unknown")
+            }
             Self::InvalidSignature => {
                 formatter.write_str("pairing trust transition signature is invalid")
             }
@@ -66,7 +68,12 @@ impl PairingTrustTransition {
         issuer_key: &SigningKey,
         minimum_delegation_epoch: u64,
     ) -> Result<Self, PairingTrustTransitionError> {
-        credential.verify(root, issuer, credential.credential_epoch(), minimum_delegation_epoch)?;
+        credential.verify(
+            root,
+            issuer,
+            credential.credential_epoch(),
+            minimum_delegation_epoch,
+        )?;
         if issuer_key.verifying_key() != issuer.delegated_public_key() {
             return Err(PairingTrustTransitionError::UnknownIssuer);
         }
@@ -93,7 +100,12 @@ impl PairingTrustTransition {
         issuer: &AuthorityDelegation,
         minimum_delegation_epoch: u64,
     ) -> Result<TrustRecord, PairingTrustTransitionError> {
-        credential.verify(root, issuer, self.credential_epoch, minimum_delegation_epoch)?;
+        credential.verify(
+            root,
+            issuer,
+            self.credential_epoch,
+            minimum_delegation_epoch,
+        )?;
         if credential.owner_id() != self.owner_id
             || credential.device_id() != self.device_id
             || credential.credential_epoch() != self.credential_epoch
