@@ -103,7 +103,10 @@ fn pairing_trust_transition_establishes_initial_membership() {
     assert_eq!(record.accepted_credential_epoch(), 0);
     assert_eq!(record.trust_revision(), 0);
     assert_eq!(record.last_transition_id(), transition_id);
-    assert_eq!(transition.pairing_evidence_digest(), pairing_evidence_digest);
+    assert_eq!(
+        transition.pairing_evidence_digest(),
+        pairing_evidence_digest
+    );
 }
 
 #[test]
