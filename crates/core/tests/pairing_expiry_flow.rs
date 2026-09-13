@@ -90,6 +90,10 @@ fn invitation_expiry_mid_flow_prevents_trust_commit() {
         inviter.commit_trust(
             &accepted,
             TransitionId::from_bytes([0x5c; 32]),
+            &root,
+            &delegation,
+            &issuer_key,
+            delegation.delegation_epoch(),
             PairingInstant::from_ticks(20),
         ),
         Err(PairingFlowError::InvitationExpired)
