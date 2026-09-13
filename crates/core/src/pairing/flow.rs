@@ -245,6 +245,7 @@ impl PairingInviterFlow {
         Ok(credential)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn commit_trust(
         &mut self,
         accepted: &PairingCredentialAccepted,
