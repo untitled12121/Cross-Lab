@@ -6,7 +6,7 @@ use crosslab_crypto::SigningKey;
 use crosslab_identity::{
     AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
 };
-use crosslab_policy::{TransitionId, TrustRecord};
+use crosslab_policy::{PairingTrustTransition, TransitionId};
 use crosslab_protocol::{FeatureSet, ProtocolRange, ProtocolVersion};
 
 #[test]
@@ -47,12 +47,24 @@ fn accepted_peer_rotation_invalidates_old_authenticated_session() {
         &issuer_key,
     )
     .unwrap();
-    let mut peer_trust = TrustRecord::trusted(
-        owner_id,
-        peer_device_id,
-        0,
+    let transition = PairingTrustTransition::issue(
+        &peer_credential,
         TransitionId::from_bytes([0x38; 32]),
-    );
+        [0x3d; 32],
+        &root,
+        &delegation,
+        &issuer_key,
+        delegation.delegation_epoch(),
+    )
+    .unwrap();
+    let mut peer_trust = transition
+        .establish(
+            &peer_credential,
+            &root,
+            &delegation,
+            delegation.delegation_epoch(),
+        )
+        .unwrap();
     let ranges = [ProtocolRange::new(1, 0, 0).unwrap()];
     let features = FeatureSet::new(&[], &[]).unwrap();
     let binding = ChannelBinding::new("in-process-test", vec![0x39; 32]);
