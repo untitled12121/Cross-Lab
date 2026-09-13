@@ -1,3 +1,5 @@
+use core::fmt;
+
 use crosslab_crypto::{Signature, SignatureAlgorithm, VerifyingKey};
 use crosslab_identity::{DeviceCredential, DeviceId, KeyId, OwnerId};
 use prost::Message;
@@ -69,7 +71,7 @@ impl SessionAuthHello {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct SessionAuthProofMessage {
     role: SessionAuthRole,
     transcript_digest: [u8; 32],
@@ -99,6 +101,17 @@ impl SessionAuthProofMessage {
 
     pub const fn signature(&self) -> Signature {
         self.signature
+    }
+}
+
+impl fmt::Debug for SessionAuthProofMessage {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SessionAuthProofMessage")
+            .field("role", &self.role)
+            .field("transcript_digest", &"[REDACTED]")
+            .field("signature", &"[REDACTED]")
+            .finish()
     }
 }
 

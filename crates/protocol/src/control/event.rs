@@ -71,7 +71,7 @@ impl fmt::Display for EventError {
 
 impl std::error::Error for EventError {}
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Event {
     event_id: EventId,
     scope: EventScope,
@@ -127,6 +127,18 @@ impl Event {
 
     pub fn body(&self) -> &[u8] {
         &self.body
+    }
+}
+
+impl fmt::Debug for Event {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Event")
+            .field("event_id", &self.event_id)
+            .field("scope", &self.scope)
+            .field("event_type", &self.event_type)
+            .field("body_len", &self.body.len())
+            .finish()
     }
 }
 
