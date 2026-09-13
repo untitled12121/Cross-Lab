@@ -260,30 +260,42 @@ impl PairingInviterFlow {
         if self.state != PairingInviterState::AwaitingCredentialAcceptance {
             return self.fail(PairingFlowError::UnexpectedState);
         }
+        let Some(credential) = self.issued_credential else {
+            return self.fail(PairingFlowError::UnexpectedState);
+        };
+
+        let transcript_digest = self.context.transcript.digest();
+        let credential_digest = signed_object_digest(
+            credential.transcript_digest(),
+            SignatureAlgorithm::Ed25519,
+            &credential.signature(),
+        );
         if accepted.pairing_id() != self.context.pairing_id.to_bytes()
-            || accepted.device_id() != self.context.joiner_device_id
+            || accepted.pairing_transcript_digest() != transcript_digest
+            || accepted.device_credential_signed_object_digest() != credential_digest
+            || accepted.joiner_device_id() != self.context.joiner_device_id
+            || accepted.joiner_device_key_id() != credential.device_key_id()
         {
             return self.fail(PairingFlowError::InvalidCredentialAcceptance);
         }
-        let Some(credential) = self.issued_credential.as_ref() else {
-            return self.fail(PairingFlowError::UnexpectedState);
-        };
-        if accepted.device_key_id() != credential.device_key_id() {
-            return self.fail(PairingFlowError::InvalidCredentialAcceptance);
-        }
-        let digest = credential_acceptance_digest(
-            &self.context,
-            credential,
-            accepted.inviter_nonce(),
-            accepted.joiner_nonce(),
+
+        let proof_digest = credential_acceptance_digest(
+            accepted.pairing_transcript_digest(),
+            accepted.device_credential_signed_object_digest(),
+            accepted.joiner_device_id(),
+            accepted.joiner_device_key_id(),
         );
-        if self
-            .context
-            .joiner_device_key
-            .verify_digest(&digest, &accepted.signature())
+        if credential
+            .device_public_key()
+            .verify_digest(&proof_digest, &accepted.signature())
             .is_err()
         {
             return self.fail(PairingFlowError::InvalidCredentialAcceptance);
+        }
+
+        if self.invitation.consume().is_err() {
+            self.state = PairingInviterState::Failed;
+            return Err(PairingFlowError::InvitationNotPending);
         }
 
         let trust = TrustRecord::trusted(
@@ -292,14 +304,17 @@ impl PairingInviterFlow {
             credential.credential_epoch(),
             transition_id,
         );
-        let _ = self.invitation.consume();
         self.state = PairingInviterState::Trusted;
         Ok(trust)
     }
 
     fn fail<T>(&mut self, error: PairingFlowError) -> Result<T, PairingFlowError> {
-        self.state = PairingInviterState::Failed;
-        let _ = self.invitation.consume();
+        if self.invitation.state() == PairingInvitationState::Pending {
+            let _ = self.invitation.consume();
+        }
+        if self.state != PairingInviterState::Trusted {
+            self.state = PairingInviterState::Failed;
+        }
         Err(error)
     }
 }
@@ -317,10 +332,9 @@ impl PairingJoinerFlow {
         inviter: PairingHello,
         joiner: PairingHello,
     ) -> Result<Self, PairingFlowError> {
-        let context = PairingContext::new(inviter, joiner)?;
         Ok(Self {
             secret,
-            context,
+            context: PairingContext::new(inviter, joiner)?,
             state: PairingJoinerState::AwaitingInviterConfirmation,
         })
     }
@@ -333,14 +347,13 @@ impl PairingJoinerFlow {
         if self.state != PairingJoinerState::AwaitingInviterConfirmation {
             return Err(PairingFlowError::UnexpectedState);
         }
-        let value = self
-            .context
-            .transcript
-            .confirmation(PairingConfirmationRole::Joiner, &self.secret);
+
         Ok(PairingConfirmation::new(
             PairingRole::Joiner,
             self.context.pairing_id.to_bytes(),
-            value,
+            self.context
+                .transcript
+                .confirmation(PairingConfirmationRole::Joiner, &self.secret),
         ))
     }
 
@@ -365,6 +378,7 @@ impl PairingJoinerFlow {
         {
             return self.fail(PairingFlowError::InvalidConfirmation);
         }
+
         self.state = PairingJoinerState::AwaitingCredential;
         Ok(())
     }
@@ -379,34 +393,40 @@ impl PairingJoinerFlow {
         if self.state != PairingJoinerState::AwaitingCredential {
             return self.fail(PairingFlowError::UnexpectedState);
         }
-        if credential.owner_id() != self.context.owner_id
-            || credential.device_id() != self.context.joiner_device_id
-            || credential.device_public_key() != self.context.joiner_device_key
-            || credential.credential_epoch() != INITIAL_CREDENTIAL_EPOCH
-        {
-            return self.fail(PairingFlowError::CredentialMismatch);
-        }
-        if joiner_key.verifying_key() != self.context.joiner_device_key {
-            return self.fail(PairingFlowError::JoinerKeyMismatch);
-        }
+
         if let Err(error) = credential.verify(root, issuer, INITIAL_CREDENTIAL_EPOCH, 0) {
             return self.fail(PairingFlowError::Identity(error));
         }
+        if credential.credential_epoch() != INITIAL_CREDENTIAL_EPOCH
+            || credential.owner_id() != self.context.owner_id
+            || credential.device_id() != self.context.joiner_device_id
+            || credential.device_public_key() != self.context.joiner_device_key
+        {
+            return self.fail(PairingFlowError::CredentialMismatch);
+        }
+        if joiner_key.verifying_key() != credential.device_public_key() {
+            return self.fail(PairingFlowError::JoinerKeyMismatch);
+        }
 
-        let inviter_nonce = self.context.transcript.inviter_nonce();
-        let joiner_nonce = self.context.transcript.joiner_nonce();
-        let digest = credential_acceptance_digest(
-            &self.context,
-            credential,
-            inviter_nonce,
-            joiner_nonce,
+        let transcript_digest = self.context.transcript.digest();
+        let credential_digest = signed_object_digest(
+            credential.transcript_digest(),
+            SignatureAlgorithm::Ed25519,
+            &credential.signature(),
         );
-        let signature = joiner_key.sign_digest(&digest);
+        let proof_digest = credential_acceptance_digest(
+            transcript_digest,
+            credential_digest,
+            self.context.joiner_device_id,
+            credential.device_key_id(),
+        );
+        let signature = joiner_key.sign_digest(&proof_digest);
+
         self.state = PairingJoinerState::Accepted;
         Ok(PairingCredentialAccepted::new(
             self.context.pairing_id.to_bytes(),
-            inviter_nonce,
-            joiner_nonce,
+            transcript_digest,
+            credential_digest,
             self.context.joiner_device_id,
             credential.device_key_id(),
             signature,
@@ -414,42 +434,32 @@ impl PairingJoinerFlow {
     }
 
     fn fail<T>(&mut self, error: PairingFlowError) -> Result<T, PairingFlowError> {
-        self.state = PairingJoinerState::Failed;
+        if self.state != PairingJoinerState::Accepted {
+            self.state = PairingJoinerState::Failed;
+        }
         Err(error)
     }
 }
 
 fn credential_acceptance_digest(
-    context: &PairingContext,
-    credential: &DeviceCredential,
-    inviter_nonce: [u8; 32],
-    joiner_nonce: [u8; 32],
+    pairing_transcript_digest: [u8; 32],
+    device_credential_signed_object_digest: [u8; 32],
+    joiner_device_id: DeviceId,
+    joiner_device_key_id: KeyId,
 ) -> [u8; 32] {
-    let mut transcript =
-        CanonicalTranscript::new(CREDENTIAL_ACCEPTANCE_DOMAIN).expect("fixed domain is valid");
+    let mut transcript = CanonicalTranscript::new(CREDENTIAL_ACCEPTANCE_DOMAIN)
+        .expect("fixed pairing credential acceptance domain is valid");
     transcript
-        .push(1, context.pairing_id.to_bytes())
-        .expect("fixed field is valid");
+        .push(1, pairing_transcript_digest)
+        .expect("pairing transcript digest field is valid");
     transcript
-        .push(2, inviter_nonce)
-        .expect("fixed field is valid");
+        .push(2, device_credential_signed_object_digest)
+        .expect("device credential digest field is valid");
     transcript
-        .push(3, joiner_nonce)
-        .expect("fixed field is valid");
+        .push(3, joiner_device_id.to_bytes())
+        .expect("joiner device id field is valid");
     transcript
-        .push(4, context.owner_id.to_bytes())
-        .expect("fixed field is valid");
-    transcript
-        .push(5, context.inviter_device_id.to_bytes())
-        .expect("fixed field is valid");
-    transcript
-        .push(6, context.joiner_device_id.to_bytes())
-        .expect("fixed field is valid");
-    transcript
-        .push(7, context.joiner_device_key.as_bytes())
-        .expect("fixed field is valid");
-    transcript
-        .push(8, signed_object_digest(credential))
-        .expect("fixed field is valid");
+        .push(4, joiner_device_key_id.to_bytes())
+        .expect("joiner device key id field is valid");
     transcript.digest()
 }
