@@ -1,5 +1,8 @@
 use crosslab_crypto::SigningKey;
-use crosslab_identity::{DeviceId, OwnerId, OwnerRootRecord};
+use crosslab_identity::{
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, IdentityError, OwnerId,
+    OwnerRootRecord,
+};
 use crosslab_policy::{
     TransitionId, TrustError, TrustRecord, TrustState, TrustTransition, TrustTransitionError,
 };
@@ -13,6 +16,60 @@ fn trusted_record() -> TrustRecord {
     )
 }
 
+struct RotationFixture {
+    owner_id: OwnerId,
+    device_id: DeviceId,
+    root: OwnerRootRecord,
+    issuer_key: SigningKey,
+    delegation: AuthorityDelegation,
+}
+
+impl RotationFixture {
+    fn new() -> Self {
+        let owner_id = OwnerId::from_bytes([0x20; 32]);
+        let root_key = SigningKey::from_secret_bytes([0x21; 32]);
+        let root = OwnerRootRecord::new(owner_id, &root_key, 0);
+        let issuer_key = SigningKey::from_secret_bytes([0x22; 32]);
+        let delegation = AuthorityDelegation::issue(
+            owner_id,
+            AuthorityRole::DeviceSigning,
+            &issuer_key,
+            0,
+            &root_key,
+        );
+
+        Self {
+            owner_id,
+            device_id: DeviceId::from_bytes([0x23; 32]),
+            root,
+            issuer_key,
+            delegation,
+        }
+    }
+
+    fn trust(&self) -> TrustRecord {
+        TrustRecord::trusted(
+            self.owner_id,
+            self.device_id,
+            0,
+            TransitionId::from_bytes([0x24; 32]),
+        )
+    }
+
+    fn credential(&self, device_id: DeviceId, epoch: u64) -> DeviceCredential {
+        DeviceCredential::issue(
+            self.owner_id,
+            device_id,
+            &SigningKey::from_secret_bytes([0x25; 32]),
+            epoch,
+            &self.root,
+            &self.delegation,
+            &self.issuer_key,
+        )
+        .unwrap()
+    }
+}
+
 #[test]
 fn trusted_record_starts_at_revision_zero() {
     let record = trusted_record();
@@ -23,31 +80,84 @@ fn trusted_record_starts_at_revision_zero() {
 }
 
 #[test]
-fn credential_epoch_advancement_preserves_identity_and_trust() {
-    let mut record = trusted_record();
-    let owner_id = record.owner_id();
-    let device_id = record.device_id();
+fn verified_successor_credential_advances_epoch_revision_and_transition() {
+    let fixture = RotationFixture::new();
+    let mut record = fixture.trust();
+    let successor = fixture.credential(fixture.device_id, 1);
+    let transition_id = TransitionId::from_bytes([0x26; 32]);
 
-    record.advance_credential_epoch(1).unwrap();
+    record
+        .accept_successor_credential(
+            &successor,
+            &fixture.root,
+            &fixture.delegation,
+            fixture.delegation.delegation_epoch(),
+            transition_id,
+        )
+        .unwrap();
 
-    assert_eq!(record.owner_id(), owner_id);
-    assert_eq!(record.device_id(), device_id);
     assert_eq!(record.state(), TrustState::Trusted);
     assert_eq!(record.accepted_credential_epoch(), 1);
-    assert_eq!(record.trust_revision(), 0);
+    assert_eq!(record.trust_revision(), 1);
+    assert_eq!(record.last_transition_id(), transition_id);
 }
 
 #[test]
-fn credential_epoch_rejects_stale_and_skipped_values() {
-    let mut record = trusted_record();
+fn successor_credential_rejects_stale_skipped_wrong_device_and_wrong_authority() {
+    let fixture = RotationFixture::new();
 
+    let mut stale_record = fixture.trust();
+    let stale = fixture.credential(fixture.device_id, 0);
     assert_eq!(
-        record.advance_credential_epoch(0),
+        stale_record.accept_successor_credential(
+            &stale,
+            &fixture.root,
+            &fixture.delegation,
+            fixture.delegation.delegation_epoch(),
+            TransitionId::from_bytes([0x27; 32]),
+        ),
         Err(TrustError::StaleCredentialEpoch)
     );
+
+    let mut skipped_record = fixture.trust();
+    let skipped = fixture.credential(fixture.device_id, 2);
     assert_eq!(
-        record.advance_credential_epoch(2),
+        skipped_record.accept_successor_credential(
+            &skipped,
+            &fixture.root,
+            &fixture.delegation,
+            fixture.delegation.delegation_epoch(),
+            TransitionId::from_bytes([0x28; 32]),
+        ),
         Err(TrustError::UnexpectedCredentialEpoch)
+    );
+
+    let mut wrong_device_record = fixture.trust();
+    let wrong_device = fixture.credential(DeviceId::from_bytes([0x29; 32]), 1);
+    assert_eq!(
+        wrong_device_record.accept_successor_credential(
+            &wrong_device,
+            &fixture.root,
+            &fixture.delegation,
+            fixture.delegation.delegation_epoch(),
+            TransitionId::from_bytes([0x2a; 32]),
+        ),
+        Err(TrustError::WrongDevice)
+    );
+
+    let mut wrong_authority_record = fixture.trust();
+    let successor = fixture.credential(fixture.device_id, 1);
+    let other_root_key = SigningKey::from_secret_bytes([0x2b; 32]);
+    let other_root = OwnerRootRecord::new(fixture.owner_id, &other_root_key, 0);
+    assert_eq!(
+        wrong_authority_record.accept_successor_credential(
+            &successor,
+            &other_root,
+            &fixture.delegation,
+            fixture.delegation.delegation_epoch(),
+            TransitionId::from_bytes([0x2c; 32]),
+        ),
+        Err(TrustError::Identity(IdentityError::UnknownIssuer))
     );
 }
 
