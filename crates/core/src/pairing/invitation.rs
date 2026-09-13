@@ -88,10 +88,7 @@ impl PairingInvitation {
         self.state
     }
 
-    pub fn ensure_pending_at(
-        &mut self,
-        now: PairingInstant,
-    ) -> Result<(), PairingInvitationError> {
+    pub fn ensure_pending_at(&mut self, now: PairingInstant) -> Result<(), PairingInvitationError> {
         if self.state != PairingInvitationState::Pending {
             return Err(PairingInvitationError::NotPending);
         }
