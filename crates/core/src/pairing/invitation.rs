@@ -4,6 +4,19 @@ use crosslab_identity::{DeviceId, OwnerId};
 
 use super::{PairingId, PairingSecret};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PairingInstant(u64);
+
+impl PairingInstant {
+    pub const fn from_ticks(ticks: u64) -> Self {
+        Self(ticks)
+    }
+
+    pub const fn ticks(self) -> u64 {
+        self.0
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PairingInvitationState {
     Pending,
@@ -18,6 +31,8 @@ pub struct PairingInvitation {
     secret: PairingSecret,
     owner_id: OwnerId,
     inviter_device_id: DeviceId,
+    created_at: PairingInstant,
+    deadline: PairingInstant,
     state: PairingInvitationState,
 }
 
@@ -27,14 +42,22 @@ impl PairingInvitation {
         secret: PairingSecret,
         owner_id: OwnerId,
         inviter_device_id: DeviceId,
-    ) -> Self {
-        Self {
+        created_at: PairingInstant,
+        deadline: PairingInstant,
+    ) -> Result<Self, PairingInvitationError> {
+        if deadline <= created_at {
+            return Err(PairingInvitationError::InvalidDeadline);
+        }
+
+        Ok(Self {
             pairing_id,
             secret,
             owner_id,
             inviter_device_id,
+            created_at,
+            deadline,
             state: PairingInvitationState::Pending,
-        }
+        })
     }
 
     pub const fn pairing_id(&self) -> PairingId {
@@ -53,8 +76,31 @@ impl PairingInvitation {
         self.inviter_device_id
     }
 
+    pub const fn created_at(&self) -> PairingInstant {
+        self.created_at
+    }
+
+    pub const fn deadline(&self) -> PairingInstant {
+        self.deadline
+    }
+
     pub const fn state(&self) -> PairingInvitationState {
         self.state
+    }
+
+    pub fn ensure_pending_at(
+        &mut self,
+        now: PairingInstant,
+    ) -> Result<(), PairingInvitationError> {
+        if self.state != PairingInvitationState::Pending {
+            return Err(PairingInvitationError::NotPending);
+        }
+        if now >= self.deadline {
+            self.state = PairingInvitationState::Expired;
+            return Err(PairingInvitationError::Expired);
+        }
+
+        Ok(())
     }
 
     pub fn consume(&mut self) -> Result<(), PairingInvitationError> {
@@ -82,13 +128,17 @@ impl PairingInvitation {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PairingInvitationError {
     NotPending,
+    Expired,
+    InvalidDeadline,
 }
 
 impl fmt::Display for PairingInvitationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NotPending => formatter.write_str("pairing invitation is no longer pending"),
-        }
+        formatter.write_str(match self {
+            Self::NotPending => "pairing invitation is no longer pending",
+            Self::Expired => "pairing invitation has expired",
+            Self::InvalidDeadline => "pairing invitation deadline must be after creation",
+        })
     }
 }
 
