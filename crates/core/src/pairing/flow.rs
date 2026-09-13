@@ -17,6 +17,7 @@ use super::{
 };
 
 const PROTOCOL_MAJOR_V1: u16 = 1;
+const INITIAL_CREDENTIAL_EPOCH: u64 = 0;
 const CREDENTIAL_ACCEPTANCE_DOMAIN: &str = "crosslab.pairing-credential-accepted.v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -208,7 +209,6 @@ impl PairingInviterFlow {
         root: &OwnerRootRecord,
         issuer: &AuthorityDelegation,
         issuer_key: &SigningKey,
-        credential_epoch: u64,
     ) -> Result<DeviceCredential, PairingFlowError> {
         if self.state != PairingInviterState::ReadyToIssueCredential {
             return self.fail(PairingFlowError::UnexpectedState);
@@ -218,7 +218,7 @@ impl PairingInviterFlow {
             self.context.owner_id,
             self.context.joiner_device_id,
             self.context.joiner_device_key,
-            credential_epoch,
+            INITIAL_CREDENTIAL_EPOCH,
             root,
             issuer,
             issuer_key,
@@ -374,10 +374,11 @@ impl PairingJoinerFlow {
             return self.fail(PairingFlowError::UnexpectedState);
         }
 
-        if let Err(error) = credential.verify(root, issuer, 0, 0) {
+        if let Err(error) = credential.verify(root, issuer, INITIAL_CREDENTIAL_EPOCH, 0) {
             return self.fail(PairingFlowError::Identity(error));
         }
-        if credential.owner_id() != self.context.owner_id
+        if credential.credential_epoch() != INITIAL_CREDENTIAL_EPOCH
+            || credential.owner_id() != self.context.owner_id
             || credential.device_id() != self.context.joiner_device_id
             || credential.device_public_key() != self.context.joiner_device_key
         {
