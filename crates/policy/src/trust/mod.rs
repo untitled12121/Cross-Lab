@@ -30,16 +30,35 @@ pub enum TrustState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrustError {
-    Identity(IdentityError),
-    WrongOwner,
-    WrongDevice,
-    NotTrusted,
     StaleCredentialEpoch,
     UnexpectedCredentialEpoch,
     AlreadyRevoked,
 }
 
 impl fmt::Display for TrustError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::StaleCredentialEpoch => "credential epoch is stale",
+            Self::UnexpectedCredentialEpoch => "credential epoch transition is invalid",
+            Self::AlreadyRevoked => "device trust is already revoked",
+        })
+    }
+}
+
+impl std::error::Error for TrustError {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CredentialRotationError {
+    Identity(IdentityError),
+    WrongOwner,
+    WrongDevice,
+    NotTrusted,
+    StaleCredentialEpoch,
+    UnexpectedCredentialEpoch,
+    RevisionOverflow,
+}
+
+impl fmt::Display for CredentialRotationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Identity(error) => fmt::Display::fmt(error, formatter),
@@ -50,14 +69,14 @@ impl fmt::Display for TrustError {
             Self::UnexpectedCredentialEpoch => {
                 formatter.write_str("credential epoch transition is invalid")
             }
-            Self::AlreadyRevoked => formatter.write_str("device trust is already revoked"),
+            Self::RevisionOverflow => formatter.write_str("trust revision is exhausted"),
         }
     }
 }
 
-impl std::error::Error for TrustError {}
+impl std::error::Error for CredentialRotationError {}
 
-impl From<IdentityError> for TrustError {
+impl From<IdentityError> for CredentialRotationError {
     fn from(error: IdentityError) -> Self {
         Self::Identity(error)
     }
@@ -97,34 +116,32 @@ impl TrustRecord {
         issuer: &AuthorityDelegation,
         minimum_delegation_epoch: u64,
         transition_id: TransitionId,
-    ) -> Result<(), TrustError> {
-        match self.state {
-            TrustState::Trusted => {}
-            TrustState::Pending => return Err(TrustError::NotTrusted),
-            TrustState::Revoked => return Err(TrustError::AlreadyRevoked),
+    ) -> Result<(), CredentialRotationError> {
+        if self.state != TrustState::Trusted {
+            return Err(CredentialRotationError::NotTrusted);
         }
         if successor.owner_id() != self.owner_id {
-            return Err(TrustError::WrongOwner);
+            return Err(CredentialRotationError::WrongOwner);
         }
         if successor.device_id() != self.device_id {
-            return Err(TrustError::WrongDevice);
+            return Err(CredentialRotationError::WrongDevice);
         }
         if successor.credential_epoch() <= self.accepted_credential_epoch {
-            return Err(TrustError::StaleCredentialEpoch);
+            return Err(CredentialRotationError::StaleCredentialEpoch);
         }
         let expected_epoch = self
             .accepted_credential_epoch
             .checked_add(1)
-            .ok_or(TrustError::UnexpectedCredentialEpoch)?;
+            .ok_or(CredentialRotationError::UnexpectedCredentialEpoch)?;
         if successor.credential_epoch() != expected_epoch {
-            return Err(TrustError::UnexpectedCredentialEpoch);
+            return Err(CredentialRotationError::UnexpectedCredentialEpoch);
         }
 
         successor.verify(root, issuer, expected_epoch, minimum_delegation_epoch)?;
         let next_revision = self
             .trust_revision
             .checked_add(1)
-            .ok_or(TrustError::UnexpectedCredentialEpoch)?;
+            .ok_or(CredentialRotationError::RevisionOverflow)?;
 
         self.accepted_credential_epoch = expected_epoch;
         self.trust_revision = next_revision;
