@@ -8,7 +8,9 @@ use crosslab_crypto::SigningKey;
 use crosslab_identity::{
     AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
 };
-use crosslab_policy::{NetworkClass, PolicyState, TransitionId, TrustRecord};
+use crosslab_policy::{
+    NetworkClass, PairingTrustTransition, PolicyState, TransitionId,
+};
 use crosslab_protocol::{
     CapabilityAdvertisement, ControlEnvelope, EnvelopeBody, FeatureSet, ProtocolRange,
     ProtocolVersion,
@@ -52,15 +54,27 @@ fn rotated_peer_credential_invalidates_old_control_snapshot() {
         &issuer_key,
     )
     .unwrap();
-    let mut peer_trust = TrustRecord::trusted(
-        owner_id,
-        peer_device_id,
-        0,
+    let transition = PairingTrustTransition::issue(
+        &peer_credential,
         TransitionId::from_bytes([0x48; 32]),
-    );
+        [0x49; 32],
+        &root,
+        &delegation,
+        &issuer_key,
+        delegation.delegation_epoch(),
+    )
+    .unwrap();
+    let mut peer_trust = transition
+        .establish(
+            &peer_credential,
+            &root,
+            &delegation,
+            delegation.delegation_epoch(),
+        )
+        .unwrap();
     let ranges = [ProtocolRange::new(1, 0, 0).unwrap()];
     let features = FeatureSet::new(&[], &[]).unwrap();
-    let binding = ChannelBinding::new("in-process-test", vec![0x49; 32]);
+    let binding = ChannelBinding::new("in-process-test", vec![0x4d; 32]);
     let transcript = SessionAuthTranscriptV1::new(
         owner_id,
         &local_credential,
