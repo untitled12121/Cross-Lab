@@ -12,8 +12,8 @@ use crosslab_identity::{
 use crosslab_policy::{
     AuthorizationContext, AuthorizedOperation, CapabilityId, CapabilityVersion,
     CapabilityVersionRange, LocalCapability, NetworkClass, OperationError, OperationName,
-    PolicyRule, PolicyState, RuleEffect, RuleId, TransitionId, TrustRecord, TrustState,
-    TrustTransition, UsePolicy,
+    PairingTrustTransition, PolicyRule, PolicyState, RuleEffect, RuleId, TransitionId, TrustRecord,
+    TrustState, TrustTransition, UsePolicy,
 };
 use crosslab_protocol::{
     CapabilityAdvertisement, CapabilityAdvertisementEntry, ControlEnvelope, ControlRequest,
@@ -28,10 +28,74 @@ use crosslab_sim::{
 
 const CAPACITY: usize = 8;
 
+fn establish_trust(
+    credential: &DeviceCredential,
+    root: &OwnerRootRecord,
+    delegation: &AuthorityDelegation,
+    issuer_key: &SigningKey,
+    transition_byte: u8,
+) -> TrustRecord {
+    let initial_credential = DeviceCredential::issue_for_public_key(
+        credential.owner_id(),
+        credential.device_id(),
+        credential.device_public_key(),
+        0,
+        root,
+        delegation,
+        issuer_key,
+    )
+    .unwrap();
+    let transition = PairingTrustTransition::issue(
+        &initial_credential,
+        TransitionId::from_bytes([transition_byte; 32]),
+        [transition_byte.wrapping_add(1); 32],
+        root,
+        delegation,
+        issuer_key,
+        delegation.delegation_epoch(),
+    )
+    .unwrap();
+    let mut trust = transition
+        .establish(
+            &initial_credential,
+            root,
+            delegation,
+            delegation.delegation_epoch(),
+        )
+        .unwrap();
+
+    for epoch in 1..=credential.credential_epoch() {
+        let successor = DeviceCredential::issue_for_public_key(
+            credential.owner_id(),
+            credential.device_id(),
+            credential.device_public_key(),
+            epoch,
+            root,
+            delegation,
+            issuer_key,
+        )
+        .unwrap();
+        let mut transition_id = [transition_byte; 32];
+        transition_id[..8].copy_from_slice(&epoch.to_be_bytes());
+        trust
+            .accept_successor_credential(
+                &successor,
+                root,
+                delegation,
+                delegation.delegation_epoch(),
+                TransitionId::from_bytes(transition_id),
+            )
+            .unwrap();
+    }
+
+    trust
+}
+
 struct Fixture {
     owner_id: OwnerId,
     root_key: SigningKey,
     root: OwnerRootRecord,
+    issuer_key: SigningKey,
     delegation: AuthorityDelegation,
     initiator_key: SigningKey,
     responder_key: SigningKey,
@@ -76,23 +140,26 @@ impl Fixture {
             &issuer_key,
         )
         .unwrap();
-        let initiator_trust = TrustRecord::trusted(
-            owner_id,
-            initiator_credential.device_id(),
-            initiator_credential.credential_epoch(),
-            TransitionId::from_bytes([0xd7; 32]),
+        let initiator_trust = establish_trust(
+            &initiator_credential,
+            &root,
+            &delegation,
+            &issuer_key,
+            0xd7,
         );
-        let responder_trust = TrustRecord::trusted(
-            owner_id,
-            responder_credential.device_id(),
-            responder_credential.credential_epoch(),
-            TransitionId::from_bytes([0xd8; 32]),
+        let responder_trust = establish_trust(
+            &responder_credential,
+            &root,
+            &delegation,
+            &issuer_key,
+            0xd8,
         );
 
         Self {
             owner_id,
             root_key,
             root,
+            issuer_key,
             delegation,
             initiator_key,
             responder_key,
@@ -308,11 +375,22 @@ impl Fixture {
     }
 
     fn revoked_other(&self, transition_byte: u8) -> TrustRecord {
-        let mut other = TrustRecord::trusted(
+        let other_credential = DeviceCredential::issue(
             self.owner_id,
             DeviceId::from_bytes([0xfe; 32]),
+            &SigningKey::from_secret_bytes([0xfc; 32]),
             1,
-            TransitionId::from_bytes([0xfd; 32]),
+            &self.root,
+            &self.delegation,
+            &self.issuer_key,
+        )
+        .unwrap();
+        let mut other = establish_trust(
+            &other_credential,
+            &self.root,
+            &self.delegation,
+            &self.issuer_key,
+            0xfd,
         );
         let transition = TrustTransition::issue_root_revocation(
             &other,
