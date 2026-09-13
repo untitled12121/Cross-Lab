@@ -25,7 +25,7 @@ fn final_joiner_proof_cannot_establish_trust_with_wrong_device_signing_key() {
     let inviter_device_id = DeviceId::from_bytes([0x15; 32]);
     let joiner_device_id = DeviceId::from_bytes([0x16; 32]);
     let pairing_id = PairingId::from_bytes([0x17; 16]);
-    let secret = PairingSecret::from_bytes([0x18; 32]);
+    let secret = [0x18; 32];
     let inviter_hello = PairingHello::new(
         PairingRole::Inviter,
         1,
@@ -46,7 +46,7 @@ fn final_joiner_proof_cannot_establish_trust_with_wrong_device_signing_key() {
     );
     let invitation = PairingInvitation::from_parts(
         pairing_id,
-        secret,
+        PairingSecret::from_bytes(secret),
         owner_id,
         inviter_device_id,
         PairingInstant::from_ticks(0),
@@ -60,7 +60,12 @@ fn final_joiner_proof_cannot_establish_trust_with_wrong_device_signing_key() {
         PairingInstant::from_ticks(0),
     )
     .unwrap();
-    let mut joiner = PairingJoinerFlow::new(secret, inviter_hello, joiner_hello).unwrap();
+    let mut joiner = PairingJoinerFlow::new(
+        PairingSecret::from_bytes(secret),
+        inviter_hello,
+        joiner_hello,
+    )
+    .unwrap();
 
     let joiner_confirmation = joiner.joiner_confirmation().unwrap();
     let inviter_confirmation = inviter
