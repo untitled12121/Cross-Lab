@@ -1,6 +1,8 @@
 use core::fmt;
 
-use crosslab_identity::{DeviceId, OwnerId};
+use crosslab_identity::{
+    AuthorityDelegation, DeviceCredential, DeviceId, IdentityError, OwnerId, OwnerRootRecord,
+};
 
 mod transition;
 
@@ -28,6 +30,10 @@ pub enum TrustState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrustError {
+    Identity(IdentityError),
+    WrongOwner,
+    WrongDevice,
+    NotTrusted,
     StaleCredentialEpoch,
     UnexpectedCredentialEpoch,
     AlreadyRevoked,
@@ -35,15 +41,27 @@ pub enum TrustError {
 
 impl fmt::Display for TrustError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
-            Self::StaleCredentialEpoch => "credential epoch is stale",
-            Self::UnexpectedCredentialEpoch => "credential epoch transition is invalid",
-            Self::AlreadyRevoked => "device trust is already revoked",
-        })
+        match self {
+            Self::Identity(error) => fmt::Display::fmt(error, formatter),
+            Self::WrongOwner => formatter.write_str("credential belongs to a different owner"),
+            Self::WrongDevice => formatter.write_str("credential belongs to a different device"),
+            Self::NotTrusted => formatter.write_str("device trust is not active"),
+            Self::StaleCredentialEpoch => formatter.write_str("credential epoch is stale"),
+            Self::UnexpectedCredentialEpoch => {
+                formatter.write_str("credential epoch transition is invalid")
+            }
+            Self::AlreadyRevoked => formatter.write_str("device trust is already revoked"),
+        }
     }
 }
 
 impl std::error::Error for TrustError {}
+
+impl From<IdentityError> for TrustError {
+    fn from(error: IdentityError) -> Self {
+        Self::Identity(error)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TrustRecord {
@@ -72,19 +90,45 @@ impl TrustRecord {
         }
     }
 
-    pub fn advance_credential_epoch(&mut self, next_epoch: u64) -> Result<(), TrustError> {
-        if next_epoch <= self.accepted_credential_epoch {
+    pub fn accept_successor_credential(
+        &mut self,
+        successor: &DeviceCredential,
+        root: &OwnerRootRecord,
+        issuer: &AuthorityDelegation,
+        minimum_delegation_epoch: u64,
+        transition_id: TransitionId,
+    ) -> Result<(), TrustError> {
+        match self.state {
+            TrustState::Trusted => {}
+            TrustState::Pending => return Err(TrustError::NotTrusted),
+            TrustState::Revoked => return Err(TrustError::AlreadyRevoked),
+        }
+        if successor.owner_id() != self.owner_id {
+            return Err(TrustError::WrongOwner);
+        }
+        if successor.device_id() != self.device_id {
+            return Err(TrustError::WrongDevice);
+        }
+        if successor.credential_epoch() <= self.accepted_credential_epoch {
             return Err(TrustError::StaleCredentialEpoch);
         }
-        let expected = self
+        let expected_epoch = self
             .accepted_credential_epoch
             .checked_add(1)
             .ok_or(TrustError::UnexpectedCredentialEpoch)?;
-        if next_epoch != expected {
+        if successor.credential_epoch() != expected_epoch {
             return Err(TrustError::UnexpectedCredentialEpoch);
         }
 
-        self.accepted_credential_epoch = next_epoch;
+        successor.verify(root, issuer, expected_epoch, minimum_delegation_epoch)?;
+        let next_revision = self
+            .trust_revision
+            .checked_add(1)
+            .ok_or(TrustError::UnexpectedCredentialEpoch)?;
+
+        self.accepted_credential_epoch = expected_epoch;
+        self.trust_revision = next_revision;
+        self.last_transition_id = transition_id;
         Ok(())
     }
 
