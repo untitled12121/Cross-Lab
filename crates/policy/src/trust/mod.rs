@@ -4,8 +4,10 @@ use crosslab_identity::{
     AuthorityDelegation, DeviceCredential, DeviceId, IdentityError, OwnerId, OwnerRootRecord,
 };
 
+mod pairing;
 mod transition;
 
+pub use pairing::{PairingTrustTransition, PairingTrustTransitionError};
 pub use transition::{TrustTransition, TrustTransitionError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -94,6 +96,15 @@ pub struct TrustRecord {
 
 impl TrustRecord {
     pub const fn trusted(
+        owner_id: OwnerId,
+        device_id: DeviceId,
+        credential_epoch: u64,
+        transition_id: TransitionId,
+    ) -> Self {
+        Self::established_from_pairing(owner_id, device_id, credential_epoch, transition_id)
+    }
+
+    pub(super) const fn established_from_pairing(
         owner_id: OwnerId,
         device_id: DeviceId,
         credential_epoch: u64,
