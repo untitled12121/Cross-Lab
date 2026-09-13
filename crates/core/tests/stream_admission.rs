@@ -205,7 +205,7 @@ impl Fixture {
 }
 
 #[test]
-fn valid_single_stream_is_admitted_once_and_consumed_after_finish() {
+fn valid_single_stream_is_admitted_once_and_retired_after_finish() {
     let fixture = Fixture::new();
     let operation = fixture.operation(UsePolicy::SingleStream);
     let operation_id = operation.id();
@@ -223,7 +223,7 @@ fn valid_single_stream_is_admitted_once_and_consumed_after_finish() {
     assert_eq!(admission.active_stream_count(), 0);
     assert_eq!(
         fixture.admit(&mut admission, &open),
-        Err(StreamAdmissionError::DuplicateStreamIndex)
+        Err(StreamAdmissionError::OperationNotFound)
     );
 }
 

@@ -1,0 +1,25 @@
+[package]
+name = "crosslab-m9-networking"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+crosslab-core = { path = "../../crates/core" }
+crosslab-crypto = { path = "../../crates/crypto" }
+crosslab-identity = { path = "../../crates/identity" }
+crosslab-policy = { path = "../../crates/policy" }
+crosslab-protocol = { path = "../../crates/protocol" }
+crosslab-sim = { path = "../../apps/sim" }
+crosslab-transport-quic = { path = "../../transports/quic" }
+iroh = { version = "=1.2.0", default-features = false, features = ["portmapper", "test-utils", "tls-ring"] }
+quinn.workspace = true
+rcgen.workspace = true
+rustls.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }

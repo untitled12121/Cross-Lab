@@ -1,8 +1,10 @@
+use core::fmt;
+
 use crosslab_policy::{CapabilityId, CapabilityVersion, OperationName};
 
 use super::{ProtocolFailure, RequestId, RetryClass};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ControlRequest {
     request_id: RequestId,
     capability_id: CapabilityId,
@@ -56,10 +58,36 @@ impl ControlRequest {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+impl fmt::Debug for ControlRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ControlRequest")
+            .field("request_id", &self.request_id)
+            .field("capability_id", &self.capability_id)
+            .field("capability_version", &self.capability_version)
+            .field("operation_name", &self.operation_name)
+            .field("retry_class", &self.retry_class)
+            .field("body_len", &self.body.len())
+            .finish()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
 pub enum ControlResponseResult {
     Success(Vec<u8>),
     Error(ProtocolFailure),
+}
+
+impl fmt::Debug for ControlResponseResult {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Success(body) => formatter
+                .debug_struct("Success")
+                .field("body_len", &body.len())
+                .finish(),
+            Self::Error(error) => formatter.debug_tuple("Error").field(error).finish(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

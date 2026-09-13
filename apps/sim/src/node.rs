@@ -4,7 +4,7 @@ use crosslab_core::{
     ControlDispatchError, ControlDispatcher, ControlReceiveError, ControlSendError, InboundControl,
     LogicalSession, SessionError, SessionState, TransportConnection,
 };
-use crosslab_policy::{LocalCapability, NetworkClass, PolicyState, TrustRecord};
+use crosslab_policy::{DecisionReason, LocalCapability, NetworkClass, PolicyState, TrustRecord};
 use crosslab_protocol::{
     CancelRequest, CapabilityAdvertisement, ControlRequest, ControlResponse, ControlResponseResult,
     EnvelopeBody, Event, ProtocolFailure, ProtocolWireError, RequestId, SessionClose,
@@ -37,6 +37,7 @@ pub struct SimNode<'a> {
     transport: &'a dyn TransportConnection,
     policy: PolicyState,
     local_capabilities: Vec<LocalCapability>,
+    network_class: NetworkClass,
 }
 
 impl<'a> SimNode<'a> {
@@ -45,6 +46,7 @@ impl<'a> SimNode<'a> {
         transport: &'a dyn TransportConnection,
         policy: PolicyState,
         local_capabilities: Vec<LocalCapability>,
+        network_class: NetworkClass,
         state_capacity: NonZeroUsize,
     ) -> Result<Self, NodeError> {
         if session.state() != SessionState::Active {
@@ -60,6 +62,7 @@ impl<'a> SimNode<'a> {
             transport,
             policy,
             local_capabilities,
+            network_class,
         })
     }
 
@@ -137,7 +140,7 @@ impl<'a> SimNode<'a> {
         self.transport.close();
     }
 
-    pub fn receive_one(&mut self) -> Result<NodeEvent, NodeError> {
+    pub fn receive_one(&mut self, peer_trust: &TrustRecord) -> Result<NodeEvent, NodeError> {
         let frame = match self.transport.try_receive_control() {
             Ok(frame) => frame,
             Err(error) => {
@@ -165,7 +168,8 @@ impl<'a> SimNode<'a> {
                 envelope,
                 &self.policy,
                 &self.local_capabilities,
-                NetworkClass::Local,
+                peer_trust,
+                self.network_class,
             )
         };
         let inbound = match result {
@@ -267,7 +271,11 @@ const fn is_fatal_dispatch(error: ControlDispatchError) -> bool {
         error,
         ControlDispatchError::InvalidSession
             | ControlDispatchError::IncompatibleProtocol
+            | ControlDispatchError::PeerTrustMismatch
+            | ControlDispatchError::PeerTrustRevisionChanged
             | ControlDispatchError::Sequence(_)
             | ControlDispatchError::ResourceLimit
+            | ControlDispatchError::AuthorizationDenied(DecisionReason::UntrustedPeer)
+            | ControlDispatchError::AuthorizationDenied(DecisionReason::RevokedPeer)
     )
 }

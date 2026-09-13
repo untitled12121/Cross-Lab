@@ -69,6 +69,7 @@ async fn m8_authenticated_quinn_carries_capabilities_control_response_and_event(
         &client_transport,
         PolicyState::new(),
         local_capabilities.clone(),
+        NetworkClass::Local,
         nonzero(STATE_CAPACITY),
     )
     .unwrap();
@@ -77,6 +78,7 @@ async fn m8_authenticated_quinn_carries_capabilities_control_response_and_event(
         &server_transport,
         allow_clipboard_policy(fixture.initiator_credential.device_id()),
         local_capabilities,
+        NetworkClass::Local,
         nonzero(STATE_CAPACITY),
     )
     .unwrap();
@@ -85,14 +87,14 @@ async fn m8_authenticated_quinn_carries_capabilities_control_response_and_event(
         .send_capability_advertisement(clipboard_advertisement())
         .unwrap();
     assert!(matches!(
-        eventually_node_event(&mut server).await,
+        eventually_node_event(&mut server, &fixture.initiator_trust).await,
         NodeEvent::CapabilitiesUpdated
     ));
     server
         .send_capability_advertisement(clipboard_advertisement())
         .unwrap();
     assert!(matches!(
-        eventually_node_event(&mut client).await,
+        eventually_node_event(&mut client, &fixture.responder_trust).await,
         NodeEvent::CapabilitiesUpdated
     ));
 
@@ -100,7 +102,9 @@ async fn m8_authenticated_quinn_carries_capabilities_control_response_and_event(
     client
         .send_request(clipboard_request(request_id, b"network-control"))
         .unwrap();
-    let NodeEvent::RequestDispatched(request) = eventually_node_event(&mut server).await else {
+    let NodeEvent::RequestDispatched(request) =
+        eventually_node_event(&mut server, &fixture.initiator_trust).await
+    else {
         panic!("expected authorized control request");
     };
     assert_eq!(request.request_id(), request_id);
@@ -109,7 +113,9 @@ async fn m8_authenticated_quinn_carries_capabilities_control_response_and_event(
     server
         .send_response(request_id, ControlResponseResult::Success(b"ok".to_vec()))
         .unwrap();
-    let NodeEvent::Response(response) = eventually_node_event(&mut client).await else {
+    let NodeEvent::Response(response) =
+        eventually_node_event(&mut client, &fixture.responder_trust).await
+    else {
         panic!("expected correlated control response");
     };
     assert_eq!(response.request_id(), request_id);
@@ -118,7 +124,9 @@ async fn m8_authenticated_quinn_carries_capabilities_control_response_and_event(
     client
         .send_event(clipboard_event(event_id, b"changed"))
         .unwrap();
-    let NodeEvent::Event(event) = eventually_node_event(&mut server).await else {
+    let NodeEvent::Event(event) =
+        eventually_node_event(&mut server, &fixture.initiator_trust).await
+    else {
         panic!("expected negotiated capability event");
     };
     assert_eq!(event.event_id(), event_id);
@@ -229,6 +237,7 @@ async fn m8_reconnect_reauthenticates_with_fresh_authority() {
         &client_transport,
         PolicyState::new(),
         local_capabilities,
+        NetworkClass::Local,
         nonzero(STATE_CAPACITY),
     )
     .unwrap();
@@ -242,7 +251,7 @@ async fn m8_reconnect_reauthenticates_with_fresh_authority() {
 
     server_transport.close();
     eventually_transport_closed(&client_transport).await;
-    eventually_node_transport_loss(&mut client).await;
+    eventually_node_transport_loss(&mut client, &fixture.responder_trust).await;
     assert_eq!(client.session().state(), SessionState::Closed);
     assert_eq!(client.pending_request_count(), 0);
     drop(client);
@@ -264,6 +273,7 @@ async fn m8_reconnect_reauthenticates_with_fresh_authority() {
         &reconnect.client_transport,
         PolicyState::new(),
         clipboard_local_capabilities(),
+        NetworkClass::Local,
         nonzero(STATE_CAPACITY),
     )
     .unwrap();
@@ -635,10 +645,10 @@ fn revoked_responder(fixture: &AuthFixture) -> TrustRecord {
     revoked
 }
 
-async fn eventually_node_event(node: &mut SimNode<'_>) -> NodeEvent {
+async fn eventually_node_event(node: &mut SimNode<'_>, peer_trust: &TrustRecord) -> NodeEvent {
     timeout(WAIT, async {
         loop {
-            match node.receive_one() {
+            match node.receive_one(peer_trust) {
                 Ok(event) => return event,
                 Err(NodeError::Receive(ControlReceiveError::Empty)) => {
                     tokio::task::yield_now().await
@@ -651,10 +661,10 @@ async fn eventually_node_event(node: &mut SimNode<'_>) -> NodeEvent {
     .expect("node event was not delivered before timeout")
 }
 
-async fn eventually_node_transport_loss(node: &mut SimNode<'_>) {
+async fn eventually_node_transport_loss(node: &mut SimNode<'_>, peer_trust: &TrustRecord) {
     timeout(WAIT, async {
         loop {
-            match node.receive_one() {
+            match node.receive_one(peer_trust) {
                 Err(NodeError::Receive(ControlReceiveError::Closed)) => return,
                 Err(NodeError::Receive(ControlReceiveError::Empty)) => {
                     tokio::task::yield_now().await

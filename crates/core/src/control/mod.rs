@@ -5,7 +5,7 @@ use std::{
 
 use crosslab_policy::{
     AuthorizationContext, DecisionEffect, DecisionReason, LocalCapability, NetworkClass,
-    PolicyState, TrustState,
+    PolicyState, TrustRecord, TrustState,
 };
 use crosslab_protocol::{
     ControlEnvelope, ControlRequest, ControlResponse, ControlSequence, EnvelopeBody, Event,
@@ -18,6 +18,8 @@ use crate::SessionContext;
 pub enum ControlDispatchError {
     InvalidSession,
     IncompatibleProtocol,
+    PeerTrustMismatch,
+    PeerTrustRevisionChanged,
     Sequence(SequenceError),
     DuplicateRequest,
     UnknownRequest,
@@ -129,6 +131,7 @@ impl ControlDispatcher {
         envelope: ControlEnvelope,
         policy: &PolicyState,
         local_capabilities: &[LocalCapability],
+        peer_trust: &TrustRecord,
         network_class: NetworkClass,
     ) -> Result<InboundControl, ControlDispatchError> {
         if envelope.session_id() != context.session_id() {
@@ -137,15 +140,21 @@ impl ControlDispatcher {
         if envelope.protocol_version() != context.protocol_version() {
             return Err(ControlDispatchError::IncompatibleProtocol);
         }
+        self.validate_peer_trust(context, peer_trust)?;
         self.receive_sequence.accept(envelope.message_seq())?;
 
         match envelope.body() {
             EnvelopeBody::CapabilityAdvertisement(advertisement) => Ok(
                 InboundControl::CapabilityAdvertisement(advertisement.clone()),
             ),
-            EnvelopeBody::ControlRequest(request) => {
-                self.accept_request(context, request, policy, local_capabilities, network_class)
-            }
+            EnvelopeBody::ControlRequest(request) => self.accept_request(
+                context,
+                request,
+                policy,
+                local_capabilities,
+                peer_trust,
+                network_class,
+            ),
             EnvelopeBody::ControlResponse(response) => {
                 if self
                     .pending_outgoing
@@ -171,6 +180,35 @@ impl ControlDispatcher {
             }
             EnvelopeBody::SessionClose(close) => Ok(InboundControl::SessionClose(close.clone())),
         }
+    }
+
+    fn validate_peer_trust(
+        &self,
+        context: &SessionContext,
+        peer_trust: &TrustRecord,
+    ) -> Result<(), ControlDispatchError> {
+        if peer_trust.owner_id() != context.owner_id()
+            || peer_trust.device_id() != context.peer_device_id()
+        {
+            return Err(ControlDispatchError::PeerTrustMismatch);
+        }
+        match peer_trust.state() {
+            TrustState::Pending => {
+                return Err(ControlDispatchError::AuthorizationDenied(
+                    DecisionReason::UntrustedPeer,
+                ));
+            }
+            TrustState::Revoked => {
+                return Err(ControlDispatchError::AuthorizationDenied(
+                    DecisionReason::RevokedPeer,
+                ));
+            }
+            TrustState::Trusted => {}
+        }
+        if peer_trust.trust_revision() != context.peer_trust_revision() {
+            return Err(ControlDispatchError::PeerTrustRevisionChanged);
+        }
+        Ok(())
     }
 
     fn validate_outbound_body(&self, body: &EnvelopeBody) -> Result<(), ControlDispatchError> {
@@ -207,6 +245,7 @@ impl ControlDispatcher {
         request: &ControlRequest,
         policy: &PolicyState,
         local_capabilities: &[LocalCapability],
+        peer_trust: &TrustRecord,
         network_class: NetworkClass,
     ) -> Result<InboundControl, ControlDispatchError> {
         let negotiated = context
@@ -243,8 +282,8 @@ impl ControlDispatcher {
             request.capability_id().clone(),
             request.capability_version(),
             request.operation_name().clone(),
-            TrustState::Trusted,
-            context.peer_trust_revision(),
+            peer_trust.state(),
+            peer_trust.trust_revision(),
             local.clone(),
             network_class,
         );

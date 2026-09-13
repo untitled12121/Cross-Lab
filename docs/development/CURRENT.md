@@ -8,109 +8,188 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 ## Current Milestone
 
-**M9 — Remote Networking ADR**
+**M9 — Remote Networking ADR: Tasks 1–3 and the foundation security hardening gate are GREEN; implementation is paused for manual review before Task 4.**
 
-M1–M8 are complete and integrated into canonical `main`. M9 is the next Phase 1 milestone; M10 remains the first Linux + Android platform vertical slice after the remote-networking architecture is selected.
+M1–M8 are complete on canonical `main`. M9 is isolated on `m9-remote-networking` in draft PR #19. M10 remains the first Linux + Android platform vertical slice after the remote-networking architecture is selected.
 
-## Canonical M8 Integration
+## Canonical Baseline
 
-M8 — Quinn Transport is integrated and independently verified on `main`.
+- M8 final feature head: `a93c6367be3174241cbab65b870f16f1543971f9`, CI `34688453044` — full gate passed.
+- PR #18 merged as `4a225976a16f34d7485fd259cacf767c84a60706`.
+- Post-merge `main` CI `34688527098` — full gate passed.
+- Canonical M8 documentation head: `ab602d62181b3dcba056874d0013e40522a68e8f`, CI `34688627614` — full gate passed.
+- `m9-remote-networking` was created from exactly `ab602d62181b3dcba056874d0013e40522a68e8f`.
 
-- final feature head: `a93c6367be3174241cbab65b870f16f1543971f9`;
-- exact feature-head CI: `34688453044` — locked metadata, rustfmt, workspace check, Clippy `-D warnings`, and full workspace tests passed;
-- PR #18: `feat: implement M8 Quinn transport` — merged;
-- canonical merge commit: `4a225976a16f34d7485fd259cacf767c84a60706`;
-- post-merge canonical-main CI: `34688527098` — the same full required gate passed.
+## M9 Approved Architecture and Plan
 
-The merged result is the factual M8 baseline for M9.
+Design: `docs/plans/phase-1/M9-remote-networking-design.md`.
 
-## M8 Result
+Plan: `docs/plans/phase-1/M9-remote-networking.md`.
 
-M8 adds the first real encrypted Cross-Lab IP transport while preserving the existing transport-neutral domain architecture.
+Foundation hardening plan: `docs/plans/phase-1/M9-foundation-security-hardening.md`.
 
-Implemented and verified behavior includes:
+Security assessment: `security/M9-FOUNDATION-HARDENING-ASSESSMENT.md`.
 
-- isolated `crosslab-transport-quic` adapter using Quinn `0.11.11` on Tokio `1.53.1`;
-- accepted ADR-0008 TLS-exporter channel binding profile `quic-tls-exporter-v1` with 32-byte output, label `EXPORTER-Cross-Lab-QUIC-Channel-Binding-v1`, and context `crosslab.quic.transport.v1`;
-- private bounded `u32` big-endian QUIC record framing with declared-length validation before allocation;
-- ownership-preserving `TooLarge`, `Full`, and `Closed` transport outcomes;
-- bounded ordered control bridge with local backpressure and terminal remote-close propagation;
-- bounded unidirectional data-stream bridge with opening-frame admission, chunk backpressure, FIN, RESET, STOP, cancellation, connection-loss propagation, and joined connection-owned tasks;
-- existing Cross-Lab session-auth hello/proof flow over the Quinn TLS-exporter binding without a second authentication transcript or certificate-to-`DeviceId` mapping;
-- ordinary capability advertisement, control request/response/event behavior through the existing `SimNode` path over Quinn;
-- operation-bound data streams through the existing `SimStreamRuntime` path over Quinn;
-- reconnect using a fresh Quinn connection, exporter binding, nonces/proofs, `SessionId`, sequence state, capability state, and operation authority;
-- replayed old proofs and old operation/session authority rejected on reconnect;
-- accepted signed peer revocation terminating active authority and preventing a fresh Cross-Lab session from reaching `Active`;
-- bounded saturation, cancellation, active-stream shutdown, and task joining.
+Durable plan checkpoint: `9add4d7e809d5579fed71b5b279ac9bc7481fc90`, CI `34691111935` — lockfile, rustfmt, workspace check, Clippy `-D warnings`, and full workspace tests passed.
 
-No Quinn/Tokio/rustls/socket/TLS-certificate type entered the public/domain state of `crosslab-core`, `crosslab-protocol`, `crosslab-policy`, or `crosslab-identity`. Quinn/TLS protects the connection but does not define Cross-Lab identity or policy authority.
+Approved direction:
 
-## M8 Resource Defaults
+```text
+Cross-Lab identity / trust / policy
+             |
+      LogicalSession
+             |
+     TransportConnection
+        /            \
+ local/LAN        remote/Internet
+ Quinn M8          Iroh candidate
+                      |
+              direct path or relay
+```
 
-`QuicTransportConfig::default()` uses explicit nonzero bounds:
+M9 invariants:
 
-- control queue: 8 records;
-- incoming stream queue: 8 streams;
-- outgoing stream slots: 8 streams;
-- per-stream chunk queue: 8 chunks;
-- maximum control record: `256 KiB + 4` bytes;
-- maximum opening record: `4 KiB + 4` bytes;
-- maximum chunk: `64 KiB`;
-- remote unidirectional stream limit: 32;
-- remote bidirectional stream limit: 1;
-- stream receive window: `512 KiB`;
-- connection receive window: `4 MiB`;
-- idle timeout: 30 seconds.
+- Quinn remains the verified local/LAN baseline.
+- Iroh `1.2.0` is evaluated first as an isolated remote/NAT/relay candidate; rust-libp2p remains conditional research.
+- Iroh `EndpointId`, `SecretKey`, relay identity/credentials, addresses, and paths never become Cross-Lab identity/trust/policy authority.
+- Required Iroh tests use `presets::Minimal`, explicit address/relay data, and no mandatory n0/Cross-Lab public infrastructure.
+- Iroh must reproduce ADR-0008 `quic-tls-exporter-v1` exactly after a full handshake; no substitute binding is allowed silently.
+- No 0-RTT authority.
+- Every Iroh-backed Cross-Lab session remains `NetworkClass::Remote` for its whole lifetime, including relay/direct path changes.
+- Path changes inside one protected connection do not change binding, `SessionId`, sequence state, policy classification, or operation authority.
+- A new Iroh connection is a full Cross-Lab reconnect with fresh authentication and authorization state.
+- Candidate dependencies stay under `experiments/m9-networking` until ADR-0009 selects a production architecture.
 
-These are adapter defaults, not protocol permission or capability authority.
+## Completed M9 Work
 
-## Dependency and Research State
+### Task 1 — Quinn baseline and typed metrics
 
-M8 production baseline:
+Added non-publishable `experiments/m9-networking` with no Iroh/libp2p dependency at this checkpoint. It provides typed evaluation configuration/metrics, deterministic TSV output, and a raw Quinn `0.11.11` loopback baseline measuring protected connect, 32-byte control RTT, bounded unidirectional bulk throughput, and shutdown without weakening the production Quinn adapter boundary.
 
-- Quinn `0.11.11`, pinned with only `runtime-tokio` + `rustls-ring`;
-- Tokio `1.53.1`;
-- rustls `0.23.44` only where concrete loopback trust construction requires its public types;
-- rcgen `0.14.10` dev-only for ephemeral loopback certificates.
+RED:
 
-The uploaded Quinn repository was inspected as research/reference material, and behavior relevant to the adapter was reconciled against the pinned `quinn-0.11.11` API. No Iroh or rust-libp2p dependency entered M8.
+- head `6ce81462d3489a8b5855f39978a81224f841fa09`;
+- CI `34692635013` failed check only on the intentionally missing baseline/config/metrics APIs.
 
-`.github/workflows/fuzz.yml` was not applicable to M8 because M8 did not change its watched protocol/policy/fuzz paths; no fuzz pass is claimed.
+GREEN:
 
-## Intentional M8 Limits
+- verified implementation head `785f93f914f454b1c902c76fe101c31d1db14e2a`;
+- CI `34692865511` passed the full gate;
+- documentation checkpoint `ea64385f04af076d41e263f0d2fd531ab7101f91`, CI `34692957283` passed.
 
-M8 does not implement discovery, NAT traversal, relay selection, Iroh, rust-libp2p, route scoring/migration, TCP/TLS fallback, datagram consumers, production certificate provisioning, persistence, UI/platform adapters, privileged services, or installable Linux/Android applications.
+### Task 2 — Direct Iroh and ADR-0008 exporter compatibility
 
-Those exclusions are deliberate milestone boundaries, not missing M8 requirements.
+Added Iroh `1.2.0` only to `experiments/m9-networking` with `default-features = false` and reviewed experiment features `portmapper`, `test-utils`, and `tls-ring`.
 
-## Exact Next Development Task
+A temporary branch-only workflow generated the dependency lockfile because the connector execution environment did not provide a usable local Cargo checkout. The workflow committed `Cargo.lock` as `github-actions[bot]` at `cf515b9f2ae75cec9ce18291090d79167c539343` and was then removed at `320ba1691bb0f42edc912da5d7375f6cada2b7d0`. The bot has no runtime or architectural role in Cross-Lab.
 
-Begin **M9 — Remote Networking ADR**.
+Implemented:
 
-Per the Master Architecture, M9 must prototype and measure Iroh and, where justified, rust-libp2p approaches against the verified Quinn baseline, then select the remote connectivity/NAT/relay architecture through an ADR.
+- `candidate::binding` deriving the exact ADR-0008 profile: `quic-tls-exporter-v1`, 32 bytes, label `EXPORTER-Cross-Lab-QUIC-Channel-Binding-v1`, context `crosslab.quic.transport.v1`;
+- explicit Minimal Iroh loopback endpoints with relay disabled;
+- direct connection using the server's explicit `EndpointAddr`, not transport identity alone;
+- connection lifetime retained privately until Task 3 introduced a real experiment-only stream consumer;
+- clean owned endpoint shutdown.
 
-Start M9 by:
+Deterministic evidence proves:
 
-1. reading the Master Architecture, M8 design/ADR, and current transport/session contracts;
-2. inspecting the uploaded Quinn, Iroh, and rust-libp2p research repositories, including versions, licenses, platform/runtime constraints, NAT traversal/relay behavior, identity coupling, resource model, and maintenance surface;
-3. defining explicit evaluation criteria and benchmark/scenario coverage before choosing a library or architecture;
-4. prototyping only the smallest isolated candidates needed to gather evidence;
-5. measuring candidates against the M8 Quinn baseline for connection establishment, direct-path behavior, relay/fallback behavior where testable, reconnect/failure semantics, resource cost, integration complexity, and preservation of Cross-Lab identity/session boundaries;
-6. recording the selected remote connectivity architecture in an ADR before introducing production Iroh/libp2p dependencies or remote relay authority.
+- both peers derive identical exporter bytes on one full Iroh connection;
+- a fresh Iroh connection derives different exporter bytes;
+- Minimal endpoints without explicit address data cannot connect merely from `EndpointId`;
+- required tests use no public/n0 infrastructure.
 
-M9 must not create a second Cross-Lab session/authentication model or make third-party endpoint/peer identifiers authoritative Cross-Lab identity.
+RED:
 
-## Phase 1 Completion Boundary
+- head `c62c683fa55333c568774611dceda5fe346e0c44`;
+- CI `34693322026` passed lockfile/format and failed check only because the intended `candidate` implementation did not exist.
 
-Phase 1 is not complete yet. After M9 selects the remote networking architecture, M10 must deliver the first platform vertical slice described by the Master Architecture before Phase 1 can be closed for real-device testing.
+GREEN:
+
+- verified implementation head `3f8aada0e6e3208664dc1d2efb2e25a98fb95752`;
+- CI `34693556913` passed lockfile verification, rustfmt, workspace check, Clippy `-D warnings`, and full workspace tests;
+- documentation checkpoint `d28cae010745feae038067ed3f83584809fbe495`.
+
+### Task 3 — Bounded record framing and reserved Iroh control bridge
+
+Added an experiment-local control transport surface over the fully established Iroh connection. No production/domain transport API was generalized and no new Cross-Lab domain error was introduced.
+
+Implemented:
+
+- `candidate::runtime::CandidateConfig` with independent typed limits matching all M8 `QuicTransportConfig::default()` semantic limits;
+- private runtime terminal state using an atomic flag plus Tokio watch notification;
+- owned `TaskRegistry` whose `close_and_take()` stops new task admission before returning all handles for joined shutdown;
+- u32 big-endian record framing with size validation before body allocation, exact-limit acceptance, empty-record rejection, and truncated-body failure;
+- one explicitly reserved Iroh bidirectional control stream, promoted only after a private framed `crosslab-m9-control-v1` marker is received;
+- bounded Tokio mpsc outbound/inbound queues sized by `CandidateConfig`;
+- synchronous nonblocking control APIs preserving existing `ControlSendError::{Full, TooLarge, Closed}` ownership semantics and `ControlReceiveError::{Empty, Closed}`;
+- connection-close monitoring and terminal propagation;
+- joined bridge shutdown followed by owned endpoint shutdown;
+- experiment-only `DirectPair` Iroh connection accessors, added only when Task 3 became their first real consumer. No Iroh type was added to a production/domain public API.
+
+RED:
+
+- formatted RED head `78084e1bb1821468e8a4e22fa90df045de6a7469`;
+- CI `34694277733` passed lockfile/format and failed check only on the intentionally absent `candidate::{control,record,runtime}` modules and connection accessors.
+
+GREEN:
+
+- implementation commit `9c58d20185322416de4a25dc2fe42b6a636710b2`;
+- verified formatted head `8698db4561696a38e4bda7b35500ae3c8d8da663`;
+- CI `34694599723` passed lockfile verification, rustfmt, workspace check, Clippy `-D warnings`, and the complete workspace test suite;
+- all eight Task 3 tests passed: config-limit parity, exact-limit record round trip, hostile declared-length rejection before body allocation, truncated-body rejection, oversize ownership-preserving rejection, ordered bounded backpressure, peer-close propagation, and joined shutdown.
+
+### Foundation security hardening gate
+
+The owner-requested pre-Task-4 hardening pass is complete. It tightened existing invariants without changing the approved M9 architecture.
+
+Completed work:
+
+- made simulator network classification explicit and locally authoritative;
+- validated inbound peer trust provenance, trust state, and authenticated trust revision before policy dispatch;
+- added fail-closed regressions for `Remote + LocalOnly`, local revocation, and wrong-device trust records;
+- reclaimed terminal `StreamAdmission` operation authority so bounded registration capacity is reusable after completion, expiry, or cancellation;
+- made experiment task admission runtime-enforced so post-close futures are dropped instead of detached and owned tasks are joined;
+- redacted connection endpoint descriptions from ordinary `Debug` output;
+- pinned mutable CI/fuzz inputs, committed the fuzz lockfile, and added a required RustSec audit gate;
+- reconciled the simulator's single-stream reuse expectation with the now-retired terminal operation contract.
+
+Verification:
+
+- exact code head `26b9ecd8abf8f7386e440bc4862a6e259d1654fe`;
+- Rust CI `34724799407` passed lockfile verification, `cargo audit`, rustfmt, workspace check, Clippy `-D warnings`, and all workspace tests;
+- Fuzz Smoke `34724799451` passed fuzz lockfile verification, formatting, and all five bounded fuzz targets;
+- focused reconciliation run `34724713810` passed the affected `s007` stream scenario before the complete gate;
+- `cargo audit` found no vulnerability failure and one unsuppressed maintenance warning: `paste 1.0.15` / `RUSTSEC-2024-0436`, traced transitively through the isolated Iroh candidate networking stack. Re-evaluate it with candidate upgrades and before ADR-0009 promotes an architecture.
+
+The technical hardening gate is satisfied. The separate manual-review hold below still applies before Task 4.
+
+## Required Evidence Still Outstanding
+
+M9 still must prove bounded uni-stream semantics, the experiment-only `TransportConnection` implementation, existing Cross-Lab session authentication over Iroh, lifecycle/reconnect/revocation behavior, owner-controlled relay-only operation, relay/direct path invariants, controlled NAT traversal/recovery evidence, comparable resource/performance measurements, and the ADR-0009 decision.
+
+Loopback relay tests alone are not NAT evidence. Real Android/mobile lifecycle remains an explicit M10 obligation and is not claimed by M9.
+
+## Review Hold and Exact Next Task
+
+**Do not begin Task 4 until the current Tasks 1–3 implementation and completed foundation hardening checkpoint have been manually reviewed and explicitly approved.**
+
+After approval, the exact next task is **Task 4 — bounded uni-stream bridge and experiment-only `TransportConnection`** from `docs/plans/phase-1/M9-remote-networking.md`.
+
+Task 4 must cover ordered opening/chunks, exact limits, stream-slot and chunk-queue saturation, sender reset/drop -> `Cancelled`, receiver stop/cancel -> sender `Closed`, clean FIN -> `Finished`, connection loss, and joined shutdown. It may implement `TransportConnection` only inside the non-publishable experiment; no Iroh type may enter a production/domain public API.
+
+## Repository Hygiene Note
+
+Two empty temporary refs, `m9-task3-red-temp` and `m9-task3-work`, were accidentally created from Task 2 checkpoint `d28cae010745feae038067ed3f83584809fbe495` while preparing Task 3. No work was committed to them. They are not part of PR #19 and are safe to delete.
+
+`main` branch protection is currently disabled. This is an external repository-administration setting. When administration capability is available, enable protection with force-push/deletion disabled and require the Rust CI check.
 
 ## Resume Procedure
 
-1. inspect canonical `main`, active branches/PRs, recent commits/workflows, and this file;
-2. read the Master Architecture, active plan, relevant ADRs, and focused transport/session specifications;
-3. reconcile documentation with actual code before changing behavior;
-4. inspect relevant uploaded research repositories before implementing related systems;
-5. work in small verifiable milestones and keep `CURRENT.md` current;
-6. preserve architecture boundaries and record material changes through ADRs;
-7. merge only exact verified heads and verify canonical `main` after integration.
+1. verify `main`, `m9-remote-networking`, PR #19, recent commits/workflows, and this file;
+2. read the Master Architecture, approved M9 design/plan, ADR-0008, the hardening assessment, and existing transport/session contracts;
+3. inspect relevant Iroh/Quinn research/API behavior before related implementation;
+4. preserve the current manual-review hold until explicitly approved;
+5. after approval, execute each remaining task RED -> verified failure -> minimal GREEN -> full gate;
+6. keep candidate dependencies isolated and `CURRENT.md` current with exact commits/CI;
+7. trigger libp2p only if the plan's evidence rule is actually satisfied;
+8. merge only an exact verified reviewed M9 head and verify canonical `main` afterward.
