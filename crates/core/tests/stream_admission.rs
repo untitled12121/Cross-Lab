@@ -128,13 +128,8 @@ impl Fixture {
             &issuer_key,
         )
         .unwrap();
-        let peer_trust = establish_trust(
-            &responder_credential,
-            &root,
-            &delegation,
-            &issuer_key,
-            0x17,
-        );
+        let peer_trust =
+            establish_trust(&responder_credential, &root, &delegation, &issuer_key, 0x17);
         let ranges = [ProtocolRange::new(1, 0, 0).unwrap()];
         let features = FeatureSet::new(&[], &[]).unwrap();
         let binding = ChannelBinding::new("in-process-test", vec![0x18; 32]);
