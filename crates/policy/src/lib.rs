@@ -19,5 +19,6 @@ pub use operation::{
     UsePolicy,
 };
 pub use trust::{
-    TransitionId, TrustError, TrustRecord, TrustState, TrustTransition, TrustTransitionError,
+    CredentialRotationError, TransitionId, TrustError, TrustRecord, TrustState, TrustTransition,
+    TrustTransitionError,
 };
