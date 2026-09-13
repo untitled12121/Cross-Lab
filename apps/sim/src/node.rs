@@ -272,6 +272,7 @@ const fn is_fatal_dispatch(error: ControlDispatchError) -> bool {
         ControlDispatchError::InvalidSession
             | ControlDispatchError::IncompatibleProtocol
             | ControlDispatchError::PeerTrustMismatch
+            | ControlDispatchError::PeerCredentialEpochChanged
             | ControlDispatchError::PeerTrustRevisionChanged
             | ControlDispatchError::Sequence(_)
             | ControlDispatchError::ResourceLimit
