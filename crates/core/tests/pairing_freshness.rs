@@ -1,8 +1,23 @@
 use crosslab_core::{
-    PairingId, PairingInstant, PairingInvitation, PairingInvitationError, PairingInvitationState,
-    PairingSecret,
+    PairingConfirmationRole, PairingId, PairingInstant, PairingInvitation, PairingInvitationError,
+    PairingInvitationState, PairingSecret, PairingTranscript,
 };
+use crosslab_crypto::SigningKey;
 use crosslab_identity::{DeviceId, OwnerId};
+
+fn transcript() -> PairingTranscript {
+    PairingTranscript::new(
+        1,
+        PairingId::from_bytes([0x31; 16]),
+        OwnerId::from_bytes([0x32; 32]),
+        DeviceId::from_bytes([0x33; 32]),
+        SigningKey::from_secret_bytes([0x34; 32]).verifying_key(),
+        [0x35; 32],
+        DeviceId::from_bytes([0x36; 32]),
+        SigningKey::from_secret_bytes([0x37; 32]).verifying_key(),
+        [0x38; 32],
+    )
+}
 
 #[test]
 fn pairing_identifiers_and_secret_have_secure_generation_apis() {
@@ -12,7 +27,11 @@ fn pairing_identifiers_and_secret_have_secure_generation_apis() {
 
     let first_secret = PairingSecret::generate().unwrap();
     let second_secret = PairingSecret::generate().unwrap();
-    assert_ne!(first_secret.as_bytes(), second_secret.as_bytes());
+    let transcript = transcript();
+    assert_ne!(
+        transcript.confirmation(PairingConfirmationRole::Inviter, &first_secret),
+        transcript.confirmation(PairingConfirmationRole::Inviter, &second_secret)
+    );
 }
 
 #[test]
