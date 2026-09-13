@@ -26,7 +26,7 @@ use crosslab_sim::{
 
 const CONTROL_CAPACITY: usize = 16;
 const STATE_CAPACITY: usize = 16;
-const JOINER_EPOCH: u64 = 5;
+const JOINER_EPOCH: u64 = 0;
 const INITIATOR_NONCE: [u8; 32] = [0x41; 32];
 const RESPONDER_NONCE: [u8; 32] = [0x42; 32];
 
@@ -121,6 +121,7 @@ impl M5Fixture {
     }
 
     fn complete_pairing(&self, credential_epoch: u64) -> (DeviceCredential, TrustRecord) {
+        assert_eq!(credential_epoch, JOINER_EPOCH);
         let mut inviter =
             PairingInviterFlow::new(self.invitation(), self.inviter_hello, self.joiner_hello)
                 .unwrap();
@@ -140,12 +141,7 @@ impl M5Fixture {
             .unwrap();
 
         let credential = inviter
-            .issue_joiner_credential(
-                &self.root,
-                &self.delegation,
-                &self.issuer_key,
-                credential_epoch,
-            )
+            .issue_initial_joiner_credential(&self.root, &self.delegation, &self.issuer_key)
             .unwrap();
         let accepted = joiner
             .accept_credential(&self.root, &self.delegation, &credential, &self.joiner_key)
@@ -512,7 +508,7 @@ fn stale_accepted_credential_epoch_is_rejected_before_session_activation() {
     let stale_trust = TrustRecord::trusted(
         fixture.owner_id,
         fixture.joiner_device_id,
-        JOINER_EPOCH - 1,
+        JOINER_EPOCH + 1,
         TransitionId::from_bytes([0x80; 32]),
     );
     let pair = transport_pair([0x81; 32]);
