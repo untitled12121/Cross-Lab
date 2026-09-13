@@ -9,8 +9,9 @@ mod transport;
 pub use control::{ControlDispatchError, ControlDispatcher, InboundControl};
 pub use pairing::{
     PairingConfirmationError, PairingConfirmationRole, PairingFlowError, PairingId,
-    PairingInvitation, PairingInvitationError, PairingInvitationState, PairingInviterFlow,
-    PairingInviterState, PairingJoinerFlow, PairingJoinerState, PairingSecret, PairingTranscript,
+    PairingInstant, PairingInvitation, PairingInvitationError, PairingInvitationState,
+    PairingInviterFlow, PairingInviterState, PairingJoinerFlow, PairingJoinerState, PairingSecret,
+    PairingTranscript,
 };
 pub use session::{
     LogicalSession, NegotiatedCapability, SessionActivation, SessionAuthError, SessionAuthProof,
