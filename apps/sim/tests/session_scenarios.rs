@@ -11,8 +11,8 @@ use crosslab_identity::{
 };
 use crosslab_policy::{
     CapabilityId, CapabilityVersion, CapabilityVersionRange, DecisionReason, LocalCapability,
-    NetworkClass, OperationName, PolicyRule, PolicyState, RuleEffect, RuleId, TransitionId,
-    TrustRecord,
+    NetworkClass, OperationName, PairingTrustTransition, PolicyRule, PolicyState, RuleEffect,
+    RuleId, TransitionId, TrustRecord,
 };
 use crosslab_protocol::{
     CapabilityAdvertisement, CapabilityAdvertisementEntry, ControlEnvelope, ControlRequest,
@@ -27,6 +27,69 @@ use crosslab_sim::{
 
 const CONTROL_CAPACITY: usize = 16;
 const STATE_CAPACITY: usize = 16;
+
+fn establish_trust(
+    credential: &DeviceCredential,
+    root: &OwnerRootRecord,
+    delegation: &AuthorityDelegation,
+    issuer_key: &SigningKey,
+    transition_byte: u8,
+) -> TrustRecord {
+    let initial_credential = DeviceCredential::issue_for_public_key(
+        credential.owner_id(),
+        credential.device_id(),
+        credential.device_public_key(),
+        0,
+        root,
+        delegation,
+        issuer_key,
+    )
+    .unwrap();
+    let transition = PairingTrustTransition::issue(
+        &initial_credential,
+        TransitionId::from_bytes([transition_byte; 32]),
+        [transition_byte.wrapping_add(1); 32],
+        root,
+        delegation,
+        issuer_key,
+        delegation.delegation_epoch(),
+    )
+    .unwrap();
+    let mut trust = transition
+        .establish(
+            &initial_credential,
+            root,
+            delegation,
+            delegation.delegation_epoch(),
+        )
+        .unwrap();
+
+    for epoch in 1..=credential.credential_epoch() {
+        let successor = DeviceCredential::issue_for_public_key(
+            credential.owner_id(),
+            credential.device_id(),
+            credential.device_public_key(),
+            epoch,
+            root,
+            delegation,
+            issuer_key,
+        )
+        .unwrap();
+        let mut transition_id = [transition_byte; 32];
+        transition_id[..8].copy_from_slice(&epoch.to_be_bytes());
+        trust
+            .accept_successor_credential(
+                &successor,
+                root,
+                delegation,
+                delegation.delegation_epoch(),
+                TransitionId::from_bytes(transition_id),
+            )
+            .unwrap();
+    }
+
+    trust
+}
 
 struct Fixture {
     owner_id: OwnerId,
@@ -75,17 +138,19 @@ impl Fixture {
             &issuer_key,
         )
         .unwrap();
-        let initiator_trust = TrustRecord::trusted(
-            owner_id,
-            initiator_credential.device_id(),
-            initiator_credential.credential_epoch(),
-            TransitionId::from_bytes([0x37; 32]),
+        let initiator_trust = establish_trust(
+            &initiator_credential,
+            &root,
+            &delegation,
+            &issuer_key,
+            0x37,
         );
-        let responder_trust = TrustRecord::trusted(
-            owner_id,
-            responder_credential.device_id(),
-            responder_credential.credential_epoch(),
-            TransitionId::from_bytes([0x38; 32]),
+        let responder_trust = establish_trust(
+            &responder_credential,
+            &root,
+            &delegation,
+            &issuer_key,
+            0x38,
         );
 
         Self {
