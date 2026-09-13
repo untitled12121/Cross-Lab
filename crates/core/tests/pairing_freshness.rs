@@ -78,5 +78,8 @@ fn invitation_rejects_non_forward_deadline() {
         now,
     );
 
-    assert_eq!(result, Err(PairingInvitationError::InvalidDeadline));
+    assert!(matches!(
+        result,
+        Err(PairingInvitationError::InvalidDeadline)
+    ));
 }
