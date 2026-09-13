@@ -2,9 +2,7 @@ use crosslab_core::{
     PairingId, PairingInvitation, PairingInviterFlow, PairingJoinerFlow, PairingSecret,
 };
 use crosslab_crypto::SigningKey;
-use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceId, OwnerId, OwnerRootRecord,
-};
+use crosslab_identity::{AuthorityDelegation, AuthorityRole, DeviceId, OwnerId, OwnerRootRecord};
 use crosslab_protocol::{PairingHello, PairingRole};
 
 #[test]
