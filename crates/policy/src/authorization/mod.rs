@@ -4,6 +4,10 @@ use crosslab_identity::DeviceId;
 
 use crate::{CapabilityId, CapabilityVersion, LocalCapability, OperationName, TrustState};
 
+mod approval;
+
+pub use approval::{ApprovalError, ApprovalInstant, OwnerApprovalEvidence, VerifiedApproval};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SessionId([u8; 32]);
 
@@ -92,25 +96,6 @@ impl ApprovalScope {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VerifiedApproval {
-    obligation: Obligation,
-    scope: ApprovalScope,
-}
-
-impl VerifiedApproval {
-    pub fn owner_confirmation(scope: ApprovalScope) -> Self {
-        Self {
-            obligation: Obligation::OwnerConfirmation,
-            scope,
-        }
-    }
-
-    fn satisfies(&self, obligation: Obligation, scope: &ApprovalScope) -> bool {
-        self.obligation == obligation && self.scope == *scope
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthorizationContext {
     source_device_id: DeviceId,
     destination_device_id: DeviceId,
@@ -122,6 +107,7 @@ pub struct AuthorizationContext {
     trust_revision: u64,
     local_capability: LocalCapability,
     network_class: NetworkClass,
+    local_time: ApprovalInstant,
     verified_approvals: Vec<VerifiedApproval>,
 }
 
@@ -138,6 +124,7 @@ impl AuthorizationContext {
         trust_revision: u64,
         local_capability: LocalCapability,
         network_class: NetworkClass,
+        local_time: ApprovalInstant,
     ) -> Self {
         Self {
             source_device_id,
@@ -150,6 +137,7 @@ impl AuthorizationContext {
             trust_revision,
             local_capability,
             network_class,
+            local_time,
             verified_approvals: Vec::new(),
         }
     }
@@ -340,10 +328,9 @@ impl PolicyState {
         let missing = required
             .into_iter()
             .filter(|obligation| {
-                !context
-                    .verified_approvals
-                    .iter()
-                    .any(|approval| approval.satisfies(*obligation, &scope))
+                !context.verified_approvals.iter().any(|approval| {
+                    approval.satisfies(*obligation, &scope, context.local_time)
+                })
             })
             .collect::<Vec<_>>();
 
