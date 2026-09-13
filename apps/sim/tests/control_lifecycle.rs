@@ -136,20 +136,10 @@ impl Fixture {
             &issuer_key,
         )
         .unwrap();
-        let initiator_trust = establish_trust(
-            &initiator_credential,
-            &root,
-            &delegation,
-            &issuer_key,
-            0xb7,
-        );
-        let responder_trust = establish_trust(
-            &responder_credential,
-            &root,
-            &delegation,
-            &issuer_key,
-            0xb8,
-        );
+        let initiator_trust =
+            establish_trust(&initiator_credential, &root, &delegation, &issuer_key, 0xb7);
+        let responder_trust =
+            establish_trust(&responder_credential, &root, &delegation, &issuer_key, 0xb8);
 
         Self {
             owner_id,

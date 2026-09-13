@@ -27,12 +27,7 @@ fn establish_initial_trust(
     )
     .unwrap();
     transition
-        .establish(
-            credential,
-            root,
-            delegation,
-            delegation.delegation_epoch(),
-        )
+        .establish(credential, root, delegation, delegation.delegation_epoch())
         .unwrap()
 }
 

@@ -143,20 +143,10 @@ impl AuthFixture {
             &issuer_key,
         )
         .unwrap();
-        let initiator_trust = establish_trust(
-            &initiator_credential,
-            &root,
-            &delegation,
-            &issuer_key,
-            0x47,
-        );
-        let responder_trust = establish_trust(
-            &responder_credential,
-            &root,
-            &delegation,
-            &issuer_key,
-            0x48,
-        );
+        let initiator_trust =
+            establish_trust(&initiator_credential, &root, &delegation, &issuer_key, 0x47);
+        let responder_trust =
+            establish_trust(&responder_credential, &root, &delegation, &issuer_key, 0x48);
 
         Self {
             owner_id,

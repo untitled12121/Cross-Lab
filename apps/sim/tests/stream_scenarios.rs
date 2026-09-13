@@ -138,20 +138,10 @@ impl Fixture {
             &issuer_key,
         )
         .unwrap();
-        let sender_trust = establish_trust(
-            &sender_credential,
-            &root,
-            &delegation,
-            &issuer_key,
-            0x67,
-        );
-        let receiver_trust = establish_trust(
-            &receiver_credential,
-            &root,
-            &delegation,
-            &issuer_key,
-            0x68,
-        );
+        let sender_trust =
+            establish_trust(&sender_credential, &root, &delegation, &issuer_key, 0x67);
+        let receiver_trust =
+            establish_trust(&receiver_credential, &root, &delegation, &issuer_key, 0x68);
         let ranges = [ProtocolRange::new(1, 0, 0).unwrap()];
         let features = FeatureSet::new(&[], &[]).unwrap();
         let binding = pair.endpoints().0.channel_binding();
