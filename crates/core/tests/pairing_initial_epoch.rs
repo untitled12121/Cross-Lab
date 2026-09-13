@@ -1,5 +1,6 @@
 use crosslab_core::{
-    PairingId, PairingInvitation, PairingInviterFlow, PairingJoinerFlow, PairingSecret,
+    PairingId, PairingInstant, PairingInvitation, PairingInviterFlow, PairingJoinerFlow,
+    PairingSecret,
 };
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{AuthorityDelegation, AuthorityRole, DeviceId, OwnerId, OwnerRootRecord};
@@ -48,8 +49,17 @@ fn initial_pairing_credential_epoch_is_zero() {
         PairingSecret::from_bytes(secret),
         owner_id,
         inviter_device_id,
-    );
-    let mut inviter = PairingInviterFlow::new(invitation, inviter_hello, joiner_hello).unwrap();
+        PairingInstant::from_ticks(0),
+        PairingInstant::from_ticks(100),
+    )
+    .unwrap();
+    let mut inviter = PairingInviterFlow::new(
+        invitation,
+        inviter_hello,
+        joiner_hello,
+        PairingInstant::from_ticks(0),
+    )
+    .unwrap();
     let joiner = PairingJoinerFlow::new(
         PairingSecret::from_bytes(secret),
         inviter_hello,
@@ -58,10 +68,17 @@ fn initial_pairing_credential_epoch_is_zero() {
     .unwrap();
 
     let confirmation = joiner.joiner_confirmation().unwrap();
-    inviter.verify_joiner_confirmation(&confirmation).unwrap();
+    inviter
+        .verify_joiner_confirmation(&confirmation, PairingInstant::from_ticks(10))
+        .unwrap();
 
     let credential = inviter
-        .issue_initial_joiner_credential(&root, &delegation, &issuer_key)
+        .issue_initial_joiner_credential(
+            &root,
+            &delegation,
+            &issuer_key,
+            PairingInstant::from_ticks(20),
+        )
         .unwrap();
 
     assert_eq!(credential.credential_epoch(), 0);
