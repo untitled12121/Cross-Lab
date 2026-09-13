@@ -28,9 +28,8 @@ impl fmt::Display for PairingTrustTransitionError {
             Self::CredentialMismatch => {
                 formatter.write_str("pairing trust transition credential does not match")
             }
-            Self::NonInitialCredentialEpoch => {
-                formatter.write_str("pairing trust transition requires the initial credential epoch")
-            }
+            Self::NonInitialCredentialEpoch => formatter
+                .write_str("pairing trust transition requires the initial credential epoch"),
             Self::UnknownIssuer => {
                 formatter.write_str("pairing trust transition issuer is unknown")
             }
