@@ -10,8 +10,8 @@ use crosslab_identity::{
     AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
 };
 use crosslab_policy::{
-    CapabilityId, CapabilityVersion, NetworkClass, OperationName, PolicyState, TransitionId,
-    TrustRecord, TrustTransition,
+    CapabilityId, CapabilityVersion, NetworkClass, OperationName, PairingTrustTransition,
+    PolicyState, TransitionId, TrustRecord, TrustTransition,
 };
 use crosslab_protocol::{
     ControlRequest, FeatureSet, ProtocolRange, ProtocolVersion, RequestId, RetryClass,
@@ -24,10 +24,74 @@ use crosslab_sim::{
 
 const CAPACITY: usize = 4;
 
+fn establish_trust(
+    credential: &DeviceCredential,
+    root: &OwnerRootRecord,
+    delegation: &AuthorityDelegation,
+    issuer_key: &SigningKey,
+    transition_byte: u8,
+) -> TrustRecord {
+    let initial_credential = DeviceCredential::issue_for_public_key(
+        credential.owner_id(),
+        credential.device_id(),
+        credential.device_public_key(),
+        0,
+        root,
+        delegation,
+        issuer_key,
+    )
+    .unwrap();
+    let transition = PairingTrustTransition::issue(
+        &initial_credential,
+        TransitionId::from_bytes([transition_byte; 32]),
+        [transition_byte.wrapping_add(1); 32],
+        root,
+        delegation,
+        issuer_key,
+        delegation.delegation_epoch(),
+    )
+    .unwrap();
+    let mut trust = transition
+        .establish(
+            &initial_credential,
+            root,
+            delegation,
+            delegation.delegation_epoch(),
+        )
+        .unwrap();
+
+    for epoch in 1..=credential.credential_epoch() {
+        let successor = DeviceCredential::issue_for_public_key(
+            credential.owner_id(),
+            credential.device_id(),
+            credential.device_public_key(),
+            epoch,
+            root,
+            delegation,
+            issuer_key,
+        )
+        .unwrap();
+        let mut transition_id = [transition_byte; 32];
+        transition_id[..8].copy_from_slice(&epoch.to_be_bytes());
+        trust
+            .accept_successor_credential(
+                &successor,
+                root,
+                delegation,
+                delegation.delegation_epoch(),
+                TransitionId::from_bytes(transition_id),
+            )
+            .unwrap();
+    }
+
+    trust
+}
+
 struct Fixture {
     owner_id: OwnerId,
     root_key: SigningKey,
     root: OwnerRootRecord,
+    issuer_key: SigningKey,
     delegation: AuthorityDelegation,
     initiator_key: SigningKey,
     responder_key: SigningKey,
@@ -72,23 +136,26 @@ impl Fixture {
             &issuer_key,
         )
         .unwrap();
-        let initiator_trust = TrustRecord::trusted(
-            owner_id,
-            initiator_credential.device_id(),
-            initiator_credential.credential_epoch(),
-            TransitionId::from_bytes([0xb7; 32]),
+        let initiator_trust = establish_trust(
+            &initiator_credential,
+            &root,
+            &delegation,
+            &issuer_key,
+            0xb7,
         );
-        let responder_trust = TrustRecord::trusted(
-            owner_id,
-            responder_credential.device_id(),
-            responder_credential.credential_epoch(),
-            TransitionId::from_bytes([0xb8; 32]),
+        let responder_trust = establish_trust(
+            &responder_credential,
+            &root,
+            &delegation,
+            &issuer_key,
+            0xb8,
         );
 
         Self {
             owner_id,
             root_key,
             root,
+            issuer_key,
             delegation,
             initiator_key,
             responder_key,
@@ -281,11 +348,22 @@ fn accepted_peer_revocation_closes_session_transport_and_pending_authority() {
 #[test]
 fn wrong_peer_revocation_cannot_terminate_an_unrelated_session() {
     let fixture = Fixture::new();
-    let wrong = TrustRecord::trusted(
+    let wrong_credential = DeviceCredential::issue(
         fixture.owner_id,
         DeviceId::from_bytes([0xc4; 32]),
+        &SigningKey::from_secret_bytes([0xcd; 32]),
         fixture.initiator_credential.credential_epoch(),
-        TransitionId::from_bytes([0xc5; 32]),
+        &fixture.root,
+        &fixture.delegation,
+        &fixture.issuer_key,
+    )
+    .unwrap();
+    let wrong = establish_trust(
+        &wrong_credential,
+        &fixture.root,
+        &fixture.delegation,
+        &fixture.issuer_key,
+        0xc5,
     );
     let wrong = fixture.revoke(wrong, 0xc6);
     let pair = pair();
