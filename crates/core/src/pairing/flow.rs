@@ -6,7 +6,9 @@ use crosslab_crypto::{
 use crosslab_identity::{
     AuthorityDelegation, DeviceCredential, DeviceId, IdentityError, KeyId, OwnerId, OwnerRootRecord,
 };
-use crosslab_policy::{TransitionId, TrustRecord};
+use crosslab_policy::{
+    PairingTrustTransition, PairingTrustTransitionError, TransitionId, TrustRecord,
+};
 use crosslab_protocol::{
     PairingConfirmation, PairingCredentialAccepted, PairingHello, PairingRole,
 };
@@ -49,6 +51,7 @@ pub enum PairingFlowError {
     JoinerKeyMismatch,
     InvalidCredentialAcceptance,
     Identity(IdentityError),
+    TrustTransition(PairingTrustTransitionError),
 }
 
 impl fmt::Display for PairingFlowError {
@@ -64,6 +67,7 @@ impl fmt::Display for PairingFlowError {
             Self::JoinerKeyMismatch => "joiner private key does not match the issued credential",
             Self::InvalidCredentialAcceptance => "credential acceptance proof verification failed",
             Self::Identity(error) => return fmt::Display::fmt(error, formatter),
+            Self::TrustTransition(error) => return fmt::Display::fmt(error, formatter),
         })
     }
 }
@@ -245,6 +249,10 @@ impl PairingInviterFlow {
         &mut self,
         accepted: &PairingCredentialAccepted,
         transition_id: TransitionId,
+        root: &OwnerRootRecord,
+        issuer: &AuthorityDelegation,
+        issuer_key: &SigningKey,
+        minimum_delegation_epoch: u64,
         now: PairingInstant,
     ) -> Result<TrustRecord, PairingFlowError> {
         if self.state != PairingInviterState::AwaitingCredentialAcceptance {
@@ -284,17 +292,38 @@ impl PairingInviterFlow {
             return self.fail(PairingFlowError::InvalidCredentialAcceptance);
         }
 
+        let pairing_evidence_digest = signed_object_digest(
+            proof_digest,
+            SignatureAlgorithm::Ed25519,
+            &accepted.signature(),
+        );
+        let transition = match PairingTrustTransition::issue(
+            &credential,
+            transition_id,
+            pairing_evidence_digest,
+            root,
+            issuer,
+            issuer_key,
+            minimum_delegation_epoch,
+        ) {
+            Ok(transition) => transition,
+            Err(error) => return self.fail(PairingFlowError::TrustTransition(error)),
+        };
+        let trust = match transition.establish(
+            &credential,
+            root,
+            issuer,
+            minimum_delegation_epoch,
+        ) {
+            Ok(trust) => trust,
+            Err(error) => return self.fail(PairingFlowError::TrustTransition(error)),
+        };
+
         if self.invitation.consume().is_err() {
             self.state = PairingInviterState::Failed;
             return Err(PairingFlowError::InvitationNotPending);
         }
 
-        let trust = TrustRecord::trusted(
-            self.context.owner_id,
-            self.context.joiner_device_id,
-            credential.credential_epoch(),
-            transition_id,
-        );
         self.state = PairingInviterState::Trusted;
         Ok(trust)
     }
