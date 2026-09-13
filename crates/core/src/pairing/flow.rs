@@ -12,8 +12,8 @@ use crosslab_protocol::{
 };
 
 use super::{
-    PairingConfirmationRole, PairingId, PairingInvitation, PairingInvitationState, PairingSecret,
-    PairingTranscript,
+    PairingConfirmationRole, PairingId, PairingInstant, PairingInvitation, PairingInvitationError,
+    PairingInvitationState, PairingSecret, PairingTranscript,
 };
 
 const PROTOCOL_MAJOR_V1: u16 = 1;
@@ -40,10 +40,11 @@ pub enum PairingJoinerState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PairingFlowError {
     InvitationNotPending,
+    InvitationExpired,
+    InvalidInvitationDeadline,
     InvalidPairingContext,
     InvalidConfirmation,
     UnexpectedState,
-    InitialCredentialEpochMustBeZero,
     CredentialMismatch,
     JoinerKeyMismatch,
     InvalidCredentialAcceptance,
@@ -54,12 +55,11 @@ impl fmt::Display for PairingFlowError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::InvitationNotPending => "pairing invitation is no longer pending",
+            Self::InvitationExpired => "pairing invitation has expired",
+            Self::InvalidInvitationDeadline => "pairing invitation deadline is invalid",
             Self::InvalidPairingContext => "pairing hello context is inconsistent",
             Self::InvalidConfirmation => "pairing confirmation verification failed",
             Self::UnexpectedState => "pairing flow received a message in an unexpected state",
-            Self::InitialCredentialEpochMustBeZero => {
-                "initial pairing credential epoch must be zero"
-            }
             Self::CredentialMismatch => "device credential does not match the confirmed pairing",
             Self::JoinerKeyMismatch => "joiner private key does not match the issued credential",
             Self::InvalidCredentialAcceptance => "credential acceptance proof verification failed",
@@ -137,10 +137,11 @@ impl PairingInviterFlow {
         mut invitation: PairingInvitation,
         inviter: PairingHello,
         joiner: PairingHello,
+        now: PairingInstant,
     ) -> Result<Self, PairingFlowError> {
-        if invitation.state() != PairingInvitationState::Pending {
-            return Err(PairingFlowError::InvitationNotPending);
-        }
+        invitation
+            .ensure_pending_at(now)
+            .map_err(map_invitation_error)?;
 
         let context = match PairingContext::new(inviter, joiner) {
             Ok(context) => context,
@@ -177,10 +178,12 @@ impl PairingInviterFlow {
     pub fn verify_joiner_confirmation(
         &mut self,
         confirmation: &PairingConfirmation,
+        now: PairingInstant,
     ) -> Result<PairingConfirmation, PairingFlowError> {
         if self.state != PairingInviterState::AwaitingJoinerConfirmation {
             return self.fail(PairingFlowError::UnexpectedState);
         }
+        self.ensure_current(now)?;
         if confirmation.role() != PairingRole::Joiner
             || confirmation.pairing_id() != self.context.pairing_id.to_bytes()
             || self
@@ -213,10 +216,12 @@ impl PairingInviterFlow {
         root: &OwnerRootRecord,
         issuer: &AuthorityDelegation,
         issuer_key: &SigningKey,
+        now: PairingInstant,
     ) -> Result<DeviceCredential, PairingFlowError> {
         if self.state != PairingInviterState::ReadyToIssueCredential {
             return self.fail(PairingFlowError::UnexpectedState);
         }
+        self.ensure_current(now)?;
 
         let credential = match DeviceCredential::issue_for_public_key(
             self.context.owner_id,
@@ -236,30 +241,16 @@ impl PairingInviterFlow {
         Ok(credential)
     }
 
-    #[deprecated(
-        note = "initial pairing credentials are fixed at epoch zero; use issue_initial_joiner_credential"
-    )]
-    pub fn issue_joiner_credential(
-        &mut self,
-        root: &OwnerRootRecord,
-        issuer: &AuthorityDelegation,
-        issuer_key: &SigningKey,
-        credential_epoch: u64,
-    ) -> Result<DeviceCredential, PairingFlowError> {
-        if credential_epoch != INITIAL_CREDENTIAL_EPOCH {
-            return self.fail(PairingFlowError::InitialCredentialEpochMustBeZero);
-        }
-        self.issue_initial_joiner_credential(root, issuer, issuer_key)
-    }
-
     pub fn commit_trust(
         &mut self,
         accepted: &PairingCredentialAccepted,
         transition_id: TransitionId,
+        now: PairingInstant,
     ) -> Result<TrustRecord, PairingFlowError> {
         if self.state != PairingInviterState::AwaitingCredentialAcceptance {
             return self.fail(PairingFlowError::UnexpectedState);
         }
+        self.ensure_current(now)?;
         let Some(credential) = self.issued_credential else {
             return self.fail(PairingFlowError::UnexpectedState);
         };
@@ -306,6 +297,16 @@ impl PairingInviterFlow {
         );
         self.state = PairingInviterState::Trusted;
         Ok(trust)
+    }
+
+    fn ensure_current(&mut self, now: PairingInstant) -> Result<(), PairingFlowError> {
+        match self.invitation.ensure_pending_at(now) {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                self.state = PairingInviterState::Failed;
+                Err(map_invitation_error(error))
+            }
+        }
     }
 
     fn fail<T>(&mut self, error: PairingFlowError) -> Result<T, PairingFlowError> {
@@ -438,6 +439,14 @@ impl PairingJoinerFlow {
             self.state = PairingJoinerState::Failed;
         }
         Err(error)
+    }
+}
+
+fn map_invitation_error(error: PairingInvitationError) -> PairingFlowError {
+    match error {
+        PairingInvitationError::NotPending => PairingFlowError::InvitationNotPending,
+        PairingInvitationError::Expired => PairingFlowError::InvitationExpired,
+        PairingInvitationError::InvalidDeadline => PairingFlowError::InvalidInvitationDeadline,
     }
 }
 
