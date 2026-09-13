@@ -1,7 +1,5 @@
 use crosslab_crypto::SigningKey;
-use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceId, OwnerId, OwnerRootRecord,
-};
+use crosslab_identity::{AuthorityDelegation, AuthorityRole, DeviceId, OwnerId, OwnerRootRecord};
 use crosslab_policy::{
     ApprovalError, ApprovalInstant, ApprovalScope, AuthorizationContext, CapabilityId,
     CapabilityVersion, CapabilityVersionRange, Constraint, DecisionEffect, DecisionReason,
@@ -65,13 +63,7 @@ impl Fixture {
         )
     }
 
-    fn administrative_authority(
-        &self,
-    ) -> (
-        OwnerRootRecord,
-        SigningKey,
-        AuthorityDelegation,
-    ) {
+    fn administrative_authority(&self) -> (OwnerRootRecord, SigningKey, AuthorityDelegation) {
         let owner_id = OwnerId::from_bytes([0x40; 32]);
         let root_key = SigningKey::from_secret_bytes([0x41; 32]);
         let root = OwnerRootRecord::new(owner_id, &root_key, 0);
@@ -247,11 +239,8 @@ fn approval_expiry_is_reevaluated_from_local_time() {
     policy.insert(fixture.rule(RuleEffect::Ask)).unwrap();
 
     let active_context = fixture.context_at(19);
-    let approval = fixture.verified_owner_approval(
-        ApprovalScope::from_context(&active_context),
-        10,
-        20,
-    );
+    let approval =
+        fixture.verified_owner_approval(ApprovalScope::from_context(&active_context), 10, 20);
     assert_eq!(
         policy
             .evaluate(&active_context.with_verified_approval(approval.clone()))
@@ -260,7 +249,10 @@ fn approval_expiry_is_reevaluated_from_local_time() {
     );
 
     let expired_context = fixture.context_at(20).with_verified_approval(approval);
-    assert_eq!(policy.evaluate(&expired_context).effect(), DecisionEffect::Ask);
+    assert_eq!(
+        policy.evaluate(&expired_context).effect(),
+        DecisionEffect::Ask
+    );
 }
 
 #[test]
