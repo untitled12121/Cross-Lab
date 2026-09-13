@@ -309,12 +309,8 @@ impl PairingInviterFlow {
             Ok(transition) => transition,
             Err(error) => return self.fail(PairingFlowError::TrustTransition(error)),
         };
-        let trust = match transition.establish(
-            &credential,
-            root,
-            issuer,
-            minimum_delegation_epoch,
-        ) {
+        let trust = match transition.establish(&credential, root, issuer, minimum_delegation_epoch)
+        {
             Ok(trust) => trust,
             Err(error) => return self.fail(PairingFlowError::TrustTransition(error)),
         };
