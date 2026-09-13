@@ -162,6 +162,10 @@ impl M5Fixture {
             .commit_trust(
                 &accepted,
                 TransitionId::from_bytes([0x1b; 32]),
+                &self.root,
+                &self.delegation,
+                &self.issuer_key,
+                self.delegation.delegation_epoch(),
                 PairingInstant::from_ticks(30),
             )
             .unwrap();
