@@ -1,9 +1,12 @@
-use crosslab_identity::DeviceId;
+use crosslab_crypto::SigningKey;
+use crosslab_identity::{
+    AuthorityDelegation, AuthorityRole, DeviceId, OwnerId, OwnerRootRecord,
+};
 use crosslab_policy::{
-    ApprovalScope, AuthorizationContext, CapabilityId, CapabilityVersion, CapabilityVersionRange,
-    Constraint, DecisionEffect, DecisionReason, LocalCapability, NetworkClass, Obligation,
-    OperationName, PolicyRule, PolicyState, RuleEffect, RuleId, SessionId, TrustState,
-    VerifiedApproval,
+    ApprovalError, ApprovalInstant, ApprovalScope, AuthorizationContext, CapabilityId,
+    CapabilityVersion, CapabilityVersionRange, Constraint, DecisionEffect, DecisionReason,
+    LocalCapability, NetworkClass, Obligation, OperationName, OwnerApprovalEvidence, PolicyRule,
+    PolicyState, RuleEffect, RuleId, SessionId, TrustState, VerifiedApproval,
 };
 
 struct Fixture {
@@ -33,6 +36,10 @@ impl Fixture {
     }
 
     fn context(&self) -> AuthorizationContext {
+        self.context_at(15)
+    }
+
+    fn context_at(&self, now: u64) -> AuthorizationContext {
         AuthorizationContext::new(
             self.source,
             self.destination,
@@ -44,6 +51,7 @@ impl Fixture {
             7,
             self.local_capability.clone(),
             NetworkClass::Local,
+            ApprovalInstant::from_ticks(now),
         )
     }
 
@@ -55,6 +63,48 @@ impl Fixture {
             self.operation.clone(),
             effect,
         )
+    }
+
+    fn administrative_authority(
+        &self,
+    ) -> (
+        OwnerRootRecord,
+        SigningKey,
+        AuthorityDelegation,
+    ) {
+        let owner_id = OwnerId::from_bytes([0x40; 32]);
+        let root_key = SigningKey::from_secret_bytes([0x41; 32]);
+        let root = OwnerRootRecord::new(owner_id, &root_key, 0);
+        let administrative_key = SigningKey::from_secret_bytes([0x42; 32]);
+        let delegation = AuthorityDelegation::issue(
+            owner_id,
+            AuthorityRole::Administrative,
+            &administrative_key,
+            3,
+            &root_key,
+        );
+        (root, administrative_key, delegation)
+    }
+
+    fn verified_owner_approval(
+        &self,
+        scope: ApprovalScope,
+        issued_at: u64,
+        expires_at: u64,
+    ) -> VerifiedApproval {
+        let (root, administrative_key, delegation) = self.administrative_authority();
+        OwnerApprovalEvidence::issue(
+            scope,
+            ApprovalInstant::from_ticks(issued_at),
+            ApprovalInstant::from_ticks(expires_at),
+            &root,
+            &delegation,
+            &administrative_key,
+            delegation.delegation_epoch(),
+        )
+        .unwrap()
+        .verify(&root, &delegation, delegation.delegation_epoch())
+        .unwrap()
     }
 }
 
@@ -167,7 +217,7 @@ fn false_hard_constraint_denies() {
 }
 
 #[test]
-fn ask_requires_scoped_locally_verified_approval() {
+fn ask_requires_scoped_signed_owner_approval() {
     let fixture = Fixture::new();
     let mut policy = PolicyState::new();
     policy
@@ -182,29 +232,42 @@ fn ask_requires_scoped_locally_verified_approval() {
     let decision = policy.evaluate(&context);
     assert_eq!(decision.effect(), DecisionEffect::Ask);
     assert_eq!(decision.reason(), DecisionReason::ApprovalRequired);
-    assert_eq!(
-        decision.required_obligations(),
-        &[Obligation::OwnerConfirmation]
-    );
 
-    let scope = ApprovalScope::from_context(&context);
-    let approved = context.with_verified_approval(VerifiedApproval::owner_confirmation(scope));
+    let approval = fixture.verified_owner_approval(ApprovalScope::from_context(&context), 10, 20);
+    let approved = context.with_verified_approval(approval);
     let decision = policy.evaluate(&approved);
     assert_eq!(decision.effect(), DecisionEffect::Allow);
     assert!(decision.into_grant().is_some());
 }
 
 #[test]
+fn approval_expiry_is_reevaluated_from_local_time() {
+    let fixture = Fixture::new();
+    let mut policy = PolicyState::new();
+    policy.insert(fixture.rule(RuleEffect::Ask)).unwrap();
+
+    let active_context = fixture.context_at(19);
+    let approval = fixture.verified_owner_approval(
+        ApprovalScope::from_context(&active_context),
+        10,
+        20,
+    );
+    assert_eq!(
+        policy
+            .evaluate(&active_context.with_verified_approval(approval.clone()))
+            .effect(),
+        DecisionEffect::Allow
+    );
+
+    let expired_context = fixture.context_at(20).with_verified_approval(approval);
+    assert_eq!(policy.evaluate(&expired_context).effect(), DecisionEffect::Ask);
+}
+
+#[test]
 fn wrong_scope_approval_does_not_satisfy_obligation() {
     let fixture = Fixture::new();
     let mut policy = PolicyState::new();
-    policy
-        .insert(
-            fixture
-                .rule(RuleEffect::Ask)
-                .with_obligation(Obligation::OwnerConfirmation),
-        )
-        .unwrap();
+    policy.insert(fixture.rule(RuleEffect::Ask)).unwrap();
 
     let context = fixture.context();
     let wrong_scope = ApprovalScope::new(
@@ -214,9 +277,59 @@ fn wrong_scope_approval_does_not_satisfy_obligation() {
         fixture.capability.clone(),
         fixture.operation.clone(),
     );
-    let context = context.with_verified_approval(VerifiedApproval::owner_confirmation(wrong_scope));
-    let decision = policy.evaluate(&context);
+    let approval = fixture.verified_owner_approval(wrong_scope, 10, 20);
+    let decision = policy.evaluate(&context.with_verified_approval(approval));
 
     assert_eq!(decision.effect(), DecisionEffect::Ask);
     assert_eq!(decision.reason(), DecisionReason::ApprovalRequired);
+}
+
+#[test]
+fn non_administrative_delegation_cannot_authorize_owner_approval() {
+    let fixture = Fixture::new();
+    let context = fixture.context();
+    let owner_id = OwnerId::from_bytes([0x50; 32]);
+    let root_key = SigningKey::from_secret_bytes([0x51; 32]);
+    let root = OwnerRootRecord::new(owner_id, &root_key, 0);
+    let device_signing_key = SigningKey::from_secret_bytes([0x52; 32]);
+    let delegation = AuthorityDelegation::issue(
+        owner_id,
+        AuthorityRole::DeviceSigning,
+        &device_signing_key,
+        0,
+        &root_key,
+    );
+
+    assert_eq!(
+        OwnerApprovalEvidence::issue(
+            ApprovalScope::from_context(&context),
+            ApprovalInstant::from_ticks(10),
+            ApprovalInstant::from_ticks(20),
+            &root,
+            &delegation,
+            &device_signing_key,
+            delegation.delegation_epoch(),
+        ),
+        Err(ApprovalError::WrongIssuerRole)
+    );
+}
+
+#[test]
+fn invalid_approval_lifetime_is_rejected() {
+    let fixture = Fixture::new();
+    let context = fixture.context();
+    let (root, administrative_key, delegation) = fixture.administrative_authority();
+
+    assert_eq!(
+        OwnerApprovalEvidence::issue(
+            ApprovalScope::from_context(&context),
+            ApprovalInstant::from_ticks(20),
+            ApprovalInstant::from_ticks(20),
+            &root,
+            &delegation,
+            &administrative_key,
+            delegation.delegation_epoch(),
+        ),
+        Err(ApprovalError::InvalidLifetime)
+    );
 }
