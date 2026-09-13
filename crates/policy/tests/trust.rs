@@ -4,7 +4,8 @@ use crosslab_identity::{
     OwnerRootRecord,
 };
 use crosslab_policy::{
-    TransitionId, TrustError, TrustRecord, TrustState, TrustTransition, TrustTransitionError,
+    CredentialRotationError, TransitionId, TrustRecord, TrustState, TrustTransition,
+    TrustTransitionError,
 };
 
 fn trusted_record() -> TrustRecord {
@@ -116,7 +117,7 @@ fn successor_credential_rejects_stale_skipped_wrong_device_and_wrong_authority()
             fixture.delegation.delegation_epoch(),
             TransitionId::from_bytes([0x27; 32]),
         ),
-        Err(TrustError::StaleCredentialEpoch)
+        Err(CredentialRotationError::StaleCredentialEpoch)
     );
 
     let mut skipped_record = fixture.trust();
@@ -129,7 +130,7 @@ fn successor_credential_rejects_stale_skipped_wrong_device_and_wrong_authority()
             fixture.delegation.delegation_epoch(),
             TransitionId::from_bytes([0x28; 32]),
         ),
-        Err(TrustError::UnexpectedCredentialEpoch)
+        Err(CredentialRotationError::UnexpectedCredentialEpoch)
     );
 
     let mut wrong_device_record = fixture.trust();
@@ -142,7 +143,7 @@ fn successor_credential_rejects_stale_skipped_wrong_device_and_wrong_authority()
             fixture.delegation.delegation_epoch(),
             TransitionId::from_bytes([0x2a; 32]),
         ),
-        Err(TrustError::WrongDevice)
+        Err(CredentialRotationError::WrongDevice)
     );
 
     let mut wrong_authority_record = fixture.trust();
@@ -157,7 +158,9 @@ fn successor_credential_rejects_stale_skipped_wrong_device_and_wrong_authority()
             fixture.delegation.delegation_epoch(),
             TransitionId::from_bytes([0x2c; 32]),
         ),
-        Err(TrustError::Identity(IdentityError::UnknownIssuer))
+        Err(CredentialRotationError::Identity(
+            IdentityError::UnknownIssuer
+        ))
     );
 }
 
