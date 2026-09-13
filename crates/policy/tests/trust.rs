@@ -8,12 +8,64 @@ use crosslab_policy::{
     TrustRecord, TrustState, TrustTransition, TrustTransitionError,
 };
 
+fn establish_initial_trust(
+    credential: &DeviceCredential,
+    root: &OwnerRootRecord,
+    delegation: &AuthorityDelegation,
+    issuer_key: &SigningKey,
+    transition_id: TransitionId,
+    pairing_evidence_digest: [u8; 32],
+) -> TrustRecord {
+    let transition = PairingTrustTransition::issue(
+        credential,
+        transition_id,
+        pairing_evidence_digest,
+        root,
+        delegation,
+        issuer_key,
+        delegation.delegation_epoch(),
+    )
+    .unwrap();
+    transition
+        .establish(
+            credential,
+            root,
+            delegation,
+            delegation.delegation_epoch(),
+        )
+        .unwrap()
+}
+
 fn trusted_record() -> TrustRecord {
-    TrustRecord::trusted(
-        OwnerId::from_bytes([1; 32]),
-        DeviceId::from_bytes([2; 32]),
+    let owner_id = OwnerId::from_bytes([1; 32]);
+    let root_key = SigningKey::from_secret_bytes([4; 32]);
+    let root = OwnerRootRecord::new(owner_id, &root_key, 0);
+    let issuer_key = SigningKey::from_secret_bytes([7; 32]);
+    let delegation = AuthorityDelegation::issue(
+        owner_id,
+        AuthorityRole::DeviceSigning,
+        &issuer_key,
         0,
+        &root_key,
+    );
+    let credential = DeviceCredential::issue(
+        owner_id,
+        DeviceId::from_bytes([2; 32]),
+        &SigningKey::from_secret_bytes([8; 32]),
+        0,
+        &root,
+        &delegation,
+        &issuer_key,
+    )
+    .unwrap();
+
+    establish_initial_trust(
+        &credential,
+        &root,
+        &delegation,
+        &issuer_key,
         TransitionId::from_bytes([3; 32]),
+        [9; 32],
     )
 }
 
@@ -49,11 +101,14 @@ impl RotationFixture {
     }
 
     fn trust(&self) -> TrustRecord {
-        TrustRecord::trusted(
-            self.owner_id,
-            self.device_id,
-            0,
+        let credential = self.credential(self.device_id, 0);
+        establish_initial_trust(
+            &credential,
+            &self.root,
+            &self.delegation,
+            &self.issuer_key,
             TransitionId::from_bytes([0x24; 32]),
+            [0x34; 32],
         )
     }
 
