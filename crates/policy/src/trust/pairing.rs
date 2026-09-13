@@ -10,11 +10,13 @@ use crosslab_identity::{
 use super::{TransitionId, TrustRecord};
 
 const DOMAIN: &str = "crosslab.pairing-trust-transition.v1";
+const INITIAL_CREDENTIAL_EPOCH: u64 = 0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PairingTrustTransitionError {
     Identity(IdentityError),
     CredentialMismatch,
+    NonInitialCredentialEpoch,
     UnknownIssuer,
     InvalidSignature,
 }
@@ -25,6 +27,9 @@ impl fmt::Display for PairingTrustTransitionError {
             Self::Identity(error) => fmt::Display::fmt(error, formatter),
             Self::CredentialMismatch => {
                 formatter.write_str("pairing trust transition credential does not match")
+            }
+            Self::NonInitialCredentialEpoch => {
+                formatter.write_str("pairing trust transition requires the initial credential epoch")
             }
             Self::UnknownIssuer => {
                 formatter.write_str("pairing trust transition issuer is unknown")
@@ -68,10 +73,13 @@ impl PairingTrustTransition {
         issuer_key: &SigningKey,
         minimum_delegation_epoch: u64,
     ) -> Result<Self, PairingTrustTransitionError> {
+        if credential.credential_epoch() != INITIAL_CREDENTIAL_EPOCH {
+            return Err(PairingTrustTransitionError::NonInitialCredentialEpoch);
+        }
         credential.verify(
             root,
             issuer,
-            credential.credential_epoch(),
+            INITIAL_CREDENTIAL_EPOCH,
             minimum_delegation_epoch,
         )?;
         if issuer_key.verifying_key() != issuer.delegated_public_key() {
@@ -82,7 +90,7 @@ impl PairingTrustTransition {
             schema_version: 1,
             owner_id: credential.owner_id(),
             device_id: credential.device_id(),
-            credential_epoch: credential.credential_epoch(),
+            credential_epoch: INITIAL_CREDENTIAL_EPOCH,
             credential_signed_object_digest: credential_signed_object_digest(credential),
             transition_id,
             pairing_evidence_digest,
@@ -100,15 +108,19 @@ impl PairingTrustTransition {
         issuer: &AuthorityDelegation,
         minimum_delegation_epoch: u64,
     ) -> Result<TrustRecord, PairingTrustTransitionError> {
+        if self.credential_epoch != INITIAL_CREDENTIAL_EPOCH
+            || credential.credential_epoch() != INITIAL_CREDENTIAL_EPOCH
+        {
+            return Err(PairingTrustTransitionError::NonInitialCredentialEpoch);
+        }
         credential.verify(
             root,
             issuer,
-            self.credential_epoch,
+            INITIAL_CREDENTIAL_EPOCH,
             minimum_delegation_epoch,
         )?;
         if credential.owner_id() != self.owner_id
             || credential.device_id() != self.device_id
-            || credential.credential_epoch() != self.credential_epoch
             || credential_signed_object_digest(credential) != self.credential_signed_object_digest
         {
             return Err(PairingTrustTransitionError::CredentialMismatch);
@@ -124,7 +136,7 @@ impl PairingTrustTransition {
         Ok(TrustRecord::established_from_pairing(
             self.owner_id,
             self.device_id,
-            self.credential_epoch,
+            INITIAL_CREDENTIAL_EPOCH,
             self.transition_id,
         ))
     }
