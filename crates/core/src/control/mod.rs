@@ -19,6 +19,7 @@ pub enum ControlDispatchError {
     InvalidSession,
     IncompatibleProtocol,
     PeerTrustMismatch,
+    PeerCredentialEpochChanged,
     PeerTrustRevisionChanged,
     Sequence(SequenceError),
     DuplicateRequest,
@@ -204,6 +205,9 @@ impl ControlDispatcher {
                 ));
             }
             TrustState::Trusted => {}
+        }
+        if peer_trust.accepted_credential_epoch() != context.peer_credential_epoch() {
+            return Err(ControlDispatchError::PeerCredentialEpochChanged);
         }
         if peer_trust.trust_revision() != context.peer_trust_revision() {
             return Err(ControlDispatchError::PeerTrustRevisionChanged);
