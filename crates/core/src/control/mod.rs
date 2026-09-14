@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     num::NonZeroUsize,
 };
 
@@ -54,8 +54,9 @@ pub struct ControlDispatcher {
     receive_sequence: ControlSequence,
     next_send_sequence: Option<u64>,
     pending_outgoing: BTreeMap<RequestId, RetryClass>,
-    inbound_requests: BTreeMap<RequestId, RetryClass>,
-    seen_nonretryable: BTreeSet<RequestId>,
+    inbound_requests: BTreeSet<RequestId>,
+    completed_inbound: BTreeSet<RequestId>,
+    completed_order: VecDeque<RequestId>,
     state_capacity: usize,
 }
 
@@ -65,8 +66,9 @@ impl ControlDispatcher {
             receive_sequence: ControlSequence::from_expected(context.next_receive_sequence()),
             next_send_sequence: Some(context.next_send_sequence()),
             pending_outgoing: BTreeMap::new(),
-            inbound_requests: BTreeMap::new(),
-            seen_nonretryable: BTreeSet::new(),
+            inbound_requests: BTreeSet::new(),
+            completed_inbound: BTreeSet::new(),
+            completed_order: VecDeque::new(),
             state_capacity: state_capacity.get(),
         }
     }
@@ -86,7 +88,8 @@ impl ControlDispatcher {
     pub fn cancel_session_state(&mut self) {
         self.pending_outgoing.clear();
         self.inbound_requests.clear();
-        self.seen_nonretryable.clear();
+        self.completed_inbound.clear();
+        self.completed_order.clear();
     }
 
     pub fn prepare_outbound(
@@ -113,7 +116,9 @@ impl ControlDispatcher {
                     .insert(request.request_id(), request.retry_class());
             }
             EnvelopeBody::ControlResponse(response) => {
-                self.inbound_requests.remove(&response.request_id());
+                if self.inbound_requests.remove(&response.request_id()) {
+                    self.remember_completed_inbound(response.request_id());
+                }
             }
             EnvelopeBody::CancelRequest(cancel) => {
                 self.pending_outgoing.remove(&cancel.request_id());
@@ -174,9 +179,10 @@ impl ControlDispatcher {
                 Ok(InboundControl::Event(event.clone()))
             }
             EnvelopeBody::CancelRequest(cancel) => {
-                if self.inbound_requests.remove(&cancel.request_id()).is_none() {
+                if !self.inbound_requests.remove(&cancel.request_id()) {
                     return Err(ControlDispatchError::UnknownRequest);
                 }
+                self.remember_completed_inbound(cancel.request_id());
                 Ok(InboundControl::Cancelled(cancel.request_id()))
             }
             EnvelopeBody::ProtocolError(error) => {
@@ -229,7 +235,7 @@ impl ControlDispatcher {
                 }
             }
             EnvelopeBody::ControlResponse(response) => {
-                if !self.inbound_requests.contains_key(&response.request_id()) {
+                if !self.inbound_requests.contains(&response.request_id()) {
                     return Err(ControlDispatchError::UnknownRequest);
                 }
             }
@@ -266,9 +272,8 @@ impl ControlDispatcher {
             return Err(ControlDispatchError::CapabilityVersionIncompatible);
         }
 
-        if self.inbound_requests.contains_key(&request.request_id())
-            || (request.retry_class() == RetryClass::NonRetryable
-                && self.seen_nonretryable.contains(&request.request_id()))
+        if self.inbound_requests.contains(&request.request_id())
+            || self.completed_inbound.contains(&request.request_id())
         {
             return Err(ControlDispatchError::DuplicateRequest);
         }
@@ -306,21 +311,38 @@ impl ControlDispatcher {
             DecisionEffect::Allow => {}
         }
 
+        self.reserve_inbound_slot()?;
+        self.inbound_requests.insert(request.request_id());
+        Ok(InboundControl::Request(request.clone()))
+    }
+
+    fn reserve_inbound_slot(&mut self) -> Result<(), ControlDispatchError> {
         if self.inbound_requests.len() >= self.state_capacity {
             return Err(ControlDispatchError::ResourceLimit);
         }
-        if request.retry_class() == RetryClass::NonRetryable
-            && self.seen_nonretryable.len() >= self.state_capacity
-        {
-            return Err(ControlDispatchError::ResourceLimit);
-        }
 
-        self.inbound_requests
-            .insert(request.request_id(), request.retry_class());
-        if request.retry_class() == RetryClass::NonRetryable {
-            self.seen_nonretryable.insert(request.request_id());
+        let completed_budget = self.state_capacity - self.inbound_requests.len() - 1;
+        self.trim_completed_inbound(completed_budget);
+        Ok(())
+    }
+
+    fn remember_completed_inbound(&mut self, request_id: RequestId) {
+        if self.completed_inbound.insert(request_id) {
+            self.completed_order.push_back(request_id);
         }
-        Ok(InboundControl::Request(request.clone()))
+        let completed_budget = self
+            .state_capacity
+            .saturating_sub(self.inbound_requests.len());
+        self.trim_completed_inbound(completed_budget);
+    }
+
+    fn trim_completed_inbound(&mut self, completed_budget: usize) {
+        while self.completed_inbound.len() > completed_budget {
+            let Some(request_id) = self.completed_order.pop_front() else {
+                break;
+            };
+            self.completed_inbound.remove(&request_id);
+        }
     }
 
     fn validate_event(
