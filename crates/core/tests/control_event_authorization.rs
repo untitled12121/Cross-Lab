@@ -212,7 +212,12 @@ fn negotiated_capability_does_not_authorize_unsubscribed_event() {
         ControlDispatcher::new(session.context().unwrap(), NonZeroUsize::new(4).unwrap());
 
     assert_eq!(
-        accept_event(&mut dispatcher, &session, &fixture, capability_event(EVENT_TYPE)),
+        accept_event(
+            &mut dispatcher,
+            &session,
+            &fixture,
+            capability_event(EVENT_TYPE),
+        ),
         Err(ControlDispatchError::EventNotSubscribed)
     );
 }
@@ -229,7 +234,12 @@ fn subscription_is_exact_to_capability_and_event_type() {
     ));
 
     assert_eq!(
-        accept_event(&mut dispatcher, &session, &fixture, capability_event(EVENT_TYPE)),
+        accept_event(
+            &mut dispatcher,
+            &session,
+            &fixture,
+            capability_event(EVENT_TYPE),
+        ),
         Err(ControlDispatchError::EventNotSubscribed)
     );
 }
@@ -246,7 +256,12 @@ fn exact_local_subscription_authorizes_capability_event() {
     ));
 
     assert!(matches!(
-        accept_event(&mut dispatcher, &session, &fixture, capability_event(EVENT_TYPE)),
+        accept_event(
+            &mut dispatcher,
+            &session,
+            &fixture,
+            capability_event(EVENT_TYPE),
+        ),
         Ok(InboundControl::Event(_))
     ));
 }
