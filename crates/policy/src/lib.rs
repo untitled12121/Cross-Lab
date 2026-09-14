@@ -2,6 +2,7 @@
 
 mod authorization;
 mod capability;
+mod id_generation;
 mod operation;
 mod trust;
 
@@ -15,6 +16,7 @@ pub use capability::{
     CapabilityId, CapabilityVersion, CapabilityVersionRange, IdentifierError, LocalCapability,
     OperationName, VersionRangeError,
 };
+pub use id_generation::PolicyIdGenerationError;
 pub use operation::{
     AuthorizedOperation, OperationError, OperationId, OperationState, OperationUseContext,
     UsePolicy,

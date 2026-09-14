@@ -1,10 +1,10 @@
 use core::{fmt, num::NonZeroU32};
 
-use crosslab_crypto::random_bytes;
 use crosslab_identity::DeviceId;
 
 use crate::{
     AuthorizationGrant, CapabilityId, CapabilityVersion, Constraint, OperationName, SessionId,
+    id_generation::{PolicyIdGenerationError, random_policy_id},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -13,6 +13,10 @@ pub struct OperationId([u8; 32]);
 impl OperationId {
     pub const fn from_bytes(bytes: [u8; 32]) -> Self {
         Self(bytes)
+    }
+
+    pub fn generate() -> Result<Self, PolicyIdGenerationError> {
+        random_policy_id().map(Self)
     }
 
     pub const fn as_bytes(&self) -> &[u8; 32] {
@@ -129,8 +133,7 @@ impl AuthorizedOperation {
             return Err(OperationError::InvalidLifetime);
         }
 
-        let id =
-            OperationId(random_bytes::<32>().map_err(|_| OperationError::RandomnessUnavailable)?);
+        let id = OperationId::generate().map_err(|_| OperationError::RandomnessUnavailable)?;
         Ok(Self {
             id,
             source_device_id: grant.source_device_id,

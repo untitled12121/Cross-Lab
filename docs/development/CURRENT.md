@@ -8,192 +8,129 @@ This file is the durable resume guide for active Cross-Lab development. Git, cod
 
 ## Current Milestone
 
-**M9 — Remote Networking ADR, paused before M9 Task 4 while the second foundation security remediation plan is executed.**
+**M9 — Remote Networking ADR, paused before M9 Task 4 until the second foundation security remediation is fully reconciled.**
 
-M1–M8 are complete on canonical `main`. M9 remains isolated on `m9-remote-networking` in draft PR #19. M10 remains the first Linux + Android platform vertical slice after the remote-networking architecture is selected.
+M1–M8 are complete. M9 research Tasks 1–3 plus foundation remediation Tasks 1–7 are now integrated into canonical `main`. Task 8 is implemented and verified on PR #20. M10 remains the first Linux + Android platform vertical slice after the remote-networking architecture is selected.
 
 ## Canonical Baseline
 
-- Canonical M8 documentation head: `ab602d62181b3dcba056874d0013e40522a68e8f`, CI `34688627614` — full gate passed.
-- `m9-remote-networking` was created from exactly that head.
-- M9 Tasks 1–3 remain implemented and previously verified.
-- M9 Task 4 must not begin until the active foundation remediation backlog below is closed and the exact final head passes the full gate.
+- `main` integration commit: `e45fa89d32efa185186ebb9d48e1cdbd985220fb`.
+- Post-merge Rust CI `34805125848` passed lockfile verification, dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and the complete workspace test suite.
+- PR #19 is merged. Its M9 Tasks 1–3 and foundation remediation Tasks 1–7 are durable on `main`.
+- M9 Task 4 must not begin until delegated-role epoch authority is explicitly designed/resolved and the final remediation reconciliation/gate is complete.
 
 ## Active Plans
 
-Primary M9 design and implementation plans remain under `docs/plans/phase-1/`.
+Primary M9 plans remain under `docs/plans/phase-1/`.
 
-The active security remediation plan is:
+Active remediation plan:
 
 `docs/superpowers/plans/2026-09-13-foundation-security-remediation.md`
 
-The discovery/audit record is:
+Discovery/audit record:
 
 `docs/plans/phase-1/M9-whole-project-security-quality-audit.md`
 
-The remediation plan is executed regression-first. Existing Master Architecture, Identity/Keys, Pairing/Trust/Revocation, Policy/Authorization, Session/Transport, Protocol V1, Security Boundaries, Threat Model, and accepted ADRs remain authoritative.
+Existing Master Architecture, Identity/Keys, Pairing/Trust/Revocation, Policy/Authorization, Session/Transport, Protocol V1, Security Boundaries, Threat Model, and accepted ADRs remain authoritative.
 
-## Completed Remediation Work
+## Completed Foundation Remediation
 
-### Task 1 — Pairing currentness and initial credential epoch
+### Tasks 1–6
 
-Implemented on the active branch:
+Completed and individually verified before the PR #19 integration checkpoint:
 
-- removed caller-selected initial pairing credential epochs; initial enrollment issues epoch `0` by construction;
-- rejects nonzero initial credentials at the joiner pairing boundary;
-- added CSPRNG-backed `PairingId::generate()` and `PairingSecret::generate()` using the existing OS-backed crypto random source;
-- added typed local `PairingInstant` creation/deadline metadata;
-- invalid/expired invitations fail closed and become terminal;
-- invitation currentness is enforced at inviter-flow creation, joiner-confirmation verification, credential issuance, and final trust commit;
-- expiry occurring after credential acceptance but before trust commit is covered and cannot create trust;
-- simulator/core deterministic fixtures use explicit local monotonic-style test ticks;
-- pairing golden vectors were reconciled after initial epoch became fixed at zero.
+1. pairing currentness and fixed initial credential epoch;
+2. verified credential rotation and active-session invalidation;
+3. trusted-state and approval provenance;
+4. receiver-local request replay authority;
+5. explicit event subscription/authorization boundary;
+6. Quinn plain-`Drop` connection/task ownership.
 
-The Task 1 changes are included in the verified Task 2 checkpoint below.
+Their exact checkpoints and verification runs remain in git history and the remediation plan/evidence.
 
-### Task 2 — Credential rotation and active-session invalidation
+### Task 7 — Debug/privacy hardening
 
-Exact verified code head:
+Regression-first RED commit:
 
-`7cd243ff52115dad923b3cf4aba92a04bde79409`
+`822775f12cf7d48a8142926d26f0dfae6365dc1e`
 
-Implemented:
+- CI `34803032034` passed the earlier gates and failed only the new privacy regressions because ordinary derived `Debug` output exposed protected session/pairing material.
+- Fuzz remained GREEN.
 
-- removed raw public numeric `TrustRecord::advance_credential_epoch(u64)`;
-- added verified successor-credential acceptance using the signed `DeviceCredential`, current owner root/delegation evidence, exact owner/device binding, and exact `N + 1` progression;
-- stale, skipped, wrong-device, and invalid-authority successors fail closed;
-- accepting a successor credential atomically advances `accepted_credential_epoch`, `trust_revision`, and `last_transition_id` only after verification succeeds;
-- added `LogicalSession::revalidate_peer_trust` so an active session can be invalidated against current local trust/credential state;
-- inbound control validates both authenticated credential epoch and trust revision before sequence/body dispatch;
-- credential-epoch drift is fatal in the simulator and closes session authority;
-- existing operation/stream admission already binds authority to `trust_revision`, so credential rotation invalidates stale stream-operation authority through the existing conservative revision contract;
-- revocation tests that previously mutated an epoch numerically now rotate through the same verified successor-credential contract.
+Verified GREEN code head before integration:
 
-Verification on exact head `7cd243ff52115dad923b3cf4aba92a04bde79409`:
-
-- Rust CI `34747301958` — lockfile verification, dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and complete workspace tests all passed;
-- Fuzz Smoke `34747301924` — fuzz lockfile verification, formatting, and all bounded fuzz targets passed.
-
-### Task 3 — Trusted-state and approval provenance
-
-Exact verified code head:
-
-`685b8ec948671a989b7f32a46e021d629cdbfa2c`
+`80c9facad7dc5f05cd5a948ff6ad91a35d61c3ad`
 
 Implemented:
 
-- removed ordinary direct construction of trusted membership;
-- added signed `PairingTrustTransition` evidence bound to the initial credential, transition ID, pairing-evidence digest, owner authority, and issuer key;
-- initial trusted membership is established only after validating the epoch-0 credential and pairing trust transition against owner authority;
-- pairing flow commits trust through that verified transition rather than minting `TrustState::Trusted` directly;
-- removed public direct minting of `VerifiedApproval`;
-- added signed `OwnerApprovalEvidence` with exact approval scope, owner identity, issuer key/delegation epoch, issue time, and expiry;
-- local verification produces the private `VerifiedApproval` capability only after validating Administrative authority, owner/issuer binding, signature, and lifetime;
-- approval evaluation remains pure and requires explicit local time when approval authority is relevant;
-- scope and lifetime mismatch tests fail closed.
+- removed derived `Debug` from `SessionAuthProof`, `SessionAuthTranscriptV1`, and `PairingTranscript`;
+- added deliberately redacted custom `Debug` implementations;
+- retained useful role/profile/protocol/length metadata only;
+- signatures, transcript digests, nonces, binding-derived material, bootstrap/security bytes, and payload-like material are not emitted;
+- transcript bytes, equality, digests, signatures, verification, and protocol behavior are unchanged.
 
-Verification on exact head `685b8ec948671a989b7f32a46e021d629cdbfa2c`:
+Verification:
 
-- Rust CI `34794229945` — lockfile verification, dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and complete workspace tests all passed;
-- Fuzz Smoke `34794229882` — fuzz lockfile verification, formatting, and all bounded fuzz targets passed.
+- Rust CI `34804692285` passed the complete gate;
+- Fuzz Smoke `34804692267` passed;
+- the integration was subsequently merged in PR #19 and post-merge `main` CI `34805125848` passed.
 
-### Task 4 — Request replay and local retry authority
+### Task 8 — Production secure-random identifier construction
 
-Exact verified code head:
+Active branch / PR:
 
-`cad5222d744eb86888b10cf884309bc65c5d95fa`
+- branch: `m9-foundation-remediation-task8`;
+- PR: #20;
+- verified production code head: `d443637c3c7c8a7993e316c13aa67832d46a996e`.
 
-Implemented:
+Regression-first RED commit:
 
-- peer-declared `RetryClass` no longer grants receiver-side duplicate/replay authority;
-- active inbound request IDs and recently terminal inbound IDs are tracked by receiver-local state;
-- completed and cancelled request IDs remain replay-protected inside a bounded local window;
-- terminal replay state uses FIFO reclamation so long sessions do not permanently exhaust admission capacity;
-- active request authority is never evicted merely to reclaim completed replay state;
-- per-session replay state is cleared with the rest of dispatcher session state;
-- message-sequence anti-replay, request/response ownership, and existing resource bounds remain intact.
+`673031dc9b27cf505378719b414a483d17d8839a`
 
-Regression-first evidence covered duplicate idempotent IDs, cancelled-ID reuse, and completed-state liveness before the production change.
+RED evidence:
 
-Verification on exact head `cad5222d744eb86888b10cf884309bc65c5d95fa`:
-
-- Rust CI `34796612978` — lockfile verification, dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and complete workspace tests all passed;
-- Fuzz Smoke `34796613004` — fuzz lockfile verification, formatting, and all bounded fuzz targets passed;
-- dependency audit retains the previously documented allowed `paste 1.0.15` / `RUSTSEC-2024-0436` maintenance warning in the isolated Iroh experiment dependency graph.
-
-### Task 5 — Event authorization/subscription boundary
-
-Exact verified code head:
-
-`7126e8057600282fb59cf0e533b0ba02c8b46033`
+- CI `34805367644` passed lockfile, dependency audit, and formatting, then failed at workspace check with exactly three `E0599` errors for missing `RuleId::generate()`, `TransitionId::generate()`, and `OperationId::generate()`;
+- Fuzz Smoke `34805367727` passed.
 
 Implemented:
 
-- reconciled event delivery around explicit receiver-local authority without changing Protocol V1 wire compatibility;
-- added typed `EventSubscription` state keyed by exact capability and event type;
-- negotiated capability support remains a prerequisite but no longer acts as implicit permission to deliver every capability event;
-- peers cannot create or widen local event subscription authority through event metadata;
-- unmatched capability events fail closed with `EventNotSubscribed`;
-- exact local subscription permits only the subscribed capability/event pair;
-- authenticated system events remain outside the capability-subscription grammar and continue through the existing session identity/trust/sequence boundary;
-- simulator and authenticated Quinn fixtures now establish explicit local subscription authority before expecting capability-event delivery.
+- added a policy-owned secure identifier generation helper backed by the existing OS-CSPRNG source in `crosslab-crypto`;
+- added typed `generate()` constructors for `RuleId`, `TransitionId`, and `OperationId`;
+- preserved `from_bytes`/byte conversion for verified parsing, wire conversion, and deterministic tests;
+- kept `SessionId` derived rather than randomly generated;
+- routed `AuthorizedOperation::issue` through `OperationId::generate()` instead of bypassing the typed construction API;
+- no dependency, protocol, or architecture change was required.
 
-Verification on exact head `7126e8057600282fb59cf0e533b0ba02c8b46033`:
+Exact code-head verification:
 
-- Rust CI `34801746532` — lockfile verification, dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and complete workspace tests all passed;
-- Fuzz Smoke `34801746547` — fuzz lockfile verification, formatting, and all bounded fuzz targets passed;
-- dependency audit retains the previously documented allowed `paste 1.0.15` / `RUSTSEC-2024-0436` maintenance warning in the isolated Iroh experiment dependency graph.
-
-### Task 6 — Quinn plain-`Drop` connection/task ownership
-
-Exact verified code head:
-
-`db81e4c7a4f52c4fc3aa99e3ada6b703d0b6534a`
-
-Implemented:
-
-- added a regression proving plain owner drop previously left a live uni-stream send handle usable after `QuicTransportConnection` was dropped;
-- plain drop now immediately terminalizes local transport authority and explicitly closes the Quinn connection;
-- task admission is closed and all owned task handles are drained from the registry during shutdown initiation;
-- explicit `shutdown().await` still performs graceful close followed by joining the drained tasks;
-- plain `Drop` synchronously aborts drained tasks because it cannot await them;
-- shutdown followed by ordinary drop is idempotent through the existing terminal flag and drained task registry;
-- peer-visible connection close and live-stream cancellation are covered by the regression.
-
-Verification on exact head `db81e4c7a4f52c4fc3aa99e3ada6b703d0b6534a`:
-
-- Rust CI `34802668466` — lockfile verification, dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and complete workspace tests all passed;
-- Fuzz Smoke `34802668471` — fuzz lockfile verification, formatting, and all bounded fuzz targets passed;
-- dependency audit retains the previously documented allowed `paste 1.0.15` / `RUSTSEC-2024-0436` maintenance warning in the isolated Iroh experiment dependency graph.
+- Rust CI `34805704494` passed lockfile verification, dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and complete workspace tests;
+- Fuzz Smoke `34805704487` passed all bounded fuzz checks;
+- dependency audit retains only the already documented allowed `paste 1.0.15` / `RUSTSEC-2024-0436` maintenance warning in the isolated Iroh experiment dependency graph.
 
 ## Exact Next Task
 
-**Foundation remediation Task 7 — Debug/privacy hardening.**
+**Resolve authoritative delegated-role epoch state before the final remediation gate.**
 
-Replace ordinary derived Debug output for core session-auth proofs/transcripts and pairing transcript/security material with deliberate redacted output while retaining useful type/profile/length metadata.
+The current identity APIs can verify a supplied `AuthorityDelegation` against a caller-provided minimum epoch, but that does not itself establish which delegation epoch local durable authority state has accepted.
 
-Required behavior:
+Required design properties:
 
-1. add regression coverage using sentinel bytes plus actual proof digest/signature material and prove ordinary Debug output cannot expose them;
-2. remove derived `Debug` from `SessionAuthProof`, `SessionAuthTranscriptV1`, and `PairingTranscript`;
-3. custom Debug output may retain useful role/profile/protocol/length metadata only;
-4. signatures, transcript digests, nonces, binding-derived material, pairing bootstrap/security bytes, and payload-like material must remain redacted;
-5. keep cryptographic behavior, equality, canonical transcript bytes, signatures, and golden vectors unchanged.
+1. local durable state is authoritative for the accepted epoch of each delegated role slot;
+2. accepting a replacement delegation verifies owner, role, root authority/signature, and strictly newer role epoch before mutating local state;
+3. once epoch `N+1` is accepted, delegation epoch `N` fails closed everywhere that role authorizes sensitive work;
+4. callers cannot widen authority by supplying their own minimum epoch/current delegation object;
+5. identity/policy/core/storage boundaries remain clean and policy evaluation remains pure;
+6. no networking-candidate type enters the authority model;
+7. ADR-0009 remains reserved for the M9 networking decision, so this authority-state decision must use ADR-0010 or a later monotonic number.
 
-## Remaining Remediation Backlog
+Do not implement this authority-state change before recording and approving the architecture decision.
 
-After Task 7:
+## Final Remediation Work After Authority-State Resolution
 
-- finish OS-CSPRNG constructors for all locally created random identifiers required by the specifications;
-- explicitly resolve/design authoritative delegated-role epoch state rather than treating a caller-supplied/current object epoch as globally authoritative; ADR-0009 remains reserved for the M9 networking decision, so this authority-state decision must use a later monotonic ADR number;
-- run the complete regression/security/fuzz/dependency gate on the final exact head;
-- reconcile `security/M9-FOUNDATION-HARDENING-ASSESSMENT.md`, this file, and PR #19 before M9 Task 4 can resume.
-
-## Important Known Design Constraint
-
-Authoritative delegated-role epoch state is not centrally persisted yet. Current verification APIs can validate a delegation against a supplied minimum epoch, but that alone does not prove which delegation epoch local durable authority state has accepted. Do not silently claim this gap is solved; give it an explicit authority-state design before the final hardening gate.
-
-ADR-0009 is reserved by the active M9 networking work. Do not reuse it for delegated-authority state.
+- implement the approved authority-state design regression-first;
+- run the complete dependency/audit/format/check/Clippy/test/Fuzz gate on the exact final remediation head;
+- reconcile `security/M9-FOUNDATION-HARDENING-ASSESSMENT.md` and this file;
+- make M9 Task 4 the exact next implementation task only after the hardening gate is fully GREEN.
 
 ## Repository / M9 Invariants
 
@@ -208,9 +145,10 @@ ADR-0009 is reserved by the active M9 networking work. Do not reuse it for deleg
 
 ## Resume Procedure
 
-1. inspect `m9-remote-networking`, PR #19, current branch head/status, recent commits/workflows, and this file;
-2. read the Master Architecture, active remediation plan, audit, and relevant architecture/ADRs before changing authority or protocol contracts;
-3. continue the exact next remediation task RED -> verified failure -> minimal GREEN -> focused verification -> full gate;
-4. preserve clean crate boundaries and keep policy evaluation pure;
-5. update this file after each meaningful verified checkpoint;
-6. keep M9 Task 4 blocked until every remediation task is durably resolved and the exact final head passes the full verification suite.
+1. inspect canonical `main`, PR #20/current active branch, recent commits/workflows, and this file;
+2. finish PR #20 integration only after its final exact-head gate is GREEN;
+3. read the Master Architecture, Identity/Keys specification, relevant authority call paths, active remediation plan, and accepted ADRs before designing delegated-role epoch authority state;
+4. record/approve that design in the next available ADR before production implementation;
+5. implement authority-state behavior RED -> verified failure -> minimal GREEN -> focused verification -> full gate;
+6. update this file at every meaningful verified checkpoint;
+7. keep M9 Task 4 blocked until the entire remediation gate is durably resolved.
