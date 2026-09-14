@@ -87,7 +87,7 @@ Exact historical RED/GREEN commits and workflow evidence remain in git history, 
 
 ## Exact Next Task
 
-**Merge PR #22 only after its exact current head passes CI.** Use the PR's actual head SHA from GitHub for both CI verification and expected-head merge protection rather than duplicating a moving branch SHA in this file.
+**Merge PR #22 only after its exact current head passes CI.** Use the PR's actual head SHA from GitHub for CI verification and expected-head merge protection rather than duplicating a moving branch SHA in this file.
 
 After merge:
 
