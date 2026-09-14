@@ -1,7 +1,7 @@
 # Foundation Currentness and Replay Design
 
 **Date:** 2026-09-14  
-**Status:** Proposed for written-spec review  
+**Status:** Accepted  
 **Scope:** M9 second foundation remediation, before remote-networking Task 4
 
 ## Purpose
