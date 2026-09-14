@@ -134,7 +134,9 @@ Each direction of the ordered control channel maintains its own `message_seq`:
 - reconnect creates a new `SessionId` and fresh directional sequence state;
 - sequence values from an old session never authorize messages in a new session.
 
-The sequence is an application-level anti-replay/state-integrity check in addition to transport protections.
+The sequence is the authoritative Phase 1 application-level exact-envelope replay/order-integrity check in addition to transport protections.
+
+An authenticated peer that constructs a new envelope with the next valid sequence is making a new request attempt even if it repeats an earlier operation body or request identifier; current authorization and operation semantics still apply.
 
 ## 8. Request identifiers
 
@@ -153,7 +155,7 @@ operation-specific request body/reference
 
 A response contains the same `request_id` and either a typed success body or typed error result.
 
-A request ID is correlation, not authorization. The receiver still authenticates the session and evaluates policy/operation semantics.
+A request ID is correlation plus bounded duplicate/retry state, not authorization and not the full-session wire anti-replay primitive. The receiver still authenticates the session and evaluates current trust, capability, policy, operation, and use semantics.
 
 ## 9. Retry and duplicate semantics
 
@@ -166,11 +168,18 @@ RetryClass
 Rules:
 
 - generic protocol code never automatically retries `NonRetryable` requests;
-- a duplicate `NonRetryable` `RequestId` in the same session is rejected as `DuplicateRequest`;
-- an `Idempotent` request may be retransmitted with the same `RequestId` only when its capability operation declares the same semantics;
-- receiver maintains a bounded per-session recent-request cache for idempotent requests and may return the recorded result rather than execute twice;
-- the cache is bounded by count/time and disappears with the session;
-- a reconnect never assumes an old `RequestId` is safe to re-execute unless a capability-specific cross-session idempotency design exists.
+- `NonRetryable` does not promise permanent receiver-side exactly-once execution for an arbitrarily long session;
+- receivers maintain bounded session-local state for active requests plus a bounded recent history of completed/cancelled `RequestId` values;
+- a duplicate `RequestId` still represented in active/recent state is rejected as `DuplicateRequest` unless a locally approved capability-specific idempotency path explicitly permits recorded-result reuse;
+- peer-declared `RetryClass::Idempotent` does not by itself authorize re-execution or result reuse;
+- an idempotent duplicate path is allowed only when local capability metadata declares matching idempotent semantics;
+- Phase 1 may use count-based recent-history retention; future count+time retention is compatible when locally controlled and bounded;
+- active/in-flight request state is never silently evicted to preserve completed history;
+- once an old completed identifier has legitimately aged out of the bounded recent-history window, later use of that identifier is evaluated as a new request attempt and must pass current authorization/operation checks;
+- cancellation retains its request ID in the bounded recent-history window rather than immediately permitting recreation of the same recent request;
+- exact replay of an old accepted envelope remains rejected by `(SessionId, message_seq)` regardless of `RequestId` cache eviction;
+- a reconnect never assumes an old `RequestId` is safe to re-execute unless a capability-specific cross-session idempotency design exists;
+- capabilities requiring single-use, bounded-use, or stronger semantic duplicate-effect prevention enforce that behavior through local capability/`AuthorizedOperation` state, not permanent `RequestId` retention.
 
 Phase 1 does not add a generic durable exactly-once protocol.
 
@@ -189,6 +198,7 @@ Cancellation is idempotent:
 - cancelling an unknown/already-complete request returns a typed harmless result or is ignored according to the request state machine;
 - cancellation cannot create permission;
 - cancelled operation/request resources are released promptly;
+- a recently cancelled request identifier remains in bounded duplicate history;
 - cancelling a control request also cancels any not-yet-authorized operation creation associated with it;
 - cancellation of an existing `AuthorizedOperation` uses its operation lifecycle in P0.5.
 
@@ -593,7 +603,8 @@ Protocol implementation must include:
 - missing/unknown envelope body rejection;
 - invalid identifier/enum rejection;
 - control sequence duplicate/gap handling;
-- duplicate request behavior by retry class;
+- bounded recent duplicate-request behavior by retry class/local capability semantics;
+- aged-out request identifiers treated as new attempts rather than exactly-once history;
 - cancellation idempotency;
 - data-stream header wrong operation/session/source rejection;
 - golden canonical transcript bytes/digests/signatures for every signed v1 object.
