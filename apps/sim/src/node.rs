@@ -85,10 +85,7 @@ impl<'a> SimNode<'a> {
         self.dispatcher.pending_request_count()
     }
 
-    pub fn subscribe_event(
-        &mut self,
-        subscription: EventSubscription,
-    ) -> Result<bool, NodeError> {
+    pub fn subscribe_event(&mut self, subscription: EventSubscription) -> Result<bool, NodeError> {
         if self.session.state() != SessionState::Active {
             return Err(NodeError::Session(SessionError::InvalidState));
         }
