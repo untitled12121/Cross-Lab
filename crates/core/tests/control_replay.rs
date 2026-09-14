@@ -16,8 +16,8 @@ use crosslab_policy::{
 };
 use crosslab_protocol::{
     CancelRequest, CapabilityAdvertisement, CapabilityAdvertisementEntry, ControlEnvelope,
-    ControlRequest, ControlResponse, ControlResponseResult, EnvelopeBody, FeatureSet, ProtocolRange,
-    ProtocolVersion, RequestId, RetryClass,
+    ControlRequest, ControlResponse, ControlResponseResult, EnvelopeBody, FeatureSet,
+    ProtocolRange, ProtocolVersion, RequestId, RetryClass,
 };
 
 const CAPABILITY: &str = "clipboard.write";
