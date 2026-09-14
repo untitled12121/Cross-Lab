@@ -26,9 +26,9 @@ Architecture branch:
 
 `m9-foundation-authority-replay-design`
 
-PR:
+Architecture checkpoint PR:
 
-`#22 — Accept authority currentness and bounded replay architecture`
+`#22`
 
 The original design head `1065818bb1d8b528d96901004ea2ea9b95de7a45` passed Rust CI run `34815054120` through dependency audit, format, check, Clippy, and the complete workspace tests.
 
