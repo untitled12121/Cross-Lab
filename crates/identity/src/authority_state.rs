@@ -1,6 +1,4 @@
-use crate::{
-    AuthorityDelegation, AuthorityRole, IdentityError, OwnerRootRecord, RootSuccessor,
-};
+use crate::{AuthorityDelegation, AuthorityRole, IdentityError, OwnerRootRecord, RootSuccessor};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 struct DelegatedRoleState {
