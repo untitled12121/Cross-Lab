@@ -1,5 +1,7 @@
 use crosslab_crypto::SigningKey;
-use crosslab_identity::{AuthorityDelegation, AuthorityRole, DeviceId, OwnerId, OwnerRootRecord};
+use crosslab_identity::{
+    AuthorityDelegation, AuthorityRole, DeviceId, OwnerAuthorityState, OwnerId, OwnerRootRecord,
+};
 use crosslab_policy::{
     ApprovalError, ApprovalInstant, ApprovalScope, AuthorizationContext, CapabilityId,
     CapabilityVersion, CapabilityVersionRange, Constraint, DecisionEffect, DecisionReason,
@@ -67,7 +69,7 @@ impl Fixture {
         )
     }
 
-    fn administrative_authority(&self) -> (OwnerRootRecord, SigningKey, AuthorityDelegation) {
+    fn administrative_authority(&self) -> (OwnerAuthorityState, SigningKey) {
         let owner_id = OwnerId::from_bytes([0x40; 32]);
         let root_key = SigningKey::from_secret_bytes([0x41; 32]);
         let root = OwnerRootRecord::new(owner_id, &root_key, 0);
@@ -79,7 +81,9 @@ impl Fixture {
             3,
             &root_key,
         );
-        (root, administrative_key, delegation)
+        let mut authority = OwnerAuthorityState::new(root);
+        authority.accept_delegation(delegation).unwrap();
+        (authority, administrative_key)
     }
 
     fn verified_owner_approval(
@@ -88,18 +92,16 @@ impl Fixture {
         issued_at: u64,
         expires_at: u64,
     ) -> VerifiedApproval {
-        let (root, administrative_key, delegation) = self.administrative_authority();
-        OwnerApprovalEvidence::issue(
+        let (authority, administrative_key) = self.administrative_authority();
+        OwnerApprovalEvidence::issue_current(
             scope,
             ApprovalInstant::from_ticks(issued_at),
             ApprovalInstant::from_ticks(expires_at),
-            &root,
-            &delegation,
+            &authority,
             &administrative_key,
-            delegation.delegation_epoch(),
         )
         .unwrap()
-        .verify(&root, &delegation, delegation.delegation_epoch())
+        .verify_current(&authority)
         .unwrap()
     }
 }
@@ -328,17 +330,15 @@ fn non_administrative_delegation_cannot_authorize_owner_approval() {
 fn invalid_approval_lifetime_is_rejected() {
     let fixture = Fixture::new();
     let context = fixture.context();
-    let (root, administrative_key, delegation) = fixture.administrative_authority();
+    let (authority, administrative_key) = fixture.administrative_authority();
 
     assert_eq!(
-        OwnerApprovalEvidence::issue(
+        OwnerApprovalEvidence::issue_current(
             ApprovalScope::from_context(&context),
             ApprovalInstant::from_ticks(20),
             ApprovalInstant::from_ticks(20),
-            &root,
-            &delegation,
+            &authority,
             &administrative_key,
-            delegation.delegation_epoch(),
         ),
         Err(ApprovalError::InvalidLifetime)
     );
