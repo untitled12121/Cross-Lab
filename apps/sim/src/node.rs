@@ -142,7 +142,11 @@ impl<'a> SimNode<'a> {
         self.transport.close();
     }
 
-    pub fn receive_one(
+    pub fn receive_one(&mut self, peer_trust: &TrustRecord) -> Result<NodeEvent, NodeError> {
+        self.receive_one_at(peer_trust, ApprovalInstant::from_ticks(0))
+    }
+
+    pub fn receive_one_at(
         &mut self,
         peer_trust: &TrustRecord,
         local_time: ApprovalInstant,
