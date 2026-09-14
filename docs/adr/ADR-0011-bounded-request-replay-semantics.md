@@ -18,9 +18,9 @@ The current implementation uses bounded completed-request state. That is safer o
 
 ## Decision
 
-### 1. Separate session anti-replay from request retry/correlation
+### 1. Separate wire replay/order integrity from semantic duplicate requests
 
-The authoritative ordinary control-plane anti-replay mechanism for Phase 1 remains:
+The authoritative ordinary control-plane replay/order mechanism for Phase 1 remains:
 
 - authenticated logical `SessionId`;
 - one ordered reliable control channel per direction;
@@ -29,11 +29,15 @@ The authoritative ordinary control-plane anti-replay mechanism for Phase 1 remai
 - gap rejection on the ordered reliable channel;
 - fresh `SessionId` and fresh sequence state on reconnect.
 
-A successfully consumed old control envelope cannot be replayed later in the same session with a new sequence number because changing `message_seq` creates a different authenticated control message/state transition rather than replaying the original accepted envelope.
+An exact previously accepted envelope replayed with its old sequence is rejected by directional sequence state.
 
-`RequestId` is not the primary session anti-replay primitive.
+If an authenticated malicious peer intentionally constructs a new envelope with the next valid sequence but repeats an earlier operation body or `RequestId`, that is a new authenticated request attempt rather than wire replay. It must still pass current trust, capability, policy, operation, and bounded duplicate-state checks.
 
-### 2. `RequestId` remains correlation and bounded retry state
+`RequestId` is therefore not the primary full-session replay primitive, and retaining it forever cannot be treated as a security boundary against a malicious peer that is already allowed to submit new requests. A peer could otherwise choose a fresh `RequestId` for the same operation anyway.
+
+Operations that require single-use, bounded-use, or idempotent semantics must enforce those semantics through local capability/`AuthorizedOperation` state rather than depend on an unbounded history of request identifiers.
+
+### 2. `RequestId` remains correlation and bounded duplicate/retry state
 
 `RequestId` remains a cryptographically random 128-bit identifier scoped to a logical session.
 
@@ -45,7 +49,7 @@ The receiver maintains bounded session-local request state for:
 
 Duplicate identifiers that are still represented in current bounded state are rejected or handled according to the capability's approved idempotency semantics.
 
-Cross-Lab does not promise permanent retention of every completed `RequestId` for the full lifetime of an arbitrarily long session.
+Cross-Lab does not promise permanent retention of every completed `RequestId` for the full lifetime of an arbitrarily long session. Once a completed identifier has legitimately aged out of the bounded recent-history window, a later request using that identifier is evaluated as a new request attempt and must pass current authorization/operation semantics.
 
 ### 3. `RetryClass` does not grant authority
 
@@ -55,7 +59,9 @@ A duplicate execution/result-reuse path is permitted only when local capability 
 
 Generic protocol code must not automatically retry or re-execute `NonRetryable` operations.
 
-For Phase 1, when capability-local idempotent result caching is not implemented, duplicate IDs in the retained replay window are rejected rather than re-executed.
+For Phase 1, when capability-local idempotent result caching is not implemented, duplicate IDs in the retained recent-history window are rejected rather than re-executed.
+
+`NonRetryable` means the generic sender/protocol layer must not automatically retry that request. It does not create a permanent receiver-side exactly-once guarantee for an arbitrarily long session.
 
 ### 4. Bounded-state exhaustion remains fail closed
 
@@ -73,6 +79,8 @@ Phase 1 continues to provide no generic durable exactly-once execution guarantee
 
 After reconnect, request/result state from the old session is not assumed reusable. A capability that needs cross-session idempotency must define a capability-specific stable operation/idempotency design through separate review.
 
+Within one session, capabilities that need stronger duplicate-effect prevention than the recent `RequestId` window must enforce it through their own locally authoritative operation/use state.
+
 ### 6. Cancellation semantics
 
 Cancellation does not erase recent duplicate protection immediately. A cancelled request ID remains in the bounded recent-history window so an immediate duplicate cannot recreate work that was just cancelled.
@@ -83,7 +91,7 @@ Unknown/already-evicted historical cancellation remains harmless and cannot crea
 
 ### Retain every `RequestId` until session close
 
-Rejected. This gives simple full-session duplicate-ID memory but creates unbounded growth or a permanent maximum-request-count lifetime for long-lived sessions, conflicting with the architecture's bounded-state requirement.
+Rejected. This gives simple full-session duplicate-ID memory but creates unbounded growth or a permanent maximum-request-count lifetime for long-lived sessions, conflicting with the architecture's bounded-state requirement. It still would not prevent a malicious authorized peer from submitting the same operation with a fresh identifier.
 
 ### Evict IDs while continuing to claim full-session duplicate-ID rejection
 
@@ -99,7 +107,9 @@ Rejected. Idempotency is an operation semantic controlled by the local capabilit
 
 ## Security impact
 
-The decision preserves full-session control-envelope replay protection through authenticated session/sequence state while making request-level duplicate memory explicitly bounded.
+The decision preserves full-session exact-envelope replay/order protection through authenticated session/sequence state while making request-level duplicate memory explicitly bounded.
+
+It does not misrepresent `RequestId` as protection against an authenticated malicious peer intentionally issuing another allowed operation. Authorization, operation-use policy, cancellation, trust/policy revision binding, and capability-specific idempotency remain the authoritative controls for semantic duplicate effects.
 
 It removes pressure to choose between unbounded attacker-influenced memory and silently weakened duplicate semantics.
 
@@ -111,6 +121,8 @@ No protobuf field, enum value, frame shape, or control-envelope encoding changes
 
 This is a semantic clarification of Protocol V1. The existing `RequestId`, `RetryClass`, `SessionId`, and `message_seq` wire representations remain unchanged.
 
+Protocol V1's current full-session duplicate-`RequestId` wording must be revised when this ADR is accepted because that behavioral guarantee changes to an explicitly bounded recent-history contract.
+
 Any future capability-specific cross-session idempotency contract is outside this ADR and may require its own compatibility review.
 
 ## Operational impact
@@ -121,10 +133,12 @@ No persistence, database, new transport primitive, or new dependency is introduc
 
 ## Consequences
 
-- directional `message_seq` is the authoritative Phase 1 control replay boundary;
-- `RequestId` is a bounded correlation/retry key rather than a second forever-retained session replay log;
+- directional `message_seq` is the authoritative Phase 1 exact-envelope replay/order boundary;
+- `RequestId` is a bounded correlation/duplicate/retry key rather than a second forever-retained session replay log;
 - recent duplicates remain rejected fail-closed;
 - active request state is never silently evicted to make room for history;
+- a later request whose old ID has aged out is treated as a new request and still requires current authorization/operation validity;
 - peer-declared retry class cannot authorize duplicate execution;
+- stronger semantic single-use/idempotency requirements live in local capability/operation state;
 - Protocol V1 must be updated after this ADR is accepted so its duplicate wording matches the bounded contract;
 - capability-specific idempotent result caching can be added later without weakening the generic security boundary.
