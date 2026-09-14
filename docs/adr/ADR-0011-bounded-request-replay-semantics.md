@@ -1,7 +1,8 @@
 # ADR-0011: Bounded request replay and retry semantics
 
-**Status:** Proposed  
-**Date:** 2026-09-14
+**Status:** Accepted  
+**Date:** 2026-09-14  
+**Accepted:** 2026-09-14
 
 ## Context
 
