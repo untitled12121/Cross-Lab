@@ -4,7 +4,9 @@ use crosslab_core::{
     ControlDispatchError, ControlDispatcher, ControlReceiveError, ControlSendError, InboundControl,
     LogicalSession, SessionError, SessionState, TransportConnection,
 };
-use crosslab_policy::{DecisionReason, LocalCapability, NetworkClass, PolicyState, TrustRecord};
+use crosslab_policy::{
+    ApprovalInstant, DecisionReason, LocalCapability, NetworkClass, PolicyState, TrustRecord,
+};
 use crosslab_protocol::{
     CancelRequest, CapabilityAdvertisement, ControlRequest, ControlResponse, ControlResponseResult,
     EnvelopeBody, Event, ProtocolFailure, ProtocolWireError, RequestId, SessionClose,
@@ -140,7 +142,11 @@ impl<'a> SimNode<'a> {
         self.transport.close();
     }
 
-    pub fn receive_one(&mut self, peer_trust: &TrustRecord) -> Result<NodeEvent, NodeError> {
+    pub fn receive_one(
+        &mut self,
+        peer_trust: &TrustRecord,
+        local_time: ApprovalInstant,
+    ) -> Result<NodeEvent, NodeError> {
         let frame = match self.transport.try_receive_control() {
             Ok(frame) => frame,
             Err(error) => {
@@ -170,6 +176,7 @@ impl<'a> SimNode<'a> {
                 &self.local_capabilities,
                 peer_trust,
                 self.network_class,
+                local_time,
             )
         };
         let inbound = match result {
