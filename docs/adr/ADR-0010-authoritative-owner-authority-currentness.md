@@ -22,12 +22,16 @@ The identity domain will expose an `OwnerAuthorityState` that is the authoritati
 ```text
 OwnerAuthorityState
   active_root: OwnerRootRecord
-  device_signing: optional AuthorityDelegation
-  administrative: optional AuthorityDelegation
-  recovery: optional AuthorityDelegation
+  device_signing: DelegatedRoleState
+  administrative: DelegatedRoleState
+  recovery: DelegatedRoleState
+
+DelegatedRoleState
+  accepted_epoch: optional u64
+  active: optional AuthorityDelegation
 ```
 
-The state stores the exact currently accepted authority object for each slot, not only an epoch floor.
+For each delegated role, the state retains the monotonic last accepted epoch and, when one is valid under the active root, the exact active delegation object. This keeps role/key/root binding explicit while preventing role-epoch rollback across owner-root rotation.
 
 `OwnerAuthorityState` belongs in the identity domain. It must not depend on networking, protocol, UI, platform-adapter, or persistence types.
 
@@ -36,6 +40,15 @@ The state stores the exact currently accepted authority object for each slot, no
 The state owns the active `OwnerRootRecord`.
 
 A normal root successor may replace it only after the existing `RootSuccessor` continuity rules verify the exact owner, expected next root epoch, old-root signature, new-root signature, and successor key identity.
+
+Root replacement is a validate-then-commit state transition. When the successor becomes active:
+
+- the previous root becomes historical rather than current ordinary authority;
+- every delegated-role `active` slot is cleared because those delegations were authorized by the superseded root;
+- each delegated role retains its `accepted_epoch` floor;
+- a new delegation under the new root must verify under that root and strictly advance the retained role epoch before becoming active.
+
+This prevents root rotation from silently carrying old-root delegations forward or resetting role epochs backward.
 
 After a successor is accepted, high-level ordinary owner-authority operations must no longer accept the superseded root as current authority.
 
@@ -47,12 +60,11 @@ Emergency root recovery remains outside this Phase 1 decision.
 
 For `DeviceSigning`, `Administrative`, and `Recovery` role slots:
 
-- a first accepted delegation must verify under the active root, match the owner and role, and carry a valid signature;
-- a first locally observed delegation may have any valid epoch because a restored or newly joined device may first observe the current role at epoch greater than zero;
-- replacement must verify completely before mutation;
-- replacement requires a strictly greater role-specific delegation epoch;
+- when no prior role epoch is known, the first accepted delegation must verify under the active root, match the owner and role, and carry a valid signature; it may begin at any valid epoch because a restored or newly joined device may first observe the current role at epoch greater than zero;
+- when a prior role epoch is known, replacement must verify completely before mutation and must carry a strictly greater role-specific delegation epoch;
 - an equal, lower, wrong-owner, wrong-role, wrong-root, invalid-signature, or otherwise ambiguous replacement fails closed;
-- once epoch `N+1` is accepted, epoch `N` cannot authorize new sensitive work through high-level APIs.
+- once epoch `N+1` is accepted, epoch `N` cannot authorize new sensitive work through high-level APIs;
+- if root rotation clears the active delegation, the retained epoch floor still prevents a new root from accepting role epoch `N` or lower after role epoch `N+1` had already been accepted.
 
 Raw `AuthorityDelegation::verify(root, minimum_epoch)` may remain as a low-level validation primitive, but caller-selected epoch floors are not authoritative currentness.
 
@@ -69,6 +81,8 @@ At minimum:
 - root-authorized trust transitions use the active root from state;
 - session authentication validates both device credentials against the state's current `DeviceSigning` authority.
 
+A missing active role delegation fails closed even if the state retains a historical accepted epoch.
+
 Low-level constructors used for deterministic vectors/import may remain narrower primitives, but they must not be the ordinary production currentness boundary.
 
 ### 5. Session consequences of authority change
@@ -77,6 +91,7 @@ Cross-Lab chooses a fail-closed Phase 1 rule for identity authority that partici
 
 - accepting a new active owner root invalidates ordinary active sessions authenticated under the superseded root;
 - accepting a new `DeviceSigning` delegation invalidates ordinary active sessions authenticated under the superseded Device Signing authority;
+- root replacement also leaves Device Signing inactive until a strictly newer delegation under the new root is accepted, so fresh ordinary session authentication fails closed during that interval;
 - invalidation rejects new control work, cancels session-scoped authorized operations/data-stream authority, and closes the logical session/transport as soon as practical;
 - reconnect requires fresh authentication under current authority state;
 - rotating `Administrative` or `Recovery` authority alone does not invalidate an ordinary device session because those roles did not authenticate that session.
@@ -89,7 +104,7 @@ Session state therefore needs enough local authentication-currentness metadata t
 
 Phase 1 implementation may keep `OwnerAuthorityState` in memory for simulator/runtime work.
 
-This ADR does not claim crash/restart rollback resistance. Before production platform state relies on this authority across restarts, the local agent/platform persistence layer must atomically persist the active root and delegated-role slots and revalidate them when loading.
+This ADR does not claim crash/restart rollback resistance. Before production platform state relies on this authority across restarts, the local agent/platform persistence layer must atomically persist the active root, each role's monotonic accepted epoch, and each active delegated-role object, then revalidate them when loading.
 
 Owner authority currentness is security state and must not be established by CRDT merge, peer-majority state, relay state, or transport metadata.
 
@@ -109,11 +124,19 @@ A caller cannot widen authority by supplying:
 
 ### Store only accepted epoch floors
 
-Rejected as the primary design. Numeric floors would improve stale-epoch rejection but still allow arbitrary authority objects to flow through high-level APIs and require each caller to bind key identity/role/root correctly. Storing the exact accepted authority object is simpler and more misuse-resistant.
+Rejected as the primary design. Numeric floors are necessary to preserve monotonicity across root rotation, but they are insufficient by themselves because arbitrary authority objects could still flow through high-level APIs. Cross-Lab stores the floor plus the exact active authority object.
 
 ### Keep caller-provided root/delegation currentness
 
 Rejected. Cryptographic validity of a supplied historical authority is not equivalent to local current authority after rotation.
+
+### Carry old delegated-role authority across root rotation
+
+Rejected for Phase 1. A delegation signed by the superseded root remains historical evidence, not current delegated authority under the new active root. Carrying it forward would require an explicit cross-root delegation-continuity rule that does not currently exist.
+
+### Reset delegated-role epochs when the root rotates
+
+Rejected. Role epochs are monotonic security currentness for the logical role slot. Root rotation must not create a path to accept an older role epoch.
 
 ### Introduce a persistent authority database now
 
@@ -127,6 +150,8 @@ Rejected for Phase 1. It permits authority known to be superseded locally to ret
 
 This decision removes caller-selected authority currentness from ordinary sensitive paths. Superseded owner roots and delegated-role keys remain cryptographically historical but cease to be locally current authority after a verified replacement is accepted.
 
+Retaining delegated-role epoch floors across root rotation prevents rollback while clearing active old-root delegations prevents cross-root authority carryover without an explicit continuity rule.
+
 Fail-closed session invalidation prevents an already authenticated session from retaining ordinary authority after the owner root or Device Signing authority that authenticated it has been replaced locally.
 
 Recovery remains a separate role and does not become ordinary device/session authority.
@@ -139,7 +164,9 @@ The change is an internal Rust API and runtime-authority semantic hardening. Gol
 
 ## Operational impact
 
-Phase 1 gains a small identity-owned runtime state object and explicit authority-replacement lifecycle hooks. No new database, daemon, network service, transport dependency, or platform-specific dependency is introduced.
+Phase 1 gains a small identity-owned runtime state object and explicit authority-replacement lifecycle hooks. Root rotation temporarily leaves delegated roles inactive until strictly newer delegations are accepted under the new root.
+
+No new database, daemon, network service, transport dependency, or platform-specific dependency is introduced.
 
 Production persistence, hardware-backed key-provider integration, and emergency root recovery remain later platform/security work.
 
@@ -147,6 +174,7 @@ Production persistence, hardware-backed key-provider integration, and emergency 
 
 - ordinary owner-authority currentness has one local source of truth;
 - active root and delegated-role replacement become explicit verified state transitions;
+- delegated-role epoch monotonicity survives root rotation without carrying old-root delegated authority forward;
 - sensitive callers no longer choose their own minimum delegation epoch or current root object;
 - root/Device Signing replacement invalidates ordinary sessions authenticated under superseded authority;
 - Administrative/Recovery rotation does not unnecessarily tear down ordinary device sessions;
