@@ -37,7 +37,7 @@ impl Fixture {
         self.context_at(15)
     }
 
-    fn context_at(&self, now: u64) -> AuthorizationContext {
+    fn context_without_time(&self) -> AuthorizationContext {
         AuthorizationContext::new(
             self.source,
             self.destination,
@@ -49,8 +49,12 @@ impl Fixture {
             7,
             self.local_capability.clone(),
             NetworkClass::Local,
-            ApprovalInstant::from_ticks(now),
         )
+    }
+
+    fn context_at(&self, now: u64) -> AuthorizationContext {
+        self.context_without_time()
+            .with_local_time(ApprovalInstant::from_ticks(now))
     }
 
     fn rule(&self, effect: RuleEffect) -> PolicyRule {
@@ -230,6 +234,20 @@ fn ask_requires_scoped_signed_owner_approval() {
     let decision = policy.evaluate(&approved);
     assert_eq!(decision.effect(), DecisionEffect::Allow);
     assert!(decision.into_grant().is_some());
+}
+
+#[test]
+fn approval_without_local_time_fails_closed() {
+    let fixture = Fixture::new();
+    let mut policy = PolicyState::new();
+    policy.insert(fixture.rule(RuleEffect::Ask)).unwrap();
+
+    let context = fixture.context_without_time();
+    let approval = fixture.verified_owner_approval(ApprovalScope::from_context(&context), 0, 20);
+    let decision = policy.evaluate(&context.with_verified_approval(approval));
+
+    assert_eq!(decision.effect(), DecisionEffect::Ask);
+    assert_eq!(decision.reason(), DecisionReason::ApprovalRequired);
 }
 
 #[test]
