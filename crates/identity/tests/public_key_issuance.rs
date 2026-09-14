@@ -1,6 +1,7 @@
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,
+    OwnerRootRecord,
 };
 
 #[test]
@@ -16,22 +17,23 @@ fn device_credential_can_be_issued_from_public_key_without_device_private_key() 
         0,
         &root_key,
     );
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(delegation).unwrap();
     let device_key = SigningKey::from_secret_bytes([0x54; 32]);
     let device_public_key = device_key.verifying_key();
     let device_id = DeviceId::from_bytes([0x55; 32]);
 
-    let credential = DeviceCredential::issue_for_public_key(
+    let credential = DeviceCredential::issue_for_public_key_current(
         owner_id,
         device_id,
         device_public_key,
         3,
-        &root,
-        &delegation,
+        &authority,
         &issuer_key,
     )
     .unwrap();
 
-    credential.verify(&root, &delegation, 3, 0).unwrap();
+    credential.verify_current(&authority, 3).unwrap();
     assert_eq!(credential.device_id(), device_id);
     assert_eq!(credential.device_public_key(), device_public_key);
     assert_eq!(credential.credential_epoch(), 3);
