@@ -2,49 +2,48 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make active owner/delegated authority currentness locally authoritative, invalidate sessions when their authentication authority is superseded, lock bounded request semantics to ADR-0011, and remove caller-selected trust/policy revision currentness from high-level stream admission.
+**Goal:** Make owner/delegated authority currentness locally authoritative, invalidate sessions when their authentication authority is superseded, lock bounded request semantics to ADR-0011, and remove caller-selected trust/policy currentness from high-level stream admission.
 
-**Architecture:** `crosslab-identity` owns an in-memory `OwnerAuthorityState` containing the active owner root plus monotonic delegated-role epoch floors and active delegations. Policy/Core consume that state for authority-bearing operations; sessions snapshot the root/Device Signing authority used at authentication and revalidate it on authority changes. Existing control `message_seq` remains exact-envelope replay protection, while `RequestId` remains bounded duplicate/retry history. Stream admission receives authoritative local `TrustRecord`/`PolicyState` objects and derives revisions internally.
+**Architecture:** `crosslab-identity` owns an in-memory `OwnerAuthorityState` containing the active owner root plus monotonic delegated-role epoch floors and active delegations. Policy/Core consume that state for authority-bearing operations; sessions snapshot the root and Device Signing authority used at authentication and revalidate them after local authority changes. `message_seq` remains exact-envelope replay/order protection, while `RequestId` remains bounded duplicate/retry history. Stream admission receives authoritative local `TrustRecord` and `PolicyState` objects and derives revisions internally.
 
-**Tech Stack:** Rust 1.98.1 workspace, Ed25519/BLAKE3 domain primitives already in `crosslab-crypto`, `crosslab-identity`, `crosslab-policy`, `crosslab-core`, simulator adapters, Quinn transport tests, cargo-audit, cargo-fuzz nightly-2026-09-12.
+**Tech Stack:** Rust 1.98.1 workspace; existing Ed25519/BLAKE3 primitives in `crosslab-crypto`; `crosslab-identity`, `crosslab-policy`, `crosslab-core`, simulator adapters, Quinn transport tests; cargo-audit; cargo-fuzz nightly-2026-09-12.
 
 **Spec:** `docs/superpowers/specs/2026-09-14-foundation-currentness-replay-design.md`
 
 ## Global Constraints
 
-- ADR-0010 and ADR-0011 are authoritative for this implementation.
-- ADR-0009 remains reserved for the M9 remote-networking decision; do not begin M9 Task 4 here.
-- Execute this plan from a fresh implementation branch created from the verified `main` commit after the accepted architecture PR is merged.
-- No protobuf schema, canonical transcript, signature format, identifier format, Quinn channel-binding, or transport-contract byte change.
-- No database, durable persistence subsystem, CRDT authority merge, global mutable authority registry, new daemon, 0-RTT authority, or emergency-root-recovery design.
-- `OwnerAuthorityState` stays in `crosslab-identity` and must not depend on policy, core, protocol, transport, UI, or platform types.
+- ADR-0010 and ADR-0011 are authoritative.
+- ADR-0009 remains reserved for M9 remote networking; do not begin M9 Task 4 in this plan.
+- Execute from a fresh implementation branch created from verified `main` after the accepted architecture PR is merged.
+- Do not change protobuf schemas, canonical transcript bytes, signature formats, identifier formats, Quinn channel-binding bytes, or transport-contract semantics.
+- Do not add a database, persistent authority store, CRDT authority merge, global mutable authority registry, daemon, 0-RTT authority, or emergency-root-recovery mechanism.
+- `OwnerAuthorityState` belongs to `crosslab-identity` and must not depend on policy, core, protocol, transport, UI, or platform types.
 - Root rotation clears active delegated-role objects but retains each role's highest accepted epoch floor.
-- A missing active delegated role fails closed even when a historical accepted epoch exists.
+- Missing current delegated authority fails closed even when a historical epoch floor exists.
 - Root or Device Signing replacement invalidates ordinary sessions authenticated under superseded authority; Administrative/Recovery-only replacement does not.
-- Request tracking stays bounded; active/in-flight request state is never evicted to preserve completed history.
+- Request tracking remains bounded; active/in-flight state is never evicted to preserve completed history.
 - Peer `RetryClass::Idempotent` never grants duplicate execution authority.
-- High-level stream admission derives trust/policy currentness from local state rather than caller-provided revision numbers.
-- Preserve existing golden vectors and externally visible protocol bytes.
-- Keep comments short and explain only security intent that is not obvious from code.
+- High-level stream admission derives trust/policy currentness from local state, never caller-selected revision integers.
+- Existing golden vectors and externally visible protocol bytes must remain unchanged.
 
 ---
 
 ## File Structure
 
-- `crates/identity/src/authority_state.rs` — new identity-owned owner/delegated authority currentness state.
-- `crates/identity/src/{lib.rs,credential.rs}` — export state and route high-level credential operations through it.
-- `crates/identity/tests/authority_state.rs` — role/root currentness and mutation-atomicity regression tests.
-- `crates/policy/src/authorization/approval.rs` — Administrative-authority currentness.
-- `crates/policy/src/trust/{mod.rs,pairing.rs,transition.rs}` — Device Signing/root/delegated trust transitions through current authority state.
+- `crates/identity/src/authority_state.rs` — owner-root/delegated-role currentness state.
+- `crates/identity/src/{lib.rs,credential.rs}` — export state and route credentials through it.
+- `crates/identity/tests/authority_state.rs` — state transition and rollback tests.
+- `crates/policy/src/authorization/approval.rs` — current Administrative authority.
+- `crates/policy/src/trust/{mod.rs,pairing.rs,transition.rs}` — current Device Signing/root/delegated trust authority.
 - `crates/policy/tests/{authorization.rs,trust.rs,trust_transitions.rs}` — stale-authority regressions.
-- `crates/core/src/pairing/flow.rs` — pairing flow consumes `OwnerAuthorityState` rather than raw root/delegation/floor.
-- `crates/core/src/session/{state.rs,currentness.rs}` — state-backed fresh authentication plus active-session authority snapshot/revalidation.
-- `crates/core/tests/{pairing_flow.rs,session_auth.rs,session_rotation.rs}` and new `session_authority_currentness.rs` — current-authority regressions.
-- `crates/core/tests/control_replay.rs` — characterization tests for ADR-0011; existing dispatcher code should remain unchanged when those tests pass.
-- `crates/core/src/stream/mod.rs`, `crates/core/tests/stream_admission.rs` — derive trust/policy currentness from local authoritative objects.
-- `apps/sim/src/{node.rs,stream.rs}`, `apps/sim/tests/{lifecycle.rs,stream_scenarios.rs}` — propagate authority-currentness failure into cancellation/transport close and migrate stream-currentness inputs.
-- `transports/quic/src/session_auth_tests.rs`, `transports/quic/src/session_auth_tests/lifecycle_tests.rs` — migrate session fixtures without changing Quinn semantics.
-- `security/M9-FOUNDATION-HARDENING-ASSESSMENT.md`, `docs/plans/phase-1/M9-whole-project-security-quality-audit.md`, `docs/development/CURRENT.md` — final evidence/reconciliation only after exact-head verification.
+- `crates/core/src/pairing/flow.rs` — state-backed pairing.
+- `crates/core/src/session/{state.rs,currentness.rs}` — state-backed authentication and authority revalidation.
+- `crates/core/tests/{pairing_flow.rs,session_auth.rs,session_rotation.rs}` plus `session_authority_currentness.rs` — session regressions.
+- `crates/core/tests/control_replay.rs` — ADR-0011 characterization.
+- `crates/core/src/stream/mod.rs`, `crates/core/tests/stream_admission.rs` — local trust/policy currentness.
+- `apps/sim/src/{node.rs,stream.rs}`, `apps/sim/tests/{lifecycle.rs,stream_scenarios.rs}` — runtime cancellation/close behavior.
+- `transports/quic/src/session_auth_tests.rs`, `transports/quic/src/session_auth_tests/lifecycle_tests.rs` — fixture migration only.
+- `security/M9-FOUNDATION-HARDENING-ASSESSMENT.md`, `docs/plans/phase-1/M9-whole-project-security-quality-audit.md`, `docs/development/CURRENT.md` — final evidence.
 
 ---
 
@@ -56,8 +55,6 @@
 - Modify: `crates/identity/src/lib.rs`
 
 **Interfaces:**
-- Consumes: existing `OwnerRootRecord`, `RootSuccessor`, `AuthorityDelegation`, `AuthorityRole`, `IdentityError`.
-- Produces:
 
 ```rust
 pub struct OwnerAuthorityState { /* private fields */ }
@@ -84,13 +81,9 @@ impl OwnerAuthorityState {
 }
 ```
 
-- `AuthorityRole::OwnerRoot` is invalid for delegated-slot APIs and returns `IdentityError::WrongIssuerRole`.
-- Missing active delegation returns the existing `IdentityError::UnknownIssuer`.
-- Equal/lower replacement returns `IdentityError::InvalidAuthorityEpoch`.
+`OwnerRoot` passed to delegated-slot access returns `WrongIssuerRole`; missing active delegation returns `UnknownIssuer`; equal/lower epoch returns `InvalidAuthorityEpoch`.
 
-- [ ] **Step 1: Write RED state tests**
-
-Create `crates/identity/tests/authority_state.rs` with the strict-monotonicity test:
+- [ ] **Step 1: Write the RED monotonicity test**
 
 ```rust
 #[test]
@@ -139,19 +132,17 @@ fn delegation_replacement_is_strictly_monotonic() {
 }
 ```
 
-Add separate tests for: first observed epoch greater than zero; wrong owner; delegated `OwnerRoot`; wrong active root/signature; alternate delegation at equal epoch; role independence; failed replacement leaves state unchanged.
+Add separate tests for first observed epoch > 0, wrong owner, delegated `OwnerRoot`, wrong active root/signature, alternate same-epoch key, role independence, and failed-replacement atomicity.
 
-- [ ] **Step 2: Run the RED tests**
+- [ ] **Step 2: Run RED**
 
 ```bash
 cargo test -p crosslab-identity --test authority_state
 ```
 
-Expected: compile failure because `OwnerAuthorityState` does not exist.
+Expected: compile failure because `OwnerAuthorityState` is absent.
 
-- [ ] **Step 3: Implement the smallest state object**
-
-Use one private focused slot type:
+- [ ] **Step 3: Implement the minimal state**
 
 ```rust
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -161,15 +152,13 @@ struct DelegatedRoleState {
 }
 ```
 
-Store exactly three fields of this type in `OwnerAuthorityState`; do not introduce a `HashMap`, trait hierarchy, service object, persistence interface, or global registry.
+Use exactly three role slots. Validate owner/role/signature against `self.root` before mutation. When a floor exists, reject `delegation.delegation_epoch() <= floor`; do not compute `floor + 1`.
 
-`accept_delegation` validates owner/role/signature against `self.root` before mutation, then rejects `delegation_epoch() <= accepted_epoch` when a floor exists. Do not compute `floor + 1`, so `u64::MAX` remains overflow-safe.
-
-- [ ] **Step 4: Add root-successor RED coverage**
+- [ ] **Step 4: Add the RED root-successor test**
 
 ```rust
 #[test]
-fn root_successor_clears_active_roles_but_keeps_epoch_floors() {
+fn root_successor_clears_active_role_but_keeps_epoch_floor() {
     let owner = OwnerId::from_bytes([0x20; 32]);
     let root0_key = SigningKey::from_secret_bytes([0x21; 32]);
     let root1_key = SigningKey::from_secret_bytes([0x22; 32]);
@@ -214,13 +203,13 @@ fn root_successor_clears_active_roles_but_keeps_epoch_floors() {
 }
 ```
 
-Then add the epoch-8-under-new-root success assertion and a failed-successor atomicity test.
+Extend it with epoch 8 under root 1 succeeding, and add failed-successor atomicity.
 
 - [ ] **Step 5: Implement root successor acceptance**
 
-Call `successor.verify(&self.root)?` before mutation. On success, replace root, clear only active delegation objects, and retain all accepted epoch floors.
+Call `successor.verify(&self.root)?` before mutation. On success replace root, clear active delegations, retain all epoch floors.
 
-- [ ] **Step 6: Run focused identity verification**
+- [ ] **Step 6: Verify**
 
 ```bash
 cargo fmt --check
@@ -239,7 +228,7 @@ git commit -m "feat(identity): add authoritative owner authority state"
 
 ---
 
-### Task 2: Route high-level device credentials through current authority
+### Task 2: Route device credentials through current authority
 
 **Files:**
 - Modify: `crates/identity/src/credential.rs`
@@ -249,8 +238,6 @@ git commit -m "feat(identity): add authoritative owner authority state"
 - Verify unchanged: `crates/identity/tests/golden_vectors.rs`
 
 **Interfaces:**
-- Consumes: `OwnerAuthorityState::root()` and `current_delegation(AuthorityRole::DeviceSigning)`.
-- Produces transitional current-authority methods used until Task 7 removes the raw high-level API:
 
 ```rust
 pub fn issue_current(
@@ -285,42 +272,44 @@ pub fn rotate_current(
 ) -> Result<Self, IdentityError>;
 ```
 
-- [ ] **Step 1: Add a RED stale-Device-Signing credential test**
+These names are transitional; Task 7 removes the old raw-currentness API and renames these to the ordinary clean names.
+
+- [ ] **Step 1: Write RED stale-DSA verification**
+
+Construct state with DSA epoch 0, issue credential C0, accept DSA epoch 1, then assert:
 
 ```rust
-#[test]
-fn superseded_device_signing_authority_cannot_verify_current_credentials() {
-    // Arrange authority with DeviceSigning epoch 0 and issue credential C0.
-    // Accept a valid DeviceSigning epoch 1 into the same authority state.
-    // C0.verify_current(&authority, 0) must return UnknownIssuer.
-}
+assert_eq!(
+    c0.verify_current(&authority, 0),
+    Err(IdentityError::UnknownIssuer)
+);
 ```
 
-Use concrete synthetic keys/IDs following existing credential tests; assert the exact `IdentityError::UnknownIssuer` result.
+Also assert the epoch-0 signing key cannot issue through `issue_current` after epoch 1 is active.
 
-- [ ] **Step 2: Run the RED test**
+- [ ] **Step 2: Run RED**
 
 ```bash
 cargo test -p crosslab-identity --test credentials superseded_device_signing_authority_cannot_verify_current_credentials
 ```
 
-Expected: compile failure because `verify_current` does not exist.
+Expected: compile failure because `verify_current` is absent.
 
-- [ ] **Step 3: Implement current-authority credential helpers**
+- [ ] **Step 3: Implement current-authority credential methods**
 
-Resolve the active Device Signing delegation from `OwnerAuthorityState`; never accept a delegation floor from the caller. `issue_current`/`issue_for_public_key_current` require `issuer_key.verifying_key()` to match the active delegation. `verify_current` requires `issuer_device_signing_key_id` to match the active delegation exactly, then verifies signature/credential epoch using existing primitives.
+Resolve `DeviceSigning` through `OwnerAuthorityState`. Issuance requires the supplied private key to match the active delegation. Verification requires the credential's issuer key ID to match the active delegation exactly before signature verification. No method accepts a caller delegation floor.
 
-- [ ] **Step 4: Preserve credential epoch and wire rules**
+- [ ] **Step 4: Preserve credential epoch/wire rules**
 
-Keep initial credential epoch `0`, normal device credential rotation exact `N+1`, transcript fields, key derivation, and signature bytes unchanged.
+Initial credential epoch remains 0; ordinary device rotation remains exact N+1; transcript fields, key derivation, and signatures remain unchanged.
 
-- [ ] **Step 5: Run identity tests and vectors**
+- [ ] **Step 5: Verify**
 
 ```bash
 cargo test -p crosslab-identity --all-features
 ```
 
-Expected: PASS including existing golden vectors.
+Expected: PASS including golden vectors.
 
 - [ ] **Step 6: Commit**
 
@@ -331,7 +320,7 @@ git commit -m "feat(identity): verify credentials against current authority"
 
 ---
 
-### Task 3: Migrate policy authority-bearing state transitions
+### Task 3: Migrate policy authority-bearing transitions
 
 **Files:**
 - Modify: `crates/policy/src/authorization/approval.rs`
@@ -344,10 +333,8 @@ git commit -m "feat(identity): verify credentials against current authority"
 - Verify unchanged: `crates/policy/tests/golden_vectors.rs`
 
 **Interfaces:**
-- Owner approval resolves `AuthorityRole::Administrative` from `OwnerAuthorityState`.
-- Pairing and credential rotation resolve current `DeviceSigning` authority.
-- Root revocation uses `authority.root()`.
-- Delegated revocation takes an explicit requested role but resolves the exact current delegation from state:
+
+Owner approval resolves current `Administrative`; pairing and credential rotation resolve current `DeviceSigning`; root revocation uses `authority.root()`.
 
 ```rust
 pub fn issue_delegated_revocation_current(
@@ -365,38 +352,25 @@ pub fn apply_delegated_current(
 ) -> Result<(), TrustTransitionError>;
 ```
 
-Only `Administrative` and `DeviceSigning` remain allowed for ordinary delegated revocation; `OwnerRoot` and `Recovery` stay rejected.
+Only `Administrative` and `DeviceSigning` remain valid ordinary delegated-revocation roles.
 
 - [ ] **Step 1: Write RED Administrative-currentness tests**
 
-Create Administrative delegation epoch 0, issue approval evidence through it, accept epoch 1, then assert:
-
-```rust
-assert_eq!(
-    old_evidence.verify_current(&authority),
-    Err(ApprovalError::UnknownIssuer)
-);
-```
-
-Also assert the epoch-0 signing key cannot create new current approval evidence once epoch 1 is active.
+Issue owner approval under Administrative epoch 0, accept epoch 1, and assert old evidence verification plus new issuance with the old key return `ApprovalError::UnknownIssuer`.
 
 - [ ] **Step 2: Write RED root/delegated revocation-currentness tests**
 
-Add separate tests proving:
+Add tests proving old-root revocation cannot apply after a root successor; Administrative/DeviceSigning epoch-0 revocation cannot apply after epoch 1; Recovery remains `WrongIssuerRole`.
 
-- a revocation signed by root 0 cannot apply through `apply_root_current` after state accepts root 1;
-- a revocation signed by Administrative/DeviceSigning epoch 0 cannot apply after epoch 1 is current;
-- Recovery delegation remains `WrongIssuerRole` for ordinary revocation.
+- [ ] **Step 3: Write RED pairing/credential-rotation currentness tests**
 
-- [ ] **Step 3: Write RED credential-rotation/pairing currentness tests**
-
-Prove `TrustRecord::accept_successor_credential_current`, `PairingTrustTransition::issue_current`, and `establish_current` reject credentials/transitions that depend only on a superseded Device Signing delegation.
+Prove `TrustRecord::accept_successor_credential_current`, `PairingTrustTransition::issue_current`, and `establish_current` reject state tied only to superseded Device Signing authority.
 
 - [ ] **Step 4: Implement current-authority policy methods**
 
-Route verification through `OwnerAuthorityState`; no new current-authority method accepts `minimum_delegation_epoch`. Keep `PolicyState::evaluate` pure and deterministic; it must not perform key verification or authority mutation.
+Use `OwnerAuthorityState`; no current-authority method accepts `minimum_delegation_epoch`. Keep `PolicyState::evaluate` pure and deterministic.
 
-- [ ] **Step 5: Run policy verification**
+- [ ] **Step 5: Verify**
 
 ```bash
 cargo fmt --check
@@ -404,7 +378,7 @@ cargo test -p crosslab-policy --all-features
 cargo clippy -p crosslab-policy --all-targets --all-features -- -D warnings
 ```
 
-Expected: PASS, golden vectors unchanged.
+Expected: PASS with golden vectors unchanged.
 
 - [ ] **Step 6: Commit**
 
@@ -415,7 +389,7 @@ git commit -m "feat(policy): enforce current owner authority"
 
 ---
 
-### Task 4: Migrate pairing/session authentication and authority-triggered lifecycle
+### Task 4: Migrate pairing/session authentication and authority lifecycle
 
 **Files:**
 - Modify: `crates/core/src/pairing/flow.rs`
@@ -434,20 +408,16 @@ git commit -m "feat(policy): enforce current owner authority"
 
 **Interfaces:**
 
-`SessionHandshakeSide` no longer carries raw issuer delegation:
-
 ```rust
-pub const fn new(
+pub const fn SessionHandshakeSide::new(
     credential: &'a DeviceCredential,
     protocol_ranges: &'a [ProtocolRange],
     features: &'a FeatureSet,
 ) -> Self;
 ```
 
-`SessionActivation` receives authoritative owner state instead of raw root:
-
 ```rust
-pub const fn new(
+pub const fn SessionActivation::new(
     authority: &'a OwnerAuthorityState,
     initiator: SessionHandshakeSide<'a>,
     responder: SessionHandshakeSide<'a>,
@@ -462,42 +432,24 @@ pub const fn new(
 ) -> Self;
 ```
 
-`SessionContext` stores local authentication-basis metadata with getters:
+`SessionContext` adds private fields/getters for `root_key_id: KeyId`, `root_epoch: u64`, `device_signing_key_id: KeyId`, `device_signing_epoch: u64`.
+
+`SessionError` adds exactly `OwnerAuthorityChanged` and `DeviceSigningAuthorityChanged`.
 
 ```rust
-root_key_id: KeyId,
-root_epoch: u64,
-device_signing_key_id: KeyId,
-device_signing_epoch: u64,
-```
-
-`SessionError` adds exactly:
-
-```rust
-OwnerAuthorityChanged,
-DeviceSigningAuthorityChanged,
-```
-
-`LogicalSession` adds:
-
-```rust
-pub fn revalidate_authority(
+pub fn LogicalSession::revalidate_authority(
     &mut self,
     authority: &OwnerAuthorityState,
 ) -> Result<(), SessionError>;
 ```
 
-- [ ] **Step 1: Write RED fresh-session stale-authority tests**
+- [ ] **Step 1: Write RED fresh-auth tests**
 
-In `session_authority_currentness.rs`:
+Create `session_authority_currentness.rs`. First case: credentials are signed under DSA epoch 0, authority advances to DSA epoch 1 before `authenticate`; expect `SessionError::Identity(IdentityError::UnknownIssuer)` and `Closed`. Second case: root successor is accepted and DSA is inactive; expect fresh ordinary auth failure until a strictly newer DSA under the new root is accepted.
 
-1. authenticate fixtures are prepared with Device Signing epoch 0 credentials;
-2. authority accepts Device Signing epoch 1 before `session.authenticate(...)`;
-3. authentication must fail before `Active` with `SessionError::Identity(IdentityError::UnknownIssuer)`.
+- [ ] **Step 2: Write RED active-session tests**
 
-Add a second test: accept root successor, leaving Device Signing inactive; fresh ordinary authentication must fail until a strictly newer Device Signing delegation is accepted under the new root.
-
-- [ ] **Step 2: Write RED active-session authority-currentness tests**
+Define `AuthoritySessionFixture` in the new test file with concrete keys/IDs/credentials/trust/proofs and methods `active()`, `rotate_device_signing()`, `rotate_root()`, `rotate_administrative()`, `rotate_recovery()`.
 
 ```rust
 #[test]
@@ -513,21 +465,21 @@ fn device_signing_rotation_closes_active_session() {
 }
 ```
 
-Define `AuthoritySessionFixture` inside this new test file with concrete synthetic keys, owner/device IDs, credentials, trust record, proofs, and helper methods `active()`, `rotate_device_signing()`, `rotate_root()`, `rotate_administrative()`, and `rotate_recovery()`. Add root-successor test plus Administrative/Recovery negative tests.
+Add root-successor close plus Administrative/Recovery non-close tests.
 
 - [ ] **Step 3: Migrate pairing flow**
 
-Change inviter/joiner authority-bearing methods to take `&OwnerAuthorityState`; remove raw root/delegation/minimum-epoch arguments. Use `DeviceCredential::*_current` and policy `*_current` methods. Pairing transcript, confirmation, and credential-acceptance bytes remain unchanged.
+Pairing authority-bearing methods take `&OwnerAuthorityState`; remove raw root/delegation/minimum-epoch inputs. Use current-authority credential and policy methods. Do not change pairing transcript/confirmation/credential-acceptance bytes.
 
-- [ ] **Step 4: Migrate fresh session authentication**
+- [ ] **Step 4: Migrate session authentication**
 
-Resolve root and current Device Signing delegation from `OwnerAuthorityState`, call `verify_current`, and snapshot root/DSA key IDs + epochs into `SessionContext`. Continue building `SessionAuthTranscriptV1` from the same existing inputs so its bytes do not change.
+Resolve root/current DSA from state, verify both credentials with current authority, and snapshot root/DSA IDs and epochs into `SessionContext`. Continue constructing `SessionAuthTranscriptV1` from its existing fields only.
 
-- [ ] **Step 5: Implement `revalidate_authority`**
+- [ ] **Step 5: Implement active authority revalidation**
 
-Compare the context snapshot to `authority.root()` first, then to `authority.current_delegation(AuthorityRole::DeviceSigning)`. A root mismatch returns `OwnerAuthorityChanged`; a missing or changed Device Signing delegation returns `DeviceSigningAuthorityChanged`. On either error, transition through the existing close path and finish `Closed`.
+Compare root snapshot to `authority.root()` first. Root mismatch closes and returns `OwnerAuthorityChanged`. Then resolve current DSA; missing or different DSA closes and returns `DeviceSigningAuthorityChanged`.
 
-- [ ] **Step 6: Propagate lifecycle cancellation in simulator runtimes**
+- [ ] **Step 6: Propagate cancellation in simulator runtimes**
 
 Add to `SimNode`:
 
@@ -545,15 +497,13 @@ pub fn revalidate_authority(
 }
 ```
 
-Add the same entry point to `SimStreamRuntime`; on error call its existing session-authority cancellation helper before closing transport, so registered operations and active streams are cancelled.
+Add equivalent behavior to `SimStreamRuntime`; on failure cancel registered operation/stream authority before closing transport. Add lifecycle assertions in the two listed simulator test files.
 
-Add lifecycle assertions in `apps/sim/tests/lifecycle.rs` and `apps/sim/tests/stream_scenarios.rs` proving authority-currentness loss clears pending control/operation/stream authority and closes transport.
+- [ ] **Step 7: Migrate Quinn fixtures**
 
-- [ ] **Step 7: Migrate Quinn/session fixtures**
+Construct `OwnerAuthorityState`, accept the fixture DSA, and pass it into `SessionActivation`. Do not place owner authority in Quinn endpoint/TLS/channel-binding types.
 
-Construct one `OwnerAuthorityState` per fixture, accept the Device Signing delegation into it, and pass it to `SessionActivation`. Quinn endpoint/TLS/channel-binding types remain unchanged and never become authority state.
-
-- [ ] **Step 8: Run focused core/simulator/Quinn tests**
+- [ ] **Step 8: Verify**
 
 ```bash
 cargo test -p crosslab-core --all-features
@@ -572,37 +522,21 @@ git commit -m "feat(core): invalidate sessions on authority rotation"
 
 ---
 
-### Task 5: Lock ADR-0011 bounded replay semantics with characterization tests
+### Task 5: Lock ADR-0011 bounded replay semantics
 
 **Files:**
 - Modify: `crates/core/tests/control_replay.rs`
 - Inspect only: `crates/core/src/control/mod.rs`
 
-**Interfaces:**
-- No production API/wire change is planned.
-- Existing bounded `inbound_requests`, `completed_inbound`, `completed_order`, and directional `ControlSequence` are the expected implementation.
+**Interfaces:** No production API or wire change is planned. Current bounded inbound/completed state plus `ControlSequence` is expected to satisfy ADR-0011.
 
 - [ ] **Step 1: Add aged-out-ID characterization**
 
-Use capacity 2. Accept and complete request A, then B, then C so A falls out of completed history. Submit A again using the next valid `message_seq` and the same allowed policy.
+With `state_capacity = 2`, accept/complete A, B, and C so A leaves completed history. Submit A again at the next valid sequence and assert `Ok(InboundControl::Request(_))` rather than `DuplicateRequest`.
 
-```rust
-assert!(matches!(
-    accept_request(
-        &mut dispatcher,
-        &session,
-        request(a, RetryClass::NonRetryable),
-        3,
-        &fixture,
-        &policy,
-    ),
-    Ok(InboundControl::Request(_))
-));
-```
+- [ ] **Step 2: Prove current policy still applies after eviction**
 
-- [ ] **Step 2: Prove current authorization still applies after eviction**
-
-Build a fresh dispatcher/session sequence scenario where A is aged out, then submit A with the next valid sequence but pass `PolicyState::new()`.
+Repeat after A has aged out but pass `PolicyState::new()`:
 
 ```rust
 assert_eq!(
@@ -620,19 +554,38 @@ assert_eq!(
 );
 ```
 
-Import `DecisionReason` into the test.
+- [ ] **Step 3: Assert exact-envelope replay remains rejected**
 
-- [ ] **Step 3: Preserve exact-envelope replay protection**
+After sequence 0 has been accepted, submit another envelope with sequence 0:
 
-After consuming sequence 0, submit another request envelope with sequence 0 and assert a `ControlDispatchError::Sequence(SequenceError::Replay { .. })` or the exact existing replay variant exposed by `ControlSequence`. Read `crates/protocol/src/control/sequence.rs` before writing the assertion and use its actual variant name; do not change that enum for this task.
+```rust
+assert_eq!(
+    accept_request(
+        &mut dispatcher,
+        &session,
+        request(RequestId::from_bytes([0x55; 16]), RetryClass::NonRetryable),
+        0,
+        &fixture,
+        &policy,
+    ),
+    Err(ControlDispatchError::Sequence(
+        SequenceError::ReplayDetected {
+            expected: 1,
+            received: 0,
+        }
+    ))
+);
+```
 
-- [ ] **Step 4: Run the characterization suite**
+Import `DecisionReason` and `SequenceError` in the test.
+
+- [ ] **Step 4: Run characterization**
 
 ```bash
 cargo test -p crosslab-core --test control_replay
 ```
 
-Expected: PASS against the current dispatcher implementation. A failure means the implementation/spec relationship was misunderstood; stop this task and use the systematic-debugging workflow before changing `control/mod.rs`.
+Expected: PASS with no production change. If it does not, stop this task and use systematic-debugging before touching `control/mod.rs` because the accepted design and current implementation were previously assessed as aligned.
 
 - [ ] **Step 5: Commit**
 
@@ -653,10 +606,8 @@ git commit -m "test(core): lock bounded request replay semantics"
 
 **Interfaces:**
 
-Replace caller-selected numeric currentness with:
-
 ```rust
-pub fn admit_inbound(
+pub fn StreamAdmission::admit_inbound(
     &mut self,
     session: &LogicalSession,
     open: &DataStreamOpen,
@@ -666,27 +617,11 @@ pub fn admit_inbound(
 ) -> Result<AdmittedStream, StreamAdmissionError>;
 ```
 
-Add exactly:
+Add `PeerTrustMismatch` and `PeerNotTrusted` to `StreamAdmissionError`. Validate trust owner/device against `SessionContext`, require `TrustState::Trusted`, then derive `peer_trust.trust_revision()` and `policy.revision()` internally.
 
-```rust
-PeerTrustMismatch,
-PeerNotTrusted,
-```
+- [ ] **Step 1: Rewrite the test fixture and capture RED**
 
-to `StreamAdmissionError`.
-
-Before `AuthorizedOperation::reserve_stream_use`, validate that `peer_trust.owner_id()` and `device_id()` match authenticated session context and `peer_trust.state() == TrustState::Trusted`. Then pass `peer_trust.trust_revision()` and `policy.revision()` internally.
-
-- [ ] **Step 1: Rewrite fixture to retain authoritative objects and capture RED**
-
-Change `Fixture` in `stream_admission.rs` to store:
-
-```rust
-peer_trust: TrustRecord,
-policy: PolicyState,
-```
-
-Remove copied `trust_revision` and `policy_revision` fields and remove `admit_with_revisions`. Make `admit` call:
+Store `peer_trust: TrustRecord` and `policy: PolicyState` instead of copied revision integers. Remove `admit_with_revisions`; make `admit` call:
 
 ```rust
 admission.admit_inbound(
@@ -704,28 +639,20 @@ Run:
 cargo test -p crosslab-core --test stream_admission
 ```
 
-Expected: compile failure because the production signature still accepts two `u64` revisions.
+Expected: compile failure because production still expects two `u64` revisions.
 
 - [ ] **Step 2: Implement local-state derivation**
 
-Import `PolicyState`, `TrustRecord`, and `TrustState`. Reject mismatched owner/device as `PeerTrustMismatch` and Pending/Revoked as `PeerNotTrusted`. Pass only locally derived revisions into `reserve_stream_use`.
+Reject owner/device mismatch with `PeerTrustMismatch`; reject Pending/Revoked with `PeerNotTrusted`; pass only locally derived revisions into `AuthorizedOperation::reserve_stream_use`. Leave low-level `AuthorizedOperation::{validate,reserve_stream_use}` explicit-revision APIs unchanged.
 
-Keep `AuthorizedOperation::validate` and `reserve_stream_use` explicit-revision parameters as lower-level policy primitives for focused policy tests.
+- [ ] **Step 3: Add policy/revocation/mismatch tests**
 
-- [ ] **Step 3: Add revocation/current-policy tests**
+Create an operation under current policy, then increment that same `PolicyState` revision by inserting a second valid unrelated rule; admission must return `OperationError::PolicyRevisionChanged`. Revoke the fixture trust record through a valid `TrustTransition`; admission must return `PeerNotTrusted`. Build a second valid trusted peer record with a different `DeviceId`; admission must return `PeerTrustMismatch`.
 
-Add a test that creates an operation under the fixture's current policy, advances the policy by inserting a second unrelated rule, then attempts admission using the same `PolicyState`; expect `OperationError::PolicyRevisionChanged`.
-
-Add a revocation test using a valid `TrustTransition` to mutate the stored `TrustRecord` to `Revoked`, then attempt admission; expect `StreamAdmissionError::PeerNotTrusted` before stream reservation.
-
-Add a wrong-peer record test built through a second valid pairing fixture and expect `PeerTrustMismatch`.
-
-- [ ] **Step 4: Migrate `SimStreamRuntime::accept_one`**
-
-Use exactly:
+- [ ] **Step 4: Migrate simulator stream API**
 
 ```rust
-pub fn accept_one(
+pub fn SimStreamRuntime::accept_one(
     &mut self,
     now: u64,
     peer_trust: &TrustRecord,
@@ -733,9 +660,9 @@ pub fn accept_one(
 ) -> Result<StreamId, SimStreamError>;
 ```
 
-Update `apps/sim/tests/stream_scenarios.rs`; no simulator caller may declare current revision numbers.
+Update `apps/sim/tests/stream_scenarios.rs`; no high-level simulator caller supplies revision integers.
 
-- [ ] **Step 5: Run focused stream tests**
+- [ ] **Step 5: Verify**
 
 ```bash
 cargo test -p crosslab-core --test stream_admission
@@ -753,43 +680,38 @@ git commit -m "fix(core): derive stream currentness from local state"
 
 ---
 
-### Task 7: Remove obsolete caller-selected authority APIs and verify compatibility
+### Task 7: Remove obsolete caller-selected authority APIs
 
 **Files:**
 - Modify: `crates/identity/src/credential.rs`
 - Modify: `crates/policy/src/authorization/approval.rs`
 - Modify: `crates/policy/src/trust/{mod.rs,pairing.rs,transition.rs}`
-- Modify remaining fixture call sites across `crates/`, `apps/sim/`, and `transports/quic/`.
+- Modify remaining fixture call sites across `crates/`, `apps/sim/`, `transports/quic/`.
 - Verify golden/vector files remain semantically unchanged.
 
-**Interfaces:**
-- Remove ordinary public methods that accept raw root + delegation + caller-selected delegation floor where a current-authority method now exists.
-- Keep `AuthorityDelegation::verify(root, minimum_epoch)` as low-level cryptographic/import validation only.
-- Keep raw import constructors such as `DeviceCredential::from_unverified_signed_parts` because they do not establish currentness.
+**Interfaces:** Keep `AuthorityDelegation::verify(root, minimum_epoch)` only as low-level cryptographic/import validation. Keep `DeviceCredential::from_unverified_signed_parts`. Remove ordinary public root/delegation/floor APIs and rename the current-authority methods to the clean ordinary names.
 
 - [ ] **Step 1: Remove legacy high-level raw-currentness methods**
 
-Delete or make crate-private the old `DeviceCredential::{issue,issue_for_public_key,verify,rotate}` and the old approval/pairing/trust-transition methods that let ordinary callers select the current root/delegation/floor directly. Rename the `*_current` methods to the clean ordinary names only after all call sites are migrated, so the final API does not retain unnecessary suffix noise.
+Delete or make crate-private old `DeviceCredential::{issue,issue_for_public_key,verify,rotate}` and old approval/pairing/trust-transition methods that let ordinary callers select current authority. Rename `*_current` replacements to ordinary method names after migration.
 
-- [ ] **Step 2: Use compiler errors as the migration checklist**
+- [ ] **Step 2: Use compiler errors as the call-site checklist**
 
 ```bash
 cargo check --workspace --all-targets --all-features
 ```
 
-Expected initially: compile errors at remaining legacy call sites. Migrate every production/test fixture to `OwnerAuthorityState`; do not add compatibility shims that reintroduce caller-selected currentness.
+Expected initially: remaining legacy call sites fail. Migrate every one to `OwnerAuthorityState`; do not add compatibility shims that recreate caller-selected currentness.
 
-- [ ] **Step 3: Verify no production caller-selected delegation floors remain**
-
-Run:
+- [ ] **Step 3: Search for forbidden high-level floors**
 
 ```bash
 rg "minimum_delegation_epoch|\.verify\([^\n]*root[^\n]*issuer" crates apps transports
 ```
 
-Expected: `minimum_delegation_epoch` remains only in the low-level `AuthorityDelegation::verify` implementation/tests or similarly explicit cryptographic tests that do not claim local currentness. No high-level production credential/policy/core call path may accept it.
+Expected: `minimum_delegation_epoch` remains only in low-level `AuthorityDelegation::verify` implementation/tests or explicit cryptographic tests that do not establish local currentness.
 
-- [ ] **Step 4: Re-run all cryptographic/protocol golden vectors**
+- [ ] **Step 4: Verify golden vectors**
 
 ```bash
 cargo test -p crosslab-identity --test golden_vectors
@@ -799,7 +721,7 @@ cargo test -p crosslab-protocol --test wire_vectors
 
 Expected: byte-for-byte existing vectors PASS unchanged.
 
-- [ ] **Step 5: Run workspace compile after API cleanup**
+- [ ] **Step 5: Verify workspace compile/lint**
 
 ```bash
 cargo check --workspace --all-targets --all-features
@@ -817,16 +739,15 @@ git commit -m "refactor(security): remove caller-selected authority currentness"
 
 ---
 
-### Task 8: Final foundation regression, security evidence, and handoff
+### Task 8: Final foundation regression and evidence
 
 **Files:**
 - Modify: `security/M9-FOUNDATION-HARDENING-ASSESSMENT.md`
 - Modify: `docs/plans/phase-1/M9-whole-project-security-quality-audit.md`
 - Modify: `docs/development/CURRENT.md`
-- Modify: `docs/superpowers/plans/2026-09-14-foundation-authority-replay-remediation.md` only to check completed boxes backed by evidence.
+- Modify: this plan only to check boxes backed by evidence.
 
-**Interfaces:**
-- No new runtime interface. This task proves the accepted foundation implementation and records exact evidence.
+**Interfaces:** No new runtime interface; this task proves and records the final foundation state.
 
 - [ ] **Step 1: Run complete workspace verification**
 
@@ -838,9 +759,9 @@ cargo test --workspace --all-features
 cargo audit
 ```
 
-Expected: all commands PASS. The documented `paste 1.0.15` / `RUSTSEC-2024-0436` maintenance warning may remain only while it is isolated to the Iroh experiment and the repository's accepted audit invocation exits successfully.
+Expected: PASS. The documented `paste 1.0.15` / `RUSTSEC-2024-0436` maintenance warning may remain only while isolated to the Iroh experiment and the accepted audit invocation exits successfully.
 
-- [ ] **Step 2: Run the exact bounded fuzz smoke commands used by CI**
+- [ ] **Step 2: Run exact CI fuzz-smoke commands**
 
 ```bash
 cargo +nightly-2026-09-12 fuzz run control_frame -- -runs=256
@@ -850,41 +771,27 @@ cargo +nightly-2026-09-12 fuzz run pairing_bootstrap -- -runs=256
 cargo +nightly-2026-09-12 fuzz run session_auth -- -runs=256
 ```
 
-Expected: all five bounded fuzz runs PASS.
+Expected: all five PASS.
 
-- [ ] **Step 3: Reconcile the security assessment**
+- [ ] **Step 3: Reconcile security assessment and audit**
 
-Update `security/M9-FOUNDATION-HARDENING-ASSESSMENT.md` with verified statements only:
+Record only verified facts: ADR-0010 resolved; old root/delegated authority cannot authorize ordinary high-level work after replacement; root/DSA session currentness verified; ADR-0011 bounded semantics verified; stream currentness derives from local trust/policy; no wire/golden changes. Keep deferred risks explicit: production authority persistence/rollback protection, platform key stores, future system-event-family authorization, branch protection, platform CI, and isolated Iroh `paste` warning while present.
 
-- ADR-0010 authority currentness resolved;
-- old root/delegated authority no longer accepted by ordinary high-level paths;
-- root/Device Signing active-session currentness behavior verified;
-- ADR-0011 bounded request semantics aligned in spec/tests;
-- stream currentness derives from local trust/policy state;
-- no wire/golden change;
-- deferred risks: production authority persistence/rollback protection, platform key stores, system-event family authorization when introduced, branch protection, platform CI, and isolated Iroh `paste` warning while still present.
+- [ ] **Step 4: Update `CURRENT.md` with exact evidence**
 
-Update the whole-project audit finding/disposition sections to point to the accepted ADRs and exact tests rather than leaving the findings open.
-
-- [ ] **Step 4: Update `CURRENT.md` with exact implementation evidence**
-
-Record the implementation branch, exact head commit, PR number, Rust CI run, Fuzz run, and remaining deferred risks. Keep M9 Task 4 blocked until merge and post-merge `main` verification are green.
+Record implementation branch, exact head commit, PR number, Rust CI run, Fuzz run, and deferred risks. M9 Task 4 stays blocked until merge and post-merge `main` verification are green.
 
 - [ ] **Step 5: Push and verify exact-head CI/Fuzz**
 
-Require on the exact implementation head:
+Require exact-head Rust CI success for audit/fmt/check/Clippy/tests, Fuzz Smoke success, and a PR diff with no unintended protobuf/schema/canonical-vector changes.
 
-- Rust CI success for dependency audit, fmt, check, Clippy, and complete workspace tests;
-- Fuzz Smoke success for affected parser/security surfaces;
-- PR diff contains no unintended protobuf/schema/canonical-vector change.
-
-- [ ] **Step 6: Commit the final reconciliation**
+- [ ] **Step 6: Commit reconciliation**
 
 ```bash
 git add security docs/development/CURRENT.md docs/plans/phase-1/M9-whole-project-security-quality-audit.md docs/superpowers/plans/2026-09-14-foundation-authority-replay-remediation.md
 git commit -m "docs: reconcile final M9 foundation hardening gate"
 ```
 
-- [ ] **Step 7: Merge only after exact-head evidence is green**
+- [ ] **Step 7: Merge and verify `main`**
 
 Merge the implementation PR with its expected exact head SHA, then verify the resulting `main` merge commit with the full Rust CI gate. Only after post-merge `main` is green may `CURRENT.md` identify **M9 Task 4 remote-networking architecture work** as the next implementation task.
