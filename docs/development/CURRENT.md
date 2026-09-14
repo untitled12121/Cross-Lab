@@ -66,42 +66,91 @@ Implemented:
 - added `LogicalSession::revalidate_peer_trust` so an active session can be invalidated against current local trust/credential state;
 - inbound control validates both authenticated credential epoch and trust revision before sequence/body dispatch;
 - credential-epoch drift is fatal in the simulator and closes session authority;
-- existing operation/stream admission already binds authority to `trust_revision`, so credential rotation now invalidates stale stream-operation authority through the existing conservative revision contract rather than adding a parallel credential-epoch stream mechanism;
+- existing operation/stream admission already binds authority to `trust_revision`, so credential rotation invalidates stale stream-operation authority through the existing conservative revision contract;
 - revocation tests that previously mutated an epoch numerically now rotate through the same verified successor-credential contract.
 
 Verification on exact head `7cd243ff52115dad923b3cf4aba92a04bde79409`:
 
 - Rust CI `34747301958` — lockfile verification, dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and complete workspace tests all passed;
-- Fuzz Smoke `34747301924` — fuzz lockfile verification, formatting, and all bounded fuzz targets passed;
-- dependency audit had no vulnerability failure and retains the already documented unsuppressed `paste 1.0.15` / `RUSTSEC-2024-0436` maintenance warning in the isolated Iroh experiment dependency graph.
+- Fuzz Smoke `34747301924` — fuzz lockfile verification, formatting, and all bounded fuzz targets passed.
+
+### Task 3 — Trusted-state and approval provenance
+
+Exact verified code head:
+
+`685b8ec948671a989b7f32a46e021d629cdbfa2c`
+
+Implemented:
+
+- removed ordinary direct construction of trusted membership;
+- added signed `PairingTrustTransition` evidence bound to the initial credential, transition ID, pairing-evidence digest, owner authority, and issuer key;
+- initial trusted membership is established only after validating the epoch-0 credential and pairing trust transition against owner authority;
+- pairing flow commits trust through that verified transition rather than minting `TrustState::Trusted` directly;
+- removed public direct minting of `VerifiedApproval`;
+- added signed `OwnerApprovalEvidence` with exact approval scope, owner identity, issuer key/delegation epoch, issue time, and expiry;
+- local verification produces the private `VerifiedApproval` capability only after validating Administrative authority, owner/issuer binding, signature, and lifetime;
+- approval evaluation remains pure and requires explicit local time when approval authority is relevant;
+- scope and lifetime mismatch tests fail closed.
+
+Verification on exact head `685b8ec948671a989b7f32a46e021d629cdbfa2c`:
+
+- Rust CI `34794229945` — lockfile verification, dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and complete workspace tests all passed;
+- Fuzz Smoke `34794229882` — fuzz lockfile verification, formatting, and all bounded fuzz targets passed.
+
+### Task 4 — Request replay and local retry authority
+
+Exact verified code head:
+
+`cad5222d744eb86888b10cf884309bc65c5d95fa`
+
+Implemented:
+
+- peer-declared `RetryClass` no longer grants receiver-side duplicate/replay authority;
+- active inbound request IDs and recently terminal inbound IDs are tracked by receiver-local state;
+- completed and cancelled request IDs remain replay-protected inside a bounded local window;
+- terminal replay state uses FIFO reclamation so long sessions do not permanently exhaust admission capacity;
+- active request authority is never evicted merely to reclaim completed replay state;
+- per-session replay state is cleared with the rest of dispatcher session state;
+- message-sequence anti-replay, request/response ownership, and existing resource bounds remain intact.
+
+Regression-first evidence covered duplicate idempotent IDs, cancelled-ID reuse, and completed-state liveness before the production change.
+
+Verification on exact head `cad5222d744eb86888b10cf884309bc65c5d95fa`:
+
+- Rust CI `34796612978` — lockfile verification, dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and complete workspace tests all passed;
+- Fuzz Smoke `34796613004` — fuzz lockfile verification, formatting, and all bounded fuzz targets passed;
+- dependency audit retains the previously documented allowed `paste 1.0.15` / `RUSTSEC-2024-0436` maintenance warning in the isolated Iroh experiment dependency graph.
 
 ## Exact Next Task
 
-**Foundation remediation Task 3 — Trusted-state and approval provenance.**
+**Foundation remediation Task 5 — Event authorization/subscription boundary.**
 
-Execute it as two small authority slices:
+Keep Protocol V1 wire compatibility unchanged. Add a receiver-local, typed event subscription/authorization boundary so negotiated capability support is not treated as permission to deliver every capability event.
 
-1. remove direct ordinary construction of `TrustState::Trusted`; initial membership must be established through an owner-authorized, auditable pairing transition only after pairing confirmation, credential validation, and joiner proof-of-possession succeed;
-2. remove public direct minting of `VerifiedApproval`; Phase 1 synthetic owner approval must be typed, locally verified, scope-bound, lifetime-bounded evidence, while the policy evaluator remains pure.
+Required behavior:
 
-Do not replace either boundary with booleans, caller assertions, visibility-only cosmetics, or context signals that bypass authentication/authorization.
+1. a capability event must still belong to a negotiated capability;
+2. receipt must also match exact local subscription authority, including the capability and event type;
+3. a peer cannot create or widen local subscription authority through event metadata;
+4. system events remain protected by authenticated session identity/trust/sequence handling and are not silently reclassified as capability subscriptions;
+5. add regression tests before implementation and keep the policy evaluator pure.
 
 ## Remaining Remediation Backlog
 
-After Task 3:
+After Task 5:
 
-- redesign request retry/replay semantics so peer-declared `RetryClass` is never local idempotency authority, duplicate state remains bounded, completed-result/replay state is reclaimable, and long sessions do not inevitably exhaust capacity;
-- add a real local event authorization/subscription boundary consistent with Protocol V1 instead of treating capability negotiation as permission;
 - prove and fix Quinn plain-`Drop` connection/task cleanup while preserving joined graceful shutdown;
 - finish custom redacted `Debug` for core session-auth proofs/transcripts and pairing transcript/security material;
 - finish OS-CSPRNG constructors for all locally created random identifiers required by the specifications;
-- explicitly resolve/design authoritative delegated-role epoch state rather than treating a caller-supplied/current object epoch as globally authoritative;
+- explicitly resolve/design authoritative delegated-role epoch state rather than treating a caller-supplied/current object epoch as globally authoritative; ADR-0009 remains reserved for the M9 networking decision, so this authority-state decision must use a later monotonic ADR number;
 - run the complete regression/security/fuzz/dependency gate on the final exact head;
 - reconcile `security/M9-FOUNDATION-HARDENING-ASSESSMENT.md`, this file, and PR #19 before M9 Task 4 can resume.
 
 ## Important Known Design Constraint
 
 Authoritative delegated-role epoch state is not centrally persisted yet. Current verification APIs can validate a delegation against a supplied minimum epoch, but that alone does not prove which delegation epoch local durable authority state has accepted. Do not silently claim this gap is solved; give it an explicit authority-state design before the final hardening gate.
+
+ADR-0009 is reserved by the active M9 networking work. Do not reuse it for delegated-authority state.
 
 ## Repository / M9 Invariants
 
