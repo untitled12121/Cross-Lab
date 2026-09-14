@@ -4,6 +4,8 @@ use crosslab_identity::{
     AuthorityDelegation, DeviceCredential, DeviceId, IdentityError, OwnerId, OwnerRootRecord,
 };
 
+use crate::id_generation::{PolicyIdGenerationError, random_policy_id};
+
 mod pairing;
 mod transition;
 
@@ -16,6 +18,10 @@ pub struct TransitionId([u8; 32]);
 impl TransitionId {
     pub const fn from_bytes(bytes: [u8; 32]) -> Self {
         Self(bytes)
+    }
+
+    pub fn generate() -> Result<Self, PolicyIdGenerationError> {
+        random_policy_id().map(Self)
     }
 
     pub const fn to_bytes(self) -> [u8; 32] {
