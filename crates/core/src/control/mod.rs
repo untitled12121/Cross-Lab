@@ -295,8 +295,8 @@ impl ControlDispatcher {
             peer_trust.trust_revision(),
             local.clone(),
             network_class,
-            local_time,
-        );
+        )
+        .with_local_time(local_time);
         let decision = policy.evaluate(&authorization);
         match decision.effect() {
             DecisionEffect::Deny => {
