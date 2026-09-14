@@ -107,7 +107,7 @@ pub struct AuthorizationContext {
     trust_revision: u64,
     local_capability: LocalCapability,
     network_class: NetworkClass,
-    local_time: ApprovalInstant,
+    local_time: Option<ApprovalInstant>,
     verified_approvals: Vec<VerifiedApproval>,
 }
 
@@ -124,7 +124,6 @@ impl AuthorizationContext {
         trust_revision: u64,
         local_capability: LocalCapability,
         network_class: NetworkClass,
-        local_time: ApprovalInstant,
     ) -> Self {
         Self {
             source_device_id,
@@ -137,9 +136,14 @@ impl AuthorizationContext {
             trust_revision,
             local_capability,
             network_class,
-            local_time,
+            local_time: None,
             verified_approvals: Vec::new(),
         }
+    }
+
+    pub fn with_local_time(mut self, local_time: ApprovalInstant) -> Self {
+        self.local_time = Some(local_time);
+        self
     }
 
     pub fn with_verified_approval(mut self, approval: VerifiedApproval) -> Self {
@@ -328,10 +332,11 @@ impl PolicyState {
         let missing = required
             .into_iter()
             .filter(|obligation| {
-                !context
-                    .verified_approvals
-                    .iter()
-                    .any(|approval| approval.satisfies(*obligation, &scope, context.local_time))
+                !context.verified_approvals.iter().any(|approval| {
+                    context
+                        .local_time
+                        .is_some_and(|now| approval.satisfies(*obligation, &scope, now))
+                })
             })
             .collect::<Vec<_>>();
 
