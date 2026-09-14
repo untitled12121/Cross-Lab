@@ -126,11 +126,7 @@ Exact historical RED/GREEN commits and workflow evidence remain in git history, 
 
 **Finish and merge the accepted architecture/implementation-plan checkpoint on PR #22 after its exact current head passes CI.**
 
-The architecture branch head after ADR acceptance, normative spec reconciliation, plan self-review, and this durable resume update is:
-
-`0ffda0ad7ff567e95c24d8c5ca7b904e13cc3a96`
-
-A later metadata-only PR update does not change this Git head. If any repository-content commit is added after this line, replace the recorded head before merge.
+Use the PR's actual current head SHA from GitHub when checking CI and when merging; do not duplicate that moving branch-head value in this file.
 
 Then:
 
