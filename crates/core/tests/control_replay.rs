@@ -15,8 +15,8 @@ use crosslab_policy::{
     RuleId, TransitionId, TrustRecord,
 };
 use crosslab_protocol::{
-    CapabilityAdvertisement, CapabilityAdvertisementEntry, ControlEnvelope, ControlRequest,
-    ControlResponse, ControlResponseResult, EnvelopeBody, FeatureSet, ProtocolRange,
+    CancelRequest, CapabilityAdvertisement, CapabilityAdvertisementEntry, ControlEnvelope,
+    ControlRequest, ControlResponse, ControlResponseResult, EnvelopeBody, FeatureSet, ProtocolRange,
     ProtocolVersion, RequestId, RetryClass,
 };
 
@@ -303,4 +303,57 @@ fn completed_replay_state_is_bounded_without_permanent_exhaustion() {
         ),
         Ok(InboundControl::Request(_))
     ));
+}
+
+#[test]
+fn cancelled_request_id_remains_in_local_replay_window() {
+    let fixture = Fixture::new();
+    let session = fixture.session();
+    let policy = fixture.allow_policy();
+    let mut dispatcher =
+        ControlDispatcher::new(session.context().unwrap(), NonZeroUsize::new(4).unwrap());
+    let id = RequestId::from_bytes([0x34; 16]);
+
+    assert!(matches!(
+        accept_request(
+            &mut dispatcher,
+            &session,
+            request(id, RetryClass::Idempotent),
+            0,
+            &fixture,
+            &policy,
+        ),
+        Ok(InboundControl::Request(_))
+    ));
+
+    let context = session.context().unwrap();
+    assert_eq!(
+        dispatcher.accept_inbound(
+            context,
+            ControlEnvelope::new(
+                context.protocol_version(),
+                context.session_id(),
+                1,
+                EnvelopeBody::CancelRequest(CancelRequest::new(id)),
+            ),
+            &policy,
+            &Fixture::local_capabilities(),
+            &fixture.peer_trust,
+            NetworkClass::Local,
+            ApprovalInstant::from_ticks(0),
+        ),
+        Ok(InboundControl::Cancelled(id))
+    );
+
+    assert_eq!(
+        accept_request(
+            &mut dispatcher,
+            &session,
+            request(id, RetryClass::Idempotent),
+            2,
+            &fixture,
+            &policy,
+        ),
+        Err(ControlDispatchError::DuplicateRequest)
+    );
 }
