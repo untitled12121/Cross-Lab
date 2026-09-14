@@ -6,9 +6,10 @@ mod operation;
 mod trust;
 
 pub use authorization::{
-    ApprovalScope, AuthorizationContext, AuthorizationGrant, Constraint, DecisionEffect,
-    DecisionReason, NetworkClass, Obligation, PolicyDecision, PolicyError, PolicyRule, PolicyState,
-    RuleEffect, RuleId, SessionId, VerifiedApproval,
+    ApprovalError, ApprovalInstant, ApprovalScope, AuthorizationContext, AuthorizationGrant,
+    Constraint, DecisionEffect, DecisionReason, NetworkClass, Obligation, OwnerApprovalEvidence,
+    PolicyDecision, PolicyError, PolicyRule, PolicyState, RuleEffect, RuleId, SessionId,
+    VerifiedApproval,
 };
 pub use capability::{
     CapabilityId, CapabilityVersion, CapabilityVersionRange, IdentifierError, LocalCapability,
@@ -19,5 +20,6 @@ pub use operation::{
     UsePolicy,
 };
 pub use trust::{
-    TransitionId, TrustError, TrustRecord, TrustState, TrustTransition, TrustTransitionError,
+    CredentialRotationError, PairingTrustTransition, PairingTrustTransitionError, TransitionId,
+    TrustError, TrustRecord, TrustState, TrustTransition, TrustTransitionError,
 };

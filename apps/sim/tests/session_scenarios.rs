@@ -1,7 +1,7 @@
 use std::num::NonZeroUsize;
 
 use crosslab_core::{
-    ControlDispatchError, LogicalSession, SessionActivation, SessionAuthRole,
+    ControlDispatchError, EventSubscription, LogicalSession, SessionActivation, SessionAuthRole,
     SessionAuthTranscriptV1, SessionHandshakeSide, SessionState, TransportConnection,
     TransportSecurityClass,
 };
@@ -11,7 +11,8 @@ use crosslab_identity::{
 };
 use crosslab_policy::{
     CapabilityId, CapabilityVersion, CapabilityVersionRange, DecisionReason, LocalCapability,
-    OperationName, PolicyRule, PolicyState, RuleEffect, RuleId, TransitionId, TrustRecord,
+    NetworkClass, OperationName, PairingTrustTransition, PolicyRule, PolicyState, RuleEffect,
+    RuleId, TransitionId, TrustRecord,
 };
 use crosslab_protocol::{
     CapabilityAdvertisement, CapabilityAdvertisementEntry, ControlEnvelope, ControlRequest,
@@ -26,6 +27,69 @@ use crosslab_sim::{
 
 const CONTROL_CAPACITY: usize = 16;
 const STATE_CAPACITY: usize = 16;
+
+fn establish_trust(
+    credential: &DeviceCredential,
+    root: &OwnerRootRecord,
+    delegation: &AuthorityDelegation,
+    issuer_key: &SigningKey,
+    transition_byte: u8,
+) -> TrustRecord {
+    let initial_credential = DeviceCredential::issue_for_public_key(
+        credential.owner_id(),
+        credential.device_id(),
+        credential.device_public_key(),
+        0,
+        root,
+        delegation,
+        issuer_key,
+    )
+    .unwrap();
+    let transition = PairingTrustTransition::issue(
+        &initial_credential,
+        TransitionId::from_bytes([transition_byte; 32]),
+        [transition_byte.wrapping_add(1); 32],
+        root,
+        delegation,
+        issuer_key,
+        delegation.delegation_epoch(),
+    )
+    .unwrap();
+    let mut trust = transition
+        .establish(
+            &initial_credential,
+            root,
+            delegation,
+            delegation.delegation_epoch(),
+        )
+        .unwrap();
+
+    for epoch in 1..=credential.credential_epoch() {
+        let successor = DeviceCredential::issue_for_public_key(
+            credential.owner_id(),
+            credential.device_id(),
+            credential.device_public_key(),
+            epoch,
+            root,
+            delegation,
+            issuer_key,
+        )
+        .unwrap();
+        let mut transition_id = [transition_byte; 32];
+        transition_id[..8].copy_from_slice(&epoch.to_be_bytes());
+        trust
+            .accept_successor_credential(
+                &successor,
+                root,
+                delegation,
+                delegation.delegation_epoch(),
+                TransitionId::from_bytes(transition_id),
+            )
+            .unwrap();
+    }
+
+    trust
+}
 
 struct Fixture {
     owner_id: OwnerId,
@@ -74,18 +138,10 @@ impl Fixture {
             &issuer_key,
         )
         .unwrap();
-        let initiator_trust = TrustRecord::trusted(
-            owner_id,
-            initiator_credential.device_id(),
-            initiator_credential.credential_epoch(),
-            TransitionId::from_bytes([0x37; 32]),
-        );
-        let responder_trust = TrustRecord::trusted(
-            owner_id,
-            responder_credential.device_id(),
-            responder_credential.credential_epoch(),
-            TransitionId::from_bytes([0x38; 32]),
-        );
+        let initiator_trust =
+            establish_trust(&initiator_credential, &root, &delegation, &issuer_key, 0x37);
+        let responder_trust =
+            establish_trust(&responder_credential, &root, &delegation, &issuer_key, 0x38);
 
         Self {
             owner_id,
@@ -286,6 +342,7 @@ fn s006_authorized_request_response_and_event_are_correlated_and_sequenced() {
         endpoint_a,
         PolicyState::new(),
         local_caps.clone(),
+        NetworkClass::Local,
         NonZeroUsize::new(STATE_CAPACITY).unwrap(),
     )
     .unwrap();
@@ -294,6 +351,7 @@ fn s006_authorized_request_response_and_event_are_correlated_and_sequenced() {
         endpoint_b,
         fixture.allow_write_policy(),
         local_caps,
+        NetworkClass::Local,
         NonZeroUsize::new(STATE_CAPACITY).unwrap(),
     )
     .unwrap();
@@ -305,7 +363,9 @@ fn s006_authorized_request_response_and_event_are_correlated_and_sequenced() {
     assert_eq!(node_a.next_send_sequence(), Some(1));
     assert_eq!(node_a.pending_request_count(), 1);
 
-    let NodeEvent::RequestDispatched(received) = node_b.receive_one().unwrap() else {
+    let NodeEvent::RequestDispatched(received) =
+        node_b.receive_one(&fixture.initiator_trust).unwrap()
+    else {
         panic!("expected authorized request dispatch");
     };
     assert_eq!(received.request_id(), request_id);
@@ -315,17 +375,26 @@ fn s006_authorized_request_response_and_event_are_correlated_and_sequenced() {
     node_b
         .send_response(request_id, ControlResponseResult::Success(b"ok".to_vec()))
         .unwrap();
-    let NodeEvent::Response(response) = node_a.receive_one().unwrap() else {
+    let NodeEvent::Response(response) = node_a.receive_one(&fixture.responder_trust).unwrap()
+    else {
         panic!("expected correlated response");
     };
     assert_eq!(response.request_id(), request_id);
     assert_eq!(node_a.pending_request_count(), 0);
     assert_eq!(node_a.expected_receive_sequence(), Some(1));
 
+    assert!(
+        node_b
+            .subscribe_event(EventSubscription::new(
+                CapabilityId::parse("clipboard.write").unwrap(),
+                EventType::parse("clipboard.changed").unwrap(),
+            ))
+            .unwrap()
+    );
     let event_id = EventId::from_bytes([0x51; 16]);
     node_a.send_event(event(event_id, b"changed")).unwrap();
-    let NodeEvent::Event(received) = node_b.receive_one().unwrap() else {
-        panic!("expected permitted event");
+    let NodeEvent::Event(received) = node_b.receive_one(&fixture.initiator_trust).unwrap() else {
+        panic!("expected subscribed event");
     };
     assert_eq!(received.event_id(), event_id);
     assert_eq!(received.body(), b"changed");
@@ -345,6 +414,7 @@ fn capability_advertisement_dispatch_updates_session_only_after_authentication()
         endpoint_a,
         PolicyState::new(),
         local_caps.clone(),
+        NetworkClass::Local,
         NonZeroUsize::new(STATE_CAPACITY).unwrap(),
     )
     .unwrap();
@@ -353,6 +423,7 @@ fn capability_advertisement_dispatch_updates_session_only_after_authentication()
         endpoint_b,
         PolicyState::new(),
         local_caps,
+        NetworkClass::Local,
         NonZeroUsize::new(STATE_CAPACITY).unwrap(),
     )
     .unwrap();
@@ -369,7 +440,7 @@ fn capability_advertisement_dispatch_updates_session_only_after_authentication()
         .send_capability_advertisement(Fixture::advertisement())
         .unwrap();
     assert!(matches!(
-        node_b.receive_one().unwrap(),
+        node_b.receive_one(&fixture.initiator_trust).unwrap(),
         NodeEvent::CapabilitiesUpdated
     ));
     let negotiated = node_b
@@ -409,12 +480,16 @@ fn duplicate_or_gap_sequence_is_rejected_and_closes_the_session() {
         endpoint_b,
         PolicyState::new(),
         Fixture::local_capabilities(),
+        NetworkClass::Local,
         NonZeroUsize::new(STATE_CAPACITY).unwrap(),
     )
     .unwrap();
-    assert!(matches!(node_b.receive_one().unwrap(), NodeEvent::Event(_)));
     assert!(matches!(
-        node_b.receive_one(),
+        node_b.receive_one(&fixture.initiator_trust).unwrap(),
+        NodeEvent::Event(_)
+    ));
+    assert!(matches!(
+        node_b.receive_one(&fixture.initiator_trust),
         Err(NodeError::Dispatch(ControlDispatchError::Sequence(
             SequenceError::ReplayDetected {
                 expected: 1,
@@ -440,11 +515,12 @@ fn duplicate_or_gap_sequence_is_rejected_and_closes_the_session() {
         endpoint_b,
         PolicyState::new(),
         Fixture::local_capabilities(),
+        NetworkClass::Local,
         NonZeroUsize::new(STATE_CAPACITY).unwrap(),
     )
     .unwrap();
     assert!(matches!(
-        node_b.receive_one(),
+        node_b.receive_one(&fixture.initiator_trust),
         Err(NodeError::Dispatch(ControlDispatchError::Sequence(
             SequenceError::Gap {
                 expected: 0,
@@ -483,19 +559,20 @@ fn duplicate_nonretryable_request_id_is_rejected_after_first_completion() {
         endpoint_b,
         fixture.allow_write_policy(),
         Fixture::local_capabilities(),
+        NetworkClass::Local,
         NonZeroUsize::new(STATE_CAPACITY).unwrap(),
     )
     .unwrap();
 
     assert!(matches!(
-        node_b.receive_one().unwrap(),
+        node_b.receive_one(&fixture.initiator_trust).unwrap(),
         NodeEvent::RequestDispatched(_)
     ));
     node_b
         .send_response(request_id, ControlResponseResult::Success(Vec::new()))
         .unwrap();
     assert!(matches!(
-        node_b.receive_one(),
+        node_b.receive_one(&fixture.initiator_trust),
         Err(NodeError::Dispatch(ControlDispatchError::DuplicateRequest))
     ));
 }
@@ -511,6 +588,7 @@ fn unauthorized_request_never_reaches_dispatch_and_session_remains_active() {
         endpoint_a,
         PolicyState::new(),
         Fixture::local_capabilities(),
+        NetworkClass::Local,
         NonZeroUsize::new(STATE_CAPACITY).unwrap(),
     )
     .unwrap();
@@ -519,6 +597,7 @@ fn unauthorized_request_never_reaches_dispatch_and_session_remains_active() {
         endpoint_b,
         PolicyState::new(),
         Fixture::local_capabilities(),
+        NetworkClass::Local,
         NonZeroUsize::new(STATE_CAPACITY).unwrap(),
     )
     .unwrap();
@@ -531,7 +610,7 @@ fn unauthorized_request_never_reaches_dispatch_and_session_remains_active() {
         ))
         .unwrap();
     assert!(matches!(
-        node_b.receive_one(),
+        node_b.receive_one(&fixture.initiator_trust),
         Err(NodeError::Dispatch(
             ControlDispatchError::AuthorizationDenied(DecisionReason::NoMatchingRule)
         ))
@@ -550,6 +629,7 @@ fn cancellation_removes_pending_request_and_prevents_late_response() {
         endpoint_a,
         PolicyState::new(),
         Fixture::local_capabilities(),
+        NetworkClass::Local,
         NonZeroUsize::new(STATE_CAPACITY).unwrap(),
     )
     .unwrap();
@@ -558,6 +638,7 @@ fn cancellation_removes_pending_request_and_prevents_late_response() {
         endpoint_b,
         fixture.allow_write_policy(),
         Fixture::local_capabilities(),
+        NetworkClass::Local,
         NonZeroUsize::new(STATE_CAPACITY).unwrap(),
     )
     .unwrap();
@@ -567,13 +648,13 @@ fn cancellation_removes_pending_request_and_prevents_late_response() {
         .send_request(request(request_id, RetryClass::Idempotent, b"work"))
         .unwrap();
     assert!(matches!(
-        node_b.receive_one().unwrap(),
+        node_b.receive_one(&fixture.initiator_trust).unwrap(),
         NodeEvent::RequestDispatched(_)
     ));
     node_a.send_cancel(request_id).unwrap();
     assert_eq!(node_a.pending_request_count(), 0);
     assert!(matches!(
-        node_b.receive_one().unwrap(),
+        node_b.receive_one(&fixture.initiator_trust).unwrap(),
         NodeEvent::RequestCancelled(id) if id == request_id
     ));
     assert!(matches!(
@@ -595,10 +676,14 @@ fn malformed_frame_invalid_session_and_registered_close_fail_closed() {
         endpoint_b,
         PolicyState::new(),
         Fixture::local_capabilities(),
+        NetworkClass::Local,
         NonZeroUsize::new(STATE_CAPACITY).unwrap(),
     )
     .unwrap();
-    assert!(matches!(node_b.receive_one(), Err(NodeError::Wire(_))));
+    assert!(matches!(
+        node_b.receive_one(&fixture.initiator_trust),
+        Err(NodeError::Wire(_))
+    ));
     assert_eq!(node_b.session().state(), SessionState::Closed);
 
     let pair = transport_pair();
@@ -617,11 +702,12 @@ fn malformed_frame_invalid_session_and_registered_close_fail_closed() {
         endpoint_b,
         PolicyState::new(),
         Fixture::local_capabilities(),
+        NetworkClass::Local,
         NonZeroUsize::new(STATE_CAPACITY).unwrap(),
     )
     .unwrap();
     assert!(matches!(
-        node_b.receive_one(),
+        node_b.receive_one(&fixture.initiator_trust),
         Err(NodeError::Dispatch(ControlDispatchError::InvalidSession))
     ));
     assert_eq!(node_b.session().state(), SessionState::Closed);
@@ -634,6 +720,7 @@ fn malformed_frame_invalid_session_and_registered_close_fail_closed() {
         endpoint_a,
         PolicyState::new(),
         Fixture::local_capabilities(),
+        NetworkClass::Local,
         NonZeroUsize::new(STATE_CAPACITY).unwrap(),
     )
     .unwrap();
@@ -642,6 +729,7 @@ fn malformed_frame_invalid_session_and_registered_close_fail_closed() {
         endpoint_b,
         PolicyState::new(),
         Fixture::local_capabilities(),
+        NetworkClass::Local,
         NonZeroUsize::new(STATE_CAPACITY).unwrap(),
     )
     .unwrap();
@@ -649,7 +737,7 @@ fn malformed_frame_invalid_session_and_registered_close_fail_closed() {
         .send_close(SessionClose::new(SessionCloseReason::Normal, None))
         .unwrap();
     assert!(matches!(
-        node_b.receive_one().unwrap(),
+        node_b.receive_one(&fixture.initiator_trust).unwrap(),
         NodeEvent::SessionClosed(SessionCloseReason::Normal)
     ));
     assert_eq!(node_b.session().state(), SessionState::Closed);

@@ -39,7 +39,7 @@ impl fmt::Debug for ChannelBinding {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ConnectionMetadata {
     local_endpoint: Option<String>,
     remote_endpoint: Option<String>,
@@ -69,6 +69,23 @@ impl ConnectionMetadata {
 
     pub const fn metered(&self) -> Option<bool> {
         self.metered
+    }
+}
+
+impl fmt::Debug for ConnectionMetadata {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ConnectionMetadata")
+            .field(
+                "local_endpoint",
+                &self.local_endpoint.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field(
+                "remote_endpoint",
+                &self.remote_endpoint.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("metered", &self.metered)
+            .finish()
     }
 }
 

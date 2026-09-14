@@ -12,13 +12,76 @@ use crosslab_identity::{
 use crosslab_policy::{
     AuthorizationContext, AuthorizedOperation, CapabilityId, CapabilityVersion,
     CapabilityVersionRange, LocalCapability, NetworkClass, OperationError, OperationName,
-    OperationState, PolicyRule, PolicyState, RuleEffect, RuleId, SessionId, TransitionId,
-    TrustRecord, TrustState, UsePolicy,
+    OperationState, PairingTrustTransition, PolicyRule, PolicyState, RuleEffect, RuleId, SessionId,
+    TransitionId, TrustRecord, TrustState, UsePolicy,
 };
 use crosslab_protocol::{
     CapabilityAdvertisement, CapabilityAdvertisementEntry, DataStreamOpen, FeatureSet,
     ProtocolRange, ProtocolVersion, StreamDirection, StreamId,
 };
+
+fn establish_trust(
+    credential: &DeviceCredential,
+    root: &OwnerRootRecord,
+    delegation: &AuthorityDelegation,
+    issuer_key: &SigningKey,
+    transition_byte: u8,
+) -> TrustRecord {
+    let initial_credential = DeviceCredential::issue_for_public_key(
+        credential.owner_id(),
+        credential.device_id(),
+        credential.device_public_key(),
+        0,
+        root,
+        delegation,
+        issuer_key,
+    )
+    .unwrap();
+    let transition = PairingTrustTransition::issue(
+        &initial_credential,
+        TransitionId::from_bytes([transition_byte; 32]),
+        [transition_byte.wrapping_add(1); 32],
+        root,
+        delegation,
+        issuer_key,
+        delegation.delegation_epoch(),
+    )
+    .unwrap();
+    let mut trust = transition
+        .establish(
+            &initial_credential,
+            root,
+            delegation,
+            delegation.delegation_epoch(),
+        )
+        .unwrap();
+
+    for epoch in 1..=credential.credential_epoch() {
+        let successor = DeviceCredential::issue_for_public_key(
+            credential.owner_id(),
+            credential.device_id(),
+            credential.device_public_key(),
+            epoch,
+            root,
+            delegation,
+            issuer_key,
+        )
+        .unwrap();
+        let mut transition_id = [transition_byte; 32];
+        transition_id[..8].copy_from_slice(&epoch.to_be_bytes());
+        trust
+            .accept_successor_credential(
+                &successor,
+                root,
+                delegation,
+                delegation.delegation_epoch(),
+                TransitionId::from_bytes(transition_id),
+            )
+            .unwrap();
+    }
+
+    trust
+}
 
 struct Fixture {
     session: LogicalSession,
@@ -65,12 +128,8 @@ impl Fixture {
             &issuer_key,
         )
         .unwrap();
-        let peer_trust = TrustRecord::trusted(
-            owner_id,
-            responder_credential.device_id(),
-            responder_credential.credential_epoch(),
-            TransitionId::from_bytes([0x17; 32]),
-        );
+        let peer_trust =
+            establish_trust(&responder_credential, &root, &delegation, &issuer_key, 0x17);
         let ranges = [ProtocolRange::new(1, 0, 0).unwrap()];
         let features = FeatureSet::new(&[], &[]).unwrap();
         let binding = ChannelBinding::new("in-process-test", vec![0x18; 32]);
@@ -205,7 +264,7 @@ impl Fixture {
 }
 
 #[test]
-fn valid_single_stream_is_admitted_once_and_consumed_after_finish() {
+fn valid_single_stream_is_admitted_once_and_retired_after_finish() {
     let fixture = Fixture::new();
     let operation = fixture.operation(UsePolicy::SingleStream);
     let operation_id = operation.id();
@@ -223,7 +282,7 @@ fn valid_single_stream_is_admitted_once_and_consumed_after_finish() {
     assert_eq!(admission.active_stream_count(), 0);
     assert_eq!(
         fixture.admit(&mut admission, &open),
-        Err(StreamAdmissionError::DuplicateStreamIndex)
+        Err(StreamAdmissionError::OperationNotFound)
     );
 }
 

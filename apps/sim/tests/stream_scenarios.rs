@@ -12,8 +12,8 @@ use crosslab_identity::{
 use crosslab_policy::{
     AuthorizationContext, AuthorizedOperation, CapabilityId, CapabilityVersion,
     CapabilityVersionRange, LocalCapability, NetworkClass, OperationError, OperationId,
-    OperationName, PolicyRule, PolicyState, RuleEffect, RuleId, SessionId, TransitionId,
-    TrustRecord, TrustState, TrustTransition, UsePolicy,
+    OperationName, PairingTrustTransition, PolicyRule, PolicyState, RuleEffect, RuleId, SessionId,
+    TransitionId, TrustRecord, TrustState, TrustTransition, UsePolicy,
 };
 use crosslab_protocol::{
     CapabilityAdvertisement, CapabilityAdvertisementEntry, DataStreamOpen, FeatureSet,
@@ -23,6 +23,69 @@ use crosslab_sim::{
     stream::{SimStreamError, SimStreamRuntime},
     transport::MemoryTransportPair,
 };
+
+fn establish_trust(
+    credential: &DeviceCredential,
+    root: &OwnerRootRecord,
+    delegation: &AuthorityDelegation,
+    issuer_key: &SigningKey,
+    transition_byte: u8,
+) -> TrustRecord {
+    let initial_credential = DeviceCredential::issue_for_public_key(
+        credential.owner_id(),
+        credential.device_id(),
+        credential.device_public_key(),
+        0,
+        root,
+        delegation,
+        issuer_key,
+    )
+    .unwrap();
+    let transition = PairingTrustTransition::issue(
+        &initial_credential,
+        TransitionId::from_bytes([transition_byte; 32]),
+        [transition_byte.wrapping_add(1); 32],
+        root,
+        delegation,
+        issuer_key,
+        delegation.delegation_epoch(),
+    )
+    .unwrap();
+    let mut trust = transition
+        .establish(
+            &initial_credential,
+            root,
+            delegation,
+            delegation.delegation_epoch(),
+        )
+        .unwrap();
+
+    for epoch in 1..=credential.credential_epoch() {
+        let successor = DeviceCredential::issue_for_public_key(
+            credential.owner_id(),
+            credential.device_id(),
+            credential.device_public_key(),
+            epoch,
+            root,
+            delegation,
+            issuer_key,
+        )
+        .unwrap();
+        let mut transition_id = [transition_byte; 32];
+        transition_id[..8].copy_from_slice(&epoch.to_be_bytes());
+        trust
+            .accept_successor_credential(
+                &successor,
+                root,
+                delegation,
+                delegation.delegation_epoch(),
+                TransitionId::from_bytes(transition_id),
+            )
+            .unwrap();
+    }
+
+    trust
+}
 
 struct Fixture {
     root_key: SigningKey,
@@ -75,18 +138,10 @@ impl Fixture {
             &issuer_key,
         )
         .unwrap();
-        let sender_trust = TrustRecord::trusted(
-            owner_id,
-            sender_credential.device_id(),
-            sender_credential.credential_epoch(),
-            TransitionId::from_bytes([0x67; 32]),
-        );
-        let receiver_trust = TrustRecord::trusted(
-            owner_id,
-            receiver_credential.device_id(),
-            receiver_credential.credential_epoch(),
-            TransitionId::from_bytes([0x68; 32]),
-        );
+        let sender_trust =
+            establish_trust(&sender_credential, &root, &delegation, &issuer_key, 0x67);
+        let receiver_trust =
+            establish_trust(&receiver_credential, &root, &delegation, &issuer_key, 0x68);
         let ranges = [ProtocolRange::new(1, 0, 0).unwrap()];
         let features = FeatureSet::new(&[], &[]).unwrap();
         let binding = pair.endpoints().0.channel_binding();
@@ -335,7 +390,7 @@ fn s007_authorized_single_stream_flows_in_order_and_cannot_be_reused() {
     assert!(matches!(
         receiver.accept_one(15, fixture.trust_revision, fixture.policy_revision),
         Err(SimStreamError::Admission(
-            StreamAdmissionError::DuplicateStreamIndex
+            StreamAdmissionError::OperationNotFound
         ))
     ));
     assert!(second_send.try_send_chunk(vec![9]).is_err());

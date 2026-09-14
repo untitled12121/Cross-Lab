@@ -12,8 +12,8 @@ use crosslab_identity::{
 use crosslab_policy::{
     AuthorizationContext, AuthorizedOperation, CapabilityId, CapabilityVersion,
     CapabilityVersionRange, LocalCapability, NetworkClass, OperationError, OperationName,
-    PolicyRule, PolicyState, RuleEffect, RuleId, TransitionId, TrustRecord, TrustState,
-    TrustTransition, UsePolicy,
+    PairingTrustTransition, PolicyRule, PolicyState, RuleEffect, RuleId, TransitionId, TrustRecord,
+    TrustState, TrustTransition, UsePolicy,
 };
 use crosslab_protocol::{
     CapabilityAdvertisement, CapabilityAdvertisementEntry, ControlEnvelope, ControlRequest,
@@ -28,10 +28,74 @@ use crosslab_sim::{
 
 const CAPACITY: usize = 8;
 
+fn establish_trust(
+    credential: &DeviceCredential,
+    root: &OwnerRootRecord,
+    delegation: &AuthorityDelegation,
+    issuer_key: &SigningKey,
+    transition_byte: u8,
+) -> TrustRecord {
+    let initial_credential = DeviceCredential::issue_for_public_key(
+        credential.owner_id(),
+        credential.device_id(),
+        credential.device_public_key(),
+        0,
+        root,
+        delegation,
+        issuer_key,
+    )
+    .unwrap();
+    let transition = PairingTrustTransition::issue(
+        &initial_credential,
+        TransitionId::from_bytes([transition_byte; 32]),
+        [transition_byte.wrapping_add(1); 32],
+        root,
+        delegation,
+        issuer_key,
+        delegation.delegation_epoch(),
+    )
+    .unwrap();
+    let mut trust = transition
+        .establish(
+            &initial_credential,
+            root,
+            delegation,
+            delegation.delegation_epoch(),
+        )
+        .unwrap();
+
+    for epoch in 1..=credential.credential_epoch() {
+        let successor = DeviceCredential::issue_for_public_key(
+            credential.owner_id(),
+            credential.device_id(),
+            credential.device_public_key(),
+            epoch,
+            root,
+            delegation,
+            issuer_key,
+        )
+        .unwrap();
+        let mut transition_id = [transition_byte; 32];
+        transition_id[..8].copy_from_slice(&epoch.to_be_bytes());
+        trust
+            .accept_successor_credential(
+                &successor,
+                root,
+                delegation,
+                delegation.delegation_epoch(),
+                TransitionId::from_bytes(transition_id),
+            )
+            .unwrap();
+    }
+
+    trust
+}
+
 struct Fixture {
     owner_id: OwnerId,
     root_key: SigningKey,
     root: OwnerRootRecord,
+    issuer_key: SigningKey,
     delegation: AuthorityDelegation,
     initiator_key: SigningKey,
     responder_key: SigningKey,
@@ -76,23 +140,16 @@ impl Fixture {
             &issuer_key,
         )
         .unwrap();
-        let initiator_trust = TrustRecord::trusted(
-            owner_id,
-            initiator_credential.device_id(),
-            initiator_credential.credential_epoch(),
-            TransitionId::from_bytes([0xd7; 32]),
-        );
-        let responder_trust = TrustRecord::trusted(
-            owner_id,
-            responder_credential.device_id(),
-            responder_credential.credential_epoch(),
-            TransitionId::from_bytes([0xd8; 32]),
-        );
+        let initiator_trust =
+            establish_trust(&initiator_credential, &root, &delegation, &issuer_key, 0xd7);
+        let responder_trust =
+            establish_trust(&responder_credential, &root, &delegation, &issuer_key, 0xd8);
 
         Self {
             owner_id,
             root_key,
             root,
+            issuer_key,
             delegation,
             initiator_key,
             responder_key,
@@ -308,11 +365,22 @@ impl Fixture {
     }
 
     fn revoked_other(&self, transition_byte: u8) -> TrustRecord {
-        let mut other = TrustRecord::trusted(
+        let other_credential = DeviceCredential::issue(
             self.owner_id,
             DeviceId::from_bytes([0xfe; 32]),
+            &SigningKey::from_secret_bytes([0xfc; 32]),
             1,
-            TransitionId::from_bytes([0xfd; 32]),
+            &self.root,
+            &self.delegation,
+            &self.issuer_key,
+        )
+        .unwrap();
+        let mut other = establish_trust(
+            &other_credential,
+            &self.root,
+            &self.delegation,
+            &self.issuer_key,
+            0xfd,
         );
         let transition = TrustTransition::issue_root_revocation(
             &other,
@@ -341,19 +409,24 @@ fn request(byte: u8) -> ControlRequest {
     )
 }
 
-fn exchange_capabilities(node_a: &mut SimNode<'_>, node_b: &mut SimNode<'_>) {
+fn exchange_capabilities(
+    node_a: &mut SimNode<'_>,
+    node_b: &mut SimNode<'_>,
+    responder_trust: &TrustRecord,
+    initiator_trust: &TrustRecord,
+) {
     node_a
         .send_capability_advertisement(Fixture::advertisement())
         .unwrap();
     assert_eq!(
-        node_b.receive_one().unwrap(),
+        node_b.receive_one(initiator_trust).unwrap(),
         NodeEvent::CapabilitiesUpdated
     );
     node_b
         .send_capability_advertisement(Fixture::advertisement())
         .unwrap();
     assert_eq!(
-        node_a.receive_one().unwrap(),
+        node_a.receive_one(responder_trust).unwrap(),
         NodeEvent::CapabilitiesUpdated
     );
 }
@@ -371,6 +444,7 @@ fn s008_disconnect_reconnect_creates_fresh_session_and_capability_state() {
         old_endpoint_a,
         PolicyState::new(),
         vec![local_capability.clone()],
+        NetworkClass::Local,
         NonZeroUsize::new(CAPACITY).unwrap(),
     )
     .unwrap();
@@ -379,11 +453,17 @@ fn s008_disconnect_reconnect_creates_fresh_session_and_capability_state() {
         old_endpoint_b,
         PolicyState::new(),
         vec![local_capability.clone()],
+        NetworkClass::Local,
         NonZeroUsize::new(CAPACITY).unwrap(),
     )
     .unwrap();
 
-    exchange_capabilities(&mut old_node_a, &mut old_node_b);
+    exchange_capabilities(
+        &mut old_node_a,
+        &mut old_node_b,
+        &fixture.responder_trust,
+        &fixture.initiator_trust,
+    );
     assert_eq!(
         old_node_a
             .session()
@@ -398,7 +478,7 @@ fn s008_disconnect_reconnect_creates_fresh_session_and_capability_state() {
 
     old_pair.faults().disconnect_now();
     assert!(matches!(
-        old_node_a.receive_one(),
+        old_node_a.receive_one(&fixture.responder_trust),
         Err(NodeError::Receive(
             crosslab_core::ControlReceiveError::Closed
         ))
@@ -433,6 +513,7 @@ fn s008_disconnect_reconnect_creates_fresh_session_and_capability_state() {
         new_endpoint_a,
         PolicyState::new(),
         vec![local_capability.clone()],
+        NetworkClass::Local,
         NonZeroUsize::new(CAPACITY).unwrap(),
     )
     .unwrap();
@@ -441,13 +522,19 @@ fn s008_disconnect_reconnect_creates_fresh_session_and_capability_state() {
         new_endpoint_b,
         PolicyState::new(),
         vec![local_capability],
+        NetworkClass::Local,
         NonZeroUsize::new(CAPACITY).unwrap(),
     )
     .unwrap();
 
     assert_eq!(new_node_a.next_send_sequence(), Some(0));
     assert_eq!(new_node_a.expected_receive_sequence(), Some(0));
-    exchange_capabilities(&mut new_node_a, &mut new_node_b);
+    exchange_capabilities(
+        &mut new_node_a,
+        &mut new_node_b,
+        &fixture.responder_trust,
+        &fixture.initiator_trust,
+    );
     assert_eq!(
         new_node_a
             .session()
@@ -483,6 +570,7 @@ fn s008_old_control_envelope_is_rejected_by_new_session() {
         new_endpoint_b,
         PolicyState::new(),
         vec![Fixture::local_capability()],
+        NetworkClass::Local,
         NonZeroUsize::new(CAPACITY).unwrap(),
     )
     .unwrap();
@@ -504,7 +592,7 @@ fn s008_old_control_envelope_is_rejected_by_new_session() {
         .unwrap();
 
     assert!(matches!(
-        new_node_b.receive_one(),
+        new_node_b.receive_one(&fixture.initiator_trust),
         Err(NodeError::Dispatch(ControlDispatchError::InvalidSession))
     ));
     assert_eq!(new_node_b.session().state(), SessionState::Closed);
@@ -561,6 +649,7 @@ fn s009_active_control_revocation_terminates_local_authority() {
         endpoint_a,
         PolicyState::new(),
         vec![local_capability.clone()],
+        NetworkClass::Local,
         NonZeroUsize::new(CAPACITY).unwrap(),
     )
     .unwrap();
@@ -569,11 +658,17 @@ fn s009_active_control_revocation_terminates_local_authority() {
         endpoint_b,
         PolicyState::new(),
         vec![local_capability],
+        NetworkClass::Local,
         NonZeroUsize::new(CAPACITY).unwrap(),
     )
     .unwrap();
 
-    exchange_capabilities(&mut node_a, &mut node_b);
+    exchange_capabilities(
+        &mut node_a,
+        &mut node_b,
+        &fixture.responder_trust,
+        &fixture.initiator_trust,
+    );
     node_b.send_request(request(0xa4)).unwrap();
     assert_eq!(node_b.pending_request_count(), 1);
 
@@ -586,7 +681,7 @@ fn s009_active_control_revocation_terminates_local_authority() {
         Err(NodeError::Session(SessionError::InvalidState))
     ));
     assert!(matches!(
-        node_b.receive_one(),
+        node_b.receive_one(&revoked_initiator),
         Err(NodeError::Receive(
             crosslab_core::ControlReceiveError::Closed
         ))
@@ -677,6 +772,7 @@ fn s009_unrelated_or_unrevoked_trust_cannot_kill_active_session() {
         endpoint_b,
         PolicyState::new(),
         vec![Fixture::local_capability()],
+        NetworkClass::Local,
         NonZeroUsize::new(CAPACITY).unwrap(),
     )
     .unwrap();

@@ -1,9 +1,13 @@
 use core::fmt;
 
-use crosslab_identity::{DeviceId, OwnerId};
+use crosslab_identity::{
+    AuthorityDelegation, DeviceCredential, DeviceId, IdentityError, OwnerId, OwnerRootRecord,
+};
 
+mod pairing;
 mod transition;
 
+pub use pairing::{PairingTrustTransition, PairingTrustTransitionError};
 pub use transition::{TrustTransition, TrustTransitionError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -46,6 +50,56 @@ impl fmt::Display for TrustError {
 impl std::error::Error for TrustError {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CredentialRotationError {
+    Identity(IdentityError),
+    WrongOwner,
+    WrongDevice,
+    NotTrusted,
+    StaleCredentialEpoch,
+    UnexpectedCredentialEpoch,
+    RevisionOverflow,
+}
+
+impl fmt::Display for CredentialRotationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Identity(error) => fmt::Display::fmt(error, formatter),
+            Self::WrongOwner => formatter.write_str("credential belongs to a different owner"),
+            Self::WrongDevice => formatter.write_str("credential belongs to a different device"),
+            Self::NotTrusted => formatter.write_str("device trust is not active"),
+            Self::StaleCredentialEpoch => formatter.write_str("credential epoch is stale"),
+            Self::UnexpectedCredentialEpoch => {
+                formatter.write_str("credential epoch transition is invalid")
+            }
+            Self::RevisionOverflow => formatter.write_str("trust revision is exhausted"),
+        }
+    }
+}
+
+impl std::error::Error for CredentialRotationError {}
+
+impl From<IdentityError> for CredentialRotationError {
+    fn from(error: IdentityError) -> Self {
+        Self::Identity(error)
+    }
+}
+
+/// Locally authoritative trusted state must be established through verified pairing evidence.
+///
+/// Ordinary callers cannot mint trusted state directly:
+///
+/// ```compile_fail
+/// use crosslab_identity::{DeviceId, OwnerId};
+/// use crosslab_policy::{TransitionId, TrustRecord};
+///
+/// let _ = TrustRecord::trusted(
+///     OwnerId::from_bytes([0x11; 32]),
+///     DeviceId::from_bytes([0x22; 32]),
+///     0,
+///     TransitionId::from_bytes([0x33; 32]),
+/// );
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TrustRecord {
     owner_id: OwnerId,
     device_id: DeviceId,
@@ -56,7 +110,7 @@ pub struct TrustRecord {
 }
 
 impl TrustRecord {
-    pub const fn trusted(
+    pub(super) const fn established_from_pairing(
         owner_id: OwnerId,
         device_id: DeviceId,
         credential_epoch: u64,
@@ -72,19 +126,43 @@ impl TrustRecord {
         }
     }
 
-    pub fn advance_credential_epoch(&mut self, next_epoch: u64) -> Result<(), TrustError> {
-        if next_epoch <= self.accepted_credential_epoch {
-            return Err(TrustError::StaleCredentialEpoch);
+    pub fn accept_successor_credential(
+        &mut self,
+        successor: &DeviceCredential,
+        root: &OwnerRootRecord,
+        issuer: &AuthorityDelegation,
+        minimum_delegation_epoch: u64,
+        transition_id: TransitionId,
+    ) -> Result<(), CredentialRotationError> {
+        if self.state != TrustState::Trusted {
+            return Err(CredentialRotationError::NotTrusted);
         }
-        let expected = self
+        if successor.owner_id() != self.owner_id {
+            return Err(CredentialRotationError::WrongOwner);
+        }
+        if successor.device_id() != self.device_id {
+            return Err(CredentialRotationError::WrongDevice);
+        }
+        if successor.credential_epoch() <= self.accepted_credential_epoch {
+            return Err(CredentialRotationError::StaleCredentialEpoch);
+        }
+        let expected_epoch = self
             .accepted_credential_epoch
             .checked_add(1)
-            .ok_or(TrustError::UnexpectedCredentialEpoch)?;
-        if next_epoch != expected {
-            return Err(TrustError::UnexpectedCredentialEpoch);
+            .ok_or(CredentialRotationError::UnexpectedCredentialEpoch)?;
+        if successor.credential_epoch() != expected_epoch {
+            return Err(CredentialRotationError::UnexpectedCredentialEpoch);
         }
 
-        self.accepted_credential_epoch = next_epoch;
+        successor.verify(root, issuer, expected_epoch, minimum_delegation_epoch)?;
+        let next_revision = self
+            .trust_revision
+            .checked_add(1)
+            .ok_or(CredentialRotationError::RevisionOverflow)?;
+
+        self.accepted_credential_epoch = expected_epoch;
+        self.trust_revision = next_revision;
+        self.last_transition_id = transition_id;
         Ok(())
     }
 

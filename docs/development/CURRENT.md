@@ -1,6 +1,6 @@
 # Current Development State
 
-This file is the durable resume guide for active Cross-Lab development. Git/code/tests are factual implementation state; this file records the intended handoff.
+This file is the durable resume guide for active Cross-Lab development. Git, code, and tests are the factual implementation state; this file records the intended handoff.
 
 ## Current Phase
 
@@ -8,109 +8,209 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 ## Current Milestone
 
-**M9 — Remote Networking ADR**
+**M9 — Remote Networking ADR, paused before M9 Task 4 while the second foundation security remediation plan is executed.**
 
-M1–M8 are complete and integrated into canonical `main`. M9 is the next Phase 1 milestone; M10 remains the first Linux + Android platform vertical slice after the remote-networking architecture is selected.
+M1–M8 are complete on canonical `main`. M9 remains isolated on `m9-remote-networking` in draft PR #19. M10 remains the first Linux + Android platform vertical slice after the remote-networking architecture is selected.
 
-## Canonical M8 Integration
+## Canonical Baseline
 
-M8 — Quinn Transport is integrated and independently verified on `main`.
+- Canonical M8 documentation head: `ab602d62181b3dcba056874d0013e40522a68e8f`, CI `34688627614` — full gate passed.
+- `m9-remote-networking` was created from exactly that head.
+- M9 Tasks 1–3 remain implemented and previously verified.
+- M9 Task 4 must not begin until the active foundation remediation backlog below is closed and the exact final head passes the full gate.
 
-- final feature head: `a93c6367be3174241cbab65b870f16f1543971f9`;
-- exact feature-head CI: `34688453044` — locked metadata, rustfmt, workspace check, Clippy `-D warnings`, and full workspace tests passed;
-- PR #18: `feat: implement M8 Quinn transport` — merged;
-- canonical merge commit: `4a225976a16f34d7485fd259cacf767c84a60706`;
-- post-merge canonical-main CI: `34688527098` — the same full required gate passed.
+## Active Plans
 
-The merged result is the factual M8 baseline for M9.
+Primary M9 design and implementation plans remain under `docs/plans/phase-1/`.
 
-## M8 Result
+The active security remediation plan is:
 
-M8 adds the first real encrypted Cross-Lab IP transport while preserving the existing transport-neutral domain architecture.
+`docs/superpowers/plans/2026-09-13-foundation-security-remediation.md`
 
-Implemented and verified behavior includes:
+The discovery/audit record is:
 
-- isolated `crosslab-transport-quic` adapter using Quinn `0.11.11` on Tokio `1.53.1`;
-- accepted ADR-0008 TLS-exporter channel binding profile `quic-tls-exporter-v1` with 32-byte output, label `EXPORTER-Cross-Lab-QUIC-Channel-Binding-v1`, and context `crosslab.quic.transport.v1`;
-- private bounded `u32` big-endian QUIC record framing with declared-length validation before allocation;
-- ownership-preserving `TooLarge`, `Full`, and `Closed` transport outcomes;
-- bounded ordered control bridge with local backpressure and terminal remote-close propagation;
-- bounded unidirectional data-stream bridge with opening-frame admission, chunk backpressure, FIN, RESET, STOP, cancellation, connection-loss propagation, and joined connection-owned tasks;
-- existing Cross-Lab session-auth hello/proof flow over the Quinn TLS-exporter binding without a second authentication transcript or certificate-to-`DeviceId` mapping;
-- ordinary capability advertisement, control request/response/event behavior through the existing `SimNode` path over Quinn;
-- operation-bound data streams through the existing `SimStreamRuntime` path over Quinn;
-- reconnect using a fresh Quinn connection, exporter binding, nonces/proofs, `SessionId`, sequence state, capability state, and operation authority;
-- replayed old proofs and old operation/session authority rejected on reconnect;
-- accepted signed peer revocation terminating active authority and preventing a fresh Cross-Lab session from reaching `Active`;
-- bounded saturation, cancellation, active-stream shutdown, and task joining.
+`docs/plans/phase-1/M9-whole-project-security-quality-audit.md`
 
-No Quinn/Tokio/rustls/socket/TLS-certificate type entered the public/domain state of `crosslab-core`, `crosslab-protocol`, `crosslab-policy`, or `crosslab-identity`. Quinn/TLS protects the connection but does not define Cross-Lab identity or policy authority.
+The remediation plan is executed regression-first. Existing Master Architecture, Identity/Keys, Pairing/Trust/Revocation, Policy/Authorization, Session/Transport, Protocol V1, Security Boundaries, Threat Model, and accepted ADRs remain authoritative.
 
-## M8 Resource Defaults
+## Completed Remediation Work
 
-`QuicTransportConfig::default()` uses explicit nonzero bounds:
+### Task 1 — Pairing currentness and initial credential epoch
 
-- control queue: 8 records;
-- incoming stream queue: 8 streams;
-- outgoing stream slots: 8 streams;
-- per-stream chunk queue: 8 chunks;
-- maximum control record: `256 KiB + 4` bytes;
-- maximum opening record: `4 KiB + 4` bytes;
-- maximum chunk: `64 KiB`;
-- remote unidirectional stream limit: 32;
-- remote bidirectional stream limit: 1;
-- stream receive window: `512 KiB`;
-- connection receive window: `4 MiB`;
-- idle timeout: 30 seconds.
+Implemented on the active branch:
 
-These are adapter defaults, not protocol permission or capability authority.
+- removed caller-selected initial pairing credential epochs; initial enrollment issues epoch `0` by construction;
+- rejects nonzero initial credentials at the joiner pairing boundary;
+- added CSPRNG-backed `PairingId::generate()` and `PairingSecret::generate()` using the existing OS-backed crypto random source;
+- added typed local `PairingInstant` creation/deadline metadata;
+- invalid/expired invitations fail closed and become terminal;
+- invitation currentness is enforced at inviter-flow creation, joiner-confirmation verification, credential issuance, and final trust commit;
+- expiry occurring after credential acceptance but before trust commit is covered and cannot create trust;
+- simulator/core deterministic fixtures use explicit local monotonic-style test ticks;
+- pairing golden vectors were reconciled after initial epoch became fixed at zero.
 
-## Dependency and Research State
+The Task 1 changes are included in the verified Task 2 checkpoint below.
 
-M8 production baseline:
+### Task 2 — Credential rotation and active-session invalidation
 
-- Quinn `0.11.11`, pinned with only `runtime-tokio` + `rustls-ring`;
-- Tokio `1.53.1`;
-- rustls `0.23.44` only where concrete loopback trust construction requires its public types;
-- rcgen `0.14.10` dev-only for ephemeral loopback certificates.
+Exact verified code head:
 
-The uploaded Quinn repository was inspected as research/reference material, and behavior relevant to the adapter was reconciled against the pinned `quinn-0.11.11` API. No Iroh or rust-libp2p dependency entered M8.
+`7cd243ff52115dad923b3cf4aba92a04bde79409`
 
-`.github/workflows/fuzz.yml` was not applicable to M8 because M8 did not change its watched protocol/policy/fuzz paths; no fuzz pass is claimed.
+Implemented:
 
-## Intentional M8 Limits
+- removed raw public numeric `TrustRecord::advance_credential_epoch(u64)`;
+- added verified successor-credential acceptance using the signed `DeviceCredential`, current owner root/delegation evidence, exact owner/device binding, and exact `N + 1` progression;
+- stale, skipped, wrong-device, and invalid-authority successors fail closed;
+- accepting a successor credential atomically advances `accepted_credential_epoch`, `trust_revision`, and `last_transition_id` only after verification succeeds;
+- added `LogicalSession::revalidate_peer_trust` so an active session can be invalidated against current local trust/credential state;
+- inbound control validates both authenticated credential epoch and trust revision before sequence/body dispatch;
+- credential-epoch drift is fatal in the simulator and closes session authority;
+- existing operation/stream admission already binds authority to `trust_revision`, so credential rotation invalidates stale stream-operation authority through the existing conservative revision contract;
+- revocation tests that previously mutated an epoch numerically now rotate through the same verified successor-credential contract.
 
-M8 does not implement discovery, NAT traversal, relay selection, Iroh, rust-libp2p, route scoring/migration, TCP/TLS fallback, datagram consumers, production certificate provisioning, persistence, UI/platform adapters, privileged services, or installable Linux/Android applications.
+Verification on exact head `7cd243ff52115dad923b3cf4aba92a04bde79409`:
 
-Those exclusions are deliberate milestone boundaries, not missing M8 requirements.
+- Rust CI `34747301958` — lockfile verification, dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and complete workspace tests all passed;
+- Fuzz Smoke `34747301924` — fuzz lockfile verification, formatting, and all bounded fuzz targets passed.
 
-## Exact Next Development Task
+### Task 3 — Trusted-state and approval provenance
 
-Begin **M9 — Remote Networking ADR**.
+Exact verified code head:
 
-Per the Master Architecture, M9 must prototype and measure Iroh and, where justified, rust-libp2p approaches against the verified Quinn baseline, then select the remote connectivity/NAT/relay architecture through an ADR.
+`685b8ec948671a989b7f32a46e021d629cdbfa2c`
 
-Start M9 by:
+Implemented:
 
-1. reading the Master Architecture, M8 design/ADR, and current transport/session contracts;
-2. inspecting the uploaded Quinn, Iroh, and rust-libp2p research repositories, including versions, licenses, platform/runtime constraints, NAT traversal/relay behavior, identity coupling, resource model, and maintenance surface;
-3. defining explicit evaluation criteria and benchmark/scenario coverage before choosing a library or architecture;
-4. prototyping only the smallest isolated candidates needed to gather evidence;
-5. measuring candidates against the M8 Quinn baseline for connection establishment, direct-path behavior, relay/fallback behavior where testable, reconnect/failure semantics, resource cost, integration complexity, and preservation of Cross-Lab identity/session boundaries;
-6. recording the selected remote connectivity architecture in an ADR before introducing production Iroh/libp2p dependencies or remote relay authority.
+- removed ordinary direct construction of trusted membership;
+- added signed `PairingTrustTransition` evidence bound to the initial credential, transition ID, pairing-evidence digest, owner authority, and issuer key;
+- initial trusted membership is established only after validating the epoch-0 credential and pairing trust transition against owner authority;
+- pairing flow commits trust through that verified transition rather than minting `TrustState::Trusted` directly;
+- removed public direct minting of `VerifiedApproval`;
+- added signed `OwnerApprovalEvidence` with exact approval scope, owner identity, issuer key/delegation epoch, issue time, and expiry;
+- local verification produces the private `VerifiedApproval` capability only after validating Administrative authority, owner/issuer binding, signature, and lifetime;
+- approval evaluation remains pure and requires explicit local time when approval authority is relevant;
+- scope and lifetime mismatch tests fail closed.
 
-M9 must not create a second Cross-Lab session/authentication model or make third-party endpoint/peer identifiers authoritative Cross-Lab identity.
+Verification on exact head `685b8ec948671a989b7f32a46e021d629cdbfa2c`:
 
-## Phase 1 Completion Boundary
+- Rust CI `34794229945` — lockfile verification, dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and complete workspace tests all passed;
+- Fuzz Smoke `34794229882` — fuzz lockfile verification, formatting, and all bounded fuzz targets passed.
 
-Phase 1 is not complete yet. After M9 selects the remote networking architecture, M10 must deliver the first platform vertical slice described by the Master Architecture before Phase 1 can be closed for real-device testing.
+### Task 4 — Request replay and local retry authority
+
+Exact verified code head:
+
+`cad5222d744eb86888b10cf884309bc65c5d95fa`
+
+Implemented:
+
+- peer-declared `RetryClass` no longer grants receiver-side duplicate/replay authority;
+- active inbound request IDs and recently terminal inbound IDs are tracked by receiver-local state;
+- completed and cancelled request IDs remain replay-protected inside a bounded local window;
+- terminal replay state uses FIFO reclamation so long sessions do not permanently exhaust admission capacity;
+- active request authority is never evicted merely to reclaim completed replay state;
+- per-session replay state is cleared with the rest of dispatcher session state;
+- message-sequence anti-replay, request/response ownership, and existing resource bounds remain intact.
+
+Regression-first evidence covered duplicate idempotent IDs, cancelled-ID reuse, and completed-state liveness before the production change.
+
+Verification on exact head `cad5222d744eb86888b10cf884309bc65c5d95fa`:
+
+- Rust CI `34796612978` — lockfile verification, dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and complete workspace tests all passed;
+- Fuzz Smoke `34796613004` — fuzz lockfile verification, formatting, and all bounded fuzz targets passed;
+- dependency audit retains the previously documented allowed `paste 1.0.15` / `RUSTSEC-2024-0436` maintenance warning in the isolated Iroh experiment dependency graph.
+
+### Task 5 — Event authorization/subscription boundary
+
+Exact verified code head:
+
+`7126e8057600282fb59cf0e533b0ba02c8b46033`
+
+Implemented:
+
+- reconciled event delivery around explicit receiver-local authority without changing Protocol V1 wire compatibility;
+- added typed `EventSubscription` state keyed by exact capability and event type;
+- negotiated capability support remains a prerequisite but no longer acts as implicit permission to deliver every capability event;
+- peers cannot create or widen local event subscription authority through event metadata;
+- unmatched capability events fail closed with `EventNotSubscribed`;
+- exact local subscription permits only the subscribed capability/event pair;
+- authenticated system events remain outside the capability-subscription grammar and continue through the existing session identity/trust/sequence boundary;
+- simulator and authenticated Quinn fixtures now establish explicit local subscription authority before expecting capability-event delivery.
+
+Verification on exact head `7126e8057600282fb59cf0e533b0ba02c8b46033`:
+
+- Rust CI `34801746532` — lockfile verification, dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and complete workspace tests all passed;
+- Fuzz Smoke `34801746547` — fuzz lockfile verification, formatting, and all bounded fuzz targets passed;
+- dependency audit retains the previously documented allowed `paste 1.0.15` / `RUSTSEC-2024-0436` maintenance warning in the isolated Iroh experiment dependency graph.
+
+### Task 6 — Quinn plain-`Drop` connection/task ownership
+
+Exact verified code head:
+
+`db81e4c7a4f52c4fc3aa99e3ada6b703d0b6534a`
+
+Implemented:
+
+- added a regression proving plain owner drop previously left a live uni-stream send handle usable after `QuicTransportConnection` was dropped;
+- plain drop now immediately terminalizes local transport authority and explicitly closes the Quinn connection;
+- task admission is closed and all owned task handles are drained from the registry during shutdown initiation;
+- explicit `shutdown().await` still performs graceful close followed by joining the drained tasks;
+- plain `Drop` synchronously aborts drained tasks because it cannot await them;
+- shutdown followed by ordinary drop is idempotent through the existing terminal flag and drained task registry;
+- peer-visible connection close and live-stream cancellation are covered by the regression.
+
+Verification on exact head `db81e4c7a4f52c4fc3aa99e3ada6b703d0b6534a`:
+
+- Rust CI `34802668466` — lockfile verification, dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and complete workspace tests all passed;
+- Fuzz Smoke `34802668471` — fuzz lockfile verification, formatting, and all bounded fuzz targets passed;
+- dependency audit retains the previously documented allowed `paste 1.0.15` / `RUSTSEC-2024-0436` maintenance warning in the isolated Iroh experiment dependency graph.
+
+## Exact Next Task
+
+**Foundation remediation Task 7 — Debug/privacy hardening.**
+
+Replace ordinary derived Debug output for core session-auth proofs/transcripts and pairing transcript/security material with deliberate redacted output while retaining useful type/profile/length metadata.
+
+Required behavior:
+
+1. add regression coverage using sentinel bytes plus actual proof digest/signature material and prove ordinary Debug output cannot expose them;
+2. remove derived `Debug` from `SessionAuthProof`, `SessionAuthTranscriptV1`, and `PairingTranscript`;
+3. custom Debug output may retain useful role/profile/protocol/length metadata only;
+4. signatures, transcript digests, nonces, binding-derived material, pairing bootstrap/security bytes, and payload-like material must remain redacted;
+5. keep cryptographic behavior, equality, canonical transcript bytes, signatures, and golden vectors unchanged.
+
+## Remaining Remediation Backlog
+
+After Task 7:
+
+- finish OS-CSPRNG constructors for all locally created random identifiers required by the specifications;
+- explicitly resolve/design authoritative delegated-role epoch state rather than treating a caller-supplied/current object epoch as globally authoritative; ADR-0009 remains reserved for the M9 networking decision, so this authority-state decision must use a later monotonic ADR number;
+- run the complete regression/security/fuzz/dependency gate on the final exact head;
+- reconcile `security/M9-FOUNDATION-HARDENING-ASSESSMENT.md`, this file, and PR #19 before M9 Task 4 can resume.
+
+## Important Known Design Constraint
+
+Authoritative delegated-role epoch state is not centrally persisted yet. Current verification APIs can validate a delegation against a supplied minimum epoch, but that alone does not prove which delegation epoch local durable authority state has accepted. Do not silently claim this gap is solved; give it an explicit authority-state design before the final hardening gate.
+
+ADR-0009 is reserved by the active M9 networking work. Do not reuse it for delegated-authority state.
+
+## Repository / M9 Invariants
+
+- Quinn remains the verified local/LAN baseline.
+- Iroh `1.2.0` remains an isolated M9 remote/NAT/relay candidate under `experiments/m9-networking` until ADR-0009 selects an architecture.
+- Iroh identities, addresses, paths, relay metadata, and transport credentials never become Cross-Lab identity/trust/policy authority.
+- No 0-RTT authority.
+- M9 remote sessions remain `NetworkClass::Remote` for their lifetime.
+- Transport/path changes do not silently mutate binding, `SessionId`, sequence, policy classification, or operation authority.
+- A new transport connection requires fresh Cross-Lab authentication/authorization state.
+- `main` branch protection remains an external repository-administration item.
 
 ## Resume Procedure
 
-1. inspect canonical `main`, active branches/PRs, recent commits/workflows, and this file;
-2. read the Master Architecture, active plan, relevant ADRs, and focused transport/session specifications;
-3. reconcile documentation with actual code before changing behavior;
-4. inspect relevant uploaded research repositories before implementing related systems;
-5. work in small verifiable milestones and keep `CURRENT.md` current;
-6. preserve architecture boundaries and record material changes through ADRs;
-7. merge only exact verified heads and verify canonical `main` after integration.
+1. inspect `m9-remote-networking`, PR #19, current branch head/status, recent commits/workflows, and this file;
+2. read the Master Architecture, active remediation plan, audit, and relevant architecture/ADRs before changing authority or protocol contracts;
+3. continue the exact next remediation task RED -> verified failure -> minimal GREEN -> focused verification -> full gate;
+4. preserve clean crate boundaries and keep policy evaluation pure;
+5. update this file after each meaningful verified checkpoint;
+6. keep M9 Task 4 blocked until every remediation task is durably resolved and the exact final head passes the full verification suite.

@@ -1,5 +1,6 @@
 use core::fmt;
 
+use crosslab_crypto::{RandomError, random_bytes};
 use zeroize::Zeroize;
 
 mod flow;
@@ -10,13 +11,19 @@ pub use flow::{
     PairingFlowError, PairingInviterFlow, PairingInviterState, PairingJoinerFlow,
     PairingJoinerState,
 };
-pub use invitation::{PairingInvitation, PairingInvitationError, PairingInvitationState};
+pub use invitation::{
+    PairingInstant, PairingInvitation, PairingInvitationError, PairingInvitationState,
+};
 pub use transcript::PairingTranscript;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PairingId([u8; 16]);
 
 impl PairingId {
+    pub fn generate() -> Result<Self, RandomError> {
+        random_bytes().map(Self)
+    }
+
     pub const fn from_bytes(bytes: [u8; 16]) -> Self {
         Self(bytes)
     }
@@ -33,6 +40,10 @@ impl PairingId {
 pub struct PairingSecret([u8; 32]);
 
 impl PairingSecret {
+    pub fn generate() -> Result<Self, RandomError> {
+        random_bytes().map(Self)
+    }
+
     pub const fn from_bytes(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }

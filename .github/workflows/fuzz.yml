@@ -15,20 +15,22 @@ permissions:
 jobs:
   fuzz:
     name: Protocol Parsers
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Install nightly Rust
-        run: rustup toolchain install nightly --profile minimal --component rustfmt
+        run: rustup toolchain install nightly-2026-09-12 --profile minimal --component rustfmt
+      - name: Verify fuzz lockfile
+        run: cargo +nightly-2026-09-12 metadata --manifest-path fuzz/Cargo.toml --locked --no-deps --format-version 1 > /dev/null
       - name: Install cargo-fuzz
-        run: cargo +nightly install cargo-fuzz --version 0.13.2 --locked
+        run: cargo +nightly-2026-09-12 install cargo-fuzz --version 0.13.2 --locked
       - name: Format fuzz targets
-        run: cargo +nightly fmt --manifest-path fuzz/Cargo.toml -- --check
+        run: cargo +nightly-2026-09-12 fmt --manifest-path fuzz/Cargo.toml -- --check
       - name: Run bounded fuzz smoke
         run: |
-          cargo +nightly fuzz run control_frame -- -runs=256
-          cargo +nightly fuzz run data_stream_open -- -runs=256
-          cargo +nightly fuzz run identifiers -- -runs=256
-          cargo +nightly fuzz run pairing_bootstrap -- -runs=256
-          cargo +nightly fuzz run session_auth -- -runs=256
+          cargo +nightly-2026-09-12 fuzz run control_frame -- -runs=256
+          cargo +nightly-2026-09-12 fuzz run data_stream_open -- -runs=256
+          cargo +nightly-2026-09-12 fuzz run identifiers -- -runs=256
+          cargo +nightly-2026-09-12 fuzz run pairing_bootstrap -- -runs=256
+          cargo +nightly-2026-09-12 fuzz run session_auth -- -runs=256

@@ -1,5 +1,6 @@
 mod auth;
 mod capabilities;
+mod currentness;
 mod state;
 
 pub use auth::{SessionAuthError, SessionAuthProof, SessionAuthRole, SessionAuthTranscriptV1};

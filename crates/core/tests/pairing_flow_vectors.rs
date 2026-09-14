@@ -1,5 +1,6 @@
 use crosslab_core::{
-    PairingId, PairingInvitation, PairingInviterFlow, PairingJoinerFlow, PairingSecret,
+    PairingId, PairingInstant, PairingInvitation, PairingInviterFlow, PairingJoinerFlow,
+    PairingSecret,
 };
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{AuthorityDelegation, AuthorityRole, DeviceId, OwnerId, OwnerRootRecord};
@@ -47,8 +48,17 @@ fn credential_acceptance_proof_matches_golden_vector() {
         PairingSecret::from_bytes(secret),
         owner_id,
         inviter_device_id,
-    );
-    let mut inviter = PairingInviterFlow::new(invitation, inviter_hello, joiner_hello).unwrap();
+        PairingInstant::from_ticks(0),
+        PairingInstant::from_ticks(100),
+    )
+    .unwrap();
+    let mut inviter = PairingInviterFlow::new(
+        invitation,
+        inviter_hello,
+        joiner_hello,
+        PairingInstant::from_ticks(0),
+    )
+    .unwrap();
     let mut joiner = PairingJoinerFlow::new(
         PairingSecret::from_bytes(secret),
         inviter_hello,
@@ -57,13 +67,18 @@ fn credential_acceptance_proof_matches_golden_vector() {
     .unwrap();
     let joiner_confirmation = joiner.joiner_confirmation().unwrap();
     let inviter_confirmation = inviter
-        .verify_joiner_confirmation(&joiner_confirmation)
+        .verify_joiner_confirmation(&joiner_confirmation, PairingInstant::from_ticks(10))
         .unwrap();
     joiner
         .verify_inviter_confirmation(&inviter_confirmation)
         .unwrap();
     let credential = inviter
-        .issue_joiner_credential(&root, &delegation, &issuer_key, 7)
+        .issue_initial_joiner_credential(
+            &root,
+            &delegation,
+            &issuer_key,
+            PairingInstant::from_ticks(20),
+        )
         .unwrap();
     let accepted = joiner
         .accept_credential(&root, &delegation, &credential, &joiner_key)
@@ -84,8 +99,8 @@ fn credential_acceptance_proof_matches_golden_vector() {
             250, 218, 254, 75, 213, 45, 92, 48, 50, 153, 149, 182, 173,
         ],
         [
-            56, 129, 41, 36, 219, 204, 136, 6, 120, 146, 179, 209, 96, 77, 73, 158, 165, 118, 116,
-            154, 9, 24, 23, 172, 64, 124, 26, 12, 53, 91, 5, 197,
+            227, 146, 182, 38, 241, 247, 224, 44, 4, 8, 150, 174, 183, 174, 139, 27, 115, 220, 158,
+            6, 66, 66, 190, 234, 236, 70, 226, 171, 9, 7, 104, 185,
         ],
         [22; 32],
         [
@@ -93,10 +108,10 @@ fn credential_acceptance_proof_matches_golden_vector() {
             35, 55, 127, 184, 214, 157, 4, 67, 6, 79, 95, 21, 92,
         ],
         [
-            64, 130, 1, 142, 71, 94, 41, 107, 176, 171, 178, 77, 77, 251, 202, 98, 88, 131, 165,
-            228, 109, 90, 104, 107, 16, 253, 74, 236, 195, 115, 164, 159, 0, 191, 35, 49, 36, 115,
-            156, 41, 218, 12, 114, 36, 73, 90, 250, 90, 5, 52, 3, 114, 216, 161, 243, 146, 253,
-            129, 255, 18, 203, 13, 189, 15,
+            123, 199, 44, 128, 53, 10, 205, 2, 177, 127, 123, 203, 254, 173, 40, 175, 28, 42, 163,
+            190, 124, 169, 146, 46, 97, 56, 80, 246, 137, 201, 36, 26, 95, 42, 249, 47, 212, 28,
+            61, 229, 52, 133, 184, 23, 110, 137, 192, 120, 0, 104, 88, 181, 90, 125, 150, 27, 54,
+            200, 144, 92, 230, 156, 246, 3,
         ],
     );
 

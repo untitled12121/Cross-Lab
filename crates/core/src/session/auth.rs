@@ -47,11 +47,22 @@ impl fmt::Display for SessionAuthError {
 
 impl std::error::Error for SessionAuthError {}
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct SessionAuthProof {
     role: SessionAuthRole,
     transcript_digest: [u8; 32],
     signature: Signature,
+}
+
+impl fmt::Debug for SessionAuthProof {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SessionAuthProof")
+            .field("role", &self.role)
+            .field("transcript_digest_len", &self.transcript_digest.len())
+            .field("signature_len", &self.signature.to_bytes().len())
+            .finish()
+    }
 }
 
 impl SessionAuthProof {
@@ -68,7 +79,7 @@ impl SessionAuthProof {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct SessionAuthTranscriptV1 {
     owner_id: OwnerId,
     initiator_device_id: DeviceId,
@@ -83,6 +94,32 @@ pub struct SessionAuthTranscriptV1 {
     negotiated_feature_set_digest: [u8; 32],
     channel_binding_profile_digest: [u8; 32],
     channel_binding_value_digest: [u8; 32],
+}
+
+impl fmt::Debug for SessionAuthTranscriptV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SessionAuthTranscriptV1")
+            .field("negotiated_protocol", &self.negotiated_protocol)
+            .field(
+                "credential_digest_len",
+                &self.initiator_credential_signed_object_digest.len(),
+            )
+            .field("nonce_len", &self.initiator_nonce.len())
+            .field(
+                "feature_set_digest_len",
+                &self.negotiated_feature_set_digest.len(),
+            )
+            .field(
+                "channel_binding_profile_digest_len",
+                &self.channel_binding_profile_digest.len(),
+            )
+            .field(
+                "channel_binding_value_digest_len",
+                &self.channel_binding_value_digest.len(),
+            )
+            .finish()
+    }
 }
 
 impl SessionAuthTranscriptV1 {

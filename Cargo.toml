@@ -6,6 +6,7 @@ members = [
     "crates/identity",
     "crates/policy",
     "crates/protocol",
+    "experiments/m9-networking",
     "transports/quic",
 ]
 resolver = "3"

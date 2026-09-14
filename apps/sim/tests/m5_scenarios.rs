@@ -1,18 +1,19 @@
 use std::num::NonZeroUsize;
 
 use crosslab_core::{
-    ChannelBinding, LogicalSession, PairingFlowError, PairingId, PairingInvitation,
-    PairingInvitationState, PairingInviterFlow, PairingJoinerFlow, PairingSecret,
-    SessionActivation, SessionAuthProof, SessionAuthRole, SessionAuthTranscriptV1, SessionError,
-    SessionHandshakeSide, SessionState, TransportConnection, TransportSecurityClass,
+    ChannelBinding, EventSubscription, LogicalSession, PairingFlowError, PairingId, PairingInstant,
+    PairingInvitation, PairingInvitationState, PairingInviterFlow, PairingJoinerFlow,
+    PairingSecret, SessionActivation, SessionAuthProof, SessionAuthRole, SessionAuthTranscriptV1,
+    SessionError, SessionHandshakeSide, SessionState, TransportConnection, TransportSecurityClass,
 };
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
     AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
 };
 use crosslab_policy::{
-    CapabilityId, CapabilityVersion, CapabilityVersionRange, LocalCapability, OperationName,
-    PolicyRule, PolicyState, RuleEffect, RuleId, TransitionId, TrustRecord,
+    CapabilityId, CapabilityVersion, CapabilityVersionRange, LocalCapability, NetworkClass,
+    OperationName, PairingTrustTransition, PolicyRule, PolicyState, RuleEffect, RuleId,
+    TransitionId, TrustRecord,
 };
 use crosslab_protocol::{
     CapabilityAdvertisement, CapabilityAdvertisementEntry, ControlRequest, ControlResponseResult,
@@ -26,9 +27,72 @@ use crosslab_sim::{
 
 const CONTROL_CAPACITY: usize = 16;
 const STATE_CAPACITY: usize = 16;
-const JOINER_EPOCH: u64 = 5;
+const JOINER_EPOCH: u64 = 0;
 const INITIATOR_NONCE: [u8; 32] = [0x41; 32];
 const RESPONDER_NONCE: [u8; 32] = [0x42; 32];
+
+fn establish_trust(
+    credential: &DeviceCredential,
+    root: &OwnerRootRecord,
+    delegation: &AuthorityDelegation,
+    issuer_key: &SigningKey,
+    transition_byte: u8,
+) -> TrustRecord {
+    let initial_credential = DeviceCredential::issue_for_public_key(
+        credential.owner_id(),
+        credential.device_id(),
+        credential.device_public_key(),
+        0,
+        root,
+        delegation,
+        issuer_key,
+    )
+    .unwrap();
+    let transition = PairingTrustTransition::issue(
+        &initial_credential,
+        TransitionId::from_bytes([transition_byte; 32]),
+        [transition_byte.wrapping_add(1); 32],
+        root,
+        delegation,
+        issuer_key,
+        delegation.delegation_epoch(),
+    )
+    .unwrap();
+    let mut trust = transition
+        .establish(
+            &initial_credential,
+            root,
+            delegation,
+            delegation.delegation_epoch(),
+        )
+        .unwrap();
+
+    for epoch in 1..=credential.credential_epoch() {
+        let successor = DeviceCredential::issue_for_public_key(
+            credential.owner_id(),
+            credential.device_id(),
+            credential.device_public_key(),
+            epoch,
+            root,
+            delegation,
+            issuer_key,
+        )
+        .unwrap();
+        let mut transition_id = [transition_byte; 32];
+        transition_id[..8].copy_from_slice(&epoch.to_be_bytes());
+        trust
+            .accept_successor_credential(
+                &successor,
+                root,
+                delegation,
+                delegation.delegation_epoch(),
+                TransitionId::from_bytes(transition_id),
+            )
+            .unwrap();
+    }
+
+    trust
+}
 
 struct M5Fixture {
     owner_id: OwnerId,
@@ -117,13 +181,21 @@ impl M5Fixture {
             PairingSecret::from_bytes(self.pairing_secret),
             self.owner_id,
             self.inviter_device_id,
+            PairingInstant::from_ticks(0),
+            PairingInstant::from_ticks(100),
         )
+        .unwrap()
     }
 
     fn complete_pairing(&self, credential_epoch: u64) -> (DeviceCredential, TrustRecord) {
-        let mut inviter =
-            PairingInviterFlow::new(self.invitation(), self.inviter_hello, self.joiner_hello)
-                .unwrap();
+        assert_eq!(credential_epoch, JOINER_EPOCH);
+        let mut inviter = PairingInviterFlow::new(
+            self.invitation(),
+            self.inviter_hello,
+            self.joiner_hello,
+            PairingInstant::from_ticks(0),
+        )
+        .unwrap();
         let mut joiner = PairingJoinerFlow::new(
             PairingSecret::from_bytes(self.pairing_secret),
             self.inviter_hello,
@@ -133,36 +205,45 @@ impl M5Fixture {
 
         let joiner_confirmation = joiner.joiner_confirmation().unwrap();
         let inviter_confirmation = inviter
-            .verify_joiner_confirmation(&joiner_confirmation)
+            .verify_joiner_confirmation(&joiner_confirmation, PairingInstant::from_ticks(10))
             .unwrap();
         joiner
             .verify_inviter_confirmation(&inviter_confirmation)
             .unwrap();
 
         let credential = inviter
-            .issue_joiner_credential(
+            .issue_initial_joiner_credential(
                 &self.root,
                 &self.delegation,
                 &self.issuer_key,
-                credential_epoch,
+                PairingInstant::from_ticks(20),
             )
             .unwrap();
         let accepted = joiner
             .accept_credential(&self.root, &self.delegation, &credential, &self.joiner_key)
             .unwrap();
         let trust = inviter
-            .commit_trust(&accepted, TransitionId::from_bytes([0x1b; 32]))
+            .commit_trust(
+                &accepted,
+                TransitionId::from_bytes([0x1b; 32]),
+                &self.root,
+                &self.delegation,
+                &self.issuer_key,
+                self.delegation.delegation_epoch(),
+                PairingInstant::from_ticks(30),
+            )
             .unwrap();
 
         (credential, trust)
     }
 
     fn inviter_trust(&self) -> TrustRecord {
-        TrustRecord::trusted(
-            self.owner_id,
-            self.inviter_device_id,
-            self.inviter_credential.credential_epoch(),
-            TransitionId::from_bytes([0x1c; 32]),
+        establish_trust(
+            &self.inviter_credential,
+            &self.root,
+            &self.delegation,
+            &self.issuer_key,
+            0x1c,
         )
     }
 
@@ -353,6 +434,7 @@ fn m5_end_to_end_pairing_session_capability_and_control_flow() {
         endpoint_a,
         PolicyState::new(),
         local_caps.clone(),
+        NetworkClass::Local,
         NonZeroUsize::new(STATE_CAPACITY).unwrap(),
     )
     .unwrap();
@@ -361,6 +443,7 @@ fn m5_end_to_end_pairing_session_capability_and_control_flow() {
         endpoint_b,
         fixture.allow_write_policy(),
         local_caps,
+        NetworkClass::Local,
         NonZeroUsize::new(STATE_CAPACITY).unwrap(),
     )
     .unwrap();
@@ -369,20 +452,20 @@ fn m5_end_to_end_pairing_session_capability_and_control_flow() {
         .send_capability_advertisement(M5Fixture::advertisement())
         .unwrap();
     assert!(matches!(
-        node_b.receive_one().unwrap(),
+        node_b.receive_one(&inviter_trust).unwrap(),
         NodeEvent::CapabilitiesUpdated
     ));
     node_b
         .send_capability_advertisement(M5Fixture::advertisement())
         .unwrap();
     assert!(matches!(
-        node_a.receive_one().unwrap(),
+        node_a.receive_one(&joiner_trust).unwrap(),
         NodeEvent::CapabilitiesUpdated
     ));
 
     let request_id = RequestId::from_bytes([0x50; 16]);
     node_a.send_request(request(request_id, b"hello")).unwrap();
-    let NodeEvent::RequestDispatched(received) = node_b.receive_one().unwrap() else {
+    let NodeEvent::RequestDispatched(received) = node_b.receive_one(&inviter_trust).unwrap() else {
         panic!("expected authorized request dispatch");
     };
     assert_eq!(received.request_id(), request_id);
@@ -391,15 +474,23 @@ fn m5_end_to_end_pairing_session_capability_and_control_flow() {
     node_b
         .send_response(request_id, ControlResponseResult::Success(b"ok".to_vec()))
         .unwrap();
-    let NodeEvent::Response(response) = node_a.receive_one().unwrap() else {
+    let NodeEvent::Response(response) = node_a.receive_one(&joiner_trust).unwrap() else {
         panic!("expected correlated response");
     };
     assert_eq!(response.request_id(), request_id);
 
+    assert!(
+        node_b
+            .subscribe_event(EventSubscription::new(
+                CapabilityId::parse("clipboard.write").unwrap(),
+                EventType::parse("clipboard.changed").unwrap(),
+            ))
+            .unwrap()
+    );
     let event_id = EventId::from_bytes([0x51; 16]);
     node_a.send_event(event(event_id, b"changed")).unwrap();
-    let NodeEvent::Event(received) = node_b.receive_one().unwrap() else {
-        panic!("expected negotiated capability event");
+    let NodeEvent::Event(received) = node_b.receive_one(&inviter_trust).unwrap() else {
+        panic!("expected subscribed capability event");
     };
     assert_eq!(received.event_id(), event_id);
     assert_eq!(received.body(), b"changed");
@@ -417,6 +508,7 @@ fn wrong_pairing_secret_fails_before_trust_commit() {
         fixture.invitation(),
         fixture.inviter_hello,
         fixture.joiner_hello,
+        PairingInstant::from_ticks(0),
     )
     .unwrap();
     let wrong_joiner = PairingJoinerFlow::new(
@@ -428,7 +520,7 @@ fn wrong_pairing_secret_fails_before_trust_commit() {
     let confirmation = wrong_joiner.joiner_confirmation().unwrap();
 
     assert_eq!(
-        inviter.verify_joiner_confirmation(&confirmation),
+        inviter.verify_joiner_confirmation(&confirmation, PairingInstant::from_ticks(10)),
         Err(PairingFlowError::InvalidConfirmation)
     );
     assert_eq!(inviter.invitation_state(), PairingInvitationState::Consumed);
@@ -507,11 +599,22 @@ fn session_proofs_bound_to_another_channel_are_rejected_closed() {
 fn stale_accepted_credential_epoch_is_rejected_before_session_activation() {
     let fixture = M5Fixture::new();
     let (joiner_credential, _) = fixture.complete_pairing(JOINER_EPOCH);
-    let stale_trust = TrustRecord::trusted(
+    let newer_credential = DeviceCredential::issue_for_public_key(
         fixture.owner_id,
         fixture.joiner_device_id,
-        JOINER_EPOCH - 1,
-        TransitionId::from_bytes([0x80; 32]),
+        fixture.joiner_key.verifying_key(),
+        JOINER_EPOCH + 1,
+        &fixture.root,
+        &fixture.delegation,
+        &fixture.issuer_key,
+    )
+    .unwrap();
+    let stale_trust = establish_trust(
+        &newer_credential,
+        &fixture.root,
+        &fixture.delegation,
+        &fixture.issuer_key,
+        0x80,
     );
     let pair = transport_pair([0x81; 32]);
     let (endpoint_a, _) = pair.endpoints();
@@ -542,11 +645,33 @@ fn stale_accepted_credential_epoch_is_rejected_before_session_activation() {
 fn owner_mismatch_in_peer_trust_is_rejected_before_session_activation() {
     let fixture = M5Fixture::new();
     let (joiner_credential, _) = fixture.complete_pairing(JOINER_EPOCH);
-    let wrong_owner_trust = TrustRecord::trusted(
-        OwnerId::from_bytes([0x90; 32]),
+    let wrong_owner = OwnerId::from_bytes([0x90; 32]);
+    let wrong_root_key = SigningKey::from_secret_bytes([0x93; 32]);
+    let wrong_root = OwnerRootRecord::new(wrong_owner, &wrong_root_key, 0);
+    let wrong_issuer_key = SigningKey::from_secret_bytes([0x94; 32]);
+    let wrong_delegation = AuthorityDelegation::issue(
+        wrong_owner,
+        AuthorityRole::DeviceSigning,
+        &wrong_issuer_key,
+        0,
+        &wrong_root_key,
+    );
+    let wrong_credential = DeviceCredential::issue_for_public_key(
+        wrong_owner,
         fixture.joiner_device_id,
+        fixture.joiner_key.verifying_key(),
         JOINER_EPOCH,
-        TransitionId::from_bytes([0x91; 32]),
+        &wrong_root,
+        &wrong_delegation,
+        &wrong_issuer_key,
+    )
+    .unwrap();
+    let wrong_owner_trust = establish_trust(
+        &wrong_credential,
+        &wrong_root,
+        &wrong_delegation,
+        &wrong_issuer_key,
+        0x91,
     );
     let pair = transport_pair([0x92; 32]);
     let (endpoint_a, _) = pair.endpoints();

@@ -1,3 +1,5 @@
+use core::fmt;
+
 use crosslab_crypto::{Signature, SignatureAlgorithm, VerifyingKey};
 use crosslab_identity::{DeviceId, KeyId, OwnerId};
 use prost::Message;
@@ -79,7 +81,7 @@ impl PairingHello {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct PairingConfirmation {
     role: PairingRole,
     pairing_id: [u8; 16],
@@ -105,6 +107,17 @@ impl PairingConfirmation {
 
     pub const fn confirmation(&self) -> [u8; 32] {
         self.confirmation
+    }
+}
+
+impl fmt::Debug for PairingConfirmation {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PairingConfirmation")
+            .field("role", &self.role)
+            .field("pairing_id", &self.pairing_id)
+            .field("confirmation", &"[REDACTED]")
+            .finish()
     }
 }
 

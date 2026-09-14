@@ -1,10 +1,13 @@
 use std::num::NonZeroUsize;
 
 use crosslab_core::{
-    ControlDispatchError, ControlDispatcher, ControlReceiveError, ControlSendError, InboundControl,
-    LogicalSession, SessionError, SessionState, TransportConnection,
+    ControlDispatchError, ControlDispatcher, ControlReceiveError, ControlSendError,
+    EventSubscription, InboundControl, LogicalSession, SessionError, SessionState,
+    TransportConnection,
 };
-use crosslab_policy::{LocalCapability, NetworkClass, PolicyState, TrustRecord};
+use crosslab_policy::{
+    ApprovalInstant, DecisionReason, LocalCapability, NetworkClass, PolicyState, TrustRecord,
+};
 use crosslab_protocol::{
     CancelRequest, CapabilityAdvertisement, ControlRequest, ControlResponse, ControlResponseResult,
     EnvelopeBody, Event, ProtocolFailure, ProtocolWireError, RequestId, SessionClose,
@@ -37,6 +40,7 @@ pub struct SimNode<'a> {
     transport: &'a dyn TransportConnection,
     policy: PolicyState,
     local_capabilities: Vec<LocalCapability>,
+    network_class: NetworkClass,
 }
 
 impl<'a> SimNode<'a> {
@@ -45,6 +49,7 @@ impl<'a> SimNode<'a> {
         transport: &'a dyn TransportConnection,
         policy: PolicyState,
         local_capabilities: Vec<LocalCapability>,
+        network_class: NetworkClass,
         state_capacity: NonZeroUsize,
     ) -> Result<Self, NodeError> {
         if session.state() != SessionState::Active {
@@ -60,6 +65,7 @@ impl<'a> SimNode<'a> {
             transport,
             policy,
             local_capabilities,
+            network_class,
         })
     }
 
@@ -77,6 +83,23 @@ impl<'a> SimNode<'a> {
 
     pub fn pending_request_count(&self) -> usize {
         self.dispatcher.pending_request_count()
+    }
+
+    pub fn subscribe_event(&mut self, subscription: EventSubscription) -> Result<bool, NodeError> {
+        if self.session.state() != SessionState::Active {
+            return Err(NodeError::Session(SessionError::InvalidState));
+        }
+        Ok(self.dispatcher.subscribe_event(subscription))
+    }
+
+    pub fn unsubscribe_event(
+        &mut self,
+        subscription: &EventSubscription,
+    ) -> Result<bool, NodeError> {
+        if self.session.state() != SessionState::Active {
+            return Err(NodeError::Session(SessionError::InvalidState));
+        }
+        Ok(self.dispatcher.unsubscribe_event(subscription))
     }
 
     pub fn send_request(&mut self, request: ControlRequest) -> Result<(), NodeError> {
@@ -137,7 +160,15 @@ impl<'a> SimNode<'a> {
         self.transport.close();
     }
 
-    pub fn receive_one(&mut self) -> Result<NodeEvent, NodeError> {
+    pub fn receive_one(&mut self, peer_trust: &TrustRecord) -> Result<NodeEvent, NodeError> {
+        self.receive_one_at(peer_trust, ApprovalInstant::from_ticks(0))
+    }
+
+    pub fn receive_one_at(
+        &mut self,
+        peer_trust: &TrustRecord,
+        local_time: ApprovalInstant,
+    ) -> Result<NodeEvent, NodeError> {
         let frame = match self.transport.try_receive_control() {
             Ok(frame) => frame,
             Err(error) => {
@@ -165,7 +196,9 @@ impl<'a> SimNode<'a> {
                 envelope,
                 &self.policy,
                 &self.local_capabilities,
-                NetworkClass::Local,
+                peer_trust,
+                self.network_class,
+                local_time,
             )
         };
         let inbound = match result {
@@ -267,7 +300,12 @@ const fn is_fatal_dispatch(error: ControlDispatchError) -> bool {
         error,
         ControlDispatchError::InvalidSession
             | ControlDispatchError::IncompatibleProtocol
+            | ControlDispatchError::PeerTrustMismatch
+            | ControlDispatchError::PeerCredentialEpochChanged
+            | ControlDispatchError::PeerTrustRevisionChanged
             | ControlDispatchError::Sequence(_)
             | ControlDispatchError::ResourceLimit
+            | ControlDispatchError::AuthorizationDenied(DecisionReason::UntrustedPeer)
+            | ControlDispatchError::AuthorizationDenied(DecisionReason::RevokedPeer)
     )
 }

@@ -6,9 +6,9 @@ mod session;
 mod stream;
 mod transport;
 
-pub use control::{ControlDispatchError, ControlDispatcher, InboundControl};
+pub use control::{ControlDispatchError, ControlDispatcher, EventSubscription, InboundControl};
 pub use pairing::{
-    PairingConfirmationError, PairingConfirmationRole, PairingFlowError, PairingId,
+    PairingConfirmationError, PairingConfirmationRole, PairingFlowError, PairingId, PairingInstant,
     PairingInvitation, PairingInvitationError, PairingInvitationState, PairingInviterFlow,
     PairingInviterState, PairingJoinerFlow, PairingJoinerState, PairingSecret, PairingTranscript,
 };
