@@ -83,6 +83,28 @@ TDD evidence:
 - Final green-only test migration head `248de3ad55a9f75cbe3c5aa50974bea8a0bbbd46` moved positive issuance, public-key issuance, import verification, stale-epoch verification, and rotation onto current-authority APIs and passed full Rust CI `34836766158`.
 - `crates/identity/tests/golden_vectors.rs` was not modified.
 
+### Task 3 — Complete
+
+Policy authority-bearing transitions now resolve current local authority through `OwnerAuthorityState`:
+
+- owner approval issuance/verification resolves the current Administrative delegation;
+- pairing trust issuance/establishment resolves the current Device Signing delegation;
+- successor credential acceptance resolves the current Device Signing delegation;
+- ordinary delegated revocation resolves the current Administrative or Device Signing delegation;
+- Recovery remains invalid for ordinary delegated revocation;
+- no high-level current-authority policy method accepts a caller-selected delegation epoch floor.
+
+Raw cryptographic/currentness methods remain only as transitional low-level APIs until Task 7. `PolicyState::evaluate` remains unchanged and deterministic. Protocol transcripts, signatures, and policy golden vectors are unchanged.
+
+TDD / verification evidence:
+
+- Task 3 RED tests reached workspace compilation and failed exactly on the missing current-authority policy APIs before production implementation was added.
+- Minimal GREEN implementation head `ce1468a403c2062efdd9fa7bd3b67fce52d9ce44` passed Rust CI `34859139243` and Fuzz Smoke `34859139231`.
+- Positive policy tests were then migrated to the state-backed APIs while explicit low-level forgery/wrong-role/epoch characterization remained raw.
+- Final exact code head `d117323754a91a845450fb3467bf76cb9d52c2a6` passed Rust CI `34865890032` including dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and complete workspace tests.
+- Fuzz Smoke `34865890030` passed on the same exact head.
+- `crates/policy/tests/golden_vectors.rs` was not modified.
+
 ## Implementation Plan
 
 `docs/superpowers/plans/2026-09-14-foundation-authority-replay-remediation.md`
@@ -91,8 +113,8 @@ Eight regression-first tasks:
 
 1. **complete** — add `OwnerAuthorityState`;
 2. **complete** — route device credentials through current authority;
-3. **next** — migrate policy authority-bearing transitions;
-4. migrate pairing/session auth and authority-triggered cancellation;
+3. **complete** — migrate policy authority-bearing transitions;
+4. **next** — migrate pairing/session auth and authority-triggered cancellation;
 5. lock ADR-0011 with replay characterization tests;
 6. derive stream currentness from local trust/policy state;
 7. remove obsolete caller-selected authority APIs and verify golden compatibility;
@@ -100,14 +122,16 @@ Eight regression-first tasks:
 
 ## Exact Next Task
 
-Execute Task 3 regression-first:
+Execute Task 4 regression-first:
 
-1. add Administrative-currentness tests proving superseded approval evidence and old-key issuance fail closed;
-2. add root/delegated revocation-currentness tests, preserving the invalid Recovery role rule;
-3. add pairing and successor-credential tests proving superseded Device Signing authority fails;
-4. capture the expected RED failures because the current-authority policy APIs do not yet exist;
-5. implement only the accepted `OwnerAuthorityState`-backed policy methods;
-6. verify policy tests, Clippy, and unchanged policy golden vectors before starting Task 4.
+1. add fresh-auth tests proving stale Device Signing authority and root succession with inactive Device Signing fail closed;
+2. add active-session authority revalidation tests for Device Signing/root rotation and Administrative/Recovery non-invalidation;
+3. migrate pairing flow authority-bearing methods to `OwnerAuthorityState` without changing pairing bytes;
+4. migrate session authentication to resolve current root/Device Signing authority and snapshot authority identity/epochs in `SessionContext`;
+5. add `LogicalSession::revalidate_authority`, closing on root or Device Signing replacement only;
+6. propagate authority invalidation through simulator control/stream runtimes by cancelling operation/session state before transport close;
+7. migrate Quinn session-auth fixtures without moving owner authority into TLS, endpoint, or channel-binding types;
+8. verify `crosslab-core`, `crosslab-sim`, and `crosslab-transport-quic` before Task 5.
 
 ## M9 Invariants
 
