@@ -1,8 +1,9 @@
 use std::num::NonZeroUsize;
 
 use crosslab_core::{
-    ControlDispatchError, ControlDispatcher, ControlReceiveError, ControlSendError, InboundControl,
-    LogicalSession, SessionError, SessionState, TransportConnection,
+    ControlDispatchError, ControlDispatcher, ControlReceiveError, ControlSendError,
+    EventSubscription, InboundControl, LogicalSession, SessionError, SessionState,
+    TransportConnection,
 };
 use crosslab_policy::{
     ApprovalInstant, DecisionReason, LocalCapability, NetworkClass, PolicyState, TrustRecord,
@@ -82,6 +83,26 @@ impl<'a> SimNode<'a> {
 
     pub fn pending_request_count(&self) -> usize {
         self.dispatcher.pending_request_count()
+    }
+
+    pub fn subscribe_event(
+        &mut self,
+        subscription: EventSubscription,
+    ) -> Result<bool, NodeError> {
+        if self.session.state() != SessionState::Active {
+            return Err(NodeError::Session(SessionError::InvalidState));
+        }
+        Ok(self.dispatcher.subscribe_event(subscription))
+    }
+
+    pub fn unsubscribe_event(
+        &mut self,
+        subscription: &EventSubscription,
+    ) -> Result<bool, NodeError> {
+        if self.session.state() != SessionState::Active {
+            return Err(NodeError::Session(SessionError::InvalidState));
+        }
+        Ok(self.dispatcher.unsubscribe_event(subscription))
     }
 
     pub fn send_request(&mut self, request: ControlRequest) -> Result<(), NodeError> {
