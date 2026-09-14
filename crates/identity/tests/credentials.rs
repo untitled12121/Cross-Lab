@@ -72,23 +72,24 @@ fn stale_authority_epoch_is_rejected() {
 }
 
 #[test]
-fn device_credential_verifies_through_root_and_device_signing_authority() {
+fn device_credential_verifies_through_current_device_signing_authority() {
     let (owner_id, _, root, issuer_key, delegation) = fixture();
     let device_id = DeviceId::from_bytes([4; 32]);
     let device_key = SigningKey::from_secret_bytes([5; 32]);
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(delegation).unwrap();
 
-    let credential = DeviceCredential::issue(
+    let credential = DeviceCredential::issue_current(
         owner_id,
         device_id,
         &device_key,
         0,
-        &root,
-        &delegation,
+        &authority,
         &issuer_key,
     )
     .unwrap();
 
-    credential.verify(&root, &delegation, 0, 0).unwrap();
+    credential.verify_current(&authority, 0).unwrap();
     assert_eq!(credential.device_id(), device_id);
     assert_eq!(credential.credential_epoch(), 0);
 }
@@ -165,19 +166,20 @@ fn recovery_authority_cannot_issue_ordinary_device_credentials() {
 #[test]
 fn stale_credential_epoch_is_rejected() {
     let (owner_id, _, root, issuer_key, delegation) = fixture();
-    let credential = DeviceCredential::issue(
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(delegation).unwrap();
+    let credential = DeviceCredential::issue_current(
         owner_id,
         DeviceId::from_bytes([12; 32]),
         &SigningKey::from_secret_bytes([13; 32]),
         1,
-        &root,
-        &delegation,
+        &authority,
         &issuer_key,
     )
     .unwrap();
 
     assert_eq!(
-        credential.verify(&root, &delegation, 2, 0),
+        credential.verify_current(&authority, 2),
         Err(IdentityError::StaleCredentialEpoch)
     );
 }
@@ -247,29 +249,29 @@ fn superseded_device_signing_key_cannot_issue_current_credentials() {
 fn device_key_rotation_preserves_device_id_and_advances_epoch() {
     let (owner_id, _, root, issuer_key, delegation) = fixture();
     let device_id = DeviceId::from_bytes([14; 32]);
-    let current = DeviceCredential::issue(
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(delegation).unwrap();
+    let current = DeviceCredential::issue_current(
         owner_id,
         device_id,
         &SigningKey::from_secret_bytes([15; 32]),
         0,
-        &root,
-        &delegation,
+        &authority,
         &issuer_key,
     )
     .unwrap();
 
     let rotated = current
-        .rotate(
+        .rotate_current(
             &SigningKey::from_secret_bytes([16; 32]),
-            &root,
-            &delegation,
+            &authority,
             &issuer_key,
         )
         .unwrap();
 
     assert_eq!(rotated.device_id(), device_id);
     assert_eq!(rotated.credential_epoch(), 1);
-    rotated.verify(&root, &delegation, 1, 0).unwrap();
+    rotated.verify_current(&authority, 1).unwrap();
 }
 
 #[test]
