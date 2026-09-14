@@ -16,6 +16,10 @@ Cross-Lab has accepted the following ADRs:
 | ADR-0006 | Focused shared `crosslab-crypto` crate boundary | Accepted |
 | ADR-0007 | Protocol v1 event namespace and session-close wire registry | Accepted |
 | ADR-0008 | Quinn channel-binding profile v1: TLS exporter bound to each protected QUIC connection | Accepted |
+| ADR-0010 | Authoritative active-root/delegated-role currentness and fail-closed session invalidation | Accepted |
+| ADR-0011 | Bounded `RequestId` duplicate/retry state with `SessionId` + `message_seq` as exact-envelope replay/order boundary | Accepted |
+
+ADR-0009 remains reserved for the M9 remote-networking decision.
 
 The governing architecture is `docs/architecture/MASTER-ARCHITECTURE.md`, Revision 2.1.
 

@@ -106,11 +106,15 @@ Before proceeding each side validates:
 
 - frame and collection bounds;
 - owner domain expected for the relationship;
-- device credential chain/signature;
+- the locally active owner root from `OwnerAuthorityState`;
+- the current active Device Signing delegation from `OwnerAuthorityState`;
+- device credential chain/signature under that current Device Signing authority;
 - accepted credential epoch;
 - current non-revoked trust state;
 - device/public-key relationship;
 - protocol compatibility.
+
+A raw historical root/delegation supplied alongside a handshake cannot establish current authority. Missing or ambiguous current owner authority fails authentication.
 
 ## 7. Negotiation
 
@@ -153,6 +157,8 @@ The canonical encoding/digest rules come from `docs/protocol/PROTOCOL-V1.md`.
 `negotiated_feature_set_digest` is computed from the canonical ascending list of negotiated numeric feature IDs. Empty set still has its specified digest.
 
 Channel binding profile/value are hashed with separate domain labels before inclusion so arbitrary raw transport data does not create ambiguous canonical objects.
+
+Authority-currentness metadata is local session state and does not add fields to this v1 wire/signing transcript.
 
 ## 9. Session proof of possession
 
@@ -203,6 +209,8 @@ Active -> Revoked          on accepted peer revocation
 Revoked -> Closed
 ```
 
+Authority-currentness loss uses the existing fail-closed closing path; it does not create a second parallel session state machine.
+
 `Revoked` is session state, separate from the device's persistent `TrustState::Revoked`.
 
 Invalid transitions return typed errors; they are not silently coerced.
@@ -211,12 +219,13 @@ Invalid transitions return typed errors; they are not silently coerced.
 
 A session becomes `Active` only after:
 
-1. both credentials and current trust validate;
-2. protocol/features negotiate successfully;
-3. channel-binding requirements validate;
-4. both directional proofs verify;
-5. `SessionId` is established;
-6. control-channel sequencing state is initialized.
+1. the active owner root and current Device Signing authority validate from local `OwnerAuthorityState`;
+2. both device credentials and current trust validate;
+3. protocol/features negotiate successfully;
+4. channel-binding requirements validate;
+5. both directional proofs verify;
+6. `SessionId` is established;
+7. control-channel sequencing state is initialized.
 
 Capability advertisement/negotiation occurs only after this authentication boundary. Capability negotiation still grants no policy authority.
 
@@ -232,6 +241,10 @@ SessionContext
   owner_id
   peer_credential_epoch
   peer_trust_revision
+  authenticated_root_key_id
+  authenticated_root_epoch
+  authenticated_device_signing_key_id
+  authenticated_device_signing_epoch
   protocol_version
   negotiated_features
   negotiated_capabilities
@@ -240,6 +253,8 @@ SessionContext
   control send/receive sequence
   cancellation token/state
 ```
+
+The authority-currentness fields record the local authentication basis. They are not peer-declared claims and are not new protocol-v1 transcript fields.
 
 Authorized operations created under P0.5 bind to this `session_id` and source/destination identities.
 
@@ -286,6 +301,7 @@ Before payload bytes are delivered to a capability handler:
 - resolve `OperationId` from local authorized-operation state;
 - validate capability/version/operation/direction/index/use policy;
 - re-check operation state/expiry/revision/revocation;
+- re-check session trust/credential/authority currentness from local state;
 - reserve the permitted stream use atomically;
 - only then expose payload to the handler.
 
@@ -313,7 +329,7 @@ Phase 1 reconnect is deliberately simple:
 3. old session-scoped `AuthorizedOperation` records are cancelled/revoked/expired and are not transferable;
 4. a new transport connection is established;
 5. new channel binding and nonces are produced;
-6. credentials/trust are revalidated;
+6. active owner authority, credentials, and trust are revalidated from current local state;
 7. a completely fresh session-authentication transcript/proofs produce a new `SessionId`;
 8. capabilities are re-negotiated;
 9. protected operations require fresh authorization.
@@ -326,7 +342,33 @@ Seamless cross-transport migration is outside Phase 1. A future route migration 
 
 Until then, switching from Wi-Fi/QUIC to USB/BLE/future link is modeled as close + fresh connection + fresh logical session.
 
-## 20. Revocation during active session
+## 20. Identity-authority replacement during active session
+
+Under ADR-0010, ordinary session authentication depends on the locally active owner root and Device Signing delegation.
+
+When local `OwnerAuthorityState` accepts either:
+
+- a successor owner root, or
+- a newer Device Signing delegation,
+
+an ordinary active session authenticated under the superseded authority is no longer current.
+
+The high-level runtime must then:
+
+- stop accepting new ordinary control work;
+- invalidate/cancel session-scoped authorized operations;
+- stop accepting new data-stream opens;
+- signal active work to cancel as soon as practical;
+- close the logical session/transport as soon as practical;
+- require fresh authentication before ordinary work resumes.
+
+Root replacement also clears active delegated roles while retaining their epoch floors. Fresh ordinary session authentication therefore fails closed until a strictly newer Device Signing delegation under the new root is accepted.
+
+Administrative-only or Recovery-only authority rotation does not invalidate an ordinary device session because those roles did not authenticate it.
+
+Phase 1 deliberately does not distinguish routine root/Device Signing rotation from compromise-response rotation for session continuation.
+
+## 21. Revocation during active session
 
 When local trust state accepts peer revocation:
 
@@ -340,7 +382,7 @@ When local trust state accepts peer revocation:
 
 Recovery-specific communication, if supported, uses the separate P0.8 recovery authority/namespace and is not ordinary session continuation.
 
-## 21. Cancellation and shutdown
+## 22. Cancellation and shutdown
 
 Every session owns explicit cancellation/shutdown state.
 
@@ -356,7 +398,7 @@ Requirements:
 
 Exact timeout durations are implementation/configuration decisions.
 
-## 22. In-memory simulator transport
+## 23. In-memory simulator transport
 
 The Phase 1 deterministic in-memory adapter is a test harness, not a production network transport.
 
@@ -370,11 +412,11 @@ It must provide:
 - `TransportSecurityClass::InProcessTest`;
 - explicit cancellation/close.
 
-Cross-Lab identity signatures, credential verification, transcript hashing, trust, policy, replay state, and session state use the same production domain implementations as real transports.
+Cross-Lab identity signatures, credential verification, transcript hashing, trust, policy, replay state, session state, and authority-currentness rules use the same production domain implementations as real transports.
 
 The test adapter must not implement toy encryption and label it network security. Confidentiality/integrity against an external network is first proven by the Quinn milestone.
 
-## 23. First real transport requirements
+## 24. First real transport requirements
 
 The Quinn milestone must supply `AuthenticatedConfidentialChannel` semantics and prove:
 
@@ -386,16 +428,17 @@ The Quinn milestone must supply `AuthenticatedConfidentialChannel` semantics and
 - disconnect/reconnect + fresh auth;
 - cancellation/shutdown;
 - revocation behavior;
+- authority-currentness behavior;
 - network fault tests.
 
 Quinn/rustls types stay in `transports/quic`.
 
-## 24. Required Phase 1 tests
+## 25. Required Phase 1 tests
 
 At minimum:
 
 - valid trusted peers establish one active session;
-- invalid credential/owner/epoch fails before Active;
+- invalid credential/owner/epoch/current authority fails before Active;
 - revoked peer fails before Active;
 - replayed auth proof with fresh nonce/binding fails;
 - wrong channel binding fails;
@@ -405,13 +448,17 @@ At minimum:
 - old sequence/request/operation state cannot be replayed into new session;
 - capability exchange occurs only after authentication;
 - data stream with wrong session/operation binding fails;
+- active root replacement invalidates sessions authenticated under the superseded root;
+- active Device Signing replacement invalidates sessions authenticated under the superseded delegation;
+- root replacement blocks fresh ordinary authentication until a strictly newer Device Signing delegation is active;
+- Administrative/Recovery-only rotation does not invalidate ordinary sessions;
 - active revocation cancels operations and closes session;
 - queue saturation/backpressure does not create unbounded memory growth;
 - cancellation during authentication/stream setup terminates cleanly;
 - process shutdown with active sessions terminates owned tasks cleanly.
 
-## 25. Security traceability
+## 26. Security traceability
 
 This specification addresses `TM-001`, `TM-004`, `TM-005`, `TM-009`, `TM-010`, `TM-014`, `TM-017`, `TM-018`, and `TM-022`.
 
-Changes that make transport identity authoritative, allow session/operation authority to transfer across reconnect without fresh authentication, or weaken channel-binding requirements require an ADR and explicit architecture approval.
+Changes that make transport identity authoritative, allow session/operation authority to transfer across reconnect without fresh authentication, or weaken channel-binding/authority-currentness requirements require an ADR and explicit architecture approval.

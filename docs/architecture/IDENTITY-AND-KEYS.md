@@ -114,9 +114,9 @@ Algorithm/profile identifiers are explicit so future platform-native/hardware-ba
 
 This specification does not define the session key-agreement/KDF/AEAD profile; that belongs to P0.7.
 
-## 5. Owner root record
+## 5. Owner root record and authoritative owner state
 
-The locally trusted owner-root record contains the minimum information needed to identify the trust domain and current root verification state:
+An owner-root record contains the minimum information needed to identify the trust domain and one root verification state:
 
 ```text
 OwnerRootRecord
@@ -129,6 +129,22 @@ OwnerRootRecord
 ```
 
 The first owner-root record is a local trust anchor created during owner-domain initialization. `OwnerId` alone never authenticates an alternative root key.
+
+Cryptographic validity of an `OwnerRootRecord` is not by itself proof that it is the locally current root after rotation. Under ADR-0010, Phase 1 runtime currentness is owned by identity-domain state:
+
+```text
+OwnerAuthorityState
+  active_root: OwnerRootRecord
+  device_signing: DelegatedRoleState
+  administrative: DelegatedRoleState
+  recovery: DelegatedRoleState
+
+DelegatedRoleState
+  accepted_epoch: optional u64
+  active: optional AuthorityDelegation
+```
+
+High-level ordinary owner-authority operations obtain the active root and delegated-role authority from this state rather than accepting caller-selected currentness.
 
 ## 6. Owner authority delegation
 
@@ -156,7 +172,11 @@ Rules:
 - delegation epoch is monotonically increasing for replacement of the same logical role slot;
 - a delegation signed by an unknown/wrong owner root is invalid;
 - a delegation for one role cannot be replayed as another role because role and domain label are signed;
-- unknown mandatory fields/profile versions fail according to protocol compatibility rules.
+- unknown mandatory fields/profile versions fail according to protocol compatibility rules;
+- when no earlier local role epoch is known, the first valid delegation observed for that role may establish the local epoch floor at any valid epoch;
+- when a role epoch floor is already known, a replacement must carry a strictly greater role-specific epoch;
+- equal/lower role epochs fail closed after a newer epoch has been accepted;
+- high-level currentness is the exact active delegation stored in `OwnerAuthorityState`, not an arbitrary delegation plus caller-selected minimum epoch.
 
 Time-based expiry may be added by a later schema/profile. Phase 1 security does not rely solely on wall-clock validity.
 
@@ -219,11 +239,21 @@ The old private key does not authorize the new key unless a pairing/rotation pro
 
 Device-signing, administrative, and recovery role keys rotate by issuing a new role delegation with a higher role-specific epoch from the active owner root authority.
 
-Consumers must reject older role epochs after the newer delegation has been accepted into authoritative local state.
+`OwnerAuthorityState` retains the highest accepted epoch for each role and, when valid under the active root, the exact active delegation. Consumers reject equal/lower role epochs after a newer delegation has been accepted.
+
+A caller-provided minimum epoch is not authoritative local currentness.
 
 ### 10.2 Owner root key
 
 Normal root-key rotation requires continuity evidence binding old and new roots, including signatures by both the current root and the proposed new root over a canonical root-successor statement.
+
+After a valid successor is accepted into `OwnerAuthorityState`:
+
+- the successor becomes the only active ordinary owner root;
+- the previous root becomes historical and cannot authorize new high-level ordinary owner operations;
+- all active delegated-role objects are cleared because they were authorized by the superseded root;
+- each delegated role retains its highest accepted epoch floor;
+- a delegation under the new root must strictly advance that role's retained epoch before becoming active.
 
 Emergency root recovery after suspected root compromise is not equivalent to normal rotation and is specified as a recovery ceremony in P0.8. Phase 1 does not implement emergency root recovery.
 
@@ -245,20 +275,25 @@ Requirements:
 
 Phase 1 may use in-memory software keys for deterministic/local simulator tests, but those keys are test-only and do not weaken production storage requirements.
 
+`OwnerAuthorityState` may also remain in-memory during Phase 1. This does not claim restart rollback resistance. Before platform production state relies on authority currentness across restart, local persistence must atomically preserve the active root, delegated-role epoch floors, and active delegated-role objects and revalidate them on load.
+
 ## 12. Identity validation
 
 A device identity is accepted only when all required conditions hold:
 
 1. credential schema/profile is supported;
 2. `OwnerId` matches the expected trust domain;
-3. issuing Device Signing Authority is valid for that owner/role/epoch;
-4. device credential signature verifies over the canonical transcript;
-5. `DeviceId`, `KeyId`, algorithm, and public-key encoding are structurally valid;
-6. credential epoch is acceptable for the current trust state;
-7. device/revocation state permits ordinary authentication;
-8. the session proves possession of the corresponding device private key.
+3. the locally active owner root is current and unambiguous;
+4. the issuing Device Signing Authority is the current active `DeviceSigning` delegation for that owner/role/epoch;
+5. device credential signature verifies over the canonical transcript;
+6. `DeviceId`, `KeyId`, algorithm, and public-key encoding are structurally valid;
+7. credential epoch is acceptable for the current trust state;
+8. device/revocation state permits ordinary authentication;
+9. the session proves possession of the corresponding device private key.
 
 Credential verification and proof-of-possession are separate checks.
+
+Missing active authority, stale root/delegation state, or ambiguous currentness fails closed.
 
 ## 13. Failure semantics
 
@@ -311,15 +346,16 @@ The vectors use fixed synthetic keys and contain no production secrets.
 The Core Simulator requires only:
 
 - owner-domain initialization;
+- identity-owned `OwnerAuthorityState` with active-root and delegated-role currentness;
 - owner root + delegated Device Signing Authority;
 - device identity/key creation;
 - device credential issuance/verification;
 - stable IDs and key fingerprints;
 - credential epochs;
 - proof-of-possession support for P0.7 session authentication;
-- hooks for trust/revocation checks.
+- hooks for trust/revocation and authority-currentness checks.
 
-Administrative operations, emergency root recovery, hardware-backed stores, and platform key-provider adapters remain outside the simulator.
+Administrative operations, emergency root recovery, durable production authority persistence, hardware-backed stores, and platform key-provider adapters remain outside the simulator.
 
 ## 17. Security traceability
 
