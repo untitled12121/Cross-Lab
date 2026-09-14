@@ -186,15 +186,27 @@ impl QuicTransportConnection {
     }
 
     pub async fn shutdown(&self) {
-        self.close();
-        for task in self.tasks.close_and_take() {
+        for task in self.begin_shutdown() {
             let _ = task.await;
         }
+    }
+
+    fn begin_shutdown(&self) -> Vec<JoinHandle<()>> {
+        self.terminate(LOCAL_CLOSE_CODE, b"crosslab transport closed");
+        self.tasks.close_and_take()
     }
 
     fn terminate(&self, code: VarInt, reason: &'static [u8]) {
         if self.shared.mark_terminal() {
             self.connection.close(code, reason);
+        }
+    }
+}
+
+impl Drop for QuicTransportConnection {
+    fn drop(&mut self) {
+        for task in self.begin_shutdown() {
+            task.abort();
         }
     }
 }
