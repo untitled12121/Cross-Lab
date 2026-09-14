@@ -1,6 +1,7 @@
 use crosslab_crypto::{Signature, SigningKey};
 use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,
+    OwnerRootRecord,
 };
 use crosslab_policy::{
     PairingTrustTransition, TransitionId, TrustRecord, TrustState, TrustTransition,
@@ -80,11 +81,19 @@ fn fixture() -> (TrustRecord, SigningKey, OwnerRootRecord) {
 #[test]
 fn owner_root_signed_revocation_applies_to_matching_trust_record() {
     let (mut record, root_key, root) = fixture();
+    let authority = OwnerAuthorityState::new(root);
     let transition_id = TransitionId::from_bytes([5; 32]);
-    let transition =
-        TrustTransition::issue_root_revocation(&record, transition_id, &root, &root_key).unwrap();
+    let transition = TrustTransition::issue_root_revocation(
+        &record,
+        transition_id,
+        authority.root(),
+        &root_key,
+    )
+    .unwrap();
 
-    transition.apply_root(&mut record, &root).unwrap();
+    transition
+        .apply_root(&mut record, authority.root())
+        .unwrap();
 
     assert_eq!(record.state(), TrustState::Revoked);
     assert_eq!(record.trust_revision(), 5);
@@ -102,18 +111,19 @@ fn administrative_authority_can_sign_ordinary_revocation() {
         0,
         &root_key,
     );
-    let transition = TrustTransition::issue_delegated_revocation(
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(delegation).unwrap();
+    let transition = TrustTransition::issue_delegated_revocation_current(
         &record,
         TransitionId::from_bytes([7; 32]),
-        &root,
-        &delegation,
+        &authority,
+        AuthorityRole::Administrative,
         &administrative_key,
-        0,
     )
     .unwrap();
 
     transition
-        .apply_delegated(&mut record, &root, &delegation, 0)
+        .apply_delegated_current(&mut record, &authority)
         .unwrap();
 
     assert_eq!(record.state(), TrustState::Revoked);
@@ -130,18 +140,19 @@ fn device_signing_authority_can_sign_ordinary_revocation() {
         2,
         &root_key,
     );
-    let transition = TrustTransition::issue_delegated_revocation(
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(delegation).unwrap();
+    let transition = TrustTransition::issue_delegated_revocation_current(
         &record,
         TransitionId::from_bytes([18; 32]),
-        &root,
-        &delegation,
+        &authority,
+        AuthorityRole::DeviceSigning,
         &device_signing_key,
-        2,
     )
     .unwrap();
 
     transition
-        .apply_delegated(&mut record, &root, &delegation, 2)
+        .apply_delegated_current(&mut record, &authority)
         .unwrap();
 
     assert_eq!(record.state(), TrustState::Revoked);
