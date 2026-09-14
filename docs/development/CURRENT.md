@@ -144,25 +144,46 @@ Verification on exact head `7126e8057600282fb59cf0e533b0ba02c8b46033`:
 - Fuzz Smoke `34801746547` — fuzz lockfile verification, formatting, and all bounded fuzz targets passed;
 - dependency audit retains the previously documented allowed `paste 1.0.15` / `RUSTSEC-2024-0436` maintenance warning in the isolated Iroh experiment dependency graph.
 
+### Task 6 — Quinn plain-`Drop` connection/task ownership
+
+Exact verified code head:
+
+`db81e4c7a4f52c4fc3aa99e3ada6b703d0b6534a`
+
+Implemented:
+
+- added a regression proving plain owner drop previously left a live uni-stream send handle usable after `QuicTransportConnection` was dropped;
+- plain drop now immediately terminalizes local transport authority and explicitly closes the Quinn connection;
+- task admission is closed and all owned task handles are drained from the registry during shutdown initiation;
+- explicit `shutdown().await` still performs graceful close followed by joining the drained tasks;
+- plain `Drop` synchronously aborts drained tasks because it cannot await them;
+- shutdown followed by ordinary drop is idempotent through the existing terminal flag and drained task registry;
+- peer-visible connection close and live-stream cancellation are covered by the regression.
+
+Verification on exact head `db81e4c7a4f52c4fc3aa99e3ada6b703d0b6534a`:
+
+- Rust CI `34802668466` — lockfile verification, dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and complete workspace tests all passed;
+- Fuzz Smoke `34802668471` — fuzz lockfile verification, formatting, and all bounded fuzz targets passed;
+- dependency audit retains the previously documented allowed `paste 1.0.15` / `RUSTSEC-2024-0436` maintenance warning in the isolated Iroh experiment dependency graph.
+
 ## Exact Next Task
 
-**Foundation remediation Task 6 — Quinn plain-`Drop` connection/task ownership.**
+**Foundation remediation Task 7 — Debug/privacy hardening.**
 
-Keep the explicit async shutdown contract, but make ordinary owner drop fail closed instead of leaving authority-bearing transport tasks detached.
+Replace ordinary derived Debug output for core session-auth proofs/transcripts and pairing transcript/security material with deliberate redacted output while retaining useful type/profile/length metadata.
 
 Required behavior:
 
-1. add a regression proving dropping `QuicTransportConnection` without `shutdown().await` closes local stream/control authority and becomes peer-visible;
-2. synchronous drop cleanup must close the QUIC connection and close task admission before background work can outlive the owning transport;
-3. owned task handles must be drained from the registry and synchronously aborted on plain `Drop`;
-4. explicit `shutdown().await` must continue to close first and then join owned tasks cleanly;
-5. cleanup must remain idempotent when shutdown and drop occur in sequence.
+1. add regression coverage using sentinel bytes plus actual proof digest/signature material and prove ordinary Debug output cannot expose them;
+2. remove derived `Debug` from `SessionAuthProof`, `SessionAuthTranscriptV1`, and `PairingTranscript`;
+3. custom Debug output may retain useful role/profile/protocol/length metadata only;
+4. signatures, transcript digests, nonces, binding-derived material, pairing bootstrap/security bytes, and payload-like material must remain redacted;
+5. keep cryptographic behavior, equality, canonical transcript bytes, signatures, and golden vectors unchanged.
 
 ## Remaining Remediation Backlog
 
-After Task 6:
+After Task 7:
 
-- finish custom redacted `Debug` for core session-auth proofs/transcripts and pairing transcript/security material;
 - finish OS-CSPRNG constructors for all locally created random identifiers required by the specifications;
 - explicitly resolve/design authoritative delegated-role epoch state rather than treating a caller-supplied/current object epoch as globally authoritative; ADR-0009 remains reserved for the M9 networking decision, so this authority-state decision must use a later monotonic ADR number;
 - run the complete regression/security/fuzz/dependency gate on the final exact head;
