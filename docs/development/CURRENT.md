@@ -26,7 +26,7 @@ Architecture branch:
 
 `m9-foundation-authority-replay-design`
 
-Draft PR:
+PR:
 
 `#22 — Propose authoritative authority currentness and bounded replay semantics`
 
