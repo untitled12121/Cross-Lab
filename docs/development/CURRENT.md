@@ -8,97 +8,113 @@ This file is the durable resume guide for active Cross-Lab development. Git, cod
 
 ## Current Milestone
 
-**M9 — Remote Networking ADR, paused before M9 Task 4 until the second foundation security remediation is fully reconciled.**
+**M9 — Remote Networking ADR, paused before Task 4 until the second foundation security remediation is implemented, merged, and verified.**
 
-M1–M8 are complete. M9 research Tasks 1–3 are complete. Foundation remediation Tasks 1–8 are integrated into `main`. The remaining work is architecture-sensitive foundation currentness/replay hardening plus the final reconciliation gate.
+M1–M8 are complete. M9 research Tasks 1–3 are complete. Foundation remediation Tasks 1–8 are integrated into canonical `main`. The remaining foundation work is the accepted authority-currentness/replay remediation defined by ADR-0010 and ADR-0011 plus the final security reconciliation gate.
 
 ## Canonical Baseline
 
-- `main` integration commit: `7448eb7b3978c3563b6c61552d423c3d2f5d748f` (`Merge M9 foundation remediation Task 8`).
-- Post-merge Rust CI `34806566405` passed lockfile verification, dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and the complete workspace test suite.
+- `main`: `7448eb7b3978c3563b6c61552d423c3d2f5d748f` (`Merge M9 foundation remediation Task 8`).
+- Post-merge Rust CI `34806566405` passed dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and the complete workspace test suite.
 - PR #20 is merged; Task 8 secure policy-ID generation is durable on `main`.
-- Exact PR #20 head Fuzz Smoke `34806180058` passed before merge.
-- The documented `paste 1.0.15` / `RUSTSEC-2024-0436` maintenance warning remains isolated to the Iroh experiment dependency graph and is not accepted for production promotion without re-evaluation.
+- PR #20 exact-head Fuzz Smoke `34806180058` passed before merge.
+- The documented `paste 1.0.15` / `RUSTSEC-2024-0436` maintenance warning remains isolated to the Iroh experiment dependency graph and must be re-evaluated before production networking promotion.
 
-## Active Architecture Checkpoint
+## Accepted Architecture Checkpoint
 
-Branch:
+Architecture branch:
 
 `m9-foundation-authority-replay-design`
 
-Written design:
+Draft PR:
 
-`docs/superpowers/specs/2026-09-14-foundation-currentness-replay-design.md`
+`#22 — Propose authoritative authority currentness and bounded replay semantics`
 
-Proposed ADRs:
+The original design head `1065818bb1d8b528d96901004ea2ea9b95de7a45` passed Rust CI run `34815054120` through dependency audit, format, check, Clippy, and the complete workspace tests.
+
+The owner explicitly approved the written design on 2026-09-14. The following are now **Accepted** on the architecture branch:
 
 - `docs/adr/ADR-0010-authoritative-owner-authority-currentness.md`
 - `docs/adr/ADR-0011-bounded-request-replay-semantics.md`
+- `docs/superpowers/specs/2026-09-14-foundation-currentness-replay-design.md`
 
-ADR-0009 remains reserved for the M9 remote-networking decision.
+Affected normative focused specifications are reconciled:
 
-The two new ADRs are deliberately **Proposed** until the owner reviews the exact written specification. No production implementation is authorized from this branch yet.
+- `docs/architecture/IDENTITY-AND-KEYS.md`
+- `docs/architecture/SESSION-TRANSPORT.md`
+- `docs/protocol/PROTOCOL-V1.md`
 
-## Foundation Findings Requiring Durable Resolution
+`POLICY-AUTHORIZATION.md` already requires trust/policy currentness to come from local authoritative state, so the stream API change is implementation hardening of the existing policy contract rather than a new policy-architecture decision.
 
-### 1. Active root and delegated-role currentness
+The Master Architecture was not revised because ADR-0010 enforces its existing local-authority/fail-closed invariants and ADR-0011 changes focused request-lifecycle semantics without changing the Master-level wire/transport architecture. ADR-0009 remains reserved for the M9 remote-networking decision.
 
-Current high-level APIs can still receive raw root/delegation objects and, in some paths, caller-selected delegation epoch floors. Cryptographic validity of a supplied historical authority is not equivalent to current local authority after rotation.
+## Accepted ADR-0010 Semantics
 
-Proposed ADR-0010 establishes identity-owned `OwnerAuthorityState` as the local source of truth for:
+`crosslab-identity` will own an in-memory `OwnerAuthorityState` containing:
 
-- active owner root;
-- current Device Signing delegation;
-- current Administrative delegation;
-- current Recovery delegation.
+- one active `OwnerRootRecord`;
+- Device Signing, Administrative, and Recovery role slots;
+- the highest accepted epoch for each delegated role;
+- the exact active delegation for each role when one is valid under the active root.
 
-Required semantics:
+Security rules:
 
-1. normal root successor is fully verified before active-root mutation;
-2. superseded root records cannot authorize new high-level ordinary owner operations;
-3. first delegated-role acceptance verifies completely under the active root and may first appear above epoch zero;
-4. replacement requires a strictly higher role-specific epoch and validates before mutation;
-5. sensitive high-level APIs obtain authority from local state rather than caller-selected currentness;
+1. root successor is fully verified before state mutation;
+2. after root succession, the old root becomes historical;
+3. root succession clears active delegated-role objects but retains role epoch floors;
+4. a new-root delegation must strictly advance the retained role epoch;
+5. high-level authority-bearing APIs resolve current authority from `OwnerAuthorityState`, not caller-selected root/delegation/floor inputs;
 6. root or Device Signing replacement invalidates ordinary active sessions authenticated under superseded authority;
-7. Administrative/Recovery rotation alone does not tear down ordinary device sessions;
-8. Phase 1 state may be in-memory; production restart durability requires later atomic local persistence and load-time revalidation;
-9. authority currentness is never established by CRDT, relay, transport, or peer-majority state.
+7. Administrative/Recovery-only rotation does not invalidate ordinary device sessions;
+8. fresh ordinary authentication fails while Device Signing has no active delegation after root rotation;
+9. Phase 1 authority state may remain in memory; production restart durability/rollback resistance requires later atomic local persistence and load-time revalidation;
+10. CRDT, relay, transport, and peer-majority state never establish owner authority currentness.
 
-### 2. Request replay versus bounded state
+## Accepted ADR-0011 Semantics
 
-Protocol V1 currently overstates `RequestId` lifetime semantics relative to the bounded implementation requirement.
+- authenticated `(SessionId, message_seq)` is the Phase 1 exact-envelope replay/order boundary;
+- `RequestId` is a random session-scoped correlation/duplicate/retry key with bounded recent history;
+- retained duplicate IDs fail closed unless a locally authorized capability-specific idempotency path exists;
+- peer-declared `RetryClass::Idempotent` never grants duplicate execution authority;
+- active request state is never evicted to preserve completed history;
+- an ancient completed ID that legitimately ages out is a new authenticated request attempt and still requires current trust/capability/policy/operation authority;
+- exact old-envelope replay remains rejected by its old `message_seq`;
+- stronger single-use/idempotency semantics belong to locally authoritative capability/`AuthorizedOperation` state;
+- no generic durable exactly-once behavior or protobuf/wire change is introduced.
 
-Proposed ADR-0011 makes the distinction explicit:
+## Stream Currentness Hardening
 
-- authenticated `(SessionId, message_seq)` is the full-session ordered control anti-replay boundary;
-- `RequestId` is a random session-scoped correlation/retry key with bounded recent history;
-- peer-declared `Idempotent` never authorizes duplicate execution;
-- local capability metadata must explicitly allow any future duplicate-result/re-execution path;
-- active request state is never silently evicted to preserve completed history;
-- no generic durable exactly-once guarantee is introduced.
+High-level stream admission will stop accepting raw `current_trust_revision` / `current_policy_revision` numbers. It will accept local `TrustRecord` and `PolicyState`, validate the authenticated peer/trust state, and derive current revisions internally before `AuthorizedOperation` validation.
 
-No protobuf/wire change is proposed.
+Low-level policy operation validation may keep explicit revision values for focused internal tests; less-trusted platform/runtime callers must not declare which security revision is current.
 
-### 3. Stream currentness misuse resistance
+## Implementation Plan
 
-The Policy/Authorization architecture already says trust and policy revision come from local authoritative state, but high-level stream admission currently accepts raw numeric `current_trust_revision` and `current_policy_revision` values.
+Accepted implementation plan:
 
-After the ADRs are accepted, implementation should harden the high-level boundary so stream admission derives current trust/policy state from local `TrustRecord` / `PolicyState` (or the eventual authoritative local stores) rather than asking callers to declare which numeric revisions are current.
+`docs/superpowers/plans/2026-09-14-foundation-authority-replay-remediation.md`
 
-This is treated as implementation hardening of the existing policy architecture, not a new ADR.
+The plan is regression-first and contains eight verifiable tasks:
 
-### 4. System-event guardrail
+1. add `OwnerAuthorityState` with monotonic role floors and root-successor behavior;
+2. route device credential issue/verify/rotation through current authority;
+3. migrate policy approval/pairing/trust transitions to current authority;
+4. migrate pairing/session authentication and authority-triggered session cancellation;
+5. lock ADR-0011 with bounded-replay characterization tests;
+6. derive stream currentness from local trust/policy state;
+7. remove obsolete high-level caller-selected authority APIs and verify golden compatibility;
+8. run the complete security/CI/Fuzz gate and reconcile audit/CURRENT evidence.
 
-Generic system events remain opaque protocol data. No new speculative registry is required now. Before a real system-event family can trigger privileged or policy-sensitive behavior, that family must define explicit local authorization/subscription semantics and fail-closed handling.
+No production Rust changes are part of PR #22. Implementation begins only from a fresh branch based on the verified `main` commit after this accepted architecture checkpoint is merged.
 
-## Completed Foundation Remediation
+## Completed Foundation Remediation Before ADR-0010/0011
 
-Tasks 1–8 are merged to `main`:
+Tasks 1–8 already on `main`:
 
 1. pairing currentness and fixed initial credential epoch;
 2. verified credential rotation and active-session invalidation;
 3. trusted-state and approval provenance;
-4. receiver-local request replay authority;
+4. receiver-local bounded request replay authority;
 5. explicit event subscription/authorization boundary;
 6. Quinn plain-`Drop` connection/task ownership;
 7. Debug/privacy hardening for session/pairing/auth material;
@@ -108,21 +124,15 @@ Exact historical RED/GREEN commits and workflow evidence remain in git history, 
 
 ## Exact Next Task
 
-**Owner review of the written foundation design/ADR checkpoint.**
+**Finish and merge the accepted architecture/implementation-plan checkpoint on PR #22 after its exact current head passes CI.**
 
-Do not implement production code yet.
+Then:
 
-After written approval:
-
-1. mark ADR-0010 and ADR-0011 Accepted;
-2. update affected normative focused specs (`IDENTITY-AND-KEYS.md`, `SESSION-TRANSPORT.md`, `PROTOCOL-V1.md`, and any policy wording required for local-currentness provenance);
-3. update the Master Architecture only if the accepted wording materially changes rather than clarifies its existing invariants;
-4. create the detailed regression-first implementation plan;
-5. implement authority state, authority-triggered session currentness, bounded request semantics reconciliation, and stream local-currentness hardening;
-6. run exact-head dependency/audit/fmt/check/Clippy/test/Fuzz gates;
-7. reconcile `security/M9-FOUNDATION-HARDENING-ASSESSMENT.md`, the whole-project audit, and this file;
-8. merge and verify on `main`;
-9. only then resume M9 Task 4.
+1. verify the PR #22 merge commit on `main` with the full Rust CI gate;
+2. create a fresh implementation branch from that verified `main` commit;
+3. execute Task 1 of `2026-09-14-foundation-authority-replay-remediation.md` regression-first;
+4. continue in small reviewed/verified tasks through Task 8;
+5. keep M9 Task 4 blocked until the complete implementation is merged and post-merge `main` is green.
 
 ## Repository / M9 Invariants
 
@@ -133,15 +143,17 @@ After written approval:
 - M9 remote sessions remain `NetworkClass::Remote` for their lifetime.
 - Transport/path changes do not silently mutate binding, `SessionId`, sequence, policy classification, or operation authority.
 - A new transport connection requires fresh Cross-Lab authentication/authorization state.
-- Security authority state is locally authoritative and fail-closed on ambiguity.
+- Security authority state is locally authoritative and fails closed on ambiguity.
 - `main` branch protection remains an external repository-administration item.
 
 ## Resume Procedure
 
-1. inspect canonical `main`, this design branch, recent commits/workflows, and this file;
-2. read the Master Architecture plus the written foundation design and proposed ADR-0010/0011;
-3. do not begin implementation until the written design is explicitly approved;
-4. after approval, update normative specs and write the implementation plan before code;
-5. implement regression-first in small verified milestones;
-6. checkpoint exact commits/workflow evidence in this file;
-7. keep M9 Task 4 blocked until the entire foundation remediation is merged and verified on `main`.
+1. inspect canonical `main`, PR #22, recent workflows, and this file;
+2. verify PR #22 exact-head CI before merge;
+3. merge accepted architecture/docs only when that gate is green;
+4. verify the resulting `main` merge commit;
+5. create a fresh implementation branch from verified `main`;
+6. read ADR-0010, ADR-0011, the accepted design, and the implementation plan;
+7. execute the plan regression-first in small verified milestones;
+8. update this file with exact commits/workflow evidence at meaningful checkpoints;
+9. do not begin M9 Task 4 until the entire foundation remediation is merged and post-merge verified.
