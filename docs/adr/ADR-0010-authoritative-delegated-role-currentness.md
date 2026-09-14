@@ -54,6 +54,8 @@ Device credential issuance and verification, pairing/trust establishment, approv
 
 Low-level `AuthorityDelegation` signature verification may remain available for parsing/import/tests, but successful low-level verification alone does not establish current local authority.
 
+Delegated-role currentness is checked when an operation consumes delegated authority. Accepting a newer delegation does not, by itself, retroactively revoke an already Active logical session. Existing session termination semantics remain governed by local trust/revocation and fatal session conditions. A fresh reconnect/session must revalidate credentials through the then-current authority state.
+
 ### Root succession
 
 `OwnerAuthorityState` owns the active `OwnerRootRecord`. Normal root succession remains governed by the existing dual-signature `RootSuccessor` continuity contract.
@@ -92,11 +94,13 @@ Rejected. The identity specification requires monotonically increasing replaceme
 
 ## Security impact
 
-The decision closes the stale delegated-authority gap after local acceptance of a newer role delegation. Historical valid signatures remain cryptographically valid objects but no longer authorize current operations once superseded locally.
+The decision closes the stale delegated-authority gap after local acceptance of a newer role delegation. Historical valid signatures remain cryptographically valid objects but no longer authorize current delegated operations once superseded locally.
 
 The state remains owner-scoped and role-scoped. Transport identifiers, peer claims, UI state, network routes, and capability metadata cannot establish delegated authority.
 
 Root succession invalidates old-root delegated slots, preventing stale old-root delegation reuse after a successful root transition.
+
+A credential whose signature can only be validated through a superseded Device Signing delegation cannot satisfy fresh identity validation after that newer delegation is locally accepted. This is fail-closed and follows the existing identity rule that the issuing Device Signing Authority must be valid for the owner/role/epoch. The remediation does not invent a bulk credential-reissuance protocol.
 
 This ADR does not solve durable-state rollback. If an attacker can restore an older authority-state snapshot, the process can lose knowledge of a newer accepted epoch. Production persistence/recovery work must provide rollback-resistant storage appropriate to each platform before claiming durable currentness across compromise/restart scenarios.
 
@@ -112,7 +116,11 @@ Golden signing/protocol vectors must remain unchanged unless an independently ap
 
 Authority state becomes explicit lifecycle state that Core/platform orchestration must retain alongside owner trust state. The identity crate remains responsible for validation semantics; platform storage adapters later become responsible for durability.
 
-Rotating a delegated role invalidates older local use immediately after acceptance. Rotating the owner root clears all delegated role slots, so ordinary operations requiring those roles remain unavailable until replacement delegations under the new root are installed.
+Rotating a delegated role invalidates older local use immediately after acceptance. For Device Signing rotation, credentials that depend only on the superseded signing delegation will not pass a future fresh authentication until the owner domain establishes suitable current credentials under the new authority. The exact owner workflow for bulk reissuance is outside this remediation.
+
+Already Active sessions are not closed solely because a delegated role rotates. Explicit peer revocation/trust transitions remain the mechanism for terminating active peer authority; reconnect always performs fresh credential/trust validation.
+
+Rotating the owner root clears all delegated role slots, so ordinary operations requiring those roles remain unavailable until replacement delegations under the new root are installed.
 
 No new background service, database, network round trip, or dependency is introduced by this decision.
 
@@ -123,5 +131,6 @@ No new background service, database, network round trip, or dependency is introd
 - Raw `AuthorityDelegation` remains a signed identity object, not proof that the object is currently accepted.
 - Identity, policy, pairing, trust, and session code gain an explicit authority-state dependency where they exercise delegated authority.
 - Root rotation has explicit delegated-role invalidation semantics.
+- Active-session shutdown semantics remain unchanged; fresh authentication uses current authority state.
 - Future persistence work has a clear object to store without forcing persistence concerns into the identity model today.
 - M9 Task 4 remains blocked until this proposal is accepted, implemented regression-first, and the final foundation hardening gate/reconciliation passes.
