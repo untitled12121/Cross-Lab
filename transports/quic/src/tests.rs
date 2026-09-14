@@ -191,6 +191,29 @@ async fn shutdown_closes_connection_and_owned_tasks() {
 }
 
 #[tokio::test]
+async fn drop_closes_connection_and_owned_tasks() {
+    let LoopbackTransportPair {
+        _client_endpoint,
+        _server_endpoint,
+        client,
+        server,
+    } = promoted_loopback_transport_pair_with_config(QuicTransportConfig::default()).await;
+    let mut send = client.try_open_uni_stream(vec![0x82]).unwrap();
+    let incoming = eventually_accept(&server).await;
+    let (_, mut recv) = incoming.into_parts();
+
+    drop(client);
+
+    assert_eq!(
+        send.try_send_chunk(vec![0x83]),
+        Err(StreamSendError::Closed(vec![0x83]))
+    );
+    eventually_closed(&server).await;
+    eventually_cancelled(recv.as_mut()).await;
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn uni_stream_carries_opening_frame_and_chunks_in_order() {
     let pair = promoted_loopback_transport_pair_with_config(QuicTransportConfig::default()).await;
     let mut send = pair.client.try_open_uni_stream(vec![0x10]).unwrap();
