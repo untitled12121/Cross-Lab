@@ -58,12 +58,7 @@ impl TrustFixture {
         )
         .unwrap();
         let record = pairing
-            .establish(
-                &credential,
-                authority.root(),
-                &dsa,
-                dsa.delegation_epoch(),
-            )
+            .establish(&credential, authority.root(), &dsa, dsa.delegation_epoch())
             .unwrap();
 
         Self {
