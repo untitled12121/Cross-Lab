@@ -4,7 +4,8 @@ use crosslab_crypto::{
     CanonicalTranscript, Signature, SignatureAlgorithm, SigningKey, signed_object_digest,
 };
 use crosslab_identity::{
-    AuthorityDelegation, DeviceCredential, DeviceId, IdentityError, KeyId, OwnerId, OwnerRootRecord,
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, IdentityError, KeyId,
+    OwnerAuthorityState, OwnerId, OwnerRootRecord,
 };
 
 use super::{TransitionId, TrustRecord};
@@ -100,6 +101,25 @@ impl PairingTrustTransition {
         Ok(transition)
     }
 
+    pub fn issue_current(
+        credential: &DeviceCredential,
+        transition_id: TransitionId,
+        pairing_evidence_digest: [u8; 32],
+        authority: &OwnerAuthorityState,
+        issuer_key: &SigningKey,
+    ) -> Result<Self, PairingTrustTransitionError> {
+        let issuer = authority.current_delegation(AuthorityRole::DeviceSigning)?;
+        Self::issue(
+            credential,
+            transition_id,
+            pairing_evidence_digest,
+            authority.root(),
+            issuer,
+            issuer_key,
+            issuer.delegation_epoch(),
+        )
+    }
+
     pub fn establish(
         &self,
         credential: &DeviceCredential,
@@ -138,6 +158,20 @@ impl PairingTrustTransition {
             INITIAL_CREDENTIAL_EPOCH,
             self.transition_id,
         ))
+    }
+
+    pub fn establish_current(
+        &self,
+        credential: &DeviceCredential,
+        authority: &OwnerAuthorityState,
+    ) -> Result<TrustRecord, PairingTrustTransitionError> {
+        let issuer = authority.current_delegation(AuthorityRole::DeviceSigning)?;
+        self.establish(
+            credential,
+            authority.root(),
+            issuer,
+            issuer.delegation_epoch(),
+        )
     }
 
     pub fn transcript_digest(&self) -> [u8; 32] {
