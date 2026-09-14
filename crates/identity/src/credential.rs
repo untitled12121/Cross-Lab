@@ -3,7 +3,8 @@ use crosslab_crypto::{
 };
 
 use crate::{
-    AuthorityDelegation, AuthorityRole, DeviceId, IdentityError, KeyId, OwnerId, OwnerRootRecord,
+    AuthorityDelegation, AuthorityRole, DeviceId, IdentityError, KeyId, OwnerAuthorityState,
+    OwnerId, OwnerRootRecord,
 };
 
 const DOMAIN: &str = "crosslab.device-credential.v1";
@@ -39,6 +40,24 @@ impl DeviceCredential {
             credential_epoch,
             root,
             issuer,
+            issuer_key,
+        )
+    }
+
+    pub fn issue_current(
+        owner_id: OwnerId,
+        device_id: DeviceId,
+        device_key: &SigningKey,
+        credential_epoch: u64,
+        authority: &OwnerAuthorityState,
+        issuer_key: &SigningKey,
+    ) -> Result<Self, IdentityError> {
+        Self::issue_for_public_key_current(
+            owner_id,
+            device_id,
+            device_key.verifying_key(),
+            credential_epoch,
+            authority,
             issuer_key,
         )
     }
@@ -95,6 +114,26 @@ impl DeviceCredential {
             issuer_device_signing_key_id,
             signature,
         })
+    }
+
+    pub fn issue_for_public_key_current(
+        owner_id: OwnerId,
+        device_id: DeviceId,
+        device_public_key: VerifyingKey,
+        credential_epoch: u64,
+        authority: &OwnerAuthorityState,
+        issuer_key: &SigningKey,
+    ) -> Result<Self, IdentityError> {
+        let issuer = authority.current_delegation(AuthorityRole::DeviceSigning)?;
+        Self::issue_for_public_key(
+            owner_id,
+            device_id,
+            device_public_key,
+            credential_epoch,
+            authority.root(),
+            issuer,
+            issuer_key,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -165,6 +204,20 @@ impl DeviceCredential {
             .map_err(|_| IdentityError::InvalidSignature)
     }
 
+    pub fn verify_current(
+        &self,
+        authority: &OwnerAuthorityState,
+        minimum_credential_epoch: u64,
+    ) -> Result<(), IdentityError> {
+        let issuer = authority.current_delegation(AuthorityRole::DeviceSigning)?;
+        self.verify(
+            authority.root(),
+            issuer,
+            minimum_credential_epoch,
+            issuer.delegation_epoch(),
+        )
+    }
+
     pub fn rotate(
         &self,
         new_device_key: &SigningKey,
@@ -189,6 +242,27 @@ impl DeviceCredential {
             next_epoch,
             root,
             issuer,
+            issuer_key,
+        )
+    }
+
+    pub fn rotate_current(
+        &self,
+        new_device_key: &SigningKey,
+        authority: &OwnerAuthorityState,
+        issuer_key: &SigningKey,
+    ) -> Result<Self, IdentityError> {
+        self.verify_current(authority, self.credential_epoch)?;
+        let next_epoch = self
+            .credential_epoch
+            .checked_add(1)
+            .ok_or(IdentityError::UnexpectedCredentialEpoch)?;
+        Self::issue_current(
+            self.owner_id,
+            self.device_id,
+            new_device_key,
+            next_epoch,
+            authority,
             issuer_key,
         )
     }
