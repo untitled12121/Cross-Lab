@@ -6,7 +6,7 @@ struct DelegatedRoleState {
     active: Option<AuthorityDelegation>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct OwnerAuthorityState {
     root: OwnerRootRecord,
     device_signing: DelegatedRoleState,
