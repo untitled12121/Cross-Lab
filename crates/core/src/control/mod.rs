@@ -4,8 +4,8 @@ use std::{
 };
 
 use crosslab_policy::{
-    AuthorizationContext, DecisionEffect, DecisionReason, LocalCapability, NetworkClass,
-    PolicyState, TrustRecord, TrustState,
+    ApprovalInstant, AuthorizationContext, DecisionEffect, DecisionReason, LocalCapability,
+    NetworkClass, PolicyState, TrustRecord, TrustState,
 };
 use crosslab_protocol::{
     ControlEnvelope, ControlRequest, ControlResponse, ControlSequence, EnvelopeBody, Event,
@@ -126,6 +126,7 @@ impl ControlDispatcher {
         self.next_send_sequence = envelope.message_seq().checked_add(1);
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn accept_inbound(
         &mut self,
         context: &SessionContext,
@@ -134,6 +135,7 @@ impl ControlDispatcher {
         local_capabilities: &[LocalCapability],
         peer_trust: &TrustRecord,
         network_class: NetworkClass,
+        local_time: ApprovalInstant,
     ) -> Result<InboundControl, ControlDispatchError> {
         if envelope.session_id() != context.session_id() {
             return Err(ControlDispatchError::InvalidSession);
@@ -155,6 +157,7 @@ impl ControlDispatcher {
                 local_capabilities,
                 peer_trust,
                 network_class,
+                local_time,
             ),
             EnvelopeBody::ControlResponse(response) => {
                 if self
@@ -243,6 +246,7 @@ impl ControlDispatcher {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn accept_request(
         &mut self,
         context: &SessionContext,
@@ -251,6 +255,7 @@ impl ControlDispatcher {
         local_capabilities: &[LocalCapability],
         peer_trust: &TrustRecord,
         network_class: NetworkClass,
+        local_time: ApprovalInstant,
     ) -> Result<InboundControl, ControlDispatchError> {
         let negotiated = context
             .negotiated_capabilities()
@@ -290,6 +295,7 @@ impl ControlDispatcher {
             peer_trust.trust_revision(),
             local.clone(),
             network_class,
+            local_time,
         );
         let decision = policy.evaluate(&authorization);
         match decision.effect() {
