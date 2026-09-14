@@ -2,7 +2,10 @@ use std::collections::BTreeMap;
 
 use crosslab_identity::DeviceId;
 
-use crate::{CapabilityId, CapabilityVersion, LocalCapability, OperationName, TrustState};
+use crate::{
+    CapabilityId, CapabilityVersion, LocalCapability, OperationName, TrustState,
+    id_generation::{PolicyIdGenerationError, random_policy_id},
+};
 
 mod approval;
 
@@ -27,6 +30,10 @@ pub struct RuleId([u8; 32]);
 impl RuleId {
     pub const fn from_bytes(bytes: [u8; 32]) -> Self {
         Self(bytes)
+    }
+
+    pub fn generate() -> Result<Self, PolicyIdGenerationError> {
+        random_policy_id().map(Self)
     }
 
     pub const fn to_bytes(self) -> [u8; 32] {
