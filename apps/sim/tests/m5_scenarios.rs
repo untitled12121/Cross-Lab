@@ -2,9 +2,9 @@ use std::num::NonZeroUsize;
 
 use crosslab_core::{
     ChannelBinding, EventSubscription, LogicalSession, PairingFlowError, PairingId, PairingInstant,
-    PairingInvitation, PairingInvitationState, PairingInviterFlow, PairingJoinerFlow, PairingSecret,
-    SessionActivation, SessionAuthProof, SessionAuthRole, SessionAuthTranscriptV1, SessionError,
-    SessionHandshakeSide, SessionState, TransportConnection, TransportSecurityClass,
+    PairingInvitation, PairingInvitationState, PairingInviterFlow, PairingJoinerFlow,
+    PairingSecret, SessionActivation, SessionAuthProof, SessionAuthRole, SessionAuthTranscriptV1,
+    SessionError, SessionHandshakeSide, SessionState, TransportConnection, TransportSecurityClass,
 };
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
@@ -681,6 +681,8 @@ fn owner_mismatch_in_peer_trust_is_rejected_before_session_activation() {
         binding,
         INITIATOR_NONCE,
         RESPONDER_NONCE,
+        &initiator_proof,
+        &responder_proof,
     );
 
     let (session, result) = fixture.attempt_session(
