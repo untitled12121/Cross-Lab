@@ -1,3 +1,5 @@
+use core::fmt;
+
 use crosslab_crypto::{
     CanonicalTranscript, SignatureAlgorithm, VerifyingKey, hmac_sha256, verify_hmac_sha256,
 };
@@ -8,7 +10,7 @@ use super::{PairingConfirmationError, PairingConfirmationRole, PairingId, Pairin
 const PAIRING_PROFILE_V1: u16 = 1;
 const PAIRING_TRANSCRIPT_DOMAIN: &str = "crosslab.pairing-transcript.v1";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct PairingTranscript {
     protocol_major: u16,
     pairing_id: PairingId,
@@ -19,6 +21,19 @@ pub struct PairingTranscript {
     joiner_device_id: DeviceId,
     joiner_device_key: VerifyingKey,
     joiner_nonce: [u8; 32],
+}
+
+impl fmt::Debug for PairingTranscript {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PairingTranscript")
+            .field("profile", &PAIRING_PROFILE_V1)
+            .field("protocol_major", &self.protocol_major)
+            .field("pairing_id_len", &self.pairing_id.as_bytes().len())
+            .field("device_key_len", &self.inviter_device_key.as_bytes().len())
+            .field("nonce_len", &self.inviter_nonce.len())
+            .finish()
+    }
 }
 
 impl PairingTranscript {
