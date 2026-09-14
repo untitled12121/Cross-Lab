@@ -1,7 +1,7 @@
 use std::num::NonZeroUsize;
 
 use crosslab_core::{
-    ControlDispatchError, LogicalSession, SessionActivation, SessionAuthRole,
+    ControlDispatchError, EventSubscription, LogicalSession, SessionActivation, SessionAuthRole,
     SessionAuthTranscriptV1, SessionHandshakeSide, SessionState, TransportConnection,
     TransportSecurityClass,
 };
@@ -383,10 +383,18 @@ fn s006_authorized_request_response_and_event_are_correlated_and_sequenced() {
     assert_eq!(node_a.pending_request_count(), 0);
     assert_eq!(node_a.expected_receive_sequence(), Some(1));
 
+    assert!(
+        node_b
+            .subscribe_event(EventSubscription::new(
+                CapabilityId::parse("clipboard.write").unwrap(),
+                EventType::parse("clipboard.changed").unwrap(),
+            ))
+            .unwrap()
+    );
     let event_id = EventId::from_bytes([0x51; 16]);
     node_a.send_event(event(event_id, b"changed")).unwrap();
     let NodeEvent::Event(received) = node_b.receive_one(&fixture.initiator_trust).unwrap() else {
-        panic!("expected permitted event");
+        panic!("expected subscribed event");
     };
     assert_eq!(received.event_id(), event_id);
     assert_eq!(received.body(), b"changed");
