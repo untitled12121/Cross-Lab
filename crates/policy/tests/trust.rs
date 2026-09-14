@@ -62,7 +62,6 @@ fn trusted_record() -> TrustRecord {
 struct RotationFixture {
     owner_id: OwnerId,
     device_id: DeviceId,
-    root: OwnerRootRecord,
     issuer_key: SigningKey,
     delegation: AuthorityDelegation,
     authority: OwnerAuthorityState,
@@ -87,7 +86,6 @@ impl RotationFixture {
         Self {
             owner_id,
             device_id: DeviceId::from_bytes([0x23; 32]),
-            root,
             issuer_key,
             delegation,
             authority,
