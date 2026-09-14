@@ -1,8 +1,8 @@
 use std::num::NonZeroUsize;
 
 use crosslab_core::{
-    ChannelBinding, LogicalSession, PairingFlowError, PairingId, PairingInstant, PairingInvitation,
-    PairingInvitationState, PairingInviterFlow, PairingJoinerFlow, PairingSecret,
+    ChannelBinding, EventSubscription, LogicalSession, PairingFlowError, PairingId, PairingInstant,
+    PairingInvitation, PairingInvitationState, PairingInviterFlow, PairingJoinerFlow, PairingSecret,
     SessionActivation, SessionAuthProof, SessionAuthRole, SessionAuthTranscriptV1, SessionError,
     SessionHandshakeSide, SessionState, TransportConnection, TransportSecurityClass,
 };
@@ -479,10 +479,18 @@ fn m5_end_to_end_pairing_session_capability_and_control_flow() {
     };
     assert_eq!(response.request_id(), request_id);
 
+    assert!(
+        node_b
+            .subscribe_event(EventSubscription::new(
+                CapabilityId::parse("clipboard.write").unwrap(),
+                EventType::parse("clipboard.changed").unwrap(),
+            ))
+            .unwrap()
+    );
     let event_id = EventId::from_bytes([0x51; 16]);
     node_a.send_event(event(event_id, b"changed")).unwrap();
     let NodeEvent::Event(received) = node_b.receive_one(&inviter_trust).unwrap() else {
-        panic!("expected negotiated capability event");
+        panic!("expected subscribed capability event");
     };
     assert_eq!(received.event_id(), event_id);
     assert_eq!(received.body(), b"changed");
