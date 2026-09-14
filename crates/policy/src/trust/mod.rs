@@ -1,7 +1,8 @@
 use core::fmt;
 
 use crosslab_identity::{
-    AuthorityDelegation, DeviceCredential, DeviceId, IdentityError, OwnerId, OwnerRootRecord,
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, IdentityError,
+    OwnerAuthorityState, OwnerId, OwnerRootRecord,
 };
 
 use crate::id_generation::{PolicyIdGenerationError, random_policy_id};
@@ -170,6 +171,22 @@ impl TrustRecord {
         self.trust_revision = next_revision;
         self.last_transition_id = transition_id;
         Ok(())
+    }
+
+    pub fn accept_successor_credential_current(
+        &mut self,
+        successor: &DeviceCredential,
+        authority: &OwnerAuthorityState,
+        transition_id: TransitionId,
+    ) -> Result<(), CredentialRotationError> {
+        let issuer = authority.current_delegation(AuthorityRole::DeviceSigning)?;
+        self.accept_successor_credential(
+            successor,
+            authority.root(),
+            issuer,
+            issuer.delegation_epoch(),
+            transition_id,
+        )
     }
 
     fn revoke(&mut self, transition_id: TransitionId) -> Result<(), TrustError> {
