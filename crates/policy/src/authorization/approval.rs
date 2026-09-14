@@ -150,11 +150,7 @@ impl OwnerApprovalEvidence {
         let delegation = authority
             .current_delegation(AuthorityRole::Administrative)
             .map_err(|_| ApprovalError::UnknownIssuer)?;
-        self.verify(
-            authority.root(),
-            delegation,
-            delegation.delegation_epoch(),
-        )
+        self.verify(authority.root(), delegation, delegation.delegation_epoch())
     }
 
     pub fn transcript_digest(&self) -> [u8; 32] {
