@@ -121,25 +121,47 @@ Verification on exact head `cad5222d744eb86888b10cf884309bc65c5d95fa`:
 - Fuzz Smoke `34796613004` — fuzz lockfile verification, formatting, and all bounded fuzz targets passed;
 - dependency audit retains the previously documented allowed `paste 1.0.15` / `RUSTSEC-2024-0436` maintenance warning in the isolated Iroh experiment dependency graph.
 
+### Task 5 — Event authorization/subscription boundary
+
+Exact verified code head:
+
+`7126e8057600282fb59cf0e533b0ba02c8b46033`
+
+Implemented:
+
+- reconciled event delivery around explicit receiver-local authority without changing Protocol V1 wire compatibility;
+- added typed `EventSubscription` state keyed by exact capability and event type;
+- negotiated capability support remains a prerequisite but no longer acts as implicit permission to deliver every capability event;
+- peers cannot create or widen local event subscription authority through event metadata;
+- unmatched capability events fail closed with `EventNotSubscribed`;
+- exact local subscription permits only the subscribed capability/event pair;
+- authenticated system events remain outside the capability-subscription grammar and continue through the existing session identity/trust/sequence boundary;
+- simulator and authenticated Quinn fixtures now establish explicit local subscription authority before expecting capability-event delivery.
+
+Verification on exact head `7126e8057600282fb59cf0e533b0ba02c8b46033`:
+
+- Rust CI `34801746532` — lockfile verification, dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and complete workspace tests all passed;
+- Fuzz Smoke `34801746547` — fuzz lockfile verification, formatting, and all bounded fuzz targets passed;
+- dependency audit retains the previously documented allowed `paste 1.0.15` / `RUSTSEC-2024-0436` maintenance warning in the isolated Iroh experiment dependency graph.
+
 ## Exact Next Task
 
-**Foundation remediation Task 5 — Event authorization/subscription boundary.**
+**Foundation remediation Task 6 — Quinn plain-`Drop` connection/task ownership.**
 
-Keep Protocol V1 wire compatibility unchanged. Add a receiver-local, typed event subscription/authorization boundary so negotiated capability support is not treated as permission to deliver every capability event.
+Keep the explicit async shutdown contract, but make ordinary owner drop fail closed instead of leaving authority-bearing transport tasks detached.
 
 Required behavior:
 
-1. a capability event must still belong to a negotiated capability;
-2. receipt must also match exact local subscription authority, including the capability and event type;
-3. a peer cannot create or widen local subscription authority through event metadata;
-4. system events remain protected by authenticated session identity/trust/sequence handling and are not silently reclassified as capability subscriptions;
-5. add regression tests before implementation and keep the policy evaluator pure.
+1. add a regression proving dropping `QuicTransportConnection` without `shutdown().await` closes local stream/control authority and becomes peer-visible;
+2. synchronous drop cleanup must close the QUIC connection and close task admission before background work can outlive the owning transport;
+3. owned task handles must be drained from the registry and synchronously aborted on plain `Drop`;
+4. explicit `shutdown().await` must continue to close first and then join owned tasks cleanly;
+5. cleanup must remain idempotent when shutdown and drop occur in sequence.
 
 ## Remaining Remediation Backlog
 
-After Task 5:
+After Task 6:
 
-- prove and fix Quinn plain-`Drop` connection/task cleanup while preserving joined graceful shutdown;
 - finish custom redacted `Debug` for core session-auth proofs/transcripts and pairing transcript/security material;
 - finish OS-CSPRNG constructors for all locally created random identifiers required by the specifications;
 - explicitly resolve/design authoritative delegated-role epoch state rather than treating a caller-supplied/current object epoch as globally authoritative; ADR-0009 remains reserved for the M9 networking decision, so this authority-state decision must use a later monotonic ADR number;
