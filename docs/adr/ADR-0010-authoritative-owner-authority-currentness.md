@@ -1,7 +1,8 @@
 # ADR-0010: Authoritative owner authority currentness
 
-**Status:** Proposed  
-**Date:** 2026-09-14
+**Status:** Accepted  
+**Date:** 2026-09-14  
+**Accepted:** 2026-09-14
 
 ## Context
 
