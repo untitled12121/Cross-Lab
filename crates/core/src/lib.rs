@@ -1,4 +1,4 @@
-//! Platform-independent Cross-Lab coordination core.
+//! Shared local-first runtime core for Cross-Lab.
 
 mod control;
 mod pairing;
@@ -6,20 +6,21 @@ mod session;
 mod stream;
 mod transport;
 
-pub use control::{ControlDispatchError, ControlDispatcher, InboundControl};
+pub use control::{ControlDispatchError, ControlDispatcher, EventSubscription, InboundControl};
 pub use pairing::{
-    PairingConfirmationError, PairingConfirmationRole, PairingFlowError, PairingId, PairingInstant,
-    PairingInvitation, PairingInvitationError, PairingInvitationState, PairingInviterFlow,
-    PairingInviterState, PairingJoinerFlow, PairingJoinerState, PairingSecret, PairingTranscript,
+    INITIAL_CREDENTIAL_EPOCH, InvitationState, PairingConfirmationError, PairingConfirmationRole,
+    PairingFlowError, PairingId, PairingInstant, PairingInvitation, PairingInvitationError,
+    PairingInviterFlow, PairingInviterState, PairingJoinerFlow, PairingJoinerState, PairingSecret,
+    PairingTranscript,
 };
 pub use session::{
     LogicalSession, NegotiatedCapability, SessionActivation, SessionAuthError, SessionAuthProof,
-    SessionAuthRole, SessionAuthTranscriptV1, SessionContext, SessionError, SessionHandshakeSide,
-    SessionState,
+    SessionAuthRole, SessionAuthTranscriptV1, SessionError, SessionHandshakeSide, SessionState,
 };
-pub use stream::{AdmittedStream, StreamAdmission, StreamAdmissionError};
+pub use stream::{StreamAdmission, StreamAdmissionError};
 pub use transport::{
     ChannelBinding, ConnectionMetadata, ControlReceiveError, ControlSendError, IncomingUniStream,
-    StreamAcceptError, StreamOpenError, StreamReceiveError, StreamSendError, TransportConnection,
-    TransportReceiveStream, TransportSecurityClass, TransportSendStream,
+    MemoryTransportConnection, MemoryTransportPair, StreamAcceptError, StreamOpenError,
+    StreamReceiveError, StreamSendError, TransportConnection, TransportReceiveStream,
+    TransportSecurityClass, TransportSendStream,
 };
