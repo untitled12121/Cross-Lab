@@ -681,8 +681,6 @@ fn owner_mismatch_in_peer_trust_is_rejected_before_session_activation() {
         binding,
         INITIATOR_NONCE,
         RESPONDER_NONCE,
-        &initiator_proof,
-        &responder_proof,
     );
 
     let (session, result) = fixture.attempt_session(
