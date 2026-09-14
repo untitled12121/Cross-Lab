@@ -1,9 +1,7 @@
 use core::fmt;
 
 use crosslab_crypto::{CanonicalTranscript, Signature, SigningKey};
-use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, KeyId, OwnerId, OwnerRootRecord,
-};
+use crosslab_identity::{AuthorityDelegation, AuthorityRole, KeyId, OwnerId, OwnerRootRecord};
 
 use super::{ApprovalScope, Obligation};
 
