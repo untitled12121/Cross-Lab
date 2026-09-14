@@ -6,7 +6,7 @@
 
 ## Goal
 
-Make delegated owner-authority currentness explicit, local, typed, and fail-closed so that a stale but historically valid delegation cannot authorize credential, trust, approval, pairing, or session operations after a newer delegation for that role has been accepted locally.
+Make delegated owner-authority currentness explicit, local, typed, and fail-closed so that a stale but historically valid delegation cannot authorize credential, trust, approval, pairing, or fresh session operations after a newer delegation for that role has been accepted locally.
 
 This design implements the semantic requirement already stated in `docs/architecture/IDENTITY-AND-KEYS.md`: older delegated-role epochs must be rejected after newer authority has been accepted into authoritative local state.
 
@@ -143,6 +143,10 @@ They should resolve the current `DeviceSigning` delegation from `OwnerAuthorityS
 
 Low-level import/vector helpers may continue to operate on explicit signed objects where deterministic testing requires it, but ordinary production paths must not rely on caller-supplied currentness.
 
+After a newer Device Signing delegation is locally accepted, a credential that can only be validated through the superseded delegation cannot satisfy fresh identity validation. This follows the existing requirement that the issuing Device Signing Authority be valid for the owner/role/epoch.
+
+This remediation does not define a bulk credential-reissuance protocol. It also must not invent a same-epoch device-key replacement path: any future credential reissuance/rotation workflow must preserve existing credential-epoch and trust-transition rules.
+
 ### Pairing and trust establishment
 
 `PairingInviterFlow` and `PairingTrustTransition` should use the authority state for Device Signing currentness.
@@ -167,7 +171,9 @@ Root-authorized revocation remains a separate root path.
 
 Both initiator and responder credentials must verify through the current Device Signing delegation accepted in that state.
 
-A stale credential issuer delegation must fail before the session becomes Active, even if its signature remains cryptographically valid.
+A stale credential issuer delegation must fail before a fresh session becomes Active, even if its signature remains cryptographically valid.
+
+Accepting a newer delegated authority does not, by itself, retroactively close an already Active logical session. Existing session termination semantics remain governed by trust/revocation and fatal session conditions. Reconnect always performs fresh credential/trust/current-authority validation.
 
 Session transcript bytes, proof bytes, channel binding, negotiated protocol/features, and `SessionId` derivation remain unchanged.
 
@@ -228,7 +234,7 @@ State mutation must occur only after validation succeeds. Tests should assert un
 4. Migrate pairing and pairing trust establishment.
 5. Migrate Administrative approval evidence.
 6. Migrate delegated trust transitions/revocation.
-7. Migrate session authentication and add a lifecycle regression: authenticate using an issuer, advance accepted Device Signing delegation, then prove the old issuer cannot establish a fresh session.
+7. Migrate session authentication and add a lifecycle regression: authenticate using an issuer, advance accepted Device Signing delegation, then prove the old issuer cannot establish a fresh session while an already Active session is not implicitly reclassified as revoked.
 8. Add root-successor tests proving successful transition clears all delegated slots and failed transition changes nothing.
 9. Remove production call-site use of arbitrary `minimum_delegation_epoch` values where currentness is required.
 10. Run full fmt/check/Clippy/tests, protocol/golden regressions, fuzz smoke, and dependency audit on the exact final head.
@@ -247,11 +253,12 @@ At minimum:
 - OwnerRoot-as-delegation fails;
 - bad root signature fails without mutation;
 - stale Device Signing authority cannot issue a new credential after rotation;
-- stale Device Signing authority cannot validate a credential as current after rotation;
+- credential validation that depends only on a superseded Device Signing delegation fails for a fresh authentication path;
 - pairing cannot establish trust using stale Device Signing authority;
 - stale Administrative authority cannot issue/verify current owner approval evidence;
 - stale delegated revocation authority cannot revoke after its role rotates;
 - fresh session authentication rejects credentials whose issuer delegation is no longer current;
+- delegated-role rotation alone does not silently mark an already Active session revoked;
 - successful root successor clears all delegated slots;
 - failed root successor preserves root and delegated slots;
 - existing canonical credential, pairing, session-auth, and protocol golden vectors remain unchanged;
@@ -265,10 +272,12 @@ This work does not:
 - select persistent storage;
 - define authority synchronization over the network;
 - add a cloud coordinator;
+- define a bulk credential-reissuance protocol;
 - change M9 transport selection;
 - change credential or delegation wire/signing formats;
 - create a general key-management daemon;
-- solve storage rollback before platform persistence exists.
+- solve storage rollback before platform persistence exists;
+- redefine active-session shutdown/revocation semantics.
 
 ## Completion criteria
 
@@ -276,7 +285,7 @@ The remediation is complete only when:
 
 - ADR-0010 is accepted;
 - the regression-first implementation removes caller-selected currentness from production authority-bearing paths;
-- stale delegated roles are rejected consistently across credential, pairing, policy/trust, and session boundaries;
+- stale delegated roles are rejected consistently across credential, pairing, policy/trust, and fresh session boundaries;
 - exact-head CI and fuzz are green;
 - `security/M9-FOUNDATION-HARDENING-ASSESSMENT.md` and `docs/development/CURRENT.md` are reconciled;
 - the final M9 foundation hardening gate passes before M9 Task 4 resumes.
