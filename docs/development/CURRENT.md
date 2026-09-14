@@ -10,21 +10,17 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 **M9 — Remote Networking ADR, paused before Task 4 until the second foundation security remediation is implemented, merged, and verified.**
 
-M1–M8 are complete. M9 research Tasks 1–3 are complete. Foundation remediation Tasks 1–8 are integrated into canonical `main`. The remaining foundation work is the accepted authority-currentness/replay remediation plus the final security reconciliation gate.
+M1–M8 are complete. M9 research Tasks 1–3 are complete. Foundation remediation Tasks 1–8 are integrated into canonical `main`. The accepted authority-currentness/replay remediation is now in implementation on PR #23.
 
 ## Canonical Baseline
 
-- `main`: `7448eb7b3978c3563b6c61552d423c3d2f5d748f`.
-- Post-merge Rust CI `34806566405` passed dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and complete workspace tests.
-- PR #20 Task 8 is merged; exact-head Fuzz Smoke `34806180058` passed before merge.
+- `main`: `1426e70c6db169a37a89dbae0565a36a619f2651` after merging accepted architecture PR #22.
+- Post-merge Rust CI `34826806366` passed dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and complete workspace tests.
 - `paste 1.0.15` / `RUSTSEC-2024-0436` remains an isolated Iroh-experiment maintenance warning and must be re-evaluated before production networking promotion.
 
 ## Accepted Architecture Checkpoint
 
-Architecture branch: `m9-foundation-authority-replay-design`  
-Architecture checkpoint PR: **#22**
-
-The owner explicitly approved the written design on 2026-09-14. Accepted artifacts:
+Architecture PR #22 is merged. The owner explicitly approved the written design on 2026-09-14. Accepted artifacts:
 
 - `docs/adr/ADR-0010-authoritative-owner-authority-currentness.md`
 - `docs/adr/ADR-0011-bounded-request-replay-semantics.md`
@@ -36,8 +32,6 @@ Normative focused specs reconciled:
 - `docs/architecture/SESSION-TRANSPORT.md`
 - `docs/protocol/PROTOCOL-V1.md`
 
-The original design head `1065818bb1d8b528d96901004ea2ea9b95de7a45` passed Rust CI `34815054120`. The exact current PR head must be checked from GitHub before merge.
-
 The Master Architecture was not revised: ADR-0010 enforces existing local-authority/fail-closed invariants, while ADR-0011 changes focused request-lifecycle semantics without changing Master-level wire/transport architecture. ADR-0009 remains reserved for M9 remote networking.
 
 ## Accepted Security Semantics
@@ -46,7 +40,29 @@ ADR-0010: `crosslab-identity` owns `OwnerAuthorityState` with active root plus D
 
 ADR-0011: `(SessionId, message_seq)` is the exact-envelope replay/order boundary. `RequestId` is bounded correlation/duplicate/retry state. Retained duplicates fail closed unless a locally authorized capability-specific idempotency path exists. Peer-declared `Idempotent` grants no authority. A legitimately aged-out ID becomes a new authenticated request attempt and still requires current authorization/operation validity. No generic exactly-once or wire change is introduced.
 
-Stream hardening: high-level stream admission takes local `TrustRecord` and `PolicyState`, validates peer trust, and derives current revisions internally instead of accepting caller-selected numbers.
+Stream hardening: high-level stream admission takes local `TrustRecord` and `PolicyState`, validates peer trust, and derives current revisions internally instead of accepting caller-selected revision integers.
+
+## Implementation Branch
+
+Branch: `m9-authority-replay-remediation`  
+Draft implementation PR: **#23**
+
+### Task 1 — Complete
+
+`OwnerAuthorityState` is implemented in `crosslab-identity` with:
+
+- active owner root;
+- independent Device Signing, Administrative, and Recovery role slots;
+- highest accepted epoch floors;
+- strictly monotonic delegated-role replacement;
+- failed-transition atomicity;
+- root succession that clears active delegated objects while retaining epoch floors;
+- no `Copy` or `Clone` on the authoritative state object.
+
+TDD evidence:
+
+- RED commit `be46b70d90874ec31e74072a259b88f010bf122f` failed at workspace check because `OwnerAuthorityState` did not exist.
+- GREEN exact head `6e61ef944f46d9610d06c0d6093a6a6a8d15573f` passed Rust CI `34828834320` including dependency audit, rustfmt, workspace check, Clippy, and complete tests.
 
 ## Implementation Plan
 
@@ -54,8 +70,8 @@ Stream hardening: high-level stream admission takes local `TrustRecord` and `Pol
 
 Eight regression-first tasks:
 
-1. add `OwnerAuthorityState`;
-2. route device credentials through current authority;
+1. **complete** — add `OwnerAuthorityState`;
+2. **next** — route device credentials through current authority;
 3. migrate approval/pairing/trust transitions;
 4. migrate pairing/session auth and authority-triggered cancellation;
 5. lock ADR-0011 with replay characterization tests;
@@ -63,19 +79,15 @@ Eight regression-first tasks:
 7. remove obsolete caller-selected authority APIs and verify golden compatibility;
 8. run full security/CI/Fuzz reconciliation.
 
-No production Rust changes belong in PR #22. Implementation starts on a fresh branch from verified `main` after PR #22 merges.
-
 ## Exact Next Task
 
-**Merge PR #22 only after its exact current head passes CI.** Use GitHub's actual PR head SHA for CI verification and expected-head merge protection.
+Execute Task 2 regression-first:
 
-Then:
-
-1. verify the merge commit on `main` with full Rust CI;
-2. create a fresh implementation branch from verified `main`;
-3. execute Task 1 of the accepted implementation plan regression-first;
-4. continue through Task 8 in small verified milestones;
-5. keep M9 Task 4 blocked until the implementation is merged and post-merge `main` is green.
+1. add a credential regression proving a credential tied to superseded Device Signing authority fails `verify_current` and the superseded signing key cannot issue through `issue_current`;
+2. capture the expected RED failure because the current-authority credential APIs do not yet exist;
+3. implement the minimal state-backed credential methods without changing transcript/signature/wire bytes;
+4. run identity tests including golden vectors and Clippy;
+5. checkpoint the verified Task 2 commit before starting Task 3.
 
 ## M9 Invariants
 
@@ -91,11 +103,8 @@ Then:
 
 ## Resume Procedure
 
-1. inspect `main`, PR #22, recent workflows, and this file;
-2. verify PR #22 exact-head CI and merge only when green;
-3. verify post-merge `main`;
-4. create a fresh implementation branch;
-5. read ADR-0010, ADR-0011, accepted design, and implementation plan;
-6. execute the plan regression-first with small verified checkpoints;
-7. update this file with exact implementation commits/workflow evidence;
-8. do not begin M9 Task 4 until the entire remediation is merged and post-merge verified.
+1. inspect `main`, PR #23, recent workflows, and this file;
+2. continue from the first incomplete remediation task only after the prior exact head is green;
+3. execute each task regression-first with small verified checkpoints;
+4. update this file with exact implementation commits/workflow evidence after meaningful progress;
+5. do not begin M9 Task 4 until the entire remediation is merged and post-merge verified.
