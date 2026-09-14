@@ -4,12 +4,12 @@ use std::{
 };
 
 use crosslab_policy::{
-    ApprovalInstant, AuthorizationContext, DecisionEffect, DecisionReason, LocalCapability,
-    NetworkClass, PolicyState, TrustRecord, TrustState,
+    ApprovalInstant, AuthorizationContext, CapabilityId, DecisionEffect, DecisionReason,
+    LocalCapability, NetworkClass, PolicyState, TrustRecord, TrustState,
 };
 use crosslab_protocol::{
     ControlEnvelope, ControlRequest, ControlResponse, ControlSequence, EnvelopeBody, Event,
-    EventScope, ProtocolFailure, RequestId, RetryClass, SequenceError, SessionClose,
+    EventScope, EventType, ProtocolFailure, RequestId, RetryClass, SequenceError, SessionClose,
 };
 
 use crate::SessionContext;
@@ -30,6 +30,7 @@ pub enum ControlDispatchError {
     AuthorizationDenied(DecisionReason),
     ApprovalRequired,
     InvalidEventCapability,
+    EventNotSubscribed,
 }
 
 impl From<SequenceError> for ControlDispatchError {
@@ -49,6 +50,33 @@ pub enum InboundControl {
     SessionClose(SessionClose),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct EventSubscription {
+    capability_id: CapabilityId,
+    event_type: EventType,
+}
+
+impl EventSubscription {
+    pub fn new(capability_id: CapabilityId, event_type: EventType) -> Self {
+        Self {
+            capability_id,
+            event_type,
+        }
+    }
+
+    pub const fn capability_id(&self) -> &CapabilityId {
+        &self.capability_id
+    }
+
+    pub const fn event_type(&self) -> &EventType {
+        &self.event_type
+    }
+
+    fn matches(&self, capability_id: &CapabilityId, event_type: &EventType) -> bool {
+        self.capability_id == *capability_id && self.event_type == *event_type
+    }
+}
+
 #[derive(Debug)]
 pub struct ControlDispatcher {
     receive_sequence: ControlSequence,
@@ -57,6 +85,7 @@ pub struct ControlDispatcher {
     inbound_requests: BTreeSet<RequestId>,
     completed_inbound: BTreeSet<RequestId>,
     completed_order: VecDeque<RequestId>,
+    event_subscriptions: BTreeSet<EventSubscription>,
     state_capacity: usize,
 }
 
@@ -69,6 +98,7 @@ impl ControlDispatcher {
             inbound_requests: BTreeSet::new(),
             completed_inbound: BTreeSet::new(),
             completed_order: VecDeque::new(),
+            event_subscriptions: BTreeSet::new(),
             state_capacity: state_capacity.get(),
         }
     }
@@ -85,11 +115,20 @@ impl ControlDispatcher {
         self.pending_outgoing.len()
     }
 
+    pub fn subscribe_event(&mut self, subscription: EventSubscription) -> bool {
+        self.event_subscriptions.insert(subscription)
+    }
+
+    pub fn unsubscribe_event(&mut self, subscription: &EventSubscription) -> bool {
+        self.event_subscriptions.remove(subscription)
+    }
+
     pub fn cancel_session_state(&mut self) {
         self.pending_outgoing.clear();
         self.inbound_requests.clear();
         self.completed_inbound.clear();
         self.completed_order.clear();
+        self.event_subscriptions.clear();
     }
 
     pub fn prepare_outbound(
@@ -353,14 +392,20 @@ impl ControlDispatcher {
         let EventScope::Capability(capability_id) = event.scope() else {
             return Ok(());
         };
-        if context
+        if !context
             .negotiated_capabilities()
             .iter()
             .any(|capability| capability.capability_id() == capability_id)
         {
-            Ok(())
-        } else {
-            Err(ControlDispatchError::InvalidEventCapability)
+            return Err(ControlDispatchError::InvalidEventCapability);
         }
+        if !self
+            .event_subscriptions
+            .iter()
+            .any(|subscription| subscription.matches(capability_id, event.event_type()))
+        {
+            return Err(ControlDispatchError::EventNotSubscribed);
+        }
+        Ok(())
     }
 }
