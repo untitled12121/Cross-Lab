@@ -222,14 +222,13 @@ fn accept_request(
     )
 }
 
-fn complete_request(
-    dispatcher: &mut ControlDispatcher,
-    session: &LogicalSession,
-    id: RequestId,
-) {
+fn complete_request(dispatcher: &mut ControlDispatcher, session: &LogicalSession, id: RequestId) {
     let response = ControlResponse::new(id, ControlResponseResult::Success(Vec::new()));
     let envelope = dispatcher
-        .prepare_outbound(session.context().unwrap(), EnvelopeBody::ControlResponse(response))
+        .prepare_outbound(
+            session.context().unwrap(),
+            EnvelopeBody::ControlResponse(response),
+        )
         .unwrap();
     dispatcher.commit_outbound(&envelope);
 }
