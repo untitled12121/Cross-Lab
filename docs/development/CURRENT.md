@@ -8,18 +8,19 @@ This file is the durable resume guide for active Cross-Lab development. Git, cod
 
 ## Current Milestone
 
-**M9 — Remote Networking ADR, paused before M9 Task 4 until the second foundation security remediation is fully reconciled.**
+**M9 — Remote Networking ADR, paused before M9 Task 4 until foundation security remediation is fully reconciled.**
 
-M1–M8 are complete. M9 research Tasks 1–3 plus foundation remediation Tasks 1–7 are now integrated into canonical `main`. Task 8 is implemented and verified on PR #20. M10 remains the first Linux + Android platform vertical slice after the remote-networking architecture is selected.
+M1–M8 are complete. M9 research Tasks 1–3 and foundation remediation Tasks 1–8 are integrated into canonical `main`. The remaining foundation item is authoritative delegated-role currentness plus the final full hardening gate/reconciliation. M10 remains the first Linux + Android platform vertical slice after the remote-networking architecture is selected.
 
 ## Canonical Baseline
 
-- `main` integration commit: `e45fa89d32efa185186ebb9d48e1cdbd985220fb`.
-- Post-merge Rust CI `34805125848` passed lockfile verification, dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and the complete workspace test suite.
-- PR #19 is merged. Its M9 Tasks 1–3 and foundation remediation Tasks 1–7 are durable on `main`.
-- M9 Task 4 must not begin until delegated-role epoch authority is explicitly designed/resolved and the final remediation reconciliation/gate is complete.
+- Canonical `main` head after Task 8 integration: `7448eb7b3978c3563b6c61552d423c3d2f5d748f`.
+- PR #19 is merged; M9 research Tasks 1–3 and foundation remediation Tasks 1–7 are durable on `main`.
+- PR #20 is merged; foundation remediation Task 8 is durable on `main`.
+- Post-merge Rust CI `34806566405` on exact `main` head `7448eb7b3978c3563b6c61552d423c3d2f5d748f` passed lockfile verification, dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and the complete workspace test suite.
+- M9 Task 4 must not begin until delegated-role currentness is accepted/implemented and the final remediation reconciliation/gate is complete.
 
-## Active Plans
+## Active Plans and Design
 
 Primary M9 plans remain under `docs/plans/phase-1/`.
 
@@ -30,6 +31,20 @@ Active remediation plan:
 Discovery/audit record:
 
 `docs/plans/phase-1/M9-whole-project-security-quality-audit.md`
+
+Current architecture-design branch:
+
+`m9-authority-currentness-design`
+
+Proposed authority decision:
+
+`docs/adr/ADR-0010-authoritative-delegated-role-currentness.md`
+
+Focused design specification:
+
+`docs/superpowers/specs/2026-09-14-authoritative-delegated-role-currentness-design.md`
+
+ADR-0010 remains **Proposed** until explicit owner review/acceptance of the written ADR/spec. No production authority-state implementation is authorized before that review gate.
 
 Existing Master Architecture, Identity/Keys, Pairing/Trust/Revocation, Policy/Authorization, Session/Transport, Protocol V1, Security Boundaries, Threat Model, and accepted ADRs remain authoritative.
 
@@ -55,7 +70,7 @@ Regression-first RED commit:
 `822775f12cf7d48a8142926d26f0dfae6365dc1e`
 
 - CI `34803032034` passed the earlier gates and failed only the new privacy regressions because ordinary derived `Debug` output exposed protected session/pairing material.
-- Fuzz remained GREEN.
+- RED Fuzz Smoke `34803032038` passed.
 
 Verified GREEN code head before integration:
 
@@ -73,15 +88,9 @@ Verification:
 
 - Rust CI `34804692285` passed the complete gate;
 - Fuzz Smoke `34804692267` passed;
-- the integration was subsequently merged in PR #19 and post-merge `main` CI `34805125848` passed.
+- the integration was merged through PR #19 and its post-merge `main` CI passed.
 
 ### Task 8 — Production secure-random identifier construction
-
-Active branch / PR:
-
-- branch: `m9-foundation-remediation-task8`;
-- PR: #20;
-- verified production code head: `d443637c3c7c8a7993e316c13aa67832d46a996e`.
 
 Regression-first RED commit:
 
@@ -92,45 +101,66 @@ RED evidence:
 - CI `34805367644` passed lockfile, dependency audit, and formatting, then failed at workspace check with exactly three `E0599` errors for missing `RuleId::generate()`, `TransitionId::generate()`, and `OperationId::generate()`;
 - Fuzz Smoke `34805367727` passed.
 
+Verified production code head:
+
+`d443637c3c7c8a7993e316c13aa67832d46a996e`
+
 Implemented:
 
 - added a policy-owned secure identifier generation helper backed by the existing OS-CSPRNG source in `crosslab-crypto`;
 - added typed `generate()` constructors for `RuleId`, `TransitionId`, and `OperationId`;
-- preserved `from_bytes`/byte conversion for verified parsing, wire conversion, and deterministic tests;
+- preserved byte conversion/construction for parsing, wire conversion, and deterministic tests;
 - kept `SessionId` derived rather than randomly generated;
-- routed `AuthorizedOperation::issue` through `OperationId::generate()` instead of bypassing the typed construction API;
+- routed `AuthorizedOperation::issue` through `OperationId::generate()`;
 - no dependency, protocol, or architecture change was required.
 
-Exact code-head verification:
+Final PR #20 documentation/head verification:
 
-- Rust CI `34805704494` passed lockfile verification, dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and complete workspace tests;
-- Fuzz Smoke `34805704487` passed all bounded fuzz checks;
-- dependency audit retains only the already documented allowed `paste 1.0.15` / `RUSTSEC-2024-0436` maintenance warning in the isolated Iroh experiment dependency graph.
+- final PR head: `a377d088dc06a1cca1b2c138b130eb94b91b14f7`;
+- Rust CI `34806180048` passed the complete gate;
+- Fuzz Smoke `34806180058` passed;
+- PR #20 merged as `7448eb7b3978c3563b6c61552d423c3d2f5d748f`;
+- post-merge `main` CI `34806566405` passed the complete Rust gate.
+
+The dependency audit retains only the already documented allowed `paste 1.0.15` / `RUSTSEC-2024-0436` maintenance warning in the isolated Iroh experiment dependency graph.
+
+## Delegated-Role Currentness Design
+
+The authority audit confirmed a real currentness gap: `AuthorityDelegation::verify` validates against a supplied minimum epoch, but production callers can choose that value. Session authentication currently verifies a supplied issuer using the issuer's own epoch as the minimum, so a stale historical delegation can prove its own floor unless authoritative local state is consulted.
+
+The approved design direction is **Option A: identity-owned `OwnerAuthorityState`**.
+
+Proposed semantics:
+
+- `crosslab-identity` owns the active `OwnerRootRecord` plus the currently accepted Device Signing, Administrative, and Recovery delegation slots;
+- first local acceptance verifies owner/role/root signature and establishes the local role anchor;
+- replacement requires a strictly higher role-specific epoch; equal/lower epochs fail closed;
+- high-level authority-bearing APIs stop treating caller-supplied minimum epochs as currentness authority;
+- Device Signing currentness applies to credential issuance/verification, pairing/trust establishment, credential rotation, and fresh session authentication;
+- Administrative currentness applies to owner approval evidence;
+- delegated trust transitions resolve their permitted signed issuer role through current local authority state;
+- root succession uses existing `RootSuccessor` continuity and clears all delegated slots after successful root replacement;
+- delegated-role rotation does not silently redefine an already Active session as revoked; explicit trust/revocation remains the active-session termination mechanism, while reconnect performs fresh authority validation;
+- no database, daemon, CRDT authority merge, protocol field, signing transcript, or networking-candidate type is added by this design;
+- durable rollback-resistant persistence remains a later platform requirement and must not be claimed solved by the in-memory Phase 1 state.
+
+The written ADR/spec also records that credentials depending only on a superseded Device Signing delegation fail fresh identity validation after the newer delegation is locally accepted. This remediation does not invent a bulk credential-reissuance protocol or same-epoch device-key replacement rule.
 
 ## Exact Next Task
 
-**Resolve authoritative delegated-role epoch state before the final remediation gate.**
+**Owner review/acceptance of proposed ADR-0010 and its focused design specification.**
 
-The current identity APIs can verify a supplied `AuthorityDelegation` against a caller-provided minimum epoch, but that does not itself establish which delegation epoch local durable authority state has accepted.
+Do not begin production implementation until the written design is explicitly accepted.
 
-Required design properties:
+After acceptance:
 
-1. local durable state is authoritative for the accepted epoch of each delegated role slot;
-2. accepting a replacement delegation verifies owner, role, root authority/signature, and strictly newer role epoch before mutating local state;
-3. once epoch `N+1` is accepted, delegation epoch `N` fails closed everywhere that role authorizes sensitive work;
-4. callers cannot widen authority by supplying their own minimum epoch/current delegation object;
-5. identity/policy/core/storage boundaries remain clean and policy evaluation remains pure;
-6. no networking-candidate type enters the authority model;
-7. ADR-0009 remains reserved for the M9 networking decision, so this authority-state decision must use ADR-0010 or a later monotonic number.
-
-Do not implement this authority-state change before recording and approving the architecture decision.
-
-## Final Remediation Work After Authority-State Resolution
-
-- implement the approved authority-state design regression-first;
-- run the complete dependency/audit/format/check/Clippy/test/Fuzz gate on the exact final remediation head;
-- reconcile `security/M9-FOUNDATION-HARDENING-ASSESSMENT.md` and this file;
-- make M9 Task 4 the exact next implementation task only after the hardening gate is fully GREEN.
+1. invoke the implementation-planning workflow and create the regression-first authority-currentness implementation plan;
+2. implement `OwnerAuthorityState` in `crosslab-identity` with atomic/fail-closed role replacement tests;
+3. migrate credential, pairing/trust, approval, delegated revocation, and fresh-session authentication call paths away from caller-selected authority currentness;
+4. verify stale/equal delegation rejection, role independence, root-successor clearing, failure atomicity, active-session non-reclassification, and unchanged signing/protocol vectors;
+5. run the complete dependency/audit/format/check/Clippy/test/Fuzz gate on the exact final remediation head;
+6. reconcile `security/M9-FOUNDATION-HARDENING-ASSESSMENT.md`, this file, and the accepted ADR/spec;
+7. make M9 Task 4 the exact next implementation task only after the hardening gate is fully GREEN.
 
 ## Repository / M9 Invariants
 
@@ -145,10 +175,10 @@ Do not implement this authority-state change before recording and approving the 
 
 ## Resume Procedure
 
-1. inspect canonical `main`, PR #20/current active branch, recent commits/workflows, and this file;
-2. finish PR #20 integration only after its final exact-head gate is GREEN;
-3. read the Master Architecture, Identity/Keys specification, relevant authority call paths, active remediation plan, and accepted ADRs before designing delegated-role epoch authority state;
-4. record/approve that design in the next available ADR before production implementation;
-5. implement authority-state behavior RED -> verified failure -> minimal GREEN -> focused verification -> full gate;
+1. inspect canonical `main`, active branch `m9-authority-currentness-design`, open design PR if present, recent commits/workflows, and this file;
+2. read the Master Architecture, Identity/Keys, Session/Transport, Pairing/Trust/Revocation, active remediation plan, proposed ADR-0010, and focused design before changing authority semantics;
+3. keep ADR-0010 Proposed and production code unchanged until explicit owner acceptance of the written design;
+4. after acceptance, write the detailed implementation plan before coding;
+5. implement regression-first with small verifiable milestones and exact-head CI/Fuzz evidence;
 6. update this file at every meaningful verified checkpoint;
 7. keep M9 Task 4 blocked until the entire remediation gate is durably resolved.
