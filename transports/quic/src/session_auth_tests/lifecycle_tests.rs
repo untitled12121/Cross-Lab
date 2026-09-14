@@ -1,8 +1,8 @@
 use std::{num::NonZeroUsize, time::Duration};
 
 use crosslab_core::{
-    ControlReceiveError, SessionActivation, SessionError, SessionHandshakeSide, SessionState,
-    StreamAcceptError, StreamAdmissionError, StreamReceiveError, StreamSendError,
+    ControlReceiveError, EventSubscription, SessionActivation, SessionError, SessionHandshakeSide,
+    SessionState, StreamAcceptError, StreamAdmissionError, StreamReceiveError, StreamSendError,
     TransportConnection, TransportSecurityClass,
 };
 use crosslab_crypto::SigningKey;
@@ -120,6 +120,14 @@ async fn m8_authenticated_quinn_carries_capabilities_control_response_and_event(
     };
     assert_eq!(response.request_id(), request_id);
 
+    assert!(
+        server
+            .subscribe_event(EventSubscription::new(
+                clipboard_capability(),
+                EventType::parse("clipboard.changed").unwrap(),
+            ))
+            .unwrap()
+    );
     let event_id = EventId::from_bytes([0x91; 16]);
     client
         .send_event(clipboard_event(event_id, b"changed"))
@@ -127,7 +135,7 @@ async fn m8_authenticated_quinn_carries_capabilities_control_response_and_event(
     let NodeEvent::Event(event) =
         eventually_node_event(&mut server, &fixture.initiator_trust).await
     else {
-        panic!("expected negotiated capability event");
+        panic!("expected subscribed capability event");
     };
     assert_eq!(event.event_id(), event_id);
     assert_eq!(event.body(), b"changed");
