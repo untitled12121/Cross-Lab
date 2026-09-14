@@ -63,6 +63,25 @@ TDD evidence:
 
 - RED commit `be46b70d90874ec31e74072a259b88f010bf122f` failed at workspace check because `OwnerAuthorityState` did not exist.
 - GREEN exact head `6e61ef944f46d9610d06c0d6093a6a6a8d15573f` passed Rust CI `34828834320` including dependency audit, rustfmt, workspace check, Clippy, and complete tests.
+- Follow-up characterization commit `097578b31dbd699bf8c33c0b85cfee93c2bcd691` added the plan-required wrong-owner, inactive-root, and failed-root-successor atomicity coverage; those tests are included in subsequent green CI.
+
+### Task 2 — Complete
+
+`DeviceCredential` now has transitional current-authority methods:
+
+- `issue_current`;
+- `issue_for_public_key_current`;
+- `verify_current`;
+- `rotate_current`.
+
+They resolve the active Device Signing delegation from `OwnerAuthorityState`; no current method accepts a caller-selected delegation floor. Existing transcript fields, key derivation, credential epoch semantics, signatures, and golden vectors remain unchanged. Raw methods remain only as transitional low-level APIs until Task 7 cleanup.
+
+TDD evidence:
+
+- RED commit `7f8717f34a05cccedfbb384dfb364fd009c5ca1f` failed at workspace check with `E0599` because `verify_current` and `issue_current` did not exist; audit and rustfmt passed first in CI `34835699782`.
+- Minimal GREEN implementation commit `b6692b3094f5f101f5b20219df4ff7befe2dc799` passed full Rust CI `34836143136`.
+- Final green-only test migration head `248de3ad55a9f75cbe3c5aa50974bea8a0bbbd46` moved positive issuance, public-key issuance, import verification, stale-epoch verification, and rotation onto current-authority APIs and passed full Rust CI `34836766158`.
+- `crates/identity/tests/golden_vectors.rs` was not modified.
 
 ## Implementation Plan
 
@@ -71,8 +90,8 @@ TDD evidence:
 Eight regression-first tasks:
 
 1. **complete** — add `OwnerAuthorityState`;
-2. **next** — route device credentials through current authority;
-3. migrate approval/pairing/trust transitions;
+2. **complete** — route device credentials through current authority;
+3. **next** — migrate policy authority-bearing transitions;
 4. migrate pairing/session auth and authority-triggered cancellation;
 5. lock ADR-0011 with replay characterization tests;
 6. derive stream currentness from local trust/policy state;
@@ -81,13 +100,14 @@ Eight regression-first tasks:
 
 ## Exact Next Task
 
-Execute Task 2 regression-first:
+Execute Task 3 regression-first:
 
-1. add a credential regression proving a credential tied to superseded Device Signing authority fails `verify_current` and the superseded signing key cannot issue through `issue_current`;
-2. capture the expected RED failure because the current-authority credential APIs do not yet exist;
-3. implement the minimal state-backed credential methods without changing transcript/signature/wire bytes;
-4. run identity tests including golden vectors and Clippy;
-5. checkpoint the verified Task 2 commit before starting Task 3.
+1. add Administrative-currentness tests proving superseded approval evidence and old-key issuance fail closed;
+2. add root/delegated revocation-currentness tests, preserving the invalid Recovery role rule;
+3. add pairing and successor-credential tests proving superseded Device Signing authority fails;
+4. capture the expected RED failures because the current-authority policy APIs do not yet exist;
+5. implement only the accepted `OwnerAuthorityState`-backed policy methods;
+6. verify policy tests, Clippy, and unchanged policy golden vectors before starting Task 4.
 
 ## M9 Invariants
 
