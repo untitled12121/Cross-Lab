@@ -8,7 +8,9 @@ use crosslab_crypto::SigningKey;
 use crosslab_identity::{
     AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
 };
-use crosslab_policy::{NetworkClass, PairingTrustTransition, PolicyState, TransitionId};
+use crosslab_policy::{
+    ApprovalInstant, NetworkClass, PairingTrustTransition, PolicyState, TransitionId,
+};
 use crosslab_protocol::{
     CapabilityAdvertisement, ControlEnvelope, EnvelopeBody, FeatureSet, ProtocolRange,
     ProtocolVersion,
@@ -145,6 +147,7 @@ fn rotated_peer_credential_invalidates_old_control_snapshot() {
             &[],
             &peer_trust,
             NetworkClass::Local,
+            ApprovalInstant::from_ticks(0),
         ),
         Err(ControlDispatchError::PeerCredentialEpochChanged)
     );
