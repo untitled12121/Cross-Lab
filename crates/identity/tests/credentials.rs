@@ -1,7 +1,7 @@
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, IdentityError, OwnerId,
-    OwnerRootRecord, RootSuccessor,
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, IdentityError,
+    OwnerAuthorityState, OwnerId, OwnerRootRecord, RootSuccessor,
 };
 
 fn fixture() -> (
@@ -179,6 +179,67 @@ fn stale_credential_epoch_is_rejected() {
     assert_eq!(
         credential.verify(&root, &delegation, 2, 0),
         Err(IdentityError::StaleCredentialEpoch)
+    );
+}
+
+#[test]
+fn superseded_device_signing_authority_cannot_verify_current_credentials() {
+    let (owner_id, root_key, root, old_issuer_key, old_delegation) = fixture();
+    let device_id = DeviceId::from_bytes([35; 32]);
+    let device_key = SigningKey::from_secret_bytes([36; 32]);
+    let credential = DeviceCredential::issue(
+        owner_id,
+        device_id,
+        &device_key,
+        0,
+        &root,
+        &old_delegation,
+        &old_issuer_key,
+    )
+    .unwrap();
+    let new_issuer_key = SigningKey::from_secret_bytes([37; 32]);
+    let new_delegation = AuthorityDelegation::issue(
+        owner_id,
+        AuthorityRole::DeviceSigning,
+        &new_issuer_key,
+        1,
+        &root_key,
+    );
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(old_delegation).unwrap();
+    authority.accept_delegation(new_delegation).unwrap();
+
+    assert_eq!(
+        credential.verify_current(&authority, 0),
+        Err(IdentityError::UnknownIssuer)
+    );
+}
+
+#[test]
+fn superseded_device_signing_key_cannot_issue_current_credentials() {
+    let (owner_id, root_key, root, old_issuer_key, old_delegation) = fixture();
+    let new_issuer_key = SigningKey::from_secret_bytes([38; 32]);
+    let new_delegation = AuthorityDelegation::issue(
+        owner_id,
+        AuthorityRole::DeviceSigning,
+        &new_issuer_key,
+        1,
+        &root_key,
+    );
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(old_delegation).unwrap();
+    authority.accept_delegation(new_delegation).unwrap();
+
+    assert_eq!(
+        DeviceCredential::issue_current(
+            owner_id,
+            DeviceId::from_bytes([39; 32]),
+            &SigningKey::from_secret_bytes([40; 32]),
+            0,
+            &authority,
+            &old_issuer_key,
+        ),
+        Err(IdentityError::UnknownIssuer)
     );
 }
 
