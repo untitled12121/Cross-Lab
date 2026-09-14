@@ -2,7 +2,8 @@ use core::fmt;
 
 use crosslab_crypto::{CanonicalTranscript, Signature, SigningKey};
 use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceId, KeyId, OwnerId, OwnerRootRecord,
+    AuthorityDelegation, AuthorityRole, DeviceId, KeyId, OwnerAuthorityState, OwnerId,
+    OwnerRootRecord,
 };
 
 use super::{TransitionId, TrustError, TrustRecord, TrustState};
@@ -124,6 +125,27 @@ impl TrustTransition {
         Ok(transition)
     }
 
+    pub fn issue_delegated_revocation_current(
+        record: &TrustRecord,
+        transition_id: TransitionId,
+        authority: &OwnerAuthorityState,
+        issuer_role: AuthorityRole,
+        issuer_key: &SigningKey,
+    ) -> Result<Self, TrustTransitionError> {
+        ensure_ordinary_delegated_role(issuer_role)?;
+        let delegation = authority
+            .current_delegation(issuer_role)
+            .map_err(|_| TrustTransitionError::UnknownIssuer)?;
+        Self::issue_delegated_revocation(
+            record,
+            transition_id,
+            authority.root(),
+            delegation,
+            issuer_key,
+            delegation.delegation_epoch(),
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn from_signed_revocation(
         owner_id: OwnerId,
@@ -197,6 +219,23 @@ impl TrustTransition {
             .verify_digest(&self.transcript_digest(), &self.signature)
             .map_err(|_| TrustTransitionError::InvalidSignature)?;
         apply_verified_revocation(record, self.transition_id)
+    }
+
+    pub fn apply_delegated_current(
+        &self,
+        record: &mut TrustRecord,
+        authority: &OwnerAuthorityState,
+    ) -> Result<(), TrustTransitionError> {
+        ensure_ordinary_delegated_role(self.issuer_role)?;
+        let delegation = authority
+            .current_delegation(self.issuer_role)
+            .map_err(|_| TrustTransitionError::UnknownIssuer)?;
+        self.apply_delegated(
+            record,
+            authority.root(),
+            delegation,
+            delegation.delegation_epoch(),
+        )
     }
 
     pub fn transcript_digest(&self) -> [u8; 32] {
