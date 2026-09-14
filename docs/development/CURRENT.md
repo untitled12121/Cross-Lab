@@ -126,13 +126,21 @@ Exact historical RED/GREEN commits and workflow evidence remain in git history, 
 
 **Finish and merge the accepted architecture/implementation-plan checkpoint on PR #22 after its exact current head passes CI.**
 
+The architecture branch head after ADR acceptance, normative spec reconciliation, plan self-review, and this durable resume update is:
+
+`0ffda0ad7ff567e95c24d8c5ca7b904e13cc3a96`
+
+A later metadata-only PR update does not change this Git head. If any repository-content commit is added after this line, replace the recorded head before merge.
+
 Then:
 
-1. verify the PR #22 merge commit on `main` with the full Rust CI gate;
-2. create a fresh implementation branch from that verified `main` commit;
-3. execute Task 1 of `2026-09-14-foundation-authority-replay-remediation.md` regression-first;
-4. continue in small reviewed/verified tasks through Task 8;
-5. keep M9 Task 4 blocked until the complete implementation is merged and post-merge `main` is green.
+1. verify PR #22 exact-head CI;
+2. merge PR #22 with the expected exact head SHA;
+3. verify the resulting merge commit on `main` with the full Rust CI gate;
+4. create a fresh implementation branch from that verified `main` commit;
+5. execute Task 1 of `2026-09-14-foundation-authority-replay-remediation.md` regression-first;
+6. continue in small reviewed/verified tasks through Task 8;
+7. keep M9 Task 4 blocked until the complete implementation is merged and post-merge `main` is green.
 
 ## Repository / M9 Invariants
 
