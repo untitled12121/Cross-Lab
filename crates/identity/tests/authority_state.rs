@@ -160,6 +160,66 @@ fn delegated_role_slots_advance_independently() {
 }
 
 #[test]
+fn wrong_owner_delegation_is_rejected_without_mutation() {
+    let owner_id = OwnerId::from_bytes([0x44; 32]);
+    let wrong_owner_id = OwnerId::from_bytes([0x45; 32]);
+    let root_key = SigningKey::from_secret_bytes([0x46; 32]);
+    let root = OwnerRootRecord::new(owner_id, &root_key, 0);
+    let delegated_key = SigningKey::from_secret_bytes([0x47; 32]);
+    let wrong_owner = AuthorityDelegation::issue(
+        wrong_owner_id,
+        AuthorityRole::DeviceSigning,
+        &delegated_key,
+        1,
+        &root_key,
+    );
+
+    let mut state = OwnerAuthorityState::new(root);
+    assert_eq!(
+        state.accept_delegation(wrong_owner),
+        Err(IdentityError::WrongOwner)
+    );
+    assert_eq!(
+        state
+            .accepted_delegation_epoch(AuthorityRole::DeviceSigning)
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        state.current_delegation(AuthorityRole::DeviceSigning),
+        Err(IdentityError::UnknownIssuer)
+    );
+}
+
+#[test]
+fn inactive_root_delegation_is_rejected_without_mutation() {
+    let owner_id = OwnerId::from_bytes([0x48; 32]);
+    let root_key = SigningKey::from_secret_bytes([0x49; 32]);
+    let root = OwnerRootRecord::new(owner_id, &root_key, 0);
+    let inactive_root_key = SigningKey::from_secret_bytes([0x4a; 32]);
+    let delegated_key = SigningKey::from_secret_bytes([0x4b; 32]);
+    let delegation = AuthorityDelegation::issue(
+        owner_id,
+        AuthorityRole::Administrative,
+        &delegated_key,
+        3,
+        &inactive_root_key,
+    );
+
+    let mut state = OwnerAuthorityState::new(root);
+    assert_eq!(
+        state.accept_delegation(delegation),
+        Err(IdentityError::UnknownIssuer)
+    );
+    assert_eq!(
+        state
+            .accepted_delegation_epoch(AuthorityRole::Administrative)
+            .unwrap(),
+        None
+    );
+}
+
+#[test]
 fn root_successor_clears_active_roles_but_keeps_epoch_floors() {
     let owner_id = OwnerId::from_bytes([0x50; 32]);
     let root_key = SigningKey::from_secret_bytes([0x51; 32]);
@@ -219,6 +279,49 @@ fn root_successor_clears_active_roles_but_keeps_epoch_floors() {
             .unwrap()
             .delegated_key_id(),
         advanced.delegated_key_id()
+    );
+}
+
+#[test]
+fn failed_root_successor_leaves_root_and_active_delegation_unchanged() {
+    let owner_id = OwnerId::from_bytes([0x56; 32]);
+    let root_key = SigningKey::from_secret_bytes([0x57; 32]);
+    let root = OwnerRootRecord::new(owner_id, &root_key, 0);
+    let delegated_key = SigningKey::from_secret_bytes([0x58; 32]);
+    let delegation = AuthorityDelegation::issue(
+        owner_id,
+        AuthorityRole::DeviceSigning,
+        &delegated_key,
+        4,
+        &root_key,
+    );
+    let foreign_root_key = SigningKey::from_secret_bytes([0x59; 32]);
+    let foreign_root = OwnerRootRecord::new(owner_id, &foreign_root_key, 0);
+    let foreign_next_key = SigningKey::from_secret_bytes([0x5a; 32]);
+    let foreign_successor =
+        RootSuccessor::issue(&foreign_root, &foreign_root_key, &foreign_next_key).unwrap();
+
+    let mut state = OwnerAuthorityState::new(root);
+    state.accept_delegation(delegation).unwrap();
+
+    assert_eq!(
+        state.accept_root_successor(&foreign_successor),
+        Err(IdentityError::InvalidRootSuccessor)
+    );
+    assert_eq!(state.root().root_key_id(), root.root_key_id());
+    assert_eq!(state.root().root_epoch(), 0);
+    assert_eq!(
+        state
+            .current_delegation(AuthorityRole::DeviceSigning)
+            .unwrap()
+            .delegated_key_id(),
+        delegation.delegated_key_id()
+    );
+    assert_eq!(
+        state
+            .accepted_delegation_epoch(AuthorityRole::DeviceSigning)
+            .unwrap(),
+        Some(4)
     );
 }
 
