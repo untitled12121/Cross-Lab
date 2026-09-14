@@ -83,13 +83,9 @@ fn owner_root_signed_revocation_applies_to_matching_trust_record() {
     let (mut record, root_key, root) = fixture();
     let authority = OwnerAuthorityState::new(root);
     let transition_id = TransitionId::from_bytes([5; 32]);
-    let transition = TrustTransition::issue_root_revocation(
-        &record,
-        transition_id,
-        authority.root(),
-        &root_key,
-    )
-    .unwrap();
+    let transition =
+        TrustTransition::issue_root_revocation(&record, transition_id, authority.root(), &root_key)
+            .unwrap();
 
     transition
         .apply_root(&mut record, authority.root())
