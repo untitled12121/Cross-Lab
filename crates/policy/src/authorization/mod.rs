@@ -328,9 +328,10 @@ impl PolicyState {
         let missing = required
             .into_iter()
             .filter(|obligation| {
-                !context.verified_approvals.iter().any(|approval| {
-                    approval.satisfies(*obligation, &scope, context.local_time)
-                })
+                !context
+                    .verified_approvals
+                    .iter()
+                    .any(|approval| approval.satisfies(*obligation, &scope, context.local_time))
             })
             .collect::<Vec<_>>();
 
