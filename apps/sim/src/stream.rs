@@ -6,6 +6,7 @@ use crosslab_core::{
     StreamAdmissionError, StreamOpenError, StreamReceiveError, TransportConnection,
     TransportReceiveStream, TransportSendStream,
 };
+use crosslab_identity::OwnerAuthorityState;
 use crosslab_policy::{AuthorizedOperation, TrustRecord};
 use crosslab_protocol::{
     DataStreamOpen, ProtocolWireError, StreamId, decode_data_stream_open, encode_data_stream_open,
@@ -235,6 +236,18 @@ impl<'a> SimStreamRuntime<'a> {
         self.cancel_session_authority();
         self.transport.close();
         self.session.finish_close()?;
+        Ok(())
+    }
+
+    pub fn revalidate_authority(
+        &mut self,
+        authority: &OwnerAuthorityState,
+    ) -> Result<(), SimStreamError> {
+        if let Err(error) = self.session.revalidate_authority(authority) {
+            self.cancel_session_authority();
+            self.transport.close();
+            return Err(error.into());
+        }
         Ok(())
     }
 
