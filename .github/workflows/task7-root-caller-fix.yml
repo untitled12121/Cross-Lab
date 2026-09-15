@@ -1,0 +1,76 @@
+name: Task 7 Root Caller Fix
+
+on:
+  push:
+    branches:
+      - m9-authority-replay-remediation
+    paths:
+      - .github/workflows/task7-root-caller-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: m9-authority-replay-remediation
+          fetch-depth: 0
+      - name: Install Rust
+        run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt
+      - name: Migrate root revocation callers
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_count(path, old, new, expected):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != expected:
+                  raise SystemExit(f"{path}: expected {expected} matches, found {count}: {old!r}")
+              p.write_text(text.replace(old, new))
+
+          replace_count(
+              "apps/sim/tests/lifecycle.rs",
+              "            self.authority.root(),\n            &self.root_key,",
+              "            &self.authority,\n            &self.root_key,",
+              2,
+          )
+          replace_count(
+              "apps/sim/tests/lifecycle.rs",
+              ".apply_root(&mut revoked, self.authority.root())",
+              ".apply_root(&mut revoked, &self.authority)",
+              1,
+          )
+          replace_count(
+              "apps/sim/tests/lifecycle.rs",
+              ".apply_root(&mut other, self.authority.root())",
+              ".apply_root(&mut other, &self.authority)",
+              1,
+          )
+          replace_count(
+              "transports/quic/src/session_auth_tests/lifecycle_tests.rs",
+              "        fixture.authority.root(),\n        &root_key,",
+              "        &fixture.authority,\n        &root_key,",
+              1,
+          )
+          replace_count(
+              "transports/quic/src/session_auth_tests/lifecycle_tests.rs",
+              ".apply_root(&mut revoked, fixture.authority.root())",
+              ".apply_root(&mut revoked, &fixture.authority)",
+              1,
+          )
+          PY
+          cargo fmt --all
+          cargo check --workspace --all-targets --all-features
+      - name: Commit caller migration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm .github/workflows/task7-root-caller-fix.yml
+          git add apps/sim/tests/lifecycle.rs transports/quic/src/session_auth_tests/lifecycle_tests.rs .github/workflows/task7-root-caller-fix.yml
+          git commit -m "refactor(security): finish authority-state caller migration"
+          git push origin HEAD:m9-authority-replay-remediation
