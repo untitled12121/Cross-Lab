@@ -75,7 +75,7 @@ ADR-0011 is locked with characterization tests. A legitimately aged-out `Request
 
 Task 5 test commit: `654cfad19108df15ccccbe1c84e9f4116f9a5178`. Focused verification run `34930994570` passed the core/simulator/Quinn/fmt gate.
 
-### Task 6 — Implemented, exact-head Rust gate pending
+### Task 6 — Complete
 
 High-level stream admission now accepts local `TrustRecord` and `PolicyState`, validates that trust belongs to the authenticated peer and is `Trusted`, and derives trust/policy revisions internally. `SimStreamRuntime::accept_one` no longer accepts caller-selected revision integers.
 
@@ -86,10 +86,10 @@ Implementation includes:
 - `StreamAdmissionError::PeerTrustMismatch` and `PeerNotTrusted`;
 - local trust owner/device/state validation before operation reservation;
 - internally derived `TrustRecord::trust_revision()` and `PolicyState::revision()`;
-- simulator stream fixture migration to local trust/policy state;
+- simulator and Quinn stream fixture migration to local trust/policy state;
 - tests for changed policy revision, locally revoked peer, and mismatched peer trust.
 
-Fuzz Smoke `34931474655` passed all five bounded fuzz targets on the Task 6 implementation. Rust CI `34931474723` reached dependency audit successfully and stopped only at formatting; formatting was subsequently applied by `cargo fmt`. This CURRENT checkpoint is the authenticated head used to obtain a fresh complete Rust gate before Task 7.
+Final caller-migration code head: `18942c3bf647e7ee1ab36f85fdd32d264a0b4e8b`. Focused Task 6 workflow `34959306875` passed core stream admission, full simulator tests, full Quinn transport tests, and `cargo fmt --check`. The prior red full Rust gate exposed the final stale callers and those callers are now removed.
 
 ## Remaining Plan
 
@@ -98,8 +98,8 @@ Fuzz Smoke `34931474655` passed all five bounded fuzz targets on the Task 6 impl
 
 ## Exact Next Task
 
-1. Require fresh exact-head Rust CI success after this Task 6 checkpoint.
-2. Only when green, execute Task 7 using compiler errors/search as the migration checklist; do not add compatibility shims that recreate caller-selected currentness.
+1. Require fresh exact-head Rust CI and Fuzz Smoke success after this Task 6 checkpoint.
+2. When green, execute Task 7 using compiler errors/search as the migration checklist; do not add compatibility shims that recreate caller-selected currentness.
 3. Preserve `AuthorityDelegation::verify(root, minimum_epoch)` only as the low-level cryptographic/import primitive and preserve `DeviceCredential::from_unverified_signed_parts`.
 4. Verify existing identity, policy, and protocol golden vectors byte-for-byte.
 5. Execute Task 8 and keep M9 networking Task 4 blocked until PR #23 is merged and post-merge `main` is green.
