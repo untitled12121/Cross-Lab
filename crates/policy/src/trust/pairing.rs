@@ -4,8 +4,7 @@ use crosslab_crypto::{
     CanonicalTranscript, Signature, SignatureAlgorithm, SigningKey, signed_object_digest,
 };
 use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, IdentityError, KeyId,
-    OwnerAuthorityState, OwnerId, OwnerRootRecord,
+    AuthorityRole, DeviceCredential, DeviceId, IdentityError, KeyId, OwnerAuthorityState, OwnerId,
 };
 
 use super::{TransitionId, TrustRecord};
@@ -63,25 +62,18 @@ pub struct PairingTrustTransition {
 }
 
 impl PairingTrustTransition {
-    #[allow(clippy::too_many_arguments)]
-    fn issue_with_authority_parts(
+    pub fn issue(
         credential: &DeviceCredential,
         transition_id: TransitionId,
         pairing_evidence_digest: [u8; 32],
-        root: &OwnerRootRecord,
-        issuer: &AuthorityDelegation,
+        authority: &OwnerAuthorityState,
         issuer_key: &SigningKey,
-        minimum_delegation_epoch: u64,
     ) -> Result<Self, PairingTrustTransitionError> {
         if credential.credential_epoch() != INITIAL_CREDENTIAL_EPOCH {
             return Err(PairingTrustTransitionError::NonInitialCredentialEpoch);
         }
-        credential.verify(
-            root,
-            issuer,
-            INITIAL_CREDENTIAL_EPOCH,
-            minimum_delegation_epoch,
-        )?;
+        credential.verify(authority, INITIAL_CREDENTIAL_EPOCH)?;
+        let issuer = authority.current_delegation(AuthorityRole::DeviceSigning)?;
         if issuer_key.verifying_key() != issuer.delegated_public_key() {
             return Err(PairingTrustTransitionError::UnknownIssuer);
         }
@@ -101,49 +93,25 @@ impl PairingTrustTransition {
         Ok(transition)
     }
 
-    pub fn issue(
-        credential: &DeviceCredential,
-        transition_id: TransitionId,
-        pairing_evidence_digest: [u8; 32],
-        authority: &OwnerAuthorityState,
-        issuer_key: &SigningKey,
-    ) -> Result<Self, PairingTrustTransitionError> {
-        let issuer = authority.current_delegation(AuthorityRole::DeviceSigning)?;
-        Self::issue_with_authority_parts(
-            credential,
-            transition_id,
-            pairing_evidence_digest,
-            authority.root(),
-            issuer,
-            issuer_key,
-            issuer.delegation_epoch(),
-        )
-    }
-
-    fn establish_with_authority_parts(
+    pub fn establish(
         &self,
         credential: &DeviceCredential,
-        root: &OwnerRootRecord,
-        issuer: &AuthorityDelegation,
-        minimum_delegation_epoch: u64,
+        authority: &OwnerAuthorityState,
     ) -> Result<TrustRecord, PairingTrustTransitionError> {
         if self.credential_epoch != INITIAL_CREDENTIAL_EPOCH
             || credential.credential_epoch() != INITIAL_CREDENTIAL_EPOCH
         {
             return Err(PairingTrustTransitionError::NonInitialCredentialEpoch);
         }
-        credential.verify(
-            root,
-            issuer,
-            INITIAL_CREDENTIAL_EPOCH,
-            minimum_delegation_epoch,
-        )?;
+        credential.verify(authority, INITIAL_CREDENTIAL_EPOCH)?;
         if credential.owner_id() != self.owner_id
             || credential.device_id() != self.device_id
             || credential_signed_object_digest(credential) != self.credential_signed_object_digest
         {
             return Err(PairingTrustTransitionError::CredentialMismatch);
         }
+
+        let issuer = authority.current_delegation(AuthorityRole::DeviceSigning)?;
         if issuer.delegated_key_id() != self.issuer_key_id {
             return Err(PairingTrustTransitionError::UnknownIssuer);
         }
@@ -158,20 +126,6 @@ impl PairingTrustTransition {
             INITIAL_CREDENTIAL_EPOCH,
             self.transition_id,
         ))
-    }
-
-    pub fn establish(
-        &self,
-        credential: &DeviceCredential,
-        authority: &OwnerAuthorityState,
-    ) -> Result<TrustRecord, PairingTrustTransitionError> {
-        let issuer = authority.current_delegation(AuthorityRole::DeviceSigning)?;
-        self.establish_with_authority_parts(
-            credential,
-            authority.root(),
-            issuer,
-            issuer.delegation_epoch(),
-        )
     }
 
     pub fn transcript_digest(&self) -> [u8; 32] {
