@@ -26,7 +26,7 @@ hmac = "=0.13.0"
 prost = "=0.14.4"
 quinn = { version = "=0.11.11", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
 rcgen = { version = "=0.14.10", default-features = false, features = ["ring"] }
-rustls = { version = "=0.23.44", default-features = false, features = ["ring", "std"] }
+rustls = { version = "=0.23.45", default-features = false, features = ["ring", "std"] }
 sha2 = "=0.11.0"
 tokio = { version = "=1.53.1", default-features = false }
 zeroize = { version = "=1.9.0", default-features = false }
