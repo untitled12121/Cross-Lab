@@ -23,27 +23,6 @@ pub struct DeviceCredential {
 }
 
 impl DeviceCredential {
-    #[allow(clippy::too_many_arguments)]
-    fn issue_with_authority_parts(
-        owner_id: OwnerId,
-        device_id: DeviceId,
-        device_key: &SigningKey,
-        credential_epoch: u64,
-        root: &OwnerRootRecord,
-        issuer: &AuthorityDelegation,
-        issuer_key: &SigningKey,
-    ) -> Result<Self, IdentityError> {
-        Self::issue_for_public_key_with_authority_parts(
-            owner_id,
-            device_id,
-            device_key.verifying_key(),
-            credential_epoch,
-            root,
-            issuer,
-            issuer_key,
-        )
-    }
-
     pub fn issue(
         owner_id: OwnerId,
         device_id: DeviceId,
@@ -78,7 +57,7 @@ impl DeviceCredential {
         if owner_id != root.owner_id() || owner_id != issuer.owner_id() {
             return Err(IdentityError::WrongOwner);
         }
-        issuer.verify(root, 0)?;
+        issuer.verify(root, issuer.delegation_epoch())?;
 
         let issuer_public_key = issuer_key.verifying_key();
         let issuer_key_id = KeyId::derive(SignatureAlgorithm::Ed25519, &issuer_public_key);
@@ -176,7 +155,6 @@ impl DeviceCredential {
         root: &OwnerRootRecord,
         issuer: &AuthorityDelegation,
         minimum_credential_epoch: u64,
-        minimum_delegation_epoch: u64,
     ) -> Result<(), IdentityError> {
         if self.schema_version != 1 {
             return Err(IdentityError::UnsupportedSchema);
@@ -187,7 +165,7 @@ impl DeviceCredential {
         if self.owner_id != root.owner_id() || self.owner_id != issuer.owner_id() {
             return Err(IdentityError::WrongOwner);
         }
-        issuer.verify(root, minimum_delegation_epoch)?;
+        issuer.verify(root, issuer.delegation_epoch())?;
         if self.issuer_device_signing_key_id != issuer.delegated_key_id() {
             return Err(IdentityError::UnknownIssuer);
         }
@@ -210,12 +188,7 @@ impl DeviceCredential {
         minimum_credential_epoch: u64,
     ) -> Result<(), IdentityError> {
         let issuer = authority.current_delegation(AuthorityRole::DeviceSigning)?;
-        self.verify_with_authority_parts(
-            authority.root(),
-            issuer,
-            minimum_credential_epoch,
-            issuer.delegation_epoch(),
-        )
+        self.verify_with_authority_parts(authority.root(), issuer, minimum_credential_epoch)
     }
 
     pub fn rotate(
