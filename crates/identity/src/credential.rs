@@ -52,7 +52,7 @@ impl DeviceCredential {
         authority: &OwnerAuthorityState,
         issuer_key: &SigningKey,
     ) -> Result<Self, IdentityError> {
-        Self::issue_for_public_key_current(
+        Self::issue_for_public_key(
             owner_id,
             device_id,
             device_key.verifying_key(),
@@ -229,7 +229,7 @@ impl DeviceCredential {
             .credential_epoch
             .checked_add(1)
             .ok_or(IdentityError::UnexpectedCredentialEpoch)?;
-        Self::issue_current(
+        Self::issue(
             self.owner_id,
             self.device_id,
             new_device_key,
