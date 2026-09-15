@@ -10,7 +10,7 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 **M9 — Remote Networking ADR, paused before networking Task 4 until the second foundation security remediation is merged and post-merge verified.**
 
-M1–M8 are complete. M9 networking research Tasks 1–3 are complete. The accepted authority-currentness/replay remediation is in implementation on PR #23.
+M1–M8 are complete. M9 networking research Tasks 1–3 are complete. PR #23 contains the accepted ADR-0010/ADR-0011 foundation remediation and is in its final evidence/reconciliation gate.
 
 ## Canonical Baseline
 
@@ -38,74 +38,72 @@ No Master Architecture revision, protobuf schema change, canonical transcript ch
 Branch: `m9-authority-replay-remediation`  
 Draft implementation PR: **#23**
 
+Final code-bearing Task 7 commit: `cf48aaa26fb4099864c6afbd5218043e551745f1`.
+
 ## Remediation Progress
 
-### Task 1 — Complete
+### Tasks 1–3 — Complete
 
-Implemented identity-owned `OwnerAuthorityState` with active root, independent Device Signing/Administrative/Recovery slots, monotonic epoch floors, root-successor handling, and failed-transition atomicity.
-
-Evidence: GREEN head `6e61ef944f46d9610d06c0d6093a6a6a8d15573f`; Rust CI `34828834320` passed.
-
-### Task 2 — Complete
-
-Device credential issuance, public-key issuance, verification, and rotation resolve current Device Signing authority from `OwnerAuthorityState`. Golden credential bytes remain unchanged.
-
-Evidence: final GREEN head `248de3ad55a9f75cbe3c5aa50974bea8a0bbbd46`; Rust CI `34836766158` passed.
-
-### Task 3 — Complete
-
-Owner approvals, pairing trust/credential rotation, and ordinary delegated revocation resolve current local authority from `OwnerAuthorityState`. Policy golden vectors remain unchanged.
-
-Evidence: exact code head `d117323754a91a845450fb3467bf76cb9d52c2a6`; Rust CI `34865890032` and Fuzz Smoke `34865890030` passed.
+- Task 1 introduced identity-owned `OwnerAuthorityState` with active root, independent Device Signing/Administrative/Recovery slots, monotonic epoch floors, root-successor handling, and failed-transition atomicity. GREEN head `6e61ef944f46d9610d06c0d6093a6a6a8d15573f`; Rust CI `34828834320` passed.
+- Task 2 routed device credential issuance, public-key issuance, verification, and rotation through current Device Signing authority without changing credential vectors. Final GREEN head `248de3ad55a9f75cbe3c5aa50974bea8a0bbbd46`; Rust CI `34836766158` passed.
+- Task 3 routed owner approval, pairing trust/credential rotation, and ordinary delegated revocation through current local authority. Exact code head `d117323754a91a845450fb3467bf76cb9d52c2a6`; Rust CI `34865890032` and Fuzz Smoke `34865890030` passed.
 
 ### Task 4 — Complete
 
-Pairing/session authentication and lifecycle now use current owner authority. Session context snapshots owner-root and Device Signing authority, `LogicalSession::revalidate_authority` closes on root/Device Signing replacement, Administrative/Recovery-only rotation preserves ordinary sessions, and simulator control/stream runtimes cancel session authority before transport close. Quinn fixtures remain transport-only consumers of Cross-Lab authority state rather than authority owners.
-
-Focused exact-branch verification run `34930872045` passed `crosslab-core`, `crosslab-sim`, `crosslab-transport-quic`, and formatting.
+Pairing/session authentication and lifecycle use current owner authority. Session context snapshots owner-root and Device Signing authority; root/Device Signing replacement closes ordinary sessions and cancels control/stream authority before transport close; Administrative/Recovery-only rotation preserves ordinary sessions. Focused verification run `34930872045` passed core/simulator/Quinn/fmt checks.
 
 ### Task 5 — Complete
 
-ADR-0011 is locked with characterization tests. A legitimately aged-out `RequestId` is accepted as a new authenticated request attempt only if current policy permits it; current policy denial still fails closed; exact old `message_seq` replay remains rejected. No production replay code change was required.
+ADR-0011 bounded replay semantics are locked with characterization tests. A legitimately aged-out `RequestId` is a new authenticated request attempt only after current authorization; exact old `message_seq` replay remains rejected. No production replay-code change was required. Test commit `654cfad19108df15ccccbe1c84e9f4116f9a5178`; focused verification `34930994570` passed.
 
-Task 5 test commit: `654cfad19108df15ccccbe1c84e9f4116f9a5178`. Focused verification run `34930994570` passed the core/simulator/Quinn/fmt gate.
+### Task 6 — Complete
 
-### Task 6 — Complete, historical exact-head bot CI was not runnable
+High-level stream admission accepts local `TrustRecord` and `PolicyState`, validates authenticated-peer trust owner/device/state, and derives trust/policy revisions internally. `SimStreamRuntime::accept_one` no longer accepts caller-selected revision integers. Focused runs `34959306875` and `34960055976` passed core/simulator/Quinn/workspace checks; predecessor Fuzz Smoke `34959517230` passed. The current full exact-head gate below also covers all Task 6 regressions.
 
-High-level stream admission accepts local `TrustRecord` and `PolicyState`, validates authenticated-peer trust ownership/state, and derives trust/policy revisions internally. `SimStreamRuntime::accept_one` no longer accepts caller-selected revision integers.
+### Task 7 — Complete and exact-head verified
 
-TDD RED: `cb37c0b93c327cda8685bbd25f075c6bf2620870`; CI `34931103468` failed exactly because the old API still required two `u64` revisions and the new trust errors did not exist.
+Obsolete caller-selected high-level authority/currentness APIs are removed from ordinary public paths and all ordinary callers use `OwnerAuthorityState`. Clean method names resolve current authority internally. Raw root/delegation/floor validation remains private/low-level; `AuthorityDelegation::verify(root, minimum_epoch)` remains the cryptographic/import primitive and `DeviceCredential::from_unverified_signed_parts` remains the signed-object import boundary.
 
-Implementation includes:
+Migration runner `34972799429` passed formatting and `cargo check --workspace --all-targets --all-features`, producing code commit `cf48aaa26fb4099864c6afbd5218043e551745f1`.
 
-- `StreamAdmissionError::PeerTrustMismatch` and `PeerNotTrusted`;
-- local trust owner/device/state validation before operation reservation;
-- internally derived `TrustRecord::trust_revision()` and `PolicyState::revision()`;
-- simulator, Quinn, lifecycle, and resource-hardening fixture migration to local trust/policy state;
-- tests for changed policy revision, locally revoked peer, and mismatched peer trust.
+Human-authored verification checkpoint `b3d2b35d8e95103f7e283585ff1951737eae07ab` then passed:
 
-Task 6 final code head before this documentation checkpoint: `6952b9dbec62a4c00e469e87bc589e3bd3e989e2`. Focused workflow `34960055976` passed the resource-hardening regression, full Quinn tests, complete workspace `cargo check --all-targets --all-features`, and `cargo fmt --check`. Earlier focused workflow `34959306875` passed core stream admission, full simulator tests, full Quinn transport tests, and formatting. Fuzz Smoke `34959517230` passed all five bounded targets on the immediately preceding checkpoint. CI/Fuzz created directly from the bot-authored Task 6 head were `action_required` without jobs, so that historical head has no separate exact-head CI claim.
+- Rust CI `34973222111`: lockfile verification, `cargo audit`, `cargo fmt --check`, workspace check with all targets/features, Clippy with `-D warnings`, and `cargo test --workspace --all-features`.
+- Fuzz Smoke `34973222116`: exact five-target gate under `nightly-2026-09-12`, 256 runs each.
+- Identity golden vectors for authority delegation and device credentials.
+- Policy trust-revocation golden vector.
+- Protocol control-envelope, pairing-confirmation, data-stream-open, session-close, and system-event wire vectors.
+- Authority-currentness, replay, stream-currentness, debug-redaction, resource-hardening, simulator lifecycle/reconnect, and Quinn lifecycle tests.
 
-### Task 7 — Implementation complete, exact-head verification pending
+The dependency audit exited successfully with only the accepted unsuppressed Iroh-experiment `paste 1.0.15` maintenance warning.
 
-Obsolete caller-selected high-level authority/currentness APIs have been removed from ordinary public paths and remaining call sites were migrated to `OwnerAuthorityState`. Clean ordinary method names now resolve current authority internally. Raw root/delegation/floor helpers remain private implementation details; `AuthorityDelegation::verify(root, minimum_epoch)` remains the low-level cryptographic/import primitive and `DeviceCredential::from_unverified_signed_parts` remains available for signed-object import.
+### Task 8 — Final evidence/reconciliation in progress
 
-Migration workflow `34972799429` passed formatting plus `cargo check --workspace --all-targets --all-features` and committed the transformed code at `cf48aaa26fb4099864c6afbd5218043e551745f1` (`refactor(security): finish authority-state caller migration`). The temporary migration workflow/scripts removed themselves in that commit.
+Task 8 Steps 1–2 are already satisfied by the exact checkpoint above: the full workspace/audit gate and the exact five fuzz commands passed on the same branch state.
 
-The bot-authored code head triggered CI/Fuzz as `action_required` without runnable jobs. This documentation checkpoint intentionally creates a human-authored exact head so normal PR CI/Fuzz can verify the transformed code. Task 7 is not recorded complete until Rust CI passes workspace audit/fmt/check/Clippy/tests, including the existing identity/policy/protocol golden-vector tests.
+Security assessment and whole-project audit have been reconciled to the verified ADR-0010/ADR-0011 implementation. The PR changed-file inventory contains no `.proto` or schema files. Golden-vector source patches only migrate fixture authority lookup to `OwnerAuthorityState`; expected bytes/constants were not rewritten, and all golden/wire-vector tests pass unchanged.
 
-## Remaining Plan
+Two stale Task 7 helper workflows (`task7-authority-api-migration.yml` and `task7-check.yml`) were identified during final diff review and removed before merge.
 
-7. require exact-head Rust CI success for the completed authority migration, including unchanged golden vectors and Clippy `-D warnings`;
-8. run final full security/CI/Fuzz reconciliation, update durable evidence, merge PR #23, and verify the resulting `main` commit.
+The active remediation plan still needs its evidence-backed checkboxes reconciled. After that documentation checkpoint, the final exact PR head must pass Rust CI and Fuzz Smoke again before merge.
+
+## Deferred / External Risks
+
+- Durable, rollback-resistant persistence for `OwnerAuthorityState` and accepted authority epochs.
+- Platform key-store / secure-enclave integration and real mobile lifecycle evidence.
+- Explicit authorization/subscription design for future authority-sensitive system-event families.
+- `main` branch protection and other repository-administration controls.
+- Windows/macOS/mobile CI matrices as their platform slices land.
+- `paste 1.0.15` / `RUSTSEC-2024-0436` in the isolated Iroh experiment, to re-evaluate before ADR-0009 production promotion.
+- M9 remote NAT/relay/path/measurement work, which remains blocked until this remediation is merged and post-merge verified.
 
 ## Exact Next Task
 
-1. Require fresh exact-head Rust CI success on this checkpoint and inspect Fuzz Smoke as additional evidence.
-2. If CI fails, use compiler/test output as the checklist and fix only the demonstrated Task 7 regression; do not add compatibility shims that recreate caller-selected currentness.
-3. When green, record Task 7 complete with exact run evidence.
-4. Execute Task 8: full workspace/audit/fuzz gate, reconcile the security assessment and audit, update this file and the active plan, and verify the final exact PR head.
-5. Merge PR #23 only with its expected verified head SHA, then require post-merge `main` CI green before resuming M9 remote-networking Task 4.
+1. Reconcile evidence-backed checkboxes in `docs/superpowers/plans/2026-09-14-foundation-authority-replay-remediation.md`.
+2. Require fresh Rust CI and Fuzz Smoke success on the resulting exact final PR head.
+3. Re-check PR #23 expected head and diff; merge only that verified SHA.
+4. Require post-merge `main` Rust CI green.
+5. Only then update durable state so **M9 remote-networking Task 4** becomes the next implementation task.
 
 ## M9 Invariants
 
@@ -117,12 +115,11 @@ The bot-authored code head triggered CI/Fuzz as `action_required` without runnab
 - Route changes do not silently mutate binding, `SessionId`, sequence, policy classification, or operation authority.
 - New transport connections require fresh Cross-Lab authentication/authorization state.
 - Security authority state is local and fail-closed.
-- `main` branch protection remains an external repository-administration item.
 
 ## Resume Procedure
 
 1. inspect `main`, PR #23, recent workflows, and this file;
-2. require the current exact head to be green before starting the next remediation task;
-3. execute remaining tasks in small verified checkpoints;
-4. update this file with exact evidence after meaningful progress;
-5. do not resume M9 networking Task 4 until the entire remediation is merged and post-merge verified.
+2. require the current exact head to be green before merge or the next remediation step;
+3. reconcile documentation only from verified evidence;
+4. merge PR #23 only at its expected verified head;
+5. do not resume M9 networking Task 4 until post-merge `main` verification is green.
