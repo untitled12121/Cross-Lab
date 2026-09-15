@@ -30,7 +30,7 @@ pub(crate) struct IrohTransportConnection {
 }
 
 impl IrohTransportConnection {
-    fn new(
+    pub(crate) fn new(
         control: ControlBridge,
         channel_binding: ChannelBinding,
         metadata: ConnectionMetadata,

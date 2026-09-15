@@ -5,3 +5,4 @@ pub mod candidate;
 pub mod config;
 pub mod error;
 pub mod metrics;
+pub mod scenarios;
