@@ -1,0 +1,75 @@
+name: Task 6 Final Fixture Fix
+
+on:
+  push:
+    branches:
+      - m9-authority-replay-remediation
+    paths:
+      - .github/workflows/task6-final-fixture-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: m9-authority-replay-remediation
+          fetch-depth: 0
+      - name: Install Rust
+        run: rustup toolchain install 1.98.1 --profile minimal --component clippy,rustfmt
+      - name: Migrate remaining fixture
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_exact(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one match, found {count}: {old!r}")
+              p.write_text(text.replace(old, new))
+
+          path = "crates/core/tests/stream_resource_hardening.rs"
+          replace_exact(
+              path,
+              "    TransitionId, TrustState, UsePolicy,\n",
+              "    TransitionId, TrustRecord, TrustState, UsePolicy,\n",
+          )
+          replace_exact(
+              path,
+              "    trust_revision: u64,\n    policy_revision: u64,\n",
+              "    peer_trust: TrustRecord,\n    policy: PolicyState,\n",
+          )
+          replace_exact(
+              path,
+              "            trust_revision,\n            policy_revision: policy.revision(),\n",
+              "            peer_trust,\n            policy,\n",
+          )
+          replace_exact(
+              path,
+              "            self.trust_revision,\n            self.policy_revision,\n",
+              "            &self.peer_trust,\n            &self.policy,\n",
+          )
+
+          path = "transports/quic/src/session_auth_tests/lifecycle_tests.rs"
+          replace_exact(path, "    let policy_revision = policy.revision();\n", "")
+          PY
+          rm .github/workflows/task6-final-fixture-fix.yml
+          cargo fmt --all
+      - name: Verify Task 6
+        run: |
+          cargo test -p crosslab-core --test stream_resource_hardening
+          cargo test -p crosslab-transport-quic --all-features
+          cargo check --workspace --all-targets --all-features
+          cargo fmt --check
+      - name: Commit Task 6 completion
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+untitled12121@users.noreply.github.com"
+          git add crates/core/tests/stream_resource_hardening.rs transports/quic/src/session_auth_tests/lifecycle_tests.rs .github/workflows/task6-final-fixture-fix.yml
+          git commit -m "fix(core): finish task 6 fixture migration"
+          git push origin HEAD:m9-authority-replay-remediation
