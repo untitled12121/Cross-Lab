@@ -1,7 +1,7 @@
 use core::fmt;
 
 use crosslab_identity::{
-    AuthorityDelegation, DeviceCredential, DeviceId, IdentityError, OwnerId, OwnerRootRecord,
+    AuthorityRole, DeviceCredential, DeviceId, IdentityError, KeyId, OwnerAuthorityState, OwnerId,
 };
 use crosslab_policy::{LocalCapability, SessionId, TrustRecord, TrustState};
 use crosslab_protocol::{
@@ -19,7 +19,6 @@ use super::{
 #[derive(Clone, Copy)]
 pub struct SessionHandshakeSide<'a> {
     credential: &'a DeviceCredential,
-    issuer: &'a AuthorityDelegation,
     protocol_ranges: &'a [ProtocolRange],
     features: &'a FeatureSet,
 }
@@ -27,13 +26,11 @@ pub struct SessionHandshakeSide<'a> {
 impl<'a> SessionHandshakeSide<'a> {
     pub const fn new(
         credential: &'a DeviceCredential,
-        issuer: &'a AuthorityDelegation,
         protocol_ranges: &'a [ProtocolRange],
         features: &'a FeatureSet,
     ) -> Self {
         Self {
             credential,
-            issuer,
             protocol_ranges,
             features,
         }
@@ -41,7 +38,7 @@ impl<'a> SessionHandshakeSide<'a> {
 }
 
 pub struct SessionActivation<'a> {
-    root: &'a OwnerRootRecord,
+    authority: &'a OwnerAuthorityState,
     initiator: SessionHandshakeSide<'a>,
     responder: SessionHandshakeSide<'a>,
     local_role: SessionAuthRole,
@@ -57,7 +54,7 @@ pub struct SessionActivation<'a> {
 impl<'a> SessionActivation<'a> {
     #[allow(clippy::too_many_arguments)]
     pub const fn new(
-        root: &'a OwnerRootRecord,
+        authority: &'a OwnerAuthorityState,
         initiator: SessionHandshakeSide<'a>,
         responder: SessionHandshakeSide<'a>,
         local_role: SessionAuthRole,
@@ -70,7 +67,7 @@ impl<'a> SessionActivation<'a> {
         responder_proof: &'a SessionAuthProof,
     ) -> Self {
         Self {
-            root,
+            authority,
             initiator,
             responder,
             local_role,
@@ -111,6 +108,8 @@ pub enum SessionError {
     PeerTrustMismatch,
     PeerCredentialEpochMismatch,
     PeerTrustRevisionNotAdvanced,
+    OwnerAuthorityChanged,
+    DeviceSigningAuthorityChanged,
     Protocol(VersionNegotiationError),
     Feature(FeatureNegotiationError),
     Auth(SessionAuthError),
@@ -132,6 +131,11 @@ impl fmt::Display for SessionError {
                 .write_str("peer credential epoch does not match the locally accepted trust epoch"),
             Self::PeerTrustRevisionNotAdvanced => formatter
                 .write_str("peer trust revision does not advance the authenticated snapshot"),
+            Self::OwnerAuthorityChanged => {
+                formatter.write_str("owner root authority changed since session authentication")
+            }
+            Self::DeviceSigningAuthorityChanged => formatter
+                .write_str("device signing authority changed since session authentication"),
             Self::Protocol(error) => fmt::Display::fmt(error, formatter),
             Self::Feature(error) => fmt::Display::fmt(error, formatter),
             Self::Auth(error) => fmt::Display::fmt(error, formatter),
@@ -171,6 +175,10 @@ pub struct SessionContext {
     local_device_id: DeviceId,
     peer_device_id: DeviceId,
     owner_id: OwnerId,
+    root_key_id: KeyId,
+    root_epoch: u64,
+    device_signing_key_id: KeyId,
+    device_signing_epoch: u64,
     peer_credential_epoch: u64,
     peer_trust_revision: u64,
     protocol_version: ProtocolVersion,
@@ -196,6 +204,22 @@ impl SessionContext {
 
     pub const fn owner_id(&self) -> OwnerId {
         self.owner_id
+    }
+
+    pub const fn root_key_id(&self) -> KeyId {
+        self.root_key_id
+    }
+
+    pub const fn root_epoch(&self) -> u64 {
+        self.root_epoch
+    }
+
+    pub const fn device_signing_key_id(&self) -> KeyId {
+        self.device_signing_key_id
+    }
+
+    pub const fn device_signing_epoch(&self) -> u64 {
+        self.device_signing_epoch
     }
 
     pub const fn peer_credential_epoch(&self) -> u64 {
@@ -353,18 +377,11 @@ impl Default for LogicalSession {
 }
 
 fn authenticate(activation: SessionActivation<'_>) -> Result<SessionContext, SessionError> {
-    activation.initiator.credential.verify(
-        activation.root,
-        activation.initiator.issuer,
-        0,
-        activation.initiator.issuer.delegation_epoch(),
-    )?;
-    activation.responder.credential.verify(
-        activation.root,
-        activation.responder.issuer,
-        0,
-        activation.responder.issuer.delegation_epoch(),
-    )?;
+    let authority = activation.authority;
+    let root = authority.root();
+    let device_signing = authority.current_delegation(AuthorityRole::DeviceSigning)?;
+    activation.initiator.credential.verify_current(authority, 0)?;
+    activation.responder.credential.verify_current(authority, 0)?;
 
     let (local, peer) = activation.local_and_peer();
     if activation.peer_trust.state() != TrustState::Trusted {
@@ -386,7 +403,7 @@ fn authenticate(activation: SessionActivation<'_>) -> Result<SessionContext, Ses
     let negotiated_features =
         negotiate_features(activation.initiator.features, activation.responder.features)?;
     let transcript = SessionAuthTranscriptV1::new(
-        activation.root.owner_id(),
+        root.owner_id(),
         activation.initiator.credential,
         activation.initiator_nonce,
         activation.responder.credential,
@@ -407,7 +424,11 @@ fn authenticate(activation: SessionActivation<'_>) -> Result<SessionContext, Ses
         session_id,
         local_device_id: local.credential.device_id(),
         peer_device_id: peer.credential.device_id(),
-        owner_id: activation.root.owner_id(),
+        owner_id: root.owner_id(),
+        root_key_id: root.root_key_id(),
+        root_epoch: root.root_epoch(),
+        device_signing_key_id: device_signing.delegated_key_id(),
+        device_signing_epoch: device_signing.delegation_epoch(),
         peer_credential_epoch: peer.credential.credential_epoch(),
         peer_trust_revision: activation.peer_trust.trust_revision(),
         protocol_version,
@@ -422,7 +443,7 @@ fn authenticate(activation: SessionActivation<'_>) -> Result<SessionContext, Ses
 #[cfg(test)]
 mod tests {
     use crosslab_crypto::SigningKey;
-    use crosslab_identity::AuthorityRole;
+    use crosslab_identity::{AuthorityDelegation, AuthorityRole, OwnerRootRecord};
     use crosslab_policy::{PairingTrustTransition, TransitionId, TrustTransition};
 
     use super::*;
@@ -509,6 +530,10 @@ mod tests {
             local_device_id: DeviceId::from_bytes([0xf6; 32]),
             peer_device_id,
             owner_id,
+            root_key_id: root.root_key_id(),
+            root_epoch: root.root_epoch(),
+            device_signing_key_id: delegation.delegated_key_id(),
+            device_signing_epoch: delegation.delegation_epoch(),
             peer_credential_epoch,
             peer_trust_revision: revoked.trust_revision(),
             protocol_version: ProtocolVersion::new(1, 0),
