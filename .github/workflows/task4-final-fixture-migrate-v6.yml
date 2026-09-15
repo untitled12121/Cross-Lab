@@ -43,7 +43,12 @@ jobs:
           anchor = '        let peer_trust =\n            establish_trust(&responder_credential, &root, &delegation, &issuer_key, 0x17);\n'
           replacement = anchor + '        let mut authority = OwnerAuthorityState::new(root);\n        authority.accept_delegation(delegation).unwrap();\n'
           text = replace_one(text, anchor, replacement, 'stream_admission authority state')
-          text = replace_one(text, '            &root,', '            &authority,', 'stream_admission activation authority')
+          text = replace_one(
+              text,
+              '        let activation = SessionActivation::new(\n            &root,\n',
+              '        let activation = SessionActivation::new(\n            &authority,\n',
+              'stream_admission activation authority',
+          )
           text = replace_one(
               text,
               '            SessionHandshakeSide::new(&initiator_credential, &delegation, &ranges, &features),',
