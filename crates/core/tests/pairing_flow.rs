@@ -4,8 +4,8 @@ use crosslab_core::{
 };
 use crosslab_crypto::{Signature, SigningKey};
 use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, IdentityError, OwnerId,
-    OwnerRootRecord,
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, IdentityError,
+    OwnerAuthorityState, OwnerId, OwnerRootRecord,
 };
 use crosslab_policy::{TransitionId, TrustState};
 use crosslab_protocol::{
@@ -14,9 +14,9 @@ use crosslab_protocol::{
 
 struct Fixture {
     owner_id: OwnerId,
-    root: OwnerRootRecord,
+    root_key: SigningKey,
+    authority: OwnerAuthorityState,
     issuer_key: SigningKey,
-    delegation: AuthorityDelegation,
     inviter_key: SigningKey,
     joiner_key: SigningKey,
     inviter_device_id: DeviceId,
@@ -40,6 +40,9 @@ impl Fixture {
             0,
             &root_key,
         );
+        let mut authority = OwnerAuthorityState::new(root);
+        authority.accept_delegation(delegation).unwrap();
+
         let inviter_key = SigningKey::from_secret_bytes([0x13; 32]);
         let joiner_key = SigningKey::from_secret_bytes([0x14; 32]);
         let inviter_device_id = DeviceId::from_bytes([0x15; 32]);
@@ -67,9 +70,9 @@ impl Fixture {
 
         Self {
             owner_id,
-            root,
+            root_key,
+            authority,
             issuer_key,
-            delegation,
             inviter_key,
             joiner_key,
             inviter_device_id,
@@ -124,6 +127,28 @@ impl Fixture {
             .unwrap();
         (inviter, joiner)
     }
+
+    fn issue_initial(&self, inviter: &mut PairingInviterFlow) -> DeviceCredential {
+        inviter
+            .issue_initial_joiner_credential(
+                &self.authority,
+                &self.issuer_key,
+                PairingInstant::from_ticks(20),
+            )
+            .unwrap()
+    }
+
+    fn rotate_device_signing(&mut self) {
+        let next_key = SigningKey::from_secret_bytes([0x2a; 32]);
+        let next = AuthorityDelegation::issue(
+            self.owner_id,
+            AuthorityRole::DeviceSigning,
+            &next_key,
+            1,
+            &self.root_key,
+        );
+        self.authority.accept_delegation(next).unwrap();
+    }
 }
 
 #[test]
@@ -135,14 +160,7 @@ fn s002_pairing_commits_trust_only_after_final_joiner_proof() {
     assert_eq!(joiner.state(), PairingJoinerState::AwaitingCredential);
     assert_eq!(inviter.invitation_state(), PairingInvitationState::Pending);
 
-    let credential = inviter
-        .issue_initial_joiner_credential(
-            &fixture.root,
-            &fixture.delegation,
-            &fixture.issuer_key,
-            PairingInstant::from_ticks(20),
-        )
-        .unwrap();
+    let credential = fixture.issue_initial(&mut inviter);
     assert_eq!(
         inviter.state(),
         PairingInviterState::AwaitingCredentialAcceptance
@@ -150,12 +168,7 @@ fn s002_pairing_commits_trust_only_after_final_joiner_proof() {
     assert_eq!(inviter.invitation_state(), PairingInvitationState::Pending);
 
     let accepted = joiner
-        .accept_credential(
-            &fixture.root,
-            &fixture.delegation,
-            &credential,
-            &fixture.joiner_key,
-        )
+        .accept_credential(&fixture.authority, &credential, &fixture.joiner_key)
         .unwrap();
     assert_eq!(joiner.state(), PairingJoinerState::Accepted);
 
@@ -164,10 +177,8 @@ fn s002_pairing_commits_trust_only_after_final_joiner_proof() {
         .commit_trust(
             &accepted,
             transition_id,
-            &fixture.root,
-            &fixture.delegation,
+            &fixture.authority,
             &fixture.issuer_key,
-            fixture.delegation.delegation_epoch(),
             PairingInstant::from_ticks(30),
         )
         .unwrap();
@@ -257,7 +268,6 @@ fn n012_pairing_id_and_nonce_substitution_are_rejected() {
     .unwrap();
     let substituted_confirmation = substituted_joiner.joiner_confirmation().unwrap();
     let mut nonce_inviter = fixture.inviter_flow();
-
     assert_eq!(
         nonce_inviter
             .verify_joiner_confirmation(&substituted_confirmation, PairingInstant::from_ticks(10)),
@@ -275,21 +285,19 @@ fn n013_joiner_key_substitution_after_confirmation_is_rejected() {
     let fixture = Fixture::new();
     let (mut inviter, mut joiner) = fixture.confirmed_flows();
     let wrong_joiner_key = SigningKey::from_secret_bytes([0xef; 32]);
-    let substituted = DeviceCredential::issue_for_public_key(
+    let substituted = DeviceCredential::issue_for_public_key_current(
         fixture.owner_id,
         fixture.joiner_device_id,
         wrong_joiner_key.verifying_key(),
         0,
-        &fixture.root,
-        &fixture.delegation,
+        &fixture.authority,
         &fixture.issuer_key,
     )
     .unwrap();
 
     assert_eq!(
         joiner.accept_credential(
-            &fixture.root,
-            &fixture.delegation,
+            &fixture.authority,
             &substituted,
             &fixture.joiner_key,
         ),
@@ -298,8 +306,7 @@ fn n013_joiner_key_substitution_after_confirmation_is_rejected() {
     assert_eq!(joiner.state(), PairingJoinerState::Failed);
 
     let result = inviter.issue_initial_joiner_credential(
-        &fixture.root,
-        &fixture.delegation,
+        &fixture.authority,
         &fixture.issuer_key,
         PairingInstant::from_ticks(20),
     );
@@ -342,19 +349,11 @@ fn n014_cancelled_or_consumed_invitation_cannot_be_reused() {
 fn n015_wrong_credential_accepted_device_key_never_commits_trust() {
     let fixture = Fixture::new();
     let (mut inviter, mut joiner) = fixture.confirmed_flows();
-    let credential = inviter
-        .issue_initial_joiner_credential(
-            &fixture.root,
-            &fixture.delegation,
-            &fixture.issuer_key,
-            PairingInstant::from_ticks(20),
-        )
-        .unwrap();
+    let credential = fixture.issue_initial(&mut inviter);
 
     assert_eq!(
         joiner.accept_credential(
-            &fixture.root,
-            &fixture.delegation,
+            &fixture.authority,
             &credential,
             &SigningKey::from_secret_bytes([0xf0; 32]),
         ),
@@ -374,10 +373,8 @@ fn n015_wrong_credential_accepted_device_key_never_commits_trust() {
         inviter.commit_trust(
             &forged,
             TransitionId::from_bytes([0x24; 32]),
-            &fixture.root,
-            &fixture.delegation,
+            &fixture.authority,
             &fixture.issuer_key,
-            fixture.delegation.delegation_epoch(),
             PairingInstant::from_ticks(30),
         ),
         Err(PairingFlowError::InvalidCredentialAcceptance)
@@ -387,62 +384,83 @@ fn n015_wrong_credential_accepted_device_key_never_commits_trust() {
 }
 
 #[test]
-fn mismatched_owner_or_invalid_delegation_fails_before_acceptance() {
+fn mismatched_owner_or_current_device_signing_authority_fails_before_acceptance() {
     let fixture = Fixture::new();
     let (mut inviter, mut joiner) = fixture.confirmed_flows();
-    let credential = inviter
-        .issue_initial_joiner_credential(
-            &fixture.root,
-            &fixture.delegation,
-            &fixture.issuer_key,
-            PairingInstant::from_ticks(20),
-        )
-        .unwrap();
+    let credential = fixture.issue_initial(&mut inviter);
 
     let wrong_owner = OwnerId::from_bytes([0x31; 32]);
     let wrong_root_key = SigningKey::from_secret_bytes([0x32; 32]);
     let wrong_root = OwnerRootRecord::new(wrong_owner, &wrong_root_key, 0);
+    let wrong_issuer_key = SigningKey::from_secret_bytes([0x33; 32]);
+    let wrong_delegation = AuthorityDelegation::issue(
+        wrong_owner,
+        AuthorityRole::DeviceSigning,
+        &wrong_issuer_key,
+        0,
+        &wrong_root_key,
+    );
+    let mut wrong_authority = OwnerAuthorityState::new(wrong_root);
+    wrong_authority.accept_delegation(wrong_delegation).unwrap();
+
     assert_eq!(
-        joiner.accept_credential(
-            &wrong_root,
-            &fixture.delegation,
-            &credential,
-            &fixture.joiner_key,
-        ),
+        joiner.accept_credential(&wrong_authority, &credential, &fixture.joiner_key),
         Err(PairingFlowError::Identity(IdentityError::WrongOwner))
     );
     assert_eq!(joiner.state(), PairingJoinerState::Failed);
 
     let fixture = Fixture::new();
     let (mut inviter, mut joiner) = fixture.confirmed_flows();
-    let credential = inviter
-        .issue_initial_joiner_credential(
-            &fixture.root,
-            &fixture.delegation,
-            &fixture.issuer_key,
-            PairingInstant::from_ticks(20),
-        )
-        .unwrap();
-    let wrong_root_key = SigningKey::from_secret_bytes([0x33; 32]);
-    let wrong_issuer_key = SigningKey::from_secret_bytes([0x34; 32]);
-    let invalid_delegation = AuthorityDelegation::issue(
+    let credential = fixture.issue_initial(&mut inviter);
+    let other_issuer_key = SigningKey::from_secret_bytes([0x34; 32]);
+    let other_delegation = AuthorityDelegation::issue(
         fixture.owner_id,
         AuthorityRole::DeviceSigning,
-        &wrong_issuer_key,
+        &other_issuer_key,
         0,
-        &wrong_root_key,
+        &fixture.root_key,
     );
+    let mut other_authority = OwnerAuthorityState::new(*fixture.authority.root());
+    other_authority.accept_delegation(other_delegation).unwrap();
 
     assert_eq!(
-        joiner.accept_credential(
-            &fixture.root,
-            &invalid_delegation,
-            &credential,
-            &fixture.joiner_key,
-        ),
+        joiner.accept_credential(&other_authority, &credential, &fixture.joiner_key),
         Err(PairingFlowError::Identity(IdentityError::UnknownIssuer))
     );
     assert_eq!(joiner.state(), PairingJoinerState::Failed);
+}
+
+#[test]
+fn pairing_rejects_credentials_after_device_signing_rotation() {
+    let mut fixture = Fixture::new();
+    let (mut inviter, mut joiner) = fixture.confirmed_flows();
+    let credential = fixture.issue_initial(&mut inviter);
+
+    fixture.rotate_device_signing();
+
+    assert_eq!(
+        joiner.accept_credential(&fixture.authority, &credential, &fixture.joiner_key),
+        Err(PairingFlowError::Identity(IdentityError::UnknownIssuer))
+    );
+    assert_eq!(joiner.state(), PairingJoinerState::Failed);
+}
+
+#[test]
+fn stale_device_signing_key_cannot_issue_pairing_credential() {
+    let mut fixture = Fixture::new();
+    let (mut inviter, _) = fixture.confirmed_flows();
+    fixture.rotate_device_signing();
+
+    assert_eq!(
+        inviter.issue_initial_joiner_credential(
+            &fixture.authority,
+            &fixture.issuer_key,
+            PairingInstant::from_ticks(20),
+        ),
+        Err(PairingFlowError::Identity(IdentityError::UnknownIssuer))
+    );
+    assert_eq!(inviter.state(), PairingInviterState::Failed);
+    assert_eq!(inviter.invitation_state(), PairingInvitationState::Consumed);
 }
 
 #[test]
@@ -484,23 +502,14 @@ fn inviter_credential_issuance_does_not_require_joiner_private_key() {
     let fixture = Fixture::new();
     let (mut inviter, _) = fixture.confirmed_flows();
 
-    let credential = inviter
-        .issue_initial_joiner_credential(
-            &fixture.root,
-            &fixture.delegation,
-            &fixture.issuer_key,
-            PairingInstant::from_ticks(20),
-        )
-        .unwrap();
+    let credential = fixture.issue_initial(&mut inviter);
 
     assert_eq!(credential.device_id(), fixture.joiner_device_id);
     assert_eq!(
         credential.device_public_key(),
         fixture.joiner_key.verifying_key()
     );
-    credential
-        .verify(&fixture.root, &fixture.delegation, 0, 0)
-        .unwrap();
+    credential.verify_current(&fixture.authority, 0).unwrap();
     assert_eq!(
         fixture.inviter_key.verifying_key(),
         fixture.inviter_hello.device_public_key()
