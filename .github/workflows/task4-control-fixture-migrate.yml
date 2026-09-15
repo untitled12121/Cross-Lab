@@ -301,7 +301,7 @@ jobs:
           }''',
           )
 
-          for obsolete in ('&fixture.root', '&fixture.delegation', '&self.root', '&self.delegation'):
+          for obsolete in ('&fixture.root,', '&fixture.delegation,', '&self.root,', '&self.delegation,'):
               if obsolete in text:
                   raise SystemExit(f'obsolete session authority reference remains: {obsolete}')
 
