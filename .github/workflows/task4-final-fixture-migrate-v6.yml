@@ -49,18 +49,8 @@ jobs:
               '        let activation = SessionActivation::new(\n            &authority,\n',
               'stream_admission activation authority',
           )
-          text = replace_one(
-              text,
-              '            SessionHandshakeSide::new(&initiator_credential, &delegation, &ranges, &features),',
-              '            SessionHandshakeSide::new(&initiator_credential, &ranges, &features),',
-              'stream_admission initiator handshake',
-          )
-          text = replace_one(
-              text,
-              '            SessionHandshakeSide::new(&responder_credential, &delegation, &ranges, &features),',
-              '            SessionHandshakeSide::new(&responder_credential, &ranges, &features),',
-              'stream_admission responder handshake',
-          )
+          text = replace_one(text, '            SessionHandshakeSide::new(&initiator_credential, &delegation, &ranges, &features),', '            SessionHandshakeSide::new(&initiator_credential, &ranges, &features),', 'stream_admission initiator handshake')
+          text = replace_one(text, '            SessionHandshakeSide::new(&responder_credential, &delegation, &ranges, &features),', '            SessionHandshakeSide::new(&responder_credential, &ranges, &features),', 'stream_admission responder handshake')
           path.write_text(text)
 
           path = Path('crates/core/tests/pairing_flow_vectors.rs')
@@ -95,12 +85,7 @@ jobs:
               '        )',
           ])
           text = replace_one(text, old_issue, new_issue, 'pairing_flow_vectors issue')
-          text = replace_one(
-              text,
-              '        .accept_credential(&root, &delegation, &credential, &joiner_key)',
-              '        .accept_credential(&authority, &credential, &joiner_key)',
-              'pairing_flow_vectors accept',
-          )
+          text = replace_one(text, '        .accept_credential(&root, &delegation, &credential, &joiner_key)', '        .accept_credential(&authority, &credential, &joiner_key)', 'pairing_flow_vectors accept')
           path.write_text(text)
 
           path = Path('crates/core/tests/control_rotation.rs')
@@ -108,35 +93,22 @@ jobs:
           old_import = '    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,\n'
           new_import = '    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,\n    OwnerRootRecord,\n'
           text = replace_one(text, old_import, new_import, 'control_rotation import')
-          anchor = '''    let mut peer_trust = transition
-              .establish(
-                  &peer_credential,
-                  &root,
-                  &delegation,
-                  delegation.delegation_epoch(),
-              )
-              .unwrap();
-'''
+          anchor = '\n'.join([
+              '    let mut peer_trust = transition',
+              '        .establish(',
+              '            &peer_credential,',
+              '            &root,',
+              '            &delegation,',
+              '            delegation.delegation_epoch(),',
+              '        )',
+              '        .unwrap();',
+              '',
+          ])
           replacement = anchor + '    let mut authority = OwnerAuthorityState::new(root);\n    authority.accept_delegation(delegation).unwrap();\n'
           text = replace_one(text, anchor, replacement, 'control_rotation authority state')
-          text = replace_one(
-              text,
-              '        .authenticate(SessionActivation::new(\n            &root,\n',
-              '        .authenticate(SessionActivation::new(\n            &authority,\n',
-              'control_rotation activation authority',
-          )
-          text = replace_one(
-              text,
-              '            SessionHandshakeSide::new(&local_credential, &delegation, &ranges, &features),',
-              '            SessionHandshakeSide::new(&local_credential, &ranges, &features),',
-              'control_rotation local handshake',
-          )
-          text = replace_one(
-              text,
-              '            SessionHandshakeSide::new(&peer_credential, &delegation, &ranges, &features),',
-              '            SessionHandshakeSide::new(&peer_credential, &ranges, &features),',
-              'control_rotation peer handshake',
-          )
+          text = replace_one(text, '        .authenticate(SessionActivation::new(\n            &root,\n', '        .authenticate(SessionActivation::new(\n            &authority,\n', 'control_rotation activation authority')
+          text = replace_one(text, '            SessionHandshakeSide::new(&local_credential, &delegation, &ranges, &features),', '            SessionHandshakeSide::new(&local_credential, &ranges, &features),', 'control_rotation local handshake')
+          text = replace_one(text, '            SessionHandshakeSide::new(&peer_credential, &delegation, &ranges, &features),', '            SessionHandshakeSide::new(&peer_credential, &ranges, &features),', 'control_rotation peer handshake')
           path.write_text(text)
 
           path = Path('crates/core/tests/control_event_authorization.rs')
@@ -144,41 +116,23 @@ jobs:
           old_import = '    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,\n'
           new_import = '    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,\n    OwnerRootRecord,\n'
           text = replace_one(text, old_import, new_import, 'control_event import')
-          text = replace_one(
-              text,
-              '    root: OwnerRootRecord,\n    delegation: AuthorityDelegation,\n',
-              '    authority: OwnerAuthorityState,\n',
-              'control_event fixture authority fields',
-          )
-          establish = '''        let peer_trust = transition
-              .establish(
-                  &peer_credential,
-                  &root,
-                  &delegation,
-                  delegation.delegation_epoch(),
-              )
-              .unwrap();
-'''
+          text = replace_one(text, '    root: OwnerRootRecord,\n    delegation: AuthorityDelegation,\n', '    authority: OwnerAuthorityState,\n', 'control_event fixture authority fields')
+          establish = '\n'.join([
+              '        let peer_trust = transition',
+              '            .establish(',
+              '                &peer_credential,',
+              '                &root,',
+              '                &delegation,',
+              '                delegation.delegation_epoch(),',
+              '            )',
+              '            .unwrap();',
+              '',
+          ])
           establish_replacement = establish + '        let mut authority = OwnerAuthorityState::new(root);\n        authority.accept_delegation(delegation).unwrap();\n'
           text = replace_one(text, establish, establish_replacement, 'control_event authority state')
-          text = replace_one(
-              text,
-              '        Self {\n            root,\n            delegation,\n',
-              '        Self {\n            authority,\n',
-              'control_event fixture construction',
-          )
-          text = replace_one(
-              text,
-              '            self.root.owner_id(),',
-              '            self.authority.root().owner_id(),',
-              'control_event transcript owner',
-          )
-          text = replace_one(
-              text,
-              '                &self.root,',
-              '                &self.authority,',
-              'control_event activation authority',
-          )
+          text = replace_one(text, '        Self {\n            root,\n            delegation,\n', '        Self {\n            authority,\n', 'control_event fixture construction')
+          text = replace_one(text, '            self.root.owner_id(),', '            self.authority.root().owner_id(),', 'control_event transcript owner')
+          text = replace_one(text, '                &self.root,', '                &self.authority,', 'control_event activation authority')
           text = replace_one(text, '                    &self.local_credential,\n                    &self.delegation,\n', '                    &self.local_credential,\n', 'control_event local handshake')
           text = replace_one(text, '                    &self.peer_credential,\n                    &self.delegation,\n', '                    &self.peer_credential,\n', 'control_event peer handshake')
           path.write_text(text)
