@@ -62,6 +62,46 @@ jobs:
               'stream_admission responder handshake',
           )
           path.write_text(text)
+
+          path = Path('crates/core/tests/pairing_flow_vectors.rs')
+          text = path.read_text()
+          old_import = 'use crosslab_identity::{AuthorityDelegation, AuthorityRole, DeviceId, OwnerId, OwnerRootRecord};'
+          new_import = 'use crosslab_identity::{\n    AuthorityDelegation, AuthorityRole, DeviceId, OwnerAuthorityState, OwnerId, OwnerRootRecord,\n};'
+          text = replace_one(text, old_import, new_import, 'pairing_flow_vectors import')
+          delegation_setup = '\n'.join([
+              '    let delegation = AuthorityDelegation::issue(',
+              '        owner_id,',
+              '        AuthorityRole::DeviceSigning,',
+              '        &issuer_key,',
+              '        0,',
+              '        &root_key,',
+              '    );',
+          ])
+          authority_setup = delegation_setup + '\n    let mut authority = OwnerAuthorityState::new(root);\n    authority.accept_delegation(delegation).unwrap();'
+          text = replace_one(text, delegation_setup, authority_setup, 'pairing_flow_vectors authority state')
+          old_issue = '\n'.join([
+              '        .issue_initial_joiner_credential(',
+              '            &root,',
+              '            &delegation,',
+              '            &issuer_key,',
+              '            PairingInstant::from_ticks(20),',
+              '        )',
+          ])
+          new_issue = '\n'.join([
+              '        .issue_initial_joiner_credential(',
+              '            &authority,',
+              '            &issuer_key,',
+              '            PairingInstant::from_ticks(20),',
+              '        )',
+          ])
+          text = replace_one(text, old_issue, new_issue, 'pairing_flow_vectors issue')
+          text = replace_one(
+              text,
+              '        .accept_credential(&root, &delegation, &credential, &joiner_key)',
+              '        .accept_credential(&authority, &credential, &joiner_key)',
+              'pairing_flow_vectors accept',
+          )
+          path.write_text(text)
           PY
           cargo fmt
           cargo check -p crosslab-sim --test session_scenarios --all-features
@@ -71,6 +111,7 @@ jobs:
           cargo check -p crosslab-core --test pairing_expiry_flow --all-features
           cargo check -p crosslab-core --test stream_resource_hardening --all-features
           cargo check -p crosslab-core --test stream_admission --all-features
+          cargo check -p crosslab-core --test pairing_flow_vectors --all-features
           cargo check --workspace --all-targets --all-features
           rm .github/workflows/task4-final-fixture-migrate.yml
           rm .github/workflows/task4-final-fixture-migrate-v2.yml
