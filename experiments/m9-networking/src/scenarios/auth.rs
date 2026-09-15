@@ -160,10 +160,6 @@ impl AuthFixture {
         FeatureSet::new(&[2, 3, 4], &[3]).unwrap()
     }
 
-    pub(crate) const fn authority(&self) -> &OwnerAuthorityState {
-        &self.authority
-    }
-
     pub(crate) const fn initiator_credential(&self) -> &DeviceCredential {
         &self.initiator_credential
     }
