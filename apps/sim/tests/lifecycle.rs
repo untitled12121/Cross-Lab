@@ -7,7 +7,8 @@ use crosslab_core::{
 };
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,
+    OwnerRootRecord,
 };
 use crosslab_policy::{
     AuthorizationContext, AuthorizedOperation, CapabilityId, CapabilityVersion,
@@ -30,59 +31,47 @@ const CAPACITY: usize = 8;
 
 fn establish_trust(
     credential: &DeviceCredential,
-    root: &OwnerRootRecord,
-    delegation: &AuthorityDelegation,
+    authority: &OwnerAuthorityState,
     issuer_key: &SigningKey,
     transition_byte: u8,
 ) -> TrustRecord {
-    let initial_credential = DeviceCredential::issue_for_public_key(
+    let initial_credential = DeviceCredential::issue_for_public_key_current(
         credential.owner_id(),
         credential.device_id(),
         credential.device_public_key(),
         0,
-        root,
-        delegation,
+        authority,
         issuer_key,
     )
     .unwrap();
-    let transition = PairingTrustTransition::issue(
+    let transition = PairingTrustTransition::issue_current(
         &initial_credential,
         TransitionId::from_bytes([transition_byte; 32]),
         [transition_byte.wrapping_add(1); 32],
-        root,
-        delegation,
+        authority,
         issuer_key,
-        delegation.delegation_epoch(),
     )
     .unwrap();
     let mut trust = transition
-        .establish(
-            &initial_credential,
-            root,
-            delegation,
-            delegation.delegation_epoch(),
-        )
+        .establish_current(&initial_credential, authority)
         .unwrap();
 
     for epoch in 1..=credential.credential_epoch() {
-        let successor = DeviceCredential::issue_for_public_key(
+        let successor = DeviceCredential::issue_for_public_key_current(
             credential.owner_id(),
             credential.device_id(),
             credential.device_public_key(),
             epoch,
-            root,
-            delegation,
+            authority,
             issuer_key,
         )
         .unwrap();
         let mut transition_id = [transition_byte; 32];
         transition_id[..8].copy_from_slice(&epoch.to_be_bytes());
         trust
-            .accept_successor_credential(
+            .accept_successor_credential_current(
                 &successor,
-                root,
-                delegation,
-                delegation.delegation_epoch(),
+                authority,
                 TransitionId::from_bytes(transition_id),
             )
             .unwrap();
@@ -94,9 +83,8 @@ fn establish_trust(
 struct Fixture {
     owner_id: OwnerId,
     root_key: SigningKey,
-    root: OwnerRootRecord,
+    authority: OwnerAuthorityState,
     issuer_key: SigningKey,
-    delegation: AuthorityDelegation,
     initiator_key: SigningKey,
     responder_key: SigningKey,
     initiator_credential: DeviceCredential,
@@ -118,39 +106,37 @@ impl Fixture {
             0,
             &root_key,
         );
+        let mut authority = OwnerAuthorityState::new(root);
+        authority.accept_delegation(delegation).unwrap();
+
         let initiator_key = SigningKey::from_secret_bytes([0xd3; 32]);
         let responder_key = SigningKey::from_secret_bytes([0xd4; 32]);
-        let initiator_credential = DeviceCredential::issue(
+        let initiator_credential = DeviceCredential::issue_current(
             owner_id,
             DeviceId::from_bytes([0xd5; 32]),
             &initiator_key,
             1,
-            &root,
-            &delegation,
+            &authority,
             &issuer_key,
         )
         .unwrap();
-        let responder_credential = DeviceCredential::issue(
+        let responder_credential = DeviceCredential::issue_current(
             owner_id,
             DeviceId::from_bytes([0xd6; 32]),
             &responder_key,
             1,
-            &root,
-            &delegation,
+            &authority,
             &issuer_key,
         )
         .unwrap();
-        let initiator_trust =
-            establish_trust(&initiator_credential, &root, &delegation, &issuer_key, 0xd7);
-        let responder_trust =
-            establish_trust(&responder_credential, &root, &delegation, &issuer_key, 0xd8);
+        let initiator_trust = establish_trust(&initiator_credential, &authority, &issuer_key, 0xd7);
+        let responder_trust = establish_trust(&responder_credential, &authority, &issuer_key, 0xd8);
 
         Self {
             owner_id,
             root_key,
-            root,
+            authority,
             issuer_key,
-            delegation,
             initiator_key,
             responder_key,
             initiator_credential,
@@ -187,23 +173,15 @@ impl Fixture {
         let responder_proof = transcript
             .create_proof(SessionAuthRole::Responder, &self.responder_key)
             .unwrap();
-        let initiator = SessionHandshakeSide::new(
-            &self.initiator_credential,
-            &self.delegation,
-            &ranges,
-            &features,
-        );
-        let responder = SessionHandshakeSide::new(
-            &self.responder_credential,
-            &self.delegation,
-            &ranges,
-            &features,
-        );
+        let initiator =
+            SessionHandshakeSide::new(&self.initiator_credential, &ranges, &features);
+        let responder =
+            SessionHandshakeSide::new(&self.responder_credential, &ranges, &features);
 
         let mut session_a = LogicalSession::new();
         session_a
             .authenticate(SessionActivation::new(
-                &self.root,
+                &self.authority,
                 initiator,
                 responder,
                 SessionAuthRole::Initiator,
@@ -220,7 +198,7 @@ impl Fixture {
         let mut session_b = LogicalSession::new();
         session_b
             .authenticate(SessionActivation::new(
-                &self.root,
+                &self.authority,
                 initiator,
                 responder,
                 SessionAuthRole::Responder,
@@ -265,21 +243,13 @@ impl Fixture {
         let responder_proof = transcript
             .create_proof(SessionAuthRole::Responder, &self.responder_key)
             .unwrap();
-        let initiator = SessionHandshakeSide::new(
-            &self.initiator_credential,
-            &self.delegation,
-            &ranges,
-            &features,
-        );
-        let responder = SessionHandshakeSide::new(
-            &self.responder_credential,
-            &self.delegation,
-            &ranges,
-            &features,
-        );
+        let initiator =
+            SessionHandshakeSide::new(&self.initiator_credential, &ranges, &features);
+        let responder =
+            SessionHandshakeSide::new(&self.responder_credential, &ranges, &features);
         let mut session = LogicalSession::new();
         let result = session.authenticate(SessionActivation::new(
-            &self.root,
+            &self.authority,
             initiator,
             responder,
             SessionAuthRole::Responder,
@@ -292,6 +262,18 @@ impl Fixture {
             &responder_proof,
         ));
         (session, result)
+    }
+
+    fn rotate_device_signing(&mut self) {
+        let key = SigningKey::from_secret_bytes([0xda; 32]);
+        let delegation = AuthorityDelegation::issue(
+            self.owner_id,
+            AuthorityRole::DeviceSigning,
+            &key,
+            1,
+            &self.root_key,
+        );
+        self.authority.accept_delegation(delegation).unwrap();
     }
 
     fn local_capability() -> LocalCapability {
@@ -356,40 +338,37 @@ impl Fixture {
         let transition = TrustTransition::issue_root_revocation(
             &revoked,
             TransitionId::from_bytes([transition_byte; 32]),
-            &self.root,
+            self.authority.root(),
             &self.root_key,
         )
         .unwrap();
-        transition.apply_root(&mut revoked, &self.root).unwrap();
+        transition
+            .apply_root(&mut revoked, self.authority.root())
+            .unwrap();
         revoked
     }
 
     fn revoked_other(&self, transition_byte: u8) -> TrustRecord {
-        let other_credential = DeviceCredential::issue(
+        let other_credential = DeviceCredential::issue_current(
             self.owner_id,
             DeviceId::from_bytes([0xfe; 32]),
             &SigningKey::from_secret_bytes([0xfc; 32]),
             1,
-            &self.root,
-            &self.delegation,
+            &self.authority,
             &self.issuer_key,
         )
         .unwrap();
-        let mut other = establish_trust(
-            &other_credential,
-            &self.root,
-            &self.delegation,
-            &self.issuer_key,
-            0xfd,
-        );
+        let mut other = establish_trust(&other_credential, &self.authority, &self.issuer_key, 0xfd);
         let transition = TrustTransition::issue_root_revocation(
             &other,
             TransitionId::from_bytes([transition_byte; 32]),
-            &self.root,
+            self.authority.root(),
             &self.root_key,
         )
         .unwrap();
-        transition.apply_root(&mut other, &self.root).unwrap();
+        transition
+            .apply_root(&mut other, self.authority.root())
+            .unwrap();
         other
     }
 }
@@ -686,6 +665,54 @@ fn s009_active_control_revocation_terminates_local_authority() {
             crosslab_core::ControlReceiveError::Closed
         ))
     ));
+}
+
+#[test]
+fn device_signing_rotation_cancels_pending_control_authority() {
+    let mut fixture = Fixture::new();
+    let pair = pair(0xb3);
+    let (session_a, session_b) = fixture.sessions(&pair, [0xb4; 32], [0xb5; 32]);
+    let (endpoint_a, endpoint_b) = pair.endpoints();
+    let local_capability = Fixture::local_capability();
+    let mut node_a = SimNode::new(
+        session_a,
+        endpoint_a,
+        PolicyState::new(),
+        vec![local_capability.clone()],
+        NetworkClass::Local,
+        NonZeroUsize::new(CAPACITY).unwrap(),
+    )
+    .unwrap();
+    let mut node_b = SimNode::new(
+        session_b,
+        endpoint_b,
+        PolicyState::new(),
+        vec![local_capability],
+        NetworkClass::Local,
+        NonZeroUsize::new(CAPACITY).unwrap(),
+    )
+    .unwrap();
+
+    exchange_capabilities(
+        &mut node_a,
+        &mut node_b,
+        &fixture.responder_trust,
+        &fixture.initiator_trust,
+    );
+    node_b.send_request(request(0xb6)).unwrap();
+    assert_eq!(node_b.pending_request_count(), 1);
+
+    fixture.rotate_device_signing();
+
+    assert!(matches!(
+        node_b.revalidate_authority(&fixture.authority),
+        Err(NodeError::Session(
+            SessionError::DeviceSigningAuthorityChanged
+        ))
+    ));
+    assert_eq!(node_b.session().state(), SessionState::Closed);
+    assert_eq!(node_b.pending_request_count(), 0);
+    assert!(endpoint_b.is_closed());
 }
 
 #[test]
