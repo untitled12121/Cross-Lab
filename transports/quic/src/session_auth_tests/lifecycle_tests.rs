@@ -424,22 +424,14 @@ async fn m8_active_revocation_cancels_stream_authority_and_fresh_reconnect_is_de
     let responder_proof = transcript
         .create_proof(CoreSessionAuthRole::Responder, &fixture.responder_key)
         .unwrap();
-    let initiator_side = SessionHandshakeSide::new(
-        &fixture.initiator_credential,
-        &fixture.delegation,
-        &ranges_a,
-        &features_a,
-    );
-    let responder_side = SessionHandshakeSide::new(
-        &fixture.responder_credential,
-        &fixture.delegation,
-        &ranges_b,
-        &features_b,
-    );
+    let initiator_side =
+        SessionHandshakeSide::new(&fixture.initiator_credential, &ranges_a, &features_a);
+    let responder_side =
+        SessionHandshakeSide::new(&fixture.responder_credential, &ranges_b, &features_b);
     let mut reconnect_session = LogicalSession::new();
     assert_eq!(
         reconnect_session.authenticate(SessionActivation::new(
-            &fixture.root,
+            &fixture.authority,
             initiator_side,
             responder_side,
             CoreSessionAuthRole::Initiator,
@@ -644,12 +636,14 @@ fn revoked_responder(fixture: &AuthFixture) -> TrustRecord {
     let transition = TrustTransition::issue_root_revocation(
         &fixture.responder_trust,
         TransitionId::from_bytes([0xa2; 32]),
-        &fixture.root,
+        fixture.authority.root(),
         &root_key,
     )
     .unwrap();
     let mut revoked = fixture.responder_trust;
-    transition.apply_root(&mut revoked, &fixture.root).unwrap();
+    transition
+        .apply_root(&mut revoked, fixture.authority.root())
+        .unwrap();
     revoked
 }
 
