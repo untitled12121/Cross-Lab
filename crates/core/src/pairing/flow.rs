@@ -4,7 +4,7 @@ use crosslab_crypto::{
     CanonicalTranscript, SignatureAlgorithm, SigningKey, VerifyingKey, signed_object_digest,
 };
 use crosslab_identity::{
-    AuthorityDelegation, DeviceCredential, DeviceId, IdentityError, KeyId, OwnerId, OwnerRootRecord,
+    DeviceCredential, DeviceId, IdentityError, KeyId, OwnerAuthorityState, OwnerId,
 };
 use crosslab_policy::{
     PairingTrustTransition, PairingTrustTransitionError, TransitionId, TrustRecord,
@@ -217,8 +217,7 @@ impl PairingInviterFlow {
 
     pub fn issue_initial_joiner_credential(
         &mut self,
-        root: &OwnerRootRecord,
-        issuer: &AuthorityDelegation,
+        authority: &OwnerAuthorityState,
         issuer_key: &SigningKey,
         now: PairingInstant,
     ) -> Result<DeviceCredential, PairingFlowError> {
@@ -227,13 +226,12 @@ impl PairingInviterFlow {
         }
         self.ensure_current(now)?;
 
-        let credential = match DeviceCredential::issue_for_public_key(
+        let credential = match DeviceCredential::issue_for_public_key_current(
             self.context.owner_id,
             self.context.joiner_device_id,
             self.context.joiner_device_key,
             INITIAL_CREDENTIAL_EPOCH,
-            root,
-            issuer,
+            authority,
             issuer_key,
         ) {
             Ok(credential) => credential,
@@ -245,15 +243,12 @@ impl PairingInviterFlow {
         Ok(credential)
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn commit_trust(
         &mut self,
         accepted: &PairingCredentialAccepted,
         transition_id: TransitionId,
-        root: &OwnerRootRecord,
-        issuer: &AuthorityDelegation,
+        authority: &OwnerAuthorityState,
         issuer_key: &SigningKey,
-        minimum_delegation_epoch: u64,
         now: PairingInstant,
     ) -> Result<TrustRecord, PairingFlowError> {
         if self.state != PairingInviterState::AwaitingCredentialAcceptance {
@@ -298,20 +293,17 @@ impl PairingInviterFlow {
             SignatureAlgorithm::Ed25519,
             &accepted.signature(),
         );
-        let transition = match PairingTrustTransition::issue(
+        let transition = match PairingTrustTransition::issue_current(
             &credential,
             transition_id,
             pairing_evidence_digest,
-            root,
-            issuer,
+            authority,
             issuer_key,
-            minimum_delegation_epoch,
         ) {
             Ok(transition) => transition,
             Err(error) => return self.fail(PairingFlowError::TrustTransition(error)),
         };
-        let trust = match transition.establish(&credential, root, issuer, minimum_delegation_epoch)
-        {
+        let trust = match transition.establish_current(&credential, authority) {
             Ok(trust) => trust,
             Err(error) => return self.fail(PairingFlowError::TrustTransition(error)),
         };
@@ -412,8 +404,7 @@ impl PairingJoinerFlow {
 
     pub fn accept_credential(
         &mut self,
-        root: &OwnerRootRecord,
-        issuer: &AuthorityDelegation,
+        authority: &OwnerAuthorityState,
         credential: &DeviceCredential,
         joiner_key: &SigningKey,
     ) -> Result<PairingCredentialAccepted, PairingFlowError> {
@@ -421,7 +412,7 @@ impl PairingJoinerFlow {
             return self.fail(PairingFlowError::UnexpectedState);
         }
 
-        if let Err(error) = credential.verify(root, issuer, INITIAL_CREDENTIAL_EPOCH, 0) {
+        if let Err(error) = credential.verify_current(authority, INITIAL_CREDENTIAL_EPOCH) {
             return self.fail(PairingFlowError::Identity(error));
         }
         if credential.credential_epoch() != INITIAL_CREDENTIAL_EPOCH
