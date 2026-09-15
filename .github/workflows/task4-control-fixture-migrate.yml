@@ -96,7 +96,7 @@ jobs:
 
           replace_region(
               'struct Fixture {',
-              '\n}\n\nimpl Fixture',
+              '\n\nimpl Fixture',
               '''struct Fixture {
               owner_id: OwnerId,
               root_key: SigningKey,
@@ -238,7 +238,7 @@ jobs:
 
           replace_region(
               '    fn revoke(&self, record: TrustRecord, transition_byte: u8)',
-              '\n    }\n}\n\nfn pair',
+              '\n}\n\nfn pair',
               '''    fn revoke(&self, record: TrustRecord, transition_byte: u8) -> TrustRecord {
               let transition = TrustTransition::issue_root_revocation(
                   &record,
