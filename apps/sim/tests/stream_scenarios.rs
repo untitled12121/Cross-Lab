@@ -88,8 +88,7 @@ struct Fixture {
     capability: CapabilityId,
     version: CapabilityVersion,
     operation_name: OperationName,
-    trust_revision: u64,
-    policy_revision: u64,
+    policy: PolicyState,
     grant: crosslab_policy::AuthorizationGrant,
 }
 
@@ -245,8 +244,7 @@ impl Fixture {
             capability,
             version,
             operation_name,
-            trust_revision,
-            policy_revision: policy.revision(),
+            policy,
             grant,
         }
     }
@@ -298,12 +296,12 @@ impl Fixture {
             self.version,
             self.operation_name.clone(),
             TrustState::Trusted,
-            self.trust_revision,
+            self.sender_trust.trust_revision(),
             local_capability,
             NetworkClass::Local,
         );
         let grant = policy.evaluate(&context).into_grant().unwrap();
-        assert_eq!(policy.revision(), self.policy_revision);
+        assert_eq!(policy.revision(), self.policy.revision());
         AuthorizedOperation::issue(grant, 10, 20, use_policy).unwrap()
     }
 
@@ -370,7 +368,7 @@ fn s007_authorized_single_stream_flows_in_order_and_cannot_be_reused() {
 
     let mut send = sender.open_uni(&open).unwrap();
     let stream_id = receiver
-        .accept_one(15, fixture.trust_revision, fixture.policy_revision)
+        .accept_one(15, &fixture.sender_trust, &fixture.policy)
         .unwrap();
     assert_eq!(stream_id, open.stream_id());
 
@@ -390,7 +388,7 @@ fn s007_authorized_single_stream_flows_in_order_and_cannot_be_reused() {
     let second = fixture.open(operation_id, 0, 0x72);
     let mut second_send = sender.open_uni(&second).unwrap();
     assert!(matches!(
-        receiver.accept_one(15, fixture.trust_revision, fixture.policy_revision),
+        receiver.accept_one(15, &fixture.sender_trust, &fixture.policy),
         Err(SimStreamError::Admission(
             StreamAdmissionError::OperationNotFound
         ))
@@ -431,17 +429,17 @@ fn saturated_runtime_leaves_pending_stream_and_operation_budget_unspent() {
     let _multi_first_send = sender.open_uni(&multi_first).unwrap();
     let mut single_send = sender.open_uni(&single_open).unwrap();
     let first_stream_id = receiver
-        .accept_one(15, fixture.trust_revision, fixture.policy_revision)
+        .accept_one(15, &fixture.sender_trust, &fixture.policy)
         .unwrap();
     let single_stream_id = receiver
-        .accept_one(15, fixture.trust_revision, fixture.policy_revision)
+        .accept_one(15, &fixture.sender_trust, &fixture.policy)
         .unwrap();
     assert_eq!(first_stream_id, multi_first.stream_id());
     assert_eq!(single_stream_id, single_open.stream_id());
 
     let _multi_second_send = sender.open_uni(&multi_second).unwrap();
     assert!(matches!(
-        receiver.accept_one(15, fixture.trust_revision, fixture.policy_revision),
+        receiver.accept_one(15, &fixture.sender_trust, &fixture.policy),
         Err(SimStreamError::ResourceLimit)
     ));
 
@@ -453,7 +451,7 @@ fn saturated_runtime_leaves_pending_stream_and_operation_budget_unspent() {
 
     assert_eq!(
         receiver
-            .accept_one(15, fixture.trust_revision, fixture.policy_revision)
+            .accept_one(15, &fixture.sender_trust, &fixture.policy)
             .unwrap(),
         multi_second.stream_id()
     );
@@ -483,7 +481,7 @@ fn unregistered_operation_is_rejected_before_payload_exposure() {
     let mut send = sender.open_uni(&open).unwrap();
     send.try_send_chunk(vec![0xaa]).unwrap();
     assert!(matches!(
-        receiver.accept_one(15, fixture.trust_revision, fixture.policy_revision),
+        receiver.accept_one(15, &fixture.sender_trust, &fixture.policy),
         Err(SimStreamError::Admission(
             StreamAdmissionError::OperationNotFound
         ))
@@ -520,7 +518,7 @@ fn authenticated_peer_mismatch_is_rejected_and_cancelled() {
 
     let mut send = sender.open_uni(&open).unwrap();
     assert!(matches!(
-        receiver.accept_one(15, fixture.trust_revision, fixture.policy_revision),
+        receiver.accept_one(15, &fixture.sender_trust, &fixture.policy),
         Err(SimStreamError::Admission(StreamAdmissionError::Operation(
             OperationError::BindingMismatch
         )))
@@ -544,7 +542,7 @@ fn malformed_open_is_cancelled_without_dangling_runtime_state() {
     let mut send = sender_endpoint.try_open_uni_stream(vec![0xff]).unwrap();
     send.try_send_chunk(vec![1]).unwrap();
     assert!(matches!(
-        receiver.accept_one(15, fixture.trust_revision, fixture.policy_revision),
+        receiver.accept_one(15, &fixture.sender_trust, &fixture.policy),
         Err(SimStreamError::Wire(_))
     ));
     assert!(send.try_send_chunk(vec![2]).is_err());
@@ -574,7 +572,7 @@ fn shutdown_cancels_active_streams_and_closes_session_and_transport() {
 
     let mut send = sender.open_uni(&open).unwrap();
     let stream_id = receiver
-        .accept_one(15, fixture.trust_revision, fixture.policy_revision)
+        .accept_one(15, &fixture.sender_trust, &fixture.policy)
         .unwrap();
     send.try_send_chunk(vec![1]).unwrap();
 
@@ -606,7 +604,7 @@ fn disconnect_during_accept_closes_stream_runtime_session() {
 
     pair.faults().disconnect_now();
     assert!(matches!(
-        receiver.accept_one(15, fixture.trust_revision, fixture.policy_revision),
+        receiver.accept_one(15, &fixture.sender_trust, &fixture.policy),
         Err(SimStreamError::Accept(StreamAcceptError::Closed))
     ));
     assert_eq!(receiver.session().state(), SessionState::Closed);
@@ -636,7 +634,7 @@ fn disconnect_during_active_stream_cancels_authority_and_closes_session() {
 
     let _send = sender.open_uni(&open).unwrap();
     let stream_id = receiver
-        .accept_one(15, fixture.trust_revision, fixture.policy_revision)
+        .accept_one(15, &fixture.sender_trust, &fixture.policy)
         .unwrap();
 
     pair.faults().disconnect_now();
@@ -672,7 +670,7 @@ fn accepted_peer_revocation_cancels_stream_authority_and_closes_session() {
 
     let mut send = sender.open_uni(&open).unwrap();
     let stream_id = receiver
-        .accept_one(15, fixture.trust_revision, fixture.policy_revision)
+        .accept_one(15, &fixture.sender_trust, &fixture.policy)
         .unwrap();
 
     receiver.apply_peer_revocation(&revoked_sender).unwrap();
@@ -709,7 +707,7 @@ fn device_signing_rotation_cancels_stream_authority_and_closes_session() {
 
     let mut send = sender.open_uni(&open).unwrap();
     let stream_id = receiver
-        .accept_one(15, fixture.trust_revision, fixture.policy_revision)
+        .accept_one(15, &fixture.sender_trust, &fixture.policy)
         .unwrap();
 
     fixture.rotate_device_signing();
