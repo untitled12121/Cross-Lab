@@ -166,10 +166,7 @@ pub async fn exercise_control_lifecycle(fixture: &AuthFixture) -> ControlLifecyc
             .unwrap()
     );
     client
-        .send_event(clipboard_event(
-            EventId::from_bytes([0xc2; 16]),
-            b"changed",
-        ))
+        .send_event(clipboard_event(EventId::from_bytes([0xc2; 16]), b"changed"))
         .unwrap();
     let NodeEvent::Event(event) =
         eventually_node_event(&mut server, &fixture.initiator_trust()).await
@@ -203,19 +200,13 @@ pub async fn exercise_stream_lifecycle(fixture: &AuthFixture) -> StreamLifecycle
         mut server_session,
     } = pair.into_parts();
     let authority = prepare_stream_authority(fixture, &mut client_session, &mut server_session);
-    let mut sender = SimStreamRuntime::new(
-        client_session,
-        &client_transport,
-        nonzero(STREAM_CAPACITY),
-    )
-    .unwrap();
-    let mut receiver = SimStreamRuntime::new(
-        server_session,
-        &server_transport,
-        nonzero(STREAM_CAPACITY),
-    )
-    .unwrap();
-    receiver.register_operation(authority.operation).unwrap();
+    let mut sender =
+        SimStreamRuntime::new(client_session, &client_transport, nonzero(STREAM_CAPACITY)).unwrap();
+    let mut receiver =
+        SimStreamRuntime::new(server_session, &server_transport, nonzero(STREAM_CAPACITY)).unwrap();
+    receiver
+        .register_operation(authority.operation.clone())
+        .unwrap();
 
     let open = stream_open(
         &authority,
@@ -223,14 +214,9 @@ pub async fn exercise_stream_lifecycle(fixture: &AuthFixture) -> StreamLifecycle
         StreamId::from_bytes([0xc3; 16]),
     );
     let mut send = sender.open_uni(&open).unwrap();
-    let stream_id = eventually_accept(
-        &mut receiver,
-        15,
-        &authority.peer_trust,
-        &authority.policy,
-    )
-    .await
-    .expect("authorized stream should be admitted");
+    let stream_id = eventually_accept(&mut receiver, 15, &authority.peer_trust, &authority.policy)
+        .await
+        .expect("authorized stream should be admitted");
     send.try_send_chunk(b"payload".to_vec()).unwrap();
     let payload = eventually_receive(&mut receiver, stream_id).await;
     send.finish();
@@ -284,23 +270,23 @@ pub async fn exercise_reconnect_lifecycle(fixture: &AuthFixture) -> ReconnectLif
     let old_operation = old_authority.operation;
     shutdown_parts(direct, client_transport, server_transport).await;
 
-    let old_proof_error = match authenticate_direct_pair(
-        fixture,
-        AuthAttempt::ReplayInitiator(old_proof),
-    )
-    .await
-    {
-        Ok(pair) => {
-            pair.shutdown().await;
-            panic!("reconnect accepted old proof");
-        }
-        Err(rejected) => rejected.error(),
-    };
+    let old_proof_error =
+        match authenticate_direct_pair(fixture, AuthAttempt::ReplayInitiator(old_proof)).await {
+            Ok(pair) => {
+                pair.shutdown().await;
+                panic!("reconnect accepted old proof");
+            }
+            Err(rejected) => rejected.error(),
+        };
 
     let reconnect = authenticate_direct_pair(fixture, AuthAttempt::Normal)
         .await
         .expect("fresh authenticated Iroh pair");
-    let new_binding = reconnect.client_transport().channel_binding().bytes().to_vec();
+    let new_binding = reconnect
+        .client_transport()
+        .channel_binding()
+        .bytes()
+        .to_vec();
     let new_session_id = reconnect.client_session().context().unwrap().session_id();
     let AuthenticatedIrohParts {
         direct,
@@ -337,17 +323,13 @@ pub async fn exercise_reconnect_lifecycle(fixture: &AuthFixture) -> ReconnectLif
         Vec::new(),
     )
     .unwrap();
-    let old_envelope = ControlEnvelope::new(
-        protocol,
-        old_session_id,
-        0,
-        EnvelopeBody::Event(old_event),
-    );
+    let old_envelope =
+        ControlEnvelope::new(protocol, old_session_id, 0, EnvelopeBody::Event(old_event));
     client_transport
         .try_send_control(encode_control_envelope(&old_envelope).unwrap())
         .unwrap();
-    let old_session_error = eventually_node_dispatch_error(&mut server, &fixture.initiator_trust())
-        .await;
+    let old_session_error =
+        eventually_node_dispatch_error(&mut server, &fixture.initiator_trust()).await;
     client.shutdown();
     server.shutdown();
     drop((client, server));
@@ -364,18 +346,10 @@ pub async fn exercise_reconnect_lifecycle(fixture: &AuthFixture) -> ReconnectLif
         mut server_session,
     } = operation_pair.into_parts();
     let current = prepare_stream_context(fixture, &mut client_session, &mut server_session);
-    let mut sender = SimStreamRuntime::new(
-        client_session,
-        &client_transport,
-        nonzero(STREAM_CAPACITY),
-    )
-    .unwrap();
-    let mut receiver = SimStreamRuntime::new(
-        server_session,
-        &server_transport,
-        nonzero(STREAM_CAPACITY),
-    )
-    .unwrap();
+    let mut sender =
+        SimStreamRuntime::new(client_session, &client_transport, nonzero(STREAM_CAPACITY)).unwrap();
+    let mut receiver =
+        SimStreamRuntime::new(server_session, &server_transport, nonzero(STREAM_CAPACITY)).unwrap();
     let old_operation_id = old_operation.id();
     receiver.register_operation(old_operation).unwrap();
     let old_open = DataStreamOpen::new(
@@ -389,17 +363,11 @@ pub async fn exercise_reconnect_lifecycle(fixture: &AuthFixture) -> ReconnectLif
         0,
     );
     let mut old_send = sender.open_uni(&old_open).unwrap();
-    let old_operation_error = match eventually_accept(
-        &mut receiver,
-        15,
-        &current.peer_trust,
-        &current.policy,
-    )
-    .await
-    {
-        Err(SimStreamError::Admission(error)) => error,
-        other => panic!("unexpected old-operation result: {other:?}"),
-    };
+    let old_operation_error =
+        match eventually_accept(&mut receiver, 15, &current.peer_trust, &current.policy).await {
+            Err(SimStreamError::Admission(error)) => error,
+            other => panic!("unexpected old-operation result: {other:?}"),
+        };
     eventually_sender_closed(old_send.as_mut()).await;
     sender.shutdown();
     receiver.shutdown();
@@ -432,33 +400,22 @@ pub async fn exercise_revocation_lifecycle(fixture: &AuthFixture) -> RevocationL
         mut server_session,
     } = pair.into_parts();
     let authority = prepare_stream_authority(fixture, &mut client_session, &mut server_session);
-    let mut sender = SimStreamRuntime::new(
-        client_session,
-        &client_transport,
-        nonzero(STREAM_CAPACITY),
-    )
-    .unwrap();
-    let mut receiver = SimStreamRuntime::new(
-        server_session,
-        &server_transport,
-        nonzero(STREAM_CAPACITY),
-    )
-    .unwrap();
-    receiver.register_operation(authority.operation).unwrap();
+    let mut sender =
+        SimStreamRuntime::new(client_session, &client_transport, nonzero(STREAM_CAPACITY)).unwrap();
+    let mut receiver =
+        SimStreamRuntime::new(server_session, &server_transport, nonzero(STREAM_CAPACITY)).unwrap();
+    receiver
+        .register_operation(authority.operation.clone())
+        .unwrap();
     let open = stream_open(
         &authority,
         authority.operation.id(),
         StreamId::from_bytes([0xc8; 16]),
     );
     let mut send = sender.open_uni(&open).unwrap();
-    let stream_id = eventually_accept(
-        &mut receiver,
-        15,
-        &authority.peer_trust,
-        &authority.policy,
-    )
-    .await
-    .unwrap();
+    let stream_id = eventually_accept(&mut receiver, 15, &authority.peer_trust, &authority.policy)
+        .await
+        .unwrap();
 
     let revoked_responder = fixture.revoked_responder();
     sender.apply_peer_revocation(&revoked_responder).unwrap();
@@ -469,8 +426,8 @@ pub async fn exercise_revocation_lifecycle(fixture: &AuthFixture) -> RevocationL
     );
     let remote_state = receiver.session().state();
     let after_revoke = b"after-revoke".to_vec();
-    let sender_closed = send.try_send_chunk(after_revoke.clone())
-        == Err(StreamSendError::Closed(after_revoke));
+    let sender_closed =
+        send.try_send_chunk(after_revoke.clone()) == Err(StreamSendError::Closed(after_revoke));
 
     drop((sender, receiver));
     shutdown_parts(direct, client_transport, server_transport).await;
@@ -581,7 +538,11 @@ fn prepare_stream_authority(
         files_local_capability(),
         NetworkClass::Remote,
     );
-    let grant = context.policy.evaluate(&authorization).into_grant().unwrap();
+    let grant = context
+        .policy
+        .evaluate(&authorization)
+        .into_grant()
+        .unwrap();
     let operation = AuthorizedOperation::issue(grant, 10, 20, UsePolicy::SingleStream).unwrap();
 
     StreamAuthority {

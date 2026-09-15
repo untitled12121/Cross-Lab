@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crosslab_core::{
     ControlDispatchError, SessionAuthError, SessionError, SessionState, StreamAdmissionError,
-    StreamOpenError, StreamSendError, TransportConnection,
+    StreamOpenError, StreamSendError,
 };
 use crosslab_m9_networking::{
     candidate::runtime::CandidateConfig,
@@ -125,7 +125,10 @@ async fn local_only_policy_rejects_remote_iroh_session() {
     let pair = authenticate_direct_pair(&fixture, AuthAttempt::Normal)
         .await
         .expect("authenticated Iroh pair");
-    let context = pair.server_session().context().expect("active session context");
+    let context = pair
+        .server_session()
+        .context()
+        .expect("active session context");
     let capability = CapabilityId::parse("files.transfer").unwrap();
     let version = CapabilityVersion::new(1, 0);
     let operation = OperationName::parse("send").unwrap();
