@@ -217,11 +217,8 @@ fn valid_authentication_activates_with_fresh_context_and_zero_sequences() {
         &local_ranges,
         &local_features,
     );
-    let responder = SessionHandshakeSide::new(
-        &fixture.responder_credential,
-        &peer_ranges,
-        &peer_features,
-    );
+    let responder =
+        SessionHandshakeSide::new(&fixture.responder_credential, &peer_ranges, &peer_features);
     let activation = SessionActivation::new(
         &fixture.authority,
         initiator,
@@ -293,11 +290,7 @@ fn replayed_proof_on_fresh_nonce_fails_closed() {
             &local_ranges,
             &local_features,
         ),
-        SessionHandshakeSide::new(
-            &fixture.responder_credential,
-            &peer_ranges,
-            &peer_features,
-        ),
+        SessionHandshakeSide::new(&fixture.responder_credential, &peer_ranges, &peer_features),
         SessionAuthRole::Initiator,
         &fixture.responder_trust,
         [0xee; 32],
@@ -343,11 +336,7 @@ fn wrong_channel_binding_fails_closed() {
             &local_ranges,
             &local_features,
         ),
-        SessionHandshakeSide::new(
-            &fixture.responder_credential,
-            &peer_ranges,
-            &peer_features,
-        ),
+        SessionHandshakeSide::new(&fixture.responder_credential, &peer_ranges, &peer_features),
         SessionAuthRole::Initiator,
         &fixture.responder_trust,
         [0x73; 32],
@@ -492,11 +481,7 @@ fn peer_trust_identity_and_accepted_credential_epoch_are_activation_gates() {
             &local_ranges,
             &local_features,
         ),
-        SessionHandshakeSide::new(
-            &fixture.responder_credential,
-            &peer_ranges,
-            &peer_features,
-        ),
+        SessionHandshakeSide::new(&fixture.responder_credential, &peer_ranges, &peer_features),
         SessionAuthRole::Initiator,
         &wrong_device_trust,
         [0x92; 32],
@@ -535,11 +520,7 @@ fn peer_trust_identity_and_accepted_credential_epoch_are_activation_gates() {
             &local_ranges,
             &local_features,
         ),
-        SessionHandshakeSide::new(
-            &fixture.responder_credential,
-            &peer_ranges,
-            &peer_features,
-        ),
+        SessionHandshakeSide::new(&fixture.responder_credential, &peer_ranges, &peer_features),
         SessionAuthRole::Initiator,
         &stale_trust,
         [0x92; 32],
@@ -579,11 +560,7 @@ fn active_session(fixture: &Fixture) -> LogicalSession {
             &local_ranges,
             &local_features,
         ),
-        SessionHandshakeSide::new(
-            &fixture.responder_credential,
-            &peer_ranges,
-            &peer_features,
-        ),
+        SessionHandshakeSide::new(&fixture.responder_credential, &peer_ranges, &peer_features),
         SessionAuthRole::Initiator,
         &fixture.responder_trust,
         [0xa2; 32],

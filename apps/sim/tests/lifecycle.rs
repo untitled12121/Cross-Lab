@@ -173,10 +173,8 @@ impl Fixture {
         let responder_proof = transcript
             .create_proof(SessionAuthRole::Responder, &self.responder_key)
             .unwrap();
-        let initiator =
-            SessionHandshakeSide::new(&self.initiator_credential, &ranges, &features);
-        let responder =
-            SessionHandshakeSide::new(&self.responder_credential, &ranges, &features);
+        let initiator = SessionHandshakeSide::new(&self.initiator_credential, &ranges, &features);
+        let responder = SessionHandshakeSide::new(&self.responder_credential, &ranges, &features);
 
         let mut session_a = LogicalSession::new();
         session_a
@@ -243,10 +241,8 @@ impl Fixture {
         let responder_proof = transcript
             .create_proof(SessionAuthRole::Responder, &self.responder_key)
             .unwrap();
-        let initiator =
-            SessionHandshakeSide::new(&self.initiator_credential, &ranges, &features);
-        let responder =
-            SessionHandshakeSide::new(&self.responder_credential, &ranges, &features);
+        let initiator = SessionHandshakeSide::new(&self.initiator_credential, &ranges, &features);
+        let responder = SessionHandshakeSide::new(&self.responder_credential, &ranges, &features);
         let mut session = LogicalSession::new();
         let result = session.authenticate(SessionActivation::new(
             &self.authority,

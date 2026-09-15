@@ -296,11 +296,7 @@ fn n013_joiner_key_substitution_after_confirmation_is_rejected() {
     .unwrap();
 
     assert_eq!(
-        joiner.accept_credential(
-            &fixture.authority,
-            &substituted,
-            &fixture.joiner_key,
-        ),
+        joiner.accept_credential(&fixture.authority, &substituted, &fixture.joiner_key,),
         Err(PairingFlowError::CredentialMismatch)
     );
     assert_eq!(joiner.state(), PairingJoinerState::Failed);
