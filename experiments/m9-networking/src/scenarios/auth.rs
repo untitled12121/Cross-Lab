@@ -529,10 +529,7 @@ fn promote_authenticated(
     })
 }
 
-fn require_active(
-    client: &LogicalSession,
-    server: &LogicalSession,
-) -> Result<(), BootstrapError> {
+fn require_active(client: &LogicalSession, server: &LogicalSession) -> Result<(), BootstrapError> {
     if client.state() == SessionState::Active && server.state() == SessionState::Active {
         Ok(())
     } else {
@@ -585,7 +582,9 @@ async fn send_bootstrap(
         .map_err(|_| EvalError::Control)
 }
 
-async fn receive_bootstrap(recv: &mut RecvStream) -> Result<SessionAuthBootstrapMessage, EvalError> {
+async fn receive_bootstrap(
+    recv: &mut RecvStream,
+) -> Result<SessionAuthBootstrapMessage, EvalError> {
     let frame = read_record(recv, BOOTSTRAP_RECORD_MAX, false)
         .await
         .map_err(|_| EvalError::Control)?;
