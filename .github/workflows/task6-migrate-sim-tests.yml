@@ -23,39 +23,27 @@ jobs:
 
           path = Path('apps/sim/tests/stream_scenarios.rs')
           text = path.read_text()
-          old_fields = '''    operation_name: OperationName,
-              trust_revision: u64,
-              policy_revision: u64,
-              grant: crosslab_policy::AuthorizationGrant,'''
-          new_fields = '''    operation_name: OperationName,
-              policy: PolicyState,
-              grant: crosslab_policy::AuthorizationGrant,'''
-          if old_fields not in text:
-              raise SystemExit('fixture fields shape changed')
-          text = text.replace(old_fields, new_fields, 1)
 
-          old_init = '''            operation_name,
-              trust_revision,
-              policy_revision: policy.revision(),
-              grant,'''
-          new_init = '''            operation_name,
-              policy,
-              grant,'''
-          if old_init not in text:
-              raise SystemExit('fixture initializer shape changed')
-          text = text.replace(old_init, new_init, 1)
+          replacements = [
+              ('    trust_revision: u64,\n    policy_revision: u64,\n', '    policy: PolicyState,\n'),
+              ('            trust_revision,\n            policy_revision: policy.revision(),\n', '            policy,\n'),
+              ('.accept_one(15, fixture.trust_revision, fixture.policy_revision)', '.accept_one(15, &fixture.sender_trust, &fixture.policy)'),
+              ('self.trust_revision', 'self.sender_trust.trust_revision()'),
+              ('self.policy_revision', 'self.policy.revision()'),
+              ('fixture.trust_revision', 'fixture.sender_trust.trust_revision()'),
+              ('fixture.policy_revision', 'fixture.policy.revision()'),
+          ]
 
-          old_accept = '.accept_one(15, fixture.trust_revision, fixture.policy_revision)'
-          count = text.count(old_accept)
-          if count < 1:
-              raise SystemExit('no old accept_one call sites found')
-          text = text.replace(old_accept, '.accept_one(15, &fixture.sender_trust, &fixture.policy)')
-          text = text.replace('self.trust_revision', 'self.sender_trust.trust_revision()')
-          text = text.replace('self.policy_revision', 'self.policy.revision()')
-          text = text.replace('fixture.trust_revision', 'fixture.sender_trust.trust_revision()')
-          text = text.replace('fixture.policy_revision', 'fixture.policy.revision()')
+          for old, new in replacements:
+              count = text.count(old)
+              if count < 1:
+                  raise SystemExit(f'missing expected migration token: {old!r}')
+              text = text.replace(old, new)
+              print(f'replaced {count}: {old!r}')
+
+          if 'trust_revision: u64' in text or 'policy_revision: u64' in text:
+              raise SystemExit('legacy fixture revision fields remain')
           path.write_text(text)
-          print(f'migrated {count} accept_one call sites')
           PY
           rm .github/workflows/task6-migrate-sim-tests.yml
           git config user.name "github-actions[bot]"
