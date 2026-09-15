@@ -1,0 +1,20 @@
+name: M9 Task 5 Focused
+
+on:
+  push:
+    branches:
+      - m9-task5-iroh-session-auth
+
+permissions:
+  contents: read
+
+jobs:
+  session-auth:
+    name: Iroh Session Auth
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Focused session test
+        run: cargo test -p crosslab-m9-networking --test session
