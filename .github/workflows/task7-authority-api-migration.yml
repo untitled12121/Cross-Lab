@@ -44,7 +44,11 @@ jobs:
 
           path = "crates/identity/src/credential.rs"
           replace_once(path, "    pub fn issue(\n", "    fn issue_with_authority_parts(\n")
-          replace_once(path, "        Self::issue_for_public_key(\n", "        Self::issue_for_public_key_with_authority_parts(\n")
+          replace_once(
+              path,
+              "        Self::issue_for_public_key(\n            owner_id,\n            device_id,\n            device_key.verifying_key(),\n            credential_epoch,\n            root,\n            issuer,\n            issuer_key,\n        )",
+              "        Self::issue_for_public_key_with_authority_parts(\n            owner_id,\n            device_id,\n            device_key.verifying_key(),\n            credential_epoch,\n            root,\n            issuer,\n            issuer_key,\n        )",
+          )
           replace_once(path, "    pub fn issue_current(\n", "    pub fn issue(\n")
           replace_once(path, "    pub fn issue_for_public_key(\n", "    fn issue_for_public_key_with_authority_parts(\n")
           replace_once(path, "    pub fn issue_for_public_key_current(\n", "    pub fn issue_for_public_key(\n")
