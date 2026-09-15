@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crosslab_core::{StreamSendError, TransportSendStream};
 
 use super::{
