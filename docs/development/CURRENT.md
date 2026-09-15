@@ -70,7 +70,7 @@ ADR-0011 is locked with characterization tests. A legitimately aged-out `Request
 
 Task 5 test commit: `654cfad19108df15ccccbe1c84e9f4116f9a5178`. Focused verification run `34930994570` passed the core/simulator/Quinn/fmt gate.
 
-### Task 6 — Complete, exact-head CI confirmation pending
+### Task 6 — Complete, historical exact-head bot CI was not runnable
 
 High-level stream admission accepts local `TrustRecord` and `PolicyState`, validates authenticated-peer trust ownership/state, and derives trust/policy revisions internally. `SimStreamRuntime::accept_one` no longer accepts caller-selected revision integers.
 
@@ -84,20 +84,28 @@ Implementation includes:
 - simulator, Quinn, lifecycle, and resource-hardening fixture migration to local trust/policy state;
 - tests for changed policy revision, locally revoked peer, and mismatched peer trust.
 
-Task 6 final code head before this documentation checkpoint: `6952b9dbec62a4c00e469e87bc589e3bd3e989e2`. Focused workflow `34960055976` passed the resource-hardening regression, full Quinn tests, complete workspace `cargo check --all-targets --all-features`, and `cargo fmt --check`. Earlier focused workflow `34959306875` passed core stream admission, full simulator tests, full Quinn transport tests, and formatting. Fuzz Smoke `34959517230` passed all five bounded targets on the immediately preceding checkpoint.
+Task 6 final code head before this documentation checkpoint: `6952b9dbec62a4c00e469e87bc589e3bd3e989e2`. Focused workflow `34960055976` passed the resource-hardening regression, full Quinn tests, complete workspace `cargo check --all-targets --all-features`, and `cargo fmt --check`. Earlier focused workflow `34959306875` passed core stream admission, full simulator tests, full Quinn transport tests, and formatting. Fuzz Smoke `34959517230` passed all five bounded targets on the immediately preceding checkpoint. CI/Fuzz created directly from the bot-authored Task 6 head were `action_required` without jobs, so that historical head has no separate exact-head CI claim.
+
+### Task 7 — Implementation complete, exact-head verification pending
+
+Obsolete caller-selected high-level authority/currentness APIs have been removed from ordinary public paths and remaining call sites were migrated to `OwnerAuthorityState`. Clean ordinary method names now resolve current authority internally. Raw root/delegation/floor helpers remain private implementation details; `AuthorityDelegation::verify(root, minimum_epoch)` remains the low-level cryptographic/import primitive and `DeviceCredential::from_unverified_signed_parts` remains available for signed-object import.
+
+Migration workflow `34972799429` passed formatting plus `cargo check --workspace --all-targets --all-features` and committed the transformed code at `cf48aaa26fb4099864c6afbd5218043e551745f1` (`refactor(security): finish authority-state caller migration`). The temporary migration workflow/scripts removed themselves in that commit.
+
+The bot-authored code head triggered CI/Fuzz as `action_required` without runnable jobs. This documentation checkpoint intentionally creates a human-authored exact head so normal PR CI/Fuzz can verify the transformed code. Task 7 is not recorded complete until Rust CI passes workspace audit/fmt/check/Clippy/tests, including the existing identity/policy/protocol golden-vector tests.
 
 ## Remaining Plan
 
-7. remove obsolete caller-selected high-level authority/currentness APIs, migrate remaining call sites, and prove identity/policy/protocol golden compatibility;
+7. require exact-head Rust CI success for the completed authority migration, including unchanged golden vectors and Clippy `-D warnings`;
 8. run final full security/CI/Fuzz reconciliation, update durable evidence, merge PR #23, and verify the resulting `main` commit.
 
 ## Exact Next Task
 
-1. Require fresh exact-head Rust CI and Fuzz Smoke success after this checkpoint.
-2. When green, execute Task 7 using compiler/search output as the migration checklist; do not add compatibility shims that recreate caller-selected currentness.
-3. Preserve `AuthorityDelegation::verify(root, minimum_epoch)` only as the low-level cryptographic/import primitive and preserve `DeviceCredential::from_unverified_signed_parts`.
-4. Verify identity, policy, and protocol golden vectors byte-for-byte.
-5. Execute Task 8 and keep M9 networking Task 4 blocked until PR #23 is merged and post-merge `main` is green.
+1. Require fresh exact-head Rust CI success on this checkpoint and inspect Fuzz Smoke as additional evidence.
+2. If CI fails, use compiler/test output as the checklist and fix only the demonstrated Task 7 regression; do not add compatibility shims that recreate caller-selected currentness.
+3. When green, record Task 7 complete with exact run evidence.
+4. Execute Task 8: full workspace/audit/fuzz gate, reconcile the security assessment and audit, update this file and the active plan, and verify the final exact PR head.
+5. Merge PR #23 only with its expected verified head SHA, then require post-merge `main` CI green before resuming M9 remote-networking Task 4.
 
 ## M9 Invariants
 
@@ -114,7 +122,7 @@ Task 6 final code head before this documentation checkpoint: `6952b9dbec62a4c00e
 ## Resume Procedure
 
 1. inspect `main`, PR #23, recent workflows, and this file;
-2. require the prior exact head to be green before starting the next remediation task;
+2. require the current exact head to be green before starting the next remediation task;
 3. execute remaining tasks in small verified checkpoints;
 4. update this file with exact evidence after meaningful progress;
 5. do not resume M9 networking Task 4 until the entire remediation is merged and post-merge verified.
