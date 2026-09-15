@@ -6,7 +6,8 @@ use crosslab_core::{
 };
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,
+    OwnerRootRecord,
 };
 use crosslab_policy::{
     ApprovalInstant, NetworkClass, PairingTrustTransition, PolicyState, TransitionId,
@@ -72,6 +73,8 @@ fn rotated_peer_credential_invalidates_old_control_snapshot() {
             delegation.delegation_epoch(),
         )
         .unwrap();
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(delegation).unwrap();
     let ranges = [ProtocolRange::new(1, 0, 0).unwrap()];
     let features = FeatureSet::new(&[], &[]).unwrap();
     let binding = ChannelBinding::new("in-process-test", vec![0x49; 32]);
@@ -96,9 +99,9 @@ fn rotated_peer_credential_invalidates_old_control_snapshot() {
     let mut session = LogicalSession::new();
     session
         .authenticate(SessionActivation::new(
-            &root,
-            SessionHandshakeSide::new(&local_credential, &delegation, &ranges, &features),
-            SessionHandshakeSide::new(&peer_credential, &delegation, &ranges, &features),
+            &authority,
+            SessionHandshakeSide::new(&local_credential, &ranges, &features),
+            SessionHandshakeSide::new(&peer_credential, &ranges, &features),
             SessionAuthRole::Initiator,
             &peer_trust,
             [0x4a; 32],

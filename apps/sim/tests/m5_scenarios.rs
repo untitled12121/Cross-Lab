@@ -8,7 +8,8 @@ use crosslab_core::{
 };
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,
+    OwnerRootRecord,
 };
 use crosslab_policy::{
     CapabilityId, CapabilityVersion, CapabilityVersionRange, LocalCapability, NetworkClass,
@@ -33,59 +34,47 @@ const RESPONDER_NONCE: [u8; 32] = [0x42; 32];
 
 fn establish_trust(
     credential: &DeviceCredential,
-    root: &OwnerRootRecord,
-    delegation: &AuthorityDelegation,
+    authority: &OwnerAuthorityState,
     issuer_key: &SigningKey,
     transition_byte: u8,
 ) -> TrustRecord {
-    let initial_credential = DeviceCredential::issue_for_public_key(
+    let initial_credential = DeviceCredential::issue_for_public_key_current(
         credential.owner_id(),
         credential.device_id(),
         credential.device_public_key(),
         0,
-        root,
-        delegation,
+        authority,
         issuer_key,
     )
     .unwrap();
-    let transition = PairingTrustTransition::issue(
+    let transition = PairingTrustTransition::issue_current(
         &initial_credential,
         TransitionId::from_bytes([transition_byte; 32]),
         [transition_byte.wrapping_add(1); 32],
-        root,
-        delegation,
+        authority,
         issuer_key,
-        delegation.delegation_epoch(),
     )
     .unwrap();
     let mut trust = transition
-        .establish(
-            &initial_credential,
-            root,
-            delegation,
-            delegation.delegation_epoch(),
-        )
+        .establish_current(&initial_credential, authority)
         .unwrap();
 
     for epoch in 1..=credential.credential_epoch() {
-        let successor = DeviceCredential::issue_for_public_key(
+        let successor = DeviceCredential::issue_for_public_key_current(
             credential.owner_id(),
             credential.device_id(),
             credential.device_public_key(),
             epoch,
-            root,
-            delegation,
+            authority,
             issuer_key,
         )
         .unwrap();
         let mut transition_id = [transition_byte; 32];
         transition_id[..8].copy_from_slice(&epoch.to_be_bytes());
         trust
-            .accept_successor_credential(
+            .accept_successor_credential_current(
                 &successor,
-                root,
-                delegation,
-                delegation.delegation_epoch(),
+                authority,
                 TransitionId::from_bytes(transition_id),
             )
             .unwrap();
@@ -96,9 +85,8 @@ fn establish_trust(
 
 struct M5Fixture {
     owner_id: OwnerId,
-    root: OwnerRootRecord,
+    authority: OwnerAuthorityState,
     issuer_key: SigningKey,
-    delegation: AuthorityDelegation,
     inviter_key: SigningKey,
     joiner_key: SigningKey,
     inviter_device_id: DeviceId,
@@ -123,17 +111,18 @@ impl M5Fixture {
             0,
             &root_key,
         );
+        let mut authority = OwnerAuthorityState::new(root);
+        authority.accept_delegation(delegation).unwrap();
         let inviter_key = SigningKey::from_secret_bytes([0x13; 32]);
         let joiner_key = SigningKey::from_secret_bytes([0x14; 32]);
         let inviter_device_id = DeviceId::from_bytes([0x15; 32]);
         let joiner_device_id = DeviceId::from_bytes([0x16; 32]);
-        let inviter_credential = DeviceCredential::issue(
+        let inviter_credential = DeviceCredential::issue_current(
             owner_id,
             inviter_device_id,
             &inviter_key,
             3,
-            &root,
-            &delegation,
+            &authority,
             &issuer_key,
         )
         .unwrap();
@@ -160,9 +149,8 @@ impl M5Fixture {
 
         Self {
             owner_id,
-            root,
+            authority,
             issuer_key,
-            delegation,
             inviter_key,
             joiner_key,
             inviter_device_id,
@@ -213,23 +201,20 @@ impl M5Fixture {
 
         let credential = inviter
             .issue_initial_joiner_credential(
-                &self.root,
-                &self.delegation,
+                &self.authority,
                 &self.issuer_key,
                 PairingInstant::from_ticks(20),
             )
             .unwrap();
         let accepted = joiner
-            .accept_credential(&self.root, &self.delegation, &credential, &self.joiner_key)
+            .accept_credential(&self.authority, &credential, &self.joiner_key)
             .unwrap();
         let trust = inviter
             .commit_trust(
                 &accepted,
                 TransitionId::from_bytes([0x1b; 32]),
-                &self.root,
-                &self.delegation,
+                &self.authority,
                 &self.issuer_key,
-                self.delegation.delegation_epoch(),
                 PairingInstant::from_ticks(30),
             )
             .unwrap();
@@ -240,8 +225,7 @@ impl M5Fixture {
     fn inviter_trust(&self) -> TrustRecord {
         establish_trust(
             &self.inviter_credential,
-            &self.root,
-            &self.delegation,
+            &self.authority,
             &self.issuer_key,
             0x1c,
         )
@@ -332,17 +316,11 @@ impl M5Fixture {
     ) -> (LogicalSession, Result<(), SessionError>) {
         let ranges = Self::protocol_ranges();
         let features = Self::features();
-        let initiator = SessionHandshakeSide::new(
-            &self.inviter_credential,
-            &self.delegation,
-            &ranges,
-            &features,
-        );
-        let responder =
-            SessionHandshakeSide::new(joiner_credential, &self.delegation, &ranges, &features);
+        let initiator = SessionHandshakeSide::new(&self.inviter_credential, &ranges, &features);
+        let responder = SessionHandshakeSide::new(joiner_credential, &ranges, &features);
         let mut session = LogicalSession::new();
         let result = session.authenticate(SessionActivation::new(
-            &self.root,
+            &self.authority,
             initiator,
             responder,
             local_role,
@@ -599,20 +577,18 @@ fn session_proofs_bound_to_another_channel_are_rejected_closed() {
 fn stale_accepted_credential_epoch_is_rejected_before_session_activation() {
     let fixture = M5Fixture::new();
     let (joiner_credential, _) = fixture.complete_pairing(JOINER_EPOCH);
-    let newer_credential = DeviceCredential::issue_for_public_key(
+    let newer_credential = DeviceCredential::issue_for_public_key_current(
         fixture.owner_id,
         fixture.joiner_device_id,
         fixture.joiner_key.verifying_key(),
         JOINER_EPOCH + 1,
-        &fixture.root,
-        &fixture.delegation,
+        &fixture.authority,
         &fixture.issuer_key,
     )
     .unwrap();
     let stale_trust = establish_trust(
         &newer_credential,
-        &fixture.root,
-        &fixture.delegation,
+        &fixture.authority,
         &fixture.issuer_key,
         0x80,
     );
@@ -656,23 +632,19 @@ fn owner_mismatch_in_peer_trust_is_rejected_before_session_activation() {
         0,
         &wrong_root_key,
     );
-    let wrong_credential = DeviceCredential::issue_for_public_key(
+    let mut wrong_authority = OwnerAuthorityState::new(wrong_root);
+    wrong_authority.accept_delegation(wrong_delegation).unwrap();
+    let wrong_credential = DeviceCredential::issue_for_public_key_current(
         wrong_owner,
         fixture.joiner_device_id,
         fixture.joiner_key.verifying_key(),
         JOINER_EPOCH,
-        &wrong_root,
-        &wrong_delegation,
+        &wrong_authority,
         &wrong_issuer_key,
     )
     .unwrap();
-    let wrong_owner_trust = establish_trust(
-        &wrong_credential,
-        &wrong_root,
-        &wrong_delegation,
-        &wrong_issuer_key,
-        0x91,
-    );
+    let wrong_owner_trust =
+        establish_trust(&wrong_credential, &wrong_authority, &wrong_issuer_key, 0x91);
     let pair = transport_pair([0x92; 32]);
     let (endpoint_a, _) = pair.endpoints();
     let binding = endpoint_a.channel_binding();

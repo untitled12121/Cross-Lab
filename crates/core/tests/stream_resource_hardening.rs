@@ -6,7 +6,8 @@ use crosslab_core::{
 };
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,
+    OwnerRootRecord,
 };
 use crosslab_policy::{
     AuthorizationContext, AuthorizedOperation, CapabilityId, CapabilityVersion,
@@ -42,63 +43,53 @@ impl Fixture {
             0,
             &root_key,
         );
+        let mut authority = OwnerAuthorityState::new(root);
+        authority.accept_delegation(delegation).unwrap();
         let initiator_key = SigningKey::from_secret_bytes([0xe6; 32]);
         let responder_key = SigningKey::from_secret_bytes([0xe7; 32]);
-        let initiator_credential = DeviceCredential::issue(
+        let initiator_credential = DeviceCredential::issue_current(
             owner_id,
             DeviceId::from_bytes([0xe8; 32]),
             &initiator_key,
             1,
-            &root,
-            &delegation,
+            &authority,
             &issuer_key,
         )
         .unwrap();
         let responder_device_id = DeviceId::from_bytes([0xe9; 32]);
-        let responder_initial_credential = DeviceCredential::issue(
+        let responder_initial_credential = DeviceCredential::issue_current(
             owner_id,
             responder_device_id,
             &responder_key,
             0,
-            &root,
-            &delegation,
+            &authority,
             &issuer_key,
         )
         .unwrap();
-        let responder_credential = DeviceCredential::issue(
+        let responder_credential = DeviceCredential::issue_current(
             owner_id,
             responder_device_id,
             &responder_key,
             1,
-            &root,
-            &delegation,
+            &authority,
             &issuer_key,
         )
         .unwrap();
-        let transition = PairingTrustTransition::issue(
+        let transition = PairingTrustTransition::issue_current(
             &responder_initial_credential,
             TransitionId::from_bytes([0xea; 32]),
             [0xf1; 32],
-            &root,
-            &delegation,
+            &authority,
             &issuer_key,
-            delegation.delegation_epoch(),
         )
         .unwrap();
         let mut peer_trust = transition
-            .establish(
-                &responder_initial_credential,
-                &root,
-                &delegation,
-                delegation.delegation_epoch(),
-            )
+            .establish_current(&responder_initial_credential, &authority)
             .unwrap();
         peer_trust
-            .accept_successor_credential(
+            .accept_successor_credential_current(
                 &responder_credential,
-                &root,
-                &delegation,
-                delegation.delegation_epoch(),
+                &authority,
                 TransitionId::from_bytes([0xf2; 32]),
             )
             .unwrap();
@@ -126,9 +117,9 @@ impl Fixture {
         let mut session = LogicalSession::new();
         session
             .authenticate(SessionActivation::new(
-                &root,
-                SessionHandshakeSide::new(&initiator_credential, &delegation, &ranges, &features),
-                SessionHandshakeSide::new(&responder_credential, &delegation, &ranges, &features),
+                &authority,
+                SessionHandshakeSide::new(&initiator_credential, &ranges, &features),
+                SessionHandshakeSide::new(&responder_credential, &ranges, &features),
                 SessionAuthRole::Initiator,
                 &peer_trust,
                 [0xec; 32],

@@ -3,7 +3,9 @@ use crosslab_core::{
     PairingSecret,
 };
 use crosslab_crypto::SigningKey;
-use crosslab_identity::{AuthorityDelegation, AuthorityRole, DeviceId, OwnerId, OwnerRootRecord};
+use crosslab_identity::{
+    AuthorityDelegation, AuthorityRole, DeviceId, OwnerAuthorityState, OwnerId, OwnerRootRecord,
+};
 use crosslab_protocol::{PairingHello, PairingRole};
 
 #[test]
@@ -19,6 +21,8 @@ fn credential_acceptance_proof_matches_golden_vector() {
         0,
         &root_key,
     );
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(delegation).unwrap();
     let inviter_key = SigningKey::from_secret_bytes([0x13; 32]);
     let joiner_key = SigningKey::from_secret_bytes([0x14; 32]);
     let inviter_device_id = DeviceId::from_bytes([0x15; 32]);
@@ -73,15 +77,10 @@ fn credential_acceptance_proof_matches_golden_vector() {
         .verify_inviter_confirmation(&inviter_confirmation)
         .unwrap();
     let credential = inviter
-        .issue_initial_joiner_credential(
-            &root,
-            &delegation,
-            &issuer_key,
-            PairingInstant::from_ticks(20),
-        )
+        .issue_initial_joiner_credential(&authority, &issuer_key, PairingInstant::from_ticks(20))
         .unwrap();
     let accepted = joiner
-        .accept_credential(&root, &delegation, &credential, &joiner_key)
+        .accept_credential(&authority, &credential, &joiner_key)
         .unwrap();
 
     let actual = (

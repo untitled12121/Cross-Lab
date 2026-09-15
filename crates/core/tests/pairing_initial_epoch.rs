@@ -3,7 +3,9 @@ use crosslab_core::{
     PairingSecret,
 };
 use crosslab_crypto::SigningKey;
-use crosslab_identity::{AuthorityDelegation, AuthorityRole, DeviceId, OwnerId, OwnerRootRecord};
+use crosslab_identity::{
+    AuthorityDelegation, AuthorityRole, DeviceId, OwnerAuthorityState, OwnerId, OwnerRootRecord,
+};
 use crosslab_protocol::{PairingHello, PairingRole};
 
 #[test]
@@ -19,6 +21,8 @@ fn initial_pairing_credential_epoch_is_zero() {
         0,
         &root_key,
     );
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(delegation).unwrap();
     let inviter_key = SigningKey::from_secret_bytes([0x44; 32]);
     let joiner_key = SigningKey::from_secret_bytes([0x45; 32]);
     let inviter_device_id = DeviceId::from_bytes([0x46; 32]);
@@ -73,12 +77,7 @@ fn initial_pairing_credential_epoch_is_zero() {
         .unwrap();
 
     let credential = inviter
-        .issue_initial_joiner_credential(
-            &root,
-            &delegation,
-            &issuer_key,
-            PairingInstant::from_ticks(20),
-        )
+        .issue_initial_joiner_credential(&authority, &issuer_key, PairingInstant::from_ticks(20))
         .unwrap();
 
     assert_eq!(credential.credential_epoch(), 0);

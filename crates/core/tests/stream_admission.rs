@@ -7,7 +7,8 @@ use crosslab_core::{
 };
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,
+    OwnerRootRecord,
 };
 use crosslab_policy::{
     AuthorizationContext, AuthorizedOperation, CapabilityId, CapabilityVersion,
@@ -130,6 +131,8 @@ impl Fixture {
         .unwrap();
         let peer_trust =
             establish_trust(&responder_credential, &root, &delegation, &issuer_key, 0x17);
+        let mut authority = OwnerAuthorityState::new(root);
+        authority.accept_delegation(delegation).unwrap();
         let ranges = [ProtocolRange::new(1, 0, 0).unwrap()];
         let features = FeatureSet::new(&[], &[]).unwrap();
         let binding = ChannelBinding::new("in-process-test", vec![0x18; 32]);
@@ -152,9 +155,9 @@ impl Fixture {
             .create_proof(SessionAuthRole::Responder, &responder_key)
             .unwrap();
         let activation = SessionActivation::new(
-            &root,
-            SessionHandshakeSide::new(&initiator_credential, &delegation, &ranges, &features),
-            SessionHandshakeSide::new(&responder_credential, &delegation, &ranges, &features),
+            &authority,
+            SessionHandshakeSide::new(&initiator_credential, &ranges, &features),
+            SessionHandshakeSide::new(&responder_credential, &ranges, &features),
             SessionAuthRole::Initiator,
             &peer_trust,
             [0x19; 32],
