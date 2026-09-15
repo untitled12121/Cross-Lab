@@ -46,80 +46,77 @@ jobs:
           new_import = '    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,\n    OwnerRootRecord,\n'
           text = replace_one(text, old_import, new_import, 'stream_resource_hardening import')
 
-          setup = '''        let mut authority = OwnerAuthorityState::new(root);
-          authority.accept_delegation(delegation).unwrap();
-          let initiator_key = SigningKey::from_secret_bytes([0xe6; 32]);
-          let responder_key = SigningKey::from_secret_bytes([0xe7; 32]);
-          let initiator_credential = DeviceCredential::issue_current(
-              owner_id,
-              DeviceId::from_bytes([0xe8; 32]),
-              &initiator_key,
-              1,
-              &authority,
-              &issuer_key,
-          )
-          .unwrap();
-          let responder_device_id = DeviceId::from_bytes([0xe9; 32]);
-          let responder_initial_credential = DeviceCredential::issue_current(
-              owner_id,
-              responder_device_id,
-              &responder_key,
-              0,
-              &authority,
-              &issuer_key,
-          )
-          .unwrap();
-          let responder_credential = DeviceCredential::issue_current(
-              owner_id,
-              responder_device_id,
-              &responder_key,
-              1,
-              &authority,
-              &issuer_key,
-          )
-          .unwrap();
-          let transition = PairingTrustTransition::issue_current(
-              &responder_initial_credential,
-              TransitionId::from_bytes([0xea; 32]),
-              [0xf1; 32],
-              &authority,
-              &issuer_key,
-          )
-          .unwrap();
-          let mut peer_trust = transition
-              .establish_current(&responder_initial_credential, &authority)
-              .unwrap();
-          peer_trust
-              .accept_successor_credential_current(
-                  &responder_credential,
-                  &authority,
-                  TransitionId::from_bytes([0xf2; 32]),
-              )
-              .unwrap();
-'''
+          setup = '\n'.join([
+              '        let mut authority = OwnerAuthorityState::new(root);',
+              '        authority.accept_delegation(delegation).unwrap();',
+              '        let initiator_key = SigningKey::from_secret_bytes([0xe6; 32]);',
+              '        let responder_key = SigningKey::from_secret_bytes([0xe7; 32]);',
+              '        let initiator_credential = DeviceCredential::issue_current(',
+              '            owner_id,',
+              '            DeviceId::from_bytes([0xe8; 32]),',
+              '            &initiator_key,',
+              '            1,',
+              '            &authority,',
+              '            &issuer_key,',
+              '        )',
+              '        .unwrap();',
+              '        let responder_device_id = DeviceId::from_bytes([0xe9; 32]);',
+              '        let responder_initial_credential = DeviceCredential::issue_current(',
+              '            owner_id,',
+              '            responder_device_id,',
+              '            &responder_key,',
+              '            0,',
+              '            &authority,',
+              '            &issuer_key,',
+              '        )',
+              '        .unwrap();',
+              '        let responder_credential = DeviceCredential::issue_current(',
+              '            owner_id,',
+              '            responder_device_id,',
+              '            &responder_key,',
+              '            1,',
+              '            &authority,',
+              '            &issuer_key,',
+              '        )',
+              '        .unwrap();',
+              '        let transition = PairingTrustTransition::issue_current(',
+              '            &responder_initial_credential,',
+              '            TransitionId::from_bytes([0xea; 32]),',
+              '            [0xf1; 32],',
+              '            &authority,',
+              '            &issuer_key,',
+              '        )',
+              '        .unwrap();',
+              '        let mut peer_trust = transition',
+              '            .establish_current(&responder_initial_credential, &authority)',
+              '            .unwrap();',
+              '        peer_trust',
+              '            .accept_successor_credential_current(',
+              '                &responder_credential,',
+              '                &authority,',
+              '                TransitionId::from_bytes([0xf2; 32]),',
+              '            )',
+              '            .unwrap();',
+              '',
+          ])
           text = replace_region(
               text,
               '        let initiator_key = SigningKey::from_secret_bytes([0xe6; 32]);',
               '        let ranges = [ProtocolRange::new(1, 0, 0).unwrap()];',
               setup,
           )
-          text = replace_one(
-              text,
-              '                &root,',
-              '                &authority,',
-              'stream_resource_hardening activation authority',
-          )
+          text = replace_one(text, '                &root,', '                &authority,', 'stream activation authority')
           text = replace_one(
               text,
               '                SessionHandshakeSide::new(&initiator_credential, &delegation, &ranges, &features),',
               '                SessionHandshakeSide::new(&initiator_credential, &ranges, &features),',
-              'stream_resource_hardening initiator handshake',
+              'stream initiator handshake',
           )
           text = replace_one(
               text,
               '                SessionHandshakeSide::new(&responder_credential, &delegation, &ranges, &features),',
               '                SessionHandshakeSide::new(&responder_credential, &ranges, &features),',
-              'stream_resource_hardening responder handshake',
+              'stream responder handshake',
           )
           path.write_text(text)
           PY
