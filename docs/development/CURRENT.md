@@ -8,19 +8,19 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 ## Current Milestone
 
-**M9 — Remote Networking ADR. Foundation authority/replay remediation is complete, merged, and post-merge verified. M9 remote-networking Task 4 is next.**
+**M9 — Remote Networking ADR. Foundation authority/replay remediation is complete and M9 remote-networking Task 4 has a verified implementation candidate in PR #24.**
 
-M1–M8 are complete. M9 networking research Tasks 1–3 are complete. The ADR-0010/ADR-0011 foundation remediation is complete.
+M1–M8 are complete. M9 networking research Tasks 1–3 are complete. Task 4 implementation is complete and awaiting its final cleanup-head CI/merge gate. ADR-0009 remains undecided.
 
 ## Canonical Baseline
 
-- `main` remediation merge: `450615a7c361384cfbe68bc8991b7ca03e4482fa`.
-- Merged PR: **#23 — M9 foundation: implement authority currentness and replay hardening**.
-- Verified PR head: `092d34b7e7eb30e0aa5d5bfeb311db343d0e11d6`.
-- Exact-head Rust CI `34974781151` passed lockfile verification, dependency audit, rustfmt, full workspace check, Clippy with `-D warnings`, and complete workspace tests.
-- Exact-head Fuzz Smoke `34974781112` passed `control_frame`, `data_stream_open`, `identifiers`, `pairing_bootstrap`, and `session_auth` at 256 runs each under `nightly-2026-09-12`.
-- Post-merge `main` Rust CI `34979066740` passed dependency audit, rustfmt, full workspace check, Clippy with `-D warnings`, and complete workspace tests.
-- `paste 1.0.15` / `RUSTSEC-2024-0436` remains an unsuppressed maintenance warning isolated to the Iroh experiment and must be re-evaluated before production networking promotion.
+- Current `main`: `ea402bb182fa744592e18b08f72903e657e3375e`.
+- Foundation remediation merge: `450615a7c361384cfbe68bc8991b7ca03e4482fa` via PR #23.
+- Foundation verified PR head: `092d34b7e7eb30e0aa5d5bfeb311db343d0e11d6`.
+- Foundation exact-head Rust CI `34974781151` passed lockfile verification, dependency audit, rustfmt, full workspace check, Clippy with `-D warnings`, and complete workspace tests.
+- Foundation exact-head Fuzz Smoke `34974781112` passed `control_frame`, `data_stream_open`, `identifiers`, `pairing_bootstrap`, and `session_auth` at 256 runs each under `nightly-2026-09-12`.
+- Foundation post-merge `main` Rust CI `34979066740` passed dependency audit, rustfmt, full workspace check, Clippy with `-D warnings`, and complete workspace tests.
+- `paste 1.0.15` / `RUSTSEC-2024-0436` remains an allowed maintenance warning isolated to the Iroh experiment and must be re-evaluated before production networking promotion.
 
 ## Accepted Foundation State
 
@@ -54,8 +54,15 @@ Tasks 1–8 are complete. Security assessment and whole-project audit are reconc
 
 - Quinn remains the verified local/LAN baseline.
 - Iroh `1.2.0` remains isolated under `experiments/m9-networking` until ADR-0009 selects the remote-networking architecture.
-- M9 networking research Tasks 1–3 are complete.
-- ADR-0009 remains reserved for the M9 remote-networking decision.
+- M9 networking Tasks 1–3 are complete on `main`.
+- Task 4 implementation candidate is PR **#24 — M9 Task 4: bounded Iroh stream transport**.
+- Task 4 RED evidence: focused run `34993804521` failed as expected because the planned `candidate::connection` surface did not yet exist.
+- Task 4 verified implementation head: `08f45c8974de5213277249c946be4c12cb0d1f90`.
+- Focused run `35002480457` passed candidate library, control, and stream tests on that head.
+- Full Rust CI `35002483529` passed dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and complete workspace tests on that head.
+- Task 4 keeps `IrohTransportConnection` crate-private and implements only the existing `TransportConnection` semantic seam; no Iroh type is exposed through Cross-Lab domain/public APIs.
+- Uni-stream opening/chunk limits, stream-slot and chunk-queue bounds, ordered delivery, clean FIN, reset/drop/cancel, connection close, and joined task shutdown are covered.
+- ADR-0009 remains reserved for the final M9 remote-networking decision; Task 4 does not promote Iroh to production.
 - Remote sessions remain `NetworkClass::Remote` for their lifetime.
 - Iroh identity/address/path/relay/transport metadata must never become Cross-Lab identity/trust/policy authority.
 - No 0-RTT authority.
@@ -75,19 +82,21 @@ Tasks 1–8 are complete. Security assessment and whole-project audit are reconc
 
 ## Exact Next Task
 
-Resume **M9 remote-networking Task 4** from the active M9 networking plan. Before implementation:
+Finish the **Task 4 integration gate**:
 
-1. re-read the Master Architecture, the active M9 plan, ADRs, and this file;
-2. inspect current `main`, recent commits, and repository state;
-3. inspect the isolated Iroh experiment and relevant uploaded Iroh/Quinn/libp2p research before changing networking architecture;
-4. preserve Cross-Lab identity, session, authorization, and lifecycle authority above transport metadata;
-5. implement the smallest measured Task 4 slice with focused tests and exact verification evidence;
-6. do not write ADR-0009 until the required remote connectivity, relay, NAT/path, lifecycle, and comparative measurement evidence is complete.
+1. require exact cleanup-head Rust CI green with no temporary Task 4 workflow in the final diff;
+2. update PR #24 from draft/RED-only metadata to the verified implementation state;
+3. merge PR #24 only if the exact head remains mergeable and green;
+4. verify the resulting `main` commit with the full Rust CI gate;
+5. then start **M9 remote-networking Task 5 — Existing Cross-Lab session authentication over Iroh** from `docs/plans/phase-1/M9-remote-networking.md` on a fresh branch from verified `main`.
+
+Task 5 must reuse the existing Cross-Lab hello/proof/session activation protocol unchanged, derive authority from Cross-Lab credentials and trust rather than Iroh endpoint identity, keep the network class fixed to `Remote`, reject wrong-binding and replay attempts, and refuse transport promotion until both logical sessions are active.
 
 ## Resume Procedure
 
-1. verify `main` and this file are still current;
-2. read the active M9 networking plan and relevant ADRs/specs;
-3. inspect current experiment code and research repositories before implementation;
-4. execute M9 Task 4 in small verified checkpoints;
-5. update this file after meaningful progress with exact commits, verification status, unfinished work, and the next task.
+1. verify `main`, open PRs, and this file against actual repository state;
+2. finish PR #24 exact-head and post-merge verification if still open;
+3. read the active M9 remote-networking plan and relevant session/transport ADRs before Task 5 implementation;
+4. inspect existing session-auth code, the verified M8 Quinn patterns, and the isolated Iroh experiment before changing code;
+5. execute Task 5 RED -> verified failure -> minimal GREEN -> focused tests -> full gate;
+6. update this file after meaningful progress with exact commits, verification status, unfinished work, and the next task.
