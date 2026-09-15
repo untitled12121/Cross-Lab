@@ -1,0 +1,204 @@
+name: Task4 Session Scenarios Migration
+
+on:
+  push:
+    branches:
+      - m9-authority-replay-remediation
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: m9-authority-replay-remediation
+          fetch-depth: 0
+      - name: Install Rust
+        run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt
+      - name: Migrate session scenarios fixture
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('apps/sim/tests/session_scenarios.rs')
+          text = path.read_text()
+
+          old_import = '    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,\n'
+          new_import = '    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,\n    OwnerRootRecord,\n'
+          if old_import not in text:
+              raise SystemExit('identity import shape changed')
+          text = text.replace(old_import, new_import, 1)
+
+          start = text.index('fn establish_trust(')
+          end = text.index('\n\nstruct Fixture', start)
+          replacement = '''fn establish_trust(
+              credential: &DeviceCredential,
+              authority: &OwnerAuthorityState,
+              issuer_key: &SigningKey,
+              transition_byte: u8,
+          ) -> TrustRecord {
+              let initial_credential = DeviceCredential::issue_for_public_key_current(
+                  credential.owner_id(),
+                  credential.device_id(),
+                  credential.device_public_key(),
+                  0,
+                  authority,
+                  issuer_key,
+              )
+              .unwrap();
+              let transition = PairingTrustTransition::issue_current(
+                  &initial_credential,
+                  TransitionId::from_bytes([transition_byte; 32]),
+                  [transition_byte.wrapping_add(1); 32],
+                  authority,
+                  issuer_key,
+              )
+              .unwrap();
+              let mut trust = transition
+                  .establish_current(&initial_credential, authority)
+                  .unwrap();
+
+              for epoch in 1..=credential.credential_epoch() {
+                  let successor = DeviceCredential::issue_for_public_key_current(
+                      credential.owner_id(),
+                      credential.device_id(),
+                      credential.device_public_key(),
+                      epoch,
+                      authority,
+                      issuer_key,
+                  )
+                  .unwrap();
+                  let mut transition_id = [transition_byte; 32];
+                  transition_id[..8].copy_from_slice(&epoch.to_be_bytes());
+                  trust
+                      .accept_successor_credential_current(
+                          &successor,
+                          authority,
+                          TransitionId::from_bytes(transition_id),
+                      )
+                      .unwrap();
+              }
+
+              trust
+          }'''
+          text = text[:start] + replacement + text[end:]
+
+          old_struct = '''struct Fixture {
+              owner_id: OwnerId,
+              root: OwnerRootRecord,
+              delegation: AuthorityDelegation,
+              initiator_key: SigningKey,
+              responder_key: SigningKey,
+              initiator_credential: DeviceCredential,
+              responder_credential: DeviceCredential,
+              initiator_trust: TrustRecord,
+              responder_trust: TrustRecord,
+          }'''
+          new_struct = '''struct Fixture {
+              owner_id: OwnerId,
+              authority: OwnerAuthorityState,
+              initiator_key: SigningKey,
+              responder_key: SigningKey,
+              initiator_credential: DeviceCredential,
+              responder_credential: DeviceCredential,
+              initiator_trust: TrustRecord,
+              responder_trust: TrustRecord,
+          }'''
+          if old_struct not in text:
+              raise SystemExit('fixture struct shape changed')
+          text = text.replace(old_struct, new_struct, 1)
+
+          start = text.index('    fn new() -> Self {')
+          end = text.index('\n\n    fn protocol_ranges', start)
+          replacement = '''    fn new() -> Self {
+              let owner_id = OwnerId::from_bytes([0x30; 32]);
+              let root_key = SigningKey::from_secret_bytes([0x31; 32]);
+              let root = OwnerRootRecord::new(owner_id, &root_key, 0);
+              let issuer_key = SigningKey::from_secret_bytes([0x32; 32]);
+              let delegation = AuthorityDelegation::issue(
+                  owner_id,
+                  AuthorityRole::DeviceSigning,
+                  &issuer_key,
+                  0,
+                  &root_key,
+              );
+              let mut authority = OwnerAuthorityState::new(root);
+              authority.accept_delegation(delegation).unwrap();
+              let initiator_key = SigningKey::from_secret_bytes([0x33; 32]);
+              let responder_key = SigningKey::from_secret_bytes([0x34; 32]);
+              let initiator_credential = DeviceCredential::issue_current(
+                  owner_id,
+                  DeviceId::from_bytes([0x35; 32]),
+                  &initiator_key,
+                  2,
+                  &authority,
+                  &issuer_key,
+              )
+              .unwrap();
+              let responder_credential = DeviceCredential::issue_current(
+                  owner_id,
+                  DeviceId::from_bytes([0x36; 32]),
+                  &responder_key,
+                  5,
+                  &authority,
+                  &issuer_key,
+              )
+              .unwrap();
+              let initiator_trust =
+                  establish_trust(&initiator_credential, &authority, &issuer_key, 0x37);
+              let responder_trust =
+                  establish_trust(&responder_credential, &authority, &issuer_key, 0x38);
+
+              Self {
+                  owner_id,
+                  authority,
+                  initiator_key,
+                  responder_key,
+                  initiator_credential,
+                  responder_credential,
+                  initiator_trust,
+                  responder_trust,
+              }
+          }'''
+          text = text[:start] + replacement + text[end:]
+
+          old_initiator = '''        let initiator = SessionHandshakeSide::new(
+              &self.initiator_credential,
+              &self.delegation,
+              &ranges,
+              &features,
+          );'''
+          new_initiator = '''        let initiator = SessionHandshakeSide::new(&self.initiator_credential, &ranges, &features);'''
+          old_responder = '''        let responder = SessionHandshakeSide::new(
+              &self.responder_credential,
+              &self.delegation,
+              &ranges,
+              &features,
+          );'''
+          new_responder = '''        let responder = SessionHandshakeSide::new(&self.responder_credential, &ranges, &features);'''
+          if old_initiator not in text or old_responder not in text:
+              raise SystemExit('session handshake shape changed')
+          text = text.replace(old_initiator, new_initiator, 1)
+          text = text.replace(old_responder, new_responder, 1)
+          text = text.replace('                &self.root,\n', '                &self.authority,\n', 2)
+
+          for obsolete in ('&self.root,', '&self.delegation,'):
+              if obsolete in text:
+                  raise SystemExit(f'obsolete session authority reference remains: {obsolete}')
+
+          path.write_text(text)
+          PY
+          cargo fmt
+          cargo check -p crosslab-sim --test session_scenarios --all-features
+          cargo check --workspace --all-targets --all-features
+          rm .github/workflows/task4-session-scenarios-migrate.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "test(sim): migrate session scenarios authority fixture"
+          git push origin HEAD:m9-authority-replay-remediation
