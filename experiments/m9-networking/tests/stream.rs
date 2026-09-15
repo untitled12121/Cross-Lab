@@ -5,7 +5,7 @@ use crosslab_core::{
     TransportConnection, TransportReceiveStream, TransportSecurityClass,
 };
 use crosslab_m9_networking::candidate::{
-    connection::{IrohTransportConnection, connected_transport_pair},
+    connection::connected_transport_pair,
     runtime::CandidateConfig,
 };
 use tokio::time::timeout;
@@ -221,7 +221,7 @@ async fn shutdown_joins_owned_stream_tasks() {
     eventually_cancelled(recv.as_mut()).await;
 }
 
-async fn eventually_accept(connection: &IrohTransportConnection) -> IncomingUniStream {
+async fn eventually_accept(connection: &dyn TransportConnection) -> IncomingUniStream {
     timeout(Duration::from_secs(5), async {
         loop {
             match connection.try_accept_uni_stream() {
@@ -300,7 +300,7 @@ async fn eventually_sender_closed(stream: &mut dyn crosslab_core::TransportSendS
     .expect("sender did not observe receiver stop before timeout");
 }
 
-async fn eventually_closed(connection: &IrohTransportConnection) {
+async fn eventually_closed(connection: &dyn TransportConnection) {
     timeout(Duration::from_secs(5), async {
         loop {
             if connection.is_closed() {
