@@ -1,7 +1,16 @@
 use std::{
+    future::Future,
+    mem,
     num::{NonZeroU32, NonZeroU64, NonZeroUsize},
+    sync::{
+        Arc, Mutex, MutexGuard,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
+
+use iroh::endpoint::{Connection, VarInt};
+use tokio::{sync::watch, task::JoinHandle};
 
 const DEFAULT_CONTROL_QUEUE_CAPACITY: usize = 8;
 const DEFAULT_INCOMING_STREAM_QUEUE_CAPACITY: usize = 8;
@@ -125,18 +134,6 @@ fn nonzero_u64(value: u64) -> NonZeroU64 {
     NonZeroU64::new(value).expect("candidate transport default must be nonzero")
 }
 
-use std::{
-    future::Future,
-    mem,
-    sync::{
-        Arc, Mutex, MutexGuard,
-        atomic::{AtomicBool, Ordering},
-    },
-};
-
-use iroh::endpoint::{Connection, VarInt};
-use tokio::{sync::watch, task::JoinHandle};
-
 pub(crate) struct SharedState {
     terminal: AtomicBool,
     terminal_tx: watch::Sender<bool>,
@@ -199,6 +196,19 @@ impl TaskRegistry {
         true
     }
 
+    pub(crate) fn spawn_if_open<Factory, Fut>(&self, factory: Factory) -> bool
+    where
+        Factory: FnOnce() -> Fut,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        let mut state = lock(&self.state);
+        if !state.accepting {
+            return false;
+        }
+        state.handles.push(tokio::spawn(factory()));
+        true
+    }
+
     pub(crate) fn close_and_take(&self) -> Vec<JoinHandle<()>> {
         let mut state = lock(&self.state);
         state.accepting = false;
@@ -229,6 +239,10 @@ impl CandidateRuntime {
         Arc::clone(&self.shared)
     }
 
+    pub(crate) fn tasks(&self) -> Arc<TaskRegistry> {
+        Arc::clone(&self.tasks)
+    }
+
     pub(crate) fn subscribe(&self) -> watch::Receiver<bool> {
         self.shared.subscribe()
     }
@@ -238,6 +252,14 @@ impl CandidateRuntime {
         Fut: Future<Output = ()> + Send + 'static,
     {
         self.tasks.spawn(future)
+    }
+
+    pub(crate) fn spawn_if_open<Factory, Fut>(&self, factory: Factory) -> bool
+    where
+        Factory: FnOnce() -> Fut,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        self.tasks.spawn_if_open(factory)
     }
 
     pub(crate) fn is_terminal(&self) -> bool {
@@ -251,13 +273,22 @@ impl CandidateRuntime {
     }
 
     pub(crate) fn close(&self) {
-        self.terminate(VarInt::from_u32(0), b"crosslab M9 control bridge closed");
+        self.terminate(VarInt::from_u32(0), b"crosslab M9 transport closed");
     }
 
     pub(crate) async fn shutdown(self) {
         self.close();
         for task in self.tasks.close_and_take() {
             let _ = task.await;
+        }
+    }
+}
+
+impl Drop for CandidateRuntime {
+    fn drop(&mut self) {
+        self.close();
+        for task in self.tasks.close_and_take() {
+            task.abort();
         }
     }
 }

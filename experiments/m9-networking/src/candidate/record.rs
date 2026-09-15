@@ -4,6 +4,7 @@ use iroh::endpoint::{RecvStream, SendStream};
 pub enum RecordError {
     Empty,
     TooLarge { declared: usize, max: usize },
+    Finished,
     Read,
     Write,
 }
@@ -42,7 +43,12 @@ pub async fn read_record(
     allow_empty: bool,
 ) -> Result<Vec<u8>, RecordError> {
     let mut prefix = [0_u8; 4];
-    recv.read_exact(&mut prefix)
+    match recv.read(&mut prefix[..1]).await {
+        Ok(None) => return Err(RecordError::Finished),
+        Ok(Some(1)) => {}
+        Ok(Some(_)) | Err(_) => return Err(RecordError::Read),
+    }
+    recv.read_exact(&mut prefix[1..])
         .await
         .map_err(|_| RecordError::Read)?;
 
