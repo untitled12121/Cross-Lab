@@ -16,6 +16,13 @@ use crate::{
 const CONTROL_FAILURE_CODE: VarInt = VarInt::from_u32(1);
 const CONTROL_STREAM_MARKER: &[u8] = b"crosslab-m9-control-v1";
 
+pub(crate) struct ReservedControlStreams {
+    pub(crate) client_send: SendStream,
+    pub(crate) client_recv: RecvStream,
+    pub(crate) server_send: SendStream,
+    pub(crate) server_recv: RecvStream,
+}
+
 pub struct ControlBridge {
     runtime: CandidateRuntime,
     config: CandidateConfig,
@@ -149,8 +156,9 @@ impl ControlPair {
     }
 }
 
-pub async fn connected_control_pair(config: CandidateConfig) -> Result<ControlPair, EvalError> {
-    let direct = direct_pair().await?;
+pub(crate) async fn reserve_control_stream(
+    direct: &DirectPair,
+) -> Result<ReservedControlStreams, EvalError> {
     let (mut client_send, client_recv) = direct
         .client_connection()
         .open_bi()
@@ -177,16 +185,27 @@ pub async fn connected_control_pair(config: CandidateConfig) -> Result<ControlPa
         return Err(EvalError::Control);
     }
 
-    let client = ControlBridge::new(
-        direct.client_connection().clone(),
+    Ok(ReservedControlStreams {
         client_send,
         client_recv,
+        server_send,
+        server_recv,
+    })
+}
+
+pub async fn connected_control_pair(config: CandidateConfig) -> Result<ControlPair, EvalError> {
+    let direct = direct_pair().await?;
+    let streams = reserve_control_stream(&direct).await?;
+    let client = ControlBridge::new(
+        direct.client_connection().clone(),
+        streams.client_send,
+        streams.client_recv,
         config,
     );
     let server = ControlBridge::new(
         direct.server_connection().clone(),
-        server_send,
-        server_recv,
+        streams.server_send,
+        streams.server_recv,
         config,
     );
 
