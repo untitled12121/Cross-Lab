@@ -103,32 +103,64 @@ jobs:
               1,
           )
 
-          replace_count(
+          for path in [
               "crates/core/tests/session_auth.rs",
-              "    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,\n",
-              "    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,\n    OwnerRootRecord,\n",
-              1,
-          )
-          replace_count(
-              "crates/core/tests/session_auth.rs",
-              "        );\n        let initiator_key = SigningKey::from_secret_bytes([0x13; 32]);",
-              "        );\n        let mut authority = OwnerAuthorityState::new(root);\n        authority.accept_delegation(delegation).unwrap();\n        let initiator_key = SigningKey::from_secret_bytes([0x13; 32]);",
-              1,
-          )
-          replace_count(
-              "crates/core/tests/session_auth.rs",
-              "            &root,\n            &delegation,\n            &issuer_key,",
-              "            &authority,\n            &issuer_key,",
-              2,
-          )
+              "crates/core/tests/debug_privacy.rs",
+          ]:
+              replace_count(
+                  path,
+                  "    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,\n",
+                  "    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,\n    OwnerRootRecord,\n",
+                  1,
+              )
+              marker = (
+                  "        );\n        let initiator_key = SigningKey::from_secret_bytes([0x13; 32]);"
+                  if path.endswith("session_auth.rs")
+                  else "    );\n    let initiator_key = SigningKey::from_secret_bytes([0xe4; 32]);"
+              )
+              replacement = (
+                  "        );\n        let mut authority = OwnerAuthorityState::new(root);\n        authority.accept_delegation(delegation).unwrap();\n        let initiator_key = SigningKey::from_secret_bytes([0x13; 32]);"
+                  if path.endswith("session_auth.rs")
+                  else "    );\n    let mut authority = OwnerAuthorityState::new(root);\n    authority.accept_delegation(delegation).unwrap();\n    let initiator_key = SigningKey::from_secret_bytes([0xe4; 32]);"
+              )
+              replace_count(path, marker, replacement, 1)
+              replace_count(
+                  path,
+                  "            &root,\n            &delegation,\n            &issuer_key," if path.endswith("session_auth.rs") else "        &root,\n        &delegation,\n        &issuer_key,",
+                  "            &authority,\n            &issuer_key," if path.endswith("session_auth.rs") else "        &authority,\n        &issuer_key,",
+                  2,
+              )
           PY
           cargo fmt --all
+
+          echo '=== remaining raw authority call shapes after migration ==='
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          roots = [Path("crates"), Path("apps"), Path("transports")]
+          patterns = {
+              "credential raw parts": re.compile(r"DeviceCredential::issue(?:_for_public_key)?\([\s\S]{0,500}?&(?:root|delegation),[\s\S]{0,160}?&(?:delegation|issuer_key),"),
+              "root revocation raw root": re.compile(r"(?:issue_root_revocation|apply_root)\([\s\S]{0,320}?\.root\(\)"),
+              "current-suffixed API": re.compile(r"\b(?:issue_current|issue_for_public_key_current|verify_current|rotate_current|establish_current|accept_successor_credential_current|issue_delegated_revocation_current|apply_delegated_current)\b"),
+          }
+          for label, pattern in patterns.items():
+              print(f"--- {label} ---")
+              for base in roots:
+                  for path in base.rglob("*.rs"):
+                      text = path.read_text()
+                      for match in pattern.finditer(text):
+                          line = text.count("\n", 0, match.start()) + 1
+                          snippet = " ".join(match.group(0).split())[:220]
+                          print(f"{path}:{line}: {snippet}")
+          PY
+
           cargo check --workspace --all-targets --all-features
       - name: Commit caller migration
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           rm .github/workflows/task7-root-caller-fix.yml
-          git add apps/sim/tests/lifecycle.rs apps/sim/tests/stream_scenarios.rs apps/sim/tests/control_lifecycle.rs apps/sim/tests/security_hardening.rs crates/core/tests/session_lifecycle.rs crates/core/tests/stream_currentness.rs crates/core/tests/session_auth.rs crates/policy/tests/authority_currentness.rs crates/policy/tests/trust_transitions.rs transports/quic/src/session_auth_tests/lifecycle_tests.rs .github/workflows/task7-root-caller-fix.yml
+          git add apps/sim/tests/lifecycle.rs apps/sim/tests/stream_scenarios.rs apps/sim/tests/control_lifecycle.rs apps/sim/tests/security_hardening.rs crates/core/tests/session_lifecycle.rs crates/core/tests/stream_currentness.rs crates/core/tests/session_auth.rs crates/core/tests/debug_privacy.rs crates/policy/tests/authority_currentness.rs crates/policy/tests/trust_transitions.rs transports/quic/src/session_auth_tests/lifecycle_tests.rs .github/workflows/task7-root-caller-fix.yml
           git commit -m "refactor(security): finish authority-state caller migration"
           git push origin HEAD:m9-authority-replay-remediation
