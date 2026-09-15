@@ -293,7 +293,7 @@ impl Fixture {
         .unwrap()
     }
 
-    fn old_operation(&self, session: &LogicalSession) -> (AuthorizedOperation, u64, u64) {
+    fn old_operation(&self, session: &LogicalSession) -> (AuthorizedOperation, PolicyState) {
         let capability = CapabilityId::parse("files.transfer").unwrap();
         let version = CapabilityVersion::new(1, 0);
         let operation_name = OperationName::parse("send").unwrap();
@@ -324,8 +324,7 @@ impl Fixture {
         let grant = policy.evaluate(&authorization).into_grant().unwrap();
         (
             AuthorizedOperation::issue(grant, 10, 20, UsePolicy::SingleStream).unwrap(),
-            self.initiator_trust.trust_revision(),
-            policy.revision(),
+            policy,
         )
     }
 
@@ -579,7 +578,7 @@ fn s008_old_operation_cannot_authorize_reconnected_session() {
     let fixture = Fixture::new();
     let old_pair = pair(0xee);
     let (_, old_b) = fixture.sessions(&old_pair, [0xef; 32], [0xf0; 32]);
-    let (old_operation, trust_revision, policy_revision) = fixture.old_operation(&old_b);
+    let (old_operation, policy) = fixture.old_operation(&old_b);
     let old_operation_id = old_operation.id();
 
     let new_pair = pair(0xf1);
@@ -604,7 +603,7 @@ fn s008_old_operation_cannot_authorize_reconnected_session() {
     );
 
     assert_eq!(
-        admission.admit_inbound(&new_b, &open, 15, trust_revision, policy_revision,),
+        admission.admit_inbound(&new_b, &open, 15, &fixture.initiator_trust, &policy,),
         Err(StreamAdmissionError::Operation(
             OperationError::BindingMismatch
         ))
@@ -725,7 +724,7 @@ fn s009_active_stream_revocation_terminates_local_authority() {
             .negotiate_capabilities(std::slice::from_ref(&local), &advertisement)
             .unwrap();
     }
-    let (operation, trust_revision, policy_revision) = fixture.old_operation(&receiver_session);
+    let (operation, policy) = fixture.old_operation(&receiver_session);
     let operation_id = operation.id();
     let session_id = receiver_session.context().unwrap().session_id();
     let open = DataStreamOpen::new(
@@ -755,7 +754,7 @@ fn s009_active_stream_revocation_terminates_local_authority() {
 
     let mut send = sender.open_uni(&open).unwrap();
     let stream_id = receiver
-        .accept_one(15, trust_revision, policy_revision)
+        .accept_one(15, &fixture.initiator_trust, &policy)
         .unwrap();
 
     receiver.apply_peer_revocation(&revoked_initiator).unwrap();
