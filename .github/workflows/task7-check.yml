@@ -6,6 +6,9 @@ on:
       - m9-authority-replay-remediation
     paths:
       - .github/workflows/task7-check.yml
+      - crates/**
+      - apps/**
+      - transports/**
 
 permissions:
   contents: read
