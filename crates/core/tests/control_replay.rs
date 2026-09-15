@@ -11,14 +11,14 @@ use crosslab_identity::{
     OwnerRootRecord,
 };
 use crosslab_policy::{
-    ApprovalInstant, CapabilityId, CapabilityVersion, CapabilityVersionRange, LocalCapability,
-    NetworkClass, OperationName, PairingTrustTransition, PolicyRule, PolicyState, RuleEffect,
-    RuleId, TransitionId, TrustRecord,
+    ApprovalInstant, CapabilityId, CapabilityVersion, CapabilityVersionRange, DecisionReason,
+    LocalCapability, NetworkClass, OperationName, PairingTrustTransition, PolicyRule, PolicyState,
+    RuleEffect, RuleId, TransitionId, TrustRecord,
 };
 use crosslab_protocol::{
     CancelRequest, CapabilityAdvertisement, CapabilityAdvertisementEntry, ControlEnvelope,
     ControlRequest, ControlResponse, ControlResponseResult, EnvelopeBody, FeatureSet,
-    ProtocolRange, ProtocolVersion, RequestId, RetryClass,
+    ProtocolRange, ProtocolVersion, RequestId, RetryClass, SequenceError,
 };
 
 const CAPABILITY: &str = "clipboard.write";
@@ -337,5 +337,123 @@ fn cancelled_request_id_remains_in_local_replay_window() {
             &policy,
         ),
         Err(ControlDispatchError::DuplicateRequest)
+    );
+}
+
+#[test]
+fn aged_out_request_id_is_a_new_authenticated_request_attempt() {
+    let fixture = Fixture::new();
+    let session = fixture.session();
+    let policy = fixture.allow_policy();
+    let mut dispatcher =
+        ControlDispatcher::new(session.context().unwrap(), NonZeroUsize::new(2).unwrap());
+    let a = RequestId::from_bytes([0x40; 16]);
+    let b = RequestId::from_bytes([0x41; 16]);
+    let c = RequestId::from_bytes([0x42; 16]);
+
+    for (sequence, id) in [(0, a), (1, b), (2, c)] {
+        assert!(matches!(
+            accept_request(
+                &mut dispatcher,
+                &session,
+                request(id, RetryClass::NonRetryable),
+                sequence,
+                &fixture,
+                &policy,
+            ),
+            Ok(InboundControl::Request(_))
+        ));
+        complete_request(&mut dispatcher, &session, id);
+    }
+
+    assert!(matches!(
+        accept_request(
+            &mut dispatcher,
+            &session,
+            request(a, RetryClass::NonRetryable),
+            3,
+            &fixture,
+            &policy,
+        ),
+        Ok(InboundControl::Request(_))
+    ));
+}
+
+#[test]
+fn aged_out_request_id_still_requires_current_policy_authorization() {
+    let fixture = Fixture::new();
+    let session = fixture.session();
+    let policy = fixture.allow_policy();
+    let mut dispatcher =
+        ControlDispatcher::new(session.context().unwrap(), NonZeroUsize::new(2).unwrap());
+    let a = RequestId::from_bytes([0x43; 16]);
+    let b = RequestId::from_bytes([0x44; 16]);
+    let c = RequestId::from_bytes([0x45; 16]);
+
+    for (sequence, id) in [(0, a), (1, b), (2, c)] {
+        assert!(matches!(
+            accept_request(
+                &mut dispatcher,
+                &session,
+                request(id, RetryClass::NonRetryable),
+                sequence,
+                &fixture,
+                &policy,
+            ),
+            Ok(InboundControl::Request(_))
+        ));
+        complete_request(&mut dispatcher, &session, id);
+    }
+
+    assert_eq!(
+        accept_request(
+            &mut dispatcher,
+            &session,
+            request(a, RetryClass::NonRetryable),
+            3,
+            &fixture,
+            &PolicyState::new(),
+        ),
+        Err(ControlDispatchError::AuthorizationDenied(
+            DecisionReason::NoMatchingRule
+        ))
+    );
+}
+
+#[test]
+fn exact_envelope_sequence_replay_remains_rejected() {
+    let fixture = Fixture::new();
+    let session = fixture.session();
+    let policy = fixture.allow_policy();
+    let mut dispatcher =
+        ControlDispatcher::new(session.context().unwrap(), NonZeroUsize::new(2).unwrap());
+
+    assert!(matches!(
+        accept_request(
+            &mut dispatcher,
+            &session,
+            request(RequestId::from_bytes([0x50; 16]), RetryClass::NonRetryable),
+            0,
+            &fixture,
+            &policy,
+        ),
+        Ok(InboundControl::Request(_))
+    ));
+
+    assert_eq!(
+        accept_request(
+            &mut dispatcher,
+            &session,
+            request(RequestId::from_bytes([0x51; 16]), RetryClass::NonRetryable),
+            0,
+            &fixture,
+            &policy,
+        ),
+        Err(ControlDispatchError::Sequence(
+            SequenceError::ReplayDetected {
+                expected: 1,
+                received: 0,
+            }
+        ))
     );
 }
