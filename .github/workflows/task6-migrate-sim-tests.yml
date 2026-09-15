@@ -24,22 +24,28 @@ jobs:
           path = Path('apps/sim/tests/stream_scenarios.rs')
           text = path.read_text()
 
-          replacements = [
+          required = [
               ('    trust_revision: u64,\n    policy_revision: u64,\n', '    policy: PolicyState,\n'),
               ('            trust_revision,\n            policy_revision: policy.revision(),\n', '            policy,\n'),
               ('.accept_one(15, fixture.trust_revision, fixture.policy_revision)', '.accept_one(15, &fixture.sender_trust, &fixture.policy)'),
               ('self.trust_revision', 'self.sender_trust.trust_revision()'),
               ('self.policy_revision', 'self.policy.revision()'),
-              ('fixture.trust_revision', 'fixture.sender_trust.trust_revision()'),
-              ('fixture.policy_revision', 'fixture.policy.revision()'),
           ]
-
-          for old, new in replacements:
+          for old, new in required:
               count = text.count(old)
               if count < 1:
                   raise SystemExit(f'missing expected migration token: {old!r}')
               text = text.replace(old, new)
               print(f'replaced {count}: {old!r}')
+
+          for old, new in [
+              ('fixture.trust_revision', 'fixture.sender_trust.trust_revision()'),
+              ('fixture.policy_revision', 'fixture.policy.revision()'),
+          ]:
+              count = text.count(old)
+              if count:
+                  text = text.replace(old, new)
+                  print(f'replaced residual {count}: {old!r}')
 
           if 'trust_revision: u64' in text or 'policy_revision: u64' in text:
               raise SystemExit('legacy fixture revision fields remain')
