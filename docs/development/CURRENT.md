@@ -8,130 +8,101 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 ## Current Milestone
 
-**M9 — Remote Networking ADR, paused before Task 4 until the second foundation security remediation is implemented, merged, and verified.**
+**M9 — Remote Networking ADR, paused before networking Task 4 until the second foundation security remediation is merged and post-merge verified.**
 
-M1–M8 are complete. M9 research Tasks 1–3 are complete. Foundation remediation Tasks 1–8 are integrated into canonical `main`. The accepted authority-currentness/replay remediation is now in implementation on PR #23.
+M1–M8 are complete. M9 networking research Tasks 1–3 are complete. The accepted authority-currentness/replay remediation is in implementation on PR #23.
 
 ## Canonical Baseline
 
-- `main`: `1426e70c6db169a37a89dbae0565a36a619f2651` after merging accepted architecture PR #22.
+- `main`: `1426e70c6db169a37a89dbae0565a36a619f2651`, merging accepted architecture PR #22.
 - Post-merge Rust CI `34826806366` passed dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and complete workspace tests.
 - `paste 1.0.15` / `RUSTSEC-2024-0436` remains an isolated Iroh-experiment maintenance warning and must be re-evaluated before production networking promotion.
 
-## Accepted Architecture Checkpoint
+## Accepted Architecture
 
-Architecture PR #22 is merged. The owner explicitly approved the written design on 2026-09-14. Accepted artifacts:
+Accepted artifacts:
 
 - `docs/adr/ADR-0010-authoritative-owner-authority-currentness.md`
 - `docs/adr/ADR-0011-bounded-request-replay-semantics.md`
 - `docs/superpowers/specs/2026-09-14-foundation-currentness-replay-design.md`
+- `docs/superpowers/plans/2026-09-14-foundation-authority-replay-remediation.md`
 
-Normative focused specs reconciled:
+ADR-0010 makes identity-owned `OwnerAuthorityState` the local source of truth for active owner root and delegated-role currentness. Root or Device Signing replacement invalidates ordinary sessions; Administrative/Recovery-only rotation does not.
 
-- `docs/architecture/IDENTITY-AND-KEYS.md`
-- `docs/architecture/SESSION-TRANSPORT.md`
-- `docs/protocol/PROTOCOL-V1.md`
+ADR-0011 keeps `(SessionId, message_seq)` as the exact-envelope replay/order boundary while `RequestId` is bounded correlation/duplicate/retry state. An aged-out request ID is a new authenticated request attempt and still requires current local authorization.
 
-The Master Architecture was not revised: ADR-0010 enforces existing local-authority/fail-closed invariants, while ADR-0011 changes focused request-lifecycle semantics without changing Master-level wire/transport architecture. ADR-0009 remains reserved for M9 remote networking.
-
-## Accepted Security Semantics
-
-ADR-0010: `crosslab-identity` owns `OwnerAuthorityState` with active root plus Device Signing, Administrative, and Recovery role slots. Each delegated role retains its highest accepted epoch and exact active delegation. Root succession makes the old root historical, clears active delegated objects, retains role epoch floors, and requires new-root delegations to strictly advance those floors. High-level authority-bearing APIs resolve current authority from this state. Root/Device Signing replacement invalidates ordinary sessions; Administrative/Recovery-only rotation does not. Fresh ordinary auth fails while Device Signing is inactive after root rotation. Phase 1 remains in-memory; durable rollback-resistant persistence is later work. CRDT/relay/transport/peer-majority state never establishes authority currentness.
-
-ADR-0011: `(SessionId, message_seq)` is the exact-envelope replay/order boundary. `RequestId` is bounded correlation/duplicate/retry state. Retained duplicates fail closed unless a locally authorized capability-specific idempotency path exists. Peer-declared `Idempotent` grants no authority. A legitimately aged-out ID becomes a new authenticated request attempt and still requires current authorization/operation validity. No generic exactly-once or wire change is introduced.
-
-Stream hardening: high-level stream admission takes local `TrustRecord` and `PolicyState`, validates peer trust, and derives current revisions internally instead of accepting caller-selected revision integers.
+No Master Architecture revision, protobuf schema change, canonical transcript change, signature-format change, or Quinn channel-binding change is part of this remediation.
 
 ## Implementation Branch
 
 Branch: `m9-authority-replay-remediation`  
 Draft implementation PR: **#23**
 
+## Remediation Progress
+
 ### Task 1 — Complete
 
-`OwnerAuthorityState` is implemented in `crosslab-identity` with:
+Implemented identity-owned `OwnerAuthorityState` with active root, independent Device Signing/Administrative/Recovery slots, monotonic epoch floors, root-successor handling, and failed-transition atomicity.
 
-- active owner root;
-- independent Device Signing, Administrative, and Recovery role slots;
-- highest accepted epoch floors;
-- strictly monotonic delegated-role replacement;
-- failed-transition atomicity;
-- root succession that clears active delegated objects while retaining epoch floors;
-- no `Copy` or `Clone` on the authoritative state object.
-
-TDD evidence:
-
-- RED commit `be46b70d90874ec31e74072a259b88f010bf122f` failed at workspace check because `OwnerAuthorityState` did not exist.
-- GREEN exact head `6e61ef944f46d9610d06c0d6093a6a6a8d15573f` passed Rust CI `34828834320` including dependency audit, rustfmt, workspace check, Clippy, and complete tests.
-- Follow-up characterization commit `097578b31dbd699bf8c33c0b85cfee93c2bcd691` added the plan-required wrong-owner, inactive-root, and failed-root-successor atomicity coverage; those tests are included in subsequent green CI.
+Evidence: GREEN head `6e61ef944f46d9610d06c0d6093a6a6a8d15573f`; Rust CI `34828834320` passed.
 
 ### Task 2 — Complete
 
-`DeviceCredential` now has transitional current-authority methods:
+Device credential issuance, public-key issuance, verification, and rotation resolve current Device Signing authority from `OwnerAuthorityState`. Golden credential bytes remain unchanged.
 
-- `issue_current`;
-- `issue_for_public_key_current`;
-- `verify_current`;
-- `rotate_current`.
-
-They resolve the active Device Signing delegation from `OwnerAuthorityState`; no current method accepts a caller-selected delegation floor. Existing transcript fields, key derivation, credential epoch semantics, signatures, and golden vectors remain unchanged. Raw methods remain only as transitional low-level APIs until Task 7 cleanup.
-
-TDD evidence:
-
-- RED commit `7f8717f34a05cccedfbb384dfb364fd009c5ca1f` failed at workspace check with `E0599` because `verify_current` and `issue_current` did not exist; audit and rustfmt passed first in CI `34835699782`.
-- Minimal GREEN implementation commit `b6692b3094f5f101f5b20219df4ff7befe2dc799` passed full Rust CI `34836143136`.
-- Final green-only test migration head `248de3ad55a9f75cbe3c5aa50974bea8a0bbbd46` moved positive issuance, public-key issuance, import verification, stale-epoch verification, and rotation onto current-authority APIs and passed full Rust CI `34836766158`.
-- `crates/identity/tests/golden_vectors.rs` was not modified.
+Evidence: final GREEN head `248de3ad55a9f75cbe3c5aa50974bea8a0bbbd46`; Rust CI `34836766158` passed.
 
 ### Task 3 — Complete
 
-Policy authority-bearing transitions now resolve current local authority through `OwnerAuthorityState`:
+Owner approvals, pairing trust/credential rotation, and ordinary delegated revocation resolve current local authority from `OwnerAuthorityState`. Policy golden vectors remain unchanged.
 
-- owner approval issuance/verification resolves the current Administrative delegation;
-- pairing trust issuance/establishment resolves the current Device Signing delegation;
-- successor credential acceptance resolves the current Device Signing delegation;
-- ordinary delegated revocation resolves the current Administrative or Device Signing delegation;
-- Recovery remains invalid for ordinary delegated revocation;
-- no high-level current-authority policy method accepts a caller-selected delegation epoch floor.
+Evidence: exact code head `d117323754a91a845450fb3467bf76cb9d52c2a6`; Rust CI `34865890032` and Fuzz Smoke `34865890030` passed.
 
-Raw cryptographic/currentness methods remain only as transitional low-level APIs until Task 7. `PolicyState::evaluate` remains unchanged and deterministic. Protocol transcripts, signatures, and policy golden vectors are unchanged.
+### Task 4 — Complete
 
-TDD / verification evidence:
+Pairing/session authentication and lifecycle now use current owner authority. Session context snapshots owner-root and Device Signing authority, `LogicalSession::revalidate_authority` closes on root/Device Signing replacement, Administrative/Recovery-only rotation preserves ordinary sessions, and simulator control/stream runtimes cancel session authority before transport close. Quinn fixtures remain transport-only consumers of Cross-Lab authority state rather than authority owners.
 
-- Task 3 RED tests reached workspace compilation and failed exactly on the missing current-authority policy APIs before production implementation was added.
-- Minimal GREEN implementation head `ce1468a403c2062efdd9fa7bd3b67fce52d9ce44` passed Rust CI `34859139243` and Fuzz Smoke `34859139231`.
-- Positive policy tests were then migrated to the state-backed APIs while explicit low-level forgery/wrong-role/epoch characterization remained raw.
-- Final exact code head `d117323754a91a845450fb3467bf76cb9d52c2a6` passed Rust CI `34865890032` including dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and complete workspace tests.
-- Fuzz Smoke `34865890030` passed on the same exact head.
-- `crates/policy/tests/golden_vectors.rs` was not modified.
+Focused exact-branch verification run `34930872045` passed:
 
-## Implementation Plan
+- `cargo test -p crosslab-core --all-features`
+- `cargo test -p crosslab-sim --all-features`
+- `cargo test -p crosslab-transport-quic --all-features`
+- `cargo fmt --check`
 
-`docs/superpowers/plans/2026-09-14-foundation-authority-replay-remediation.md`
+### Task 5 — Complete
 
-Eight regression-first tasks:
+ADR-0011 is locked with characterization tests. A legitimately aged-out `RequestId` is accepted as a new authenticated request attempt only if current policy permits it; current policy denial still fails closed; exact old `message_seq` replay remains rejected. No production replay code change was required.
 
-1. **complete** — add `OwnerAuthorityState`;
-2. **complete** — route device credentials through current authority;
-3. **complete** — migrate policy authority-bearing transitions;
-4. **next** — migrate pairing/session auth and authority-triggered cancellation;
-5. lock ADR-0011 with replay characterization tests;
-6. derive stream currentness from local trust/policy state;
-7. remove obsolete caller-selected authority APIs and verify golden compatibility;
-8. run full security/CI/Fuzz reconciliation.
+Task 5 test commit: `654cfad19108df15ccccbe1c84e9f4116f9a5178`. Focused verification run `34930994570` passed the core/simulator/Quinn/fmt gate.
+
+### Task 6 — Implemented, exact-head Rust gate pending
+
+High-level stream admission now accepts local `TrustRecord` and `PolicyState`, validates that trust belongs to the authenticated peer and is `Trusted`, and derives trust/policy revisions internally. `SimStreamRuntime::accept_one` no longer accepts caller-selected revision integers.
+
+TDD RED: `cb37c0b93c327cda8685bbd25f075c6bf2620870`; CI `34931103468` failed exactly because the old API still required two `u64` revisions and the new trust errors did not exist.
+
+Implementation includes:
+
+- `StreamAdmissionError::PeerTrustMismatch` and `PeerNotTrusted`;
+- local trust owner/device/state validation before operation reservation;
+- internally derived `TrustRecord::trust_revision()` and `PolicyState::revision()`;
+- simulator stream fixture migration to local trust/policy state;
+- tests for changed policy revision, locally revoked peer, and mismatched peer trust.
+
+Fuzz Smoke `34931474655` passed all five bounded fuzz targets on the Task 6 implementation. Rust CI `34931474723` reached dependency audit successfully and stopped only at formatting; formatting was subsequently applied by `cargo fmt`. This CURRENT checkpoint is the authenticated head used to obtain a fresh complete Rust gate before Task 7.
+
+## Remaining Plan
+
+7. remove obsolete caller-selected high-level authority/currentness APIs, migrate remaining call sites, and prove identity/policy/protocol golden compatibility;
+8. run the final full security/CI/Fuzz reconciliation, update durable evidence, merge PR #23, and verify the resulting `main` commit.
 
 ## Exact Next Task
 
-Execute Task 4 regression-first:
-
-1. add fresh-auth tests proving stale Device Signing authority and root succession with inactive Device Signing fail closed;
-2. add active-session authority revalidation tests for Device Signing/root rotation and Administrative/Recovery non-invalidation;
-3. migrate pairing flow authority-bearing methods to `OwnerAuthorityState` without changing pairing bytes;
-4. migrate session authentication to resolve current root/Device Signing authority and snapshot authority identity/epochs in `SessionContext`;
-5. add `LogicalSession::revalidate_authority`, closing on root or Device Signing replacement only;
-6. propagate authority invalidation through simulator control/stream runtimes by cancelling operation/session state before transport close;
-7. migrate Quinn session-auth fixtures without moving owner authority into TLS, endpoint, or channel-binding types;
-8. verify `crosslab-core`, `crosslab-sim`, and `crosslab-transport-quic` before Task 5.
+1. Require fresh exact-head Rust CI success after this Task 6 checkpoint.
+2. Only when green, execute Task 7 using compiler errors/search as the migration checklist; do not add compatibility shims that recreate caller-selected currentness.
+3. Preserve `AuthorityDelegation::verify(root, minimum_epoch)` only as the low-level cryptographic/import primitive and preserve `DeviceCredential::from_unverified_signed_parts`.
+4. Verify existing identity, policy, and protocol golden vectors byte-for-byte.
+5. Execute Task 8 and keep M9 networking Task 4 blocked until PR #23 is merged and post-merge `main` is green.
 
 ## M9 Invariants
 
@@ -148,7 +119,7 @@ Execute Task 4 regression-first:
 ## Resume Procedure
 
 1. inspect `main`, PR #23, recent workflows, and this file;
-2. continue from the first incomplete remediation task only after the prior exact head is green;
-3. execute each task regression-first with small verified checkpoints;
-4. update this file with exact implementation commits/workflow evidence after meaningful progress;
-5. do not begin M9 Task 4 until the entire remediation is merged and post-merge verified.
+2. require the prior exact head to be green before starting the next remediation task;
+3. execute remaining tasks in small verified checkpoints;
+4. update this file with exact evidence after meaningful progress;
+5. do not resume M9 networking Task 4 until the entire remediation is merged and post-merge verified.
