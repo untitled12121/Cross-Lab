@@ -20,7 +20,7 @@ use crate::{
 
 const STREAM_FAILURE_CODE: VarInt = VarInt::from_u32(2);
 
-pub struct IrohTransportConnection {
+pub(crate) struct IrohTransportConnection {
     control: ControlBridge,
     channel_binding: ChannelBinding,
     metadata: ConnectionMetadata,
@@ -63,7 +63,7 @@ impl IrohTransportConnection {
         }
     }
 
-    pub async fn shutdown(self) {
+    pub(crate) async fn shutdown(self) {
         self.control.shutdown().await;
     }
 }
@@ -173,11 +173,11 @@ pub struct TransportPair {
 }
 
 impl TransportPair {
-    pub fn client(&self) -> &IrohTransportConnection {
+    pub fn client(&self) -> &dyn TransportConnection {
         &self.client
     }
 
-    pub fn server(&self) -> &IrohTransportConnection {
+    pub fn server(&self) -> &dyn TransportConnection {
         &self.server
     }
 
