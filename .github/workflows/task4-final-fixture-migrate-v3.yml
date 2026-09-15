@@ -47,31 +47,35 @@ jobs:
               raise SystemExit('pairing_initial_epoch import shape changed')
           text = text.replace(old_import, new_import, 1)
 
-          anchor = '''    let delegation = AuthorityDelegation::issue(
-        owner_id,
-        AuthorityRole::DeviceSigning,
-        &issuer_key,
-        0,
-        &root_key,
-    );'''
-          replacement = anchor + '''
-    let mut authority = OwnerAuthorityState::new(root);
-    authority.accept_delegation(delegation).unwrap();'''
+          anchor = '\n'.join([
+              '    let delegation = AuthorityDelegation::issue(',
+              '        owner_id,',
+              '        AuthorityRole::DeviceSigning,',
+              '        &issuer_key,',
+              '        0,',
+              '        &root_key,',
+              '    );',
+          ])
+          replacement = anchor + '\n    let mut authority = OwnerAuthorityState::new(root);\n    authority.accept_delegation(delegation).unwrap();'
           if text.count(anchor) != 1:
               raise SystemExit('pairing_initial_epoch delegation setup shape changed')
           text = text.replace(anchor, replacement, 1)
 
-          old_call = '''        .issue_initial_joiner_credential(
-            &root,
-            &delegation,
-            &issuer_key,
-            PairingInstant::from_ticks(20),
-        )'''
-          new_call = '''        .issue_initial_joiner_credential(
-            &authority,
-            &issuer_key,
-            PairingInstant::from_ticks(20),
-        )'''
+          old_call = '\n'.join([
+              '        .issue_initial_joiner_credential(',
+              '            &root,',
+              '            &delegation,',
+              '            &issuer_key,',
+              '            PairingInstant::from_ticks(20),',
+              '        )',
+          ])
+          new_call = '\n'.join([
+              '        .issue_initial_joiner_credential(',
+              '            &authority,',
+              '            &issuer_key,',
+              '            PairingInstant::from_ticks(20),',
+              '        )',
+          ])
           if text.count(old_call) != 1:
               raise SystemExit('pairing_initial_epoch issue call shape changed')
           text = text.replace(old_call, new_call, 1)
