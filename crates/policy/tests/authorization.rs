@@ -311,18 +311,18 @@ fn non_administrative_delegation_cannot_authorize_owner_approval() {
         0,
         &root_key,
     );
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(delegation).unwrap();
 
     assert_eq!(
         OwnerApprovalEvidence::issue(
             ApprovalScope::from_context(&context),
             ApprovalInstant::from_ticks(10),
             ApprovalInstant::from_ticks(20),
-            &root,
-            &delegation,
+            &authority,
             &device_signing_key,
-            delegation.delegation_epoch(),
         ),
-        Err(ApprovalError::WrongIssuerRole)
+        Err(ApprovalError::UnknownIssuer)
     );
 }
 

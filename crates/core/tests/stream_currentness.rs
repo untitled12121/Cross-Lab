@@ -233,13 +233,13 @@ fn admission_rejects_locally_revoked_peer_trust() {
     let transition = TrustTransition::issue_root_revocation(
         &fixture.peer_trust,
         TransitionId::from_bytes([0x83; 32]),
-        fixture.authority.root(),
+        &fixture.authority,
         &fixture.root_key,
     )
     .unwrap();
     let mut revoked = fixture.peer_trust;
     transition
-        .apply_root(&mut revoked, fixture.authority.root())
+        .apply_root(&mut revoked, &fixture.authority)
         .unwrap();
 
     assert_eq!(

@@ -1,6 +1,7 @@
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,
+    OwnerRootRecord,
 };
 
 #[test]
@@ -47,14 +48,15 @@ fn device_credential_v1_golden_vector() {
         7,
         &root_key,
     );
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(delegation).unwrap();
     let device_key = SigningKey::from_secret_bytes([0x55; 32]);
     let credential = DeviceCredential::issue(
         owner_id,
         DeviceId::from_bytes([0x44; 32]),
         &device_key,
         9,
-        &root,
-        &delegation,
+        &authority,
         &issuer_key,
     )
     .unwrap();

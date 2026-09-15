@@ -444,7 +444,9 @@ fn authenticate(activation: SessionActivation<'_>) -> Result<SessionContext, Ses
 #[cfg(test)]
 mod tests {
     use crosslab_crypto::SigningKey;
-    use crosslab_identity::{AuthorityDelegation, AuthorityRole, OwnerRootRecord};
+    use crosslab_identity::{
+        AuthorityDelegation, AuthorityRole, OwnerAuthorityState, OwnerRootRecord,
+    };
     use crosslab_policy::{PairingTrustTransition, TransitionId, TrustTransition};
 
     use super::*;
@@ -462,6 +464,8 @@ mod tests {
             0,
             &root_key,
         );
+        let mut authority = OwnerAuthorityState::new(root);
+        authority.accept_delegation(delegation).unwrap();
         let peer_device_id = DeviceId::from_bytes([0xf2; 32]);
         let peer_device_key = SigningKey::from_secret_bytes([0xf8; 32]);
         let initial_credential = DeviceCredential::issue(
@@ -469,8 +473,7 @@ mod tests {
             peer_device_id,
             &peer_device_key,
             0,
-            &root,
-            &delegation,
+            &authority,
             &issuer_key,
         )
         .unwrap();
@@ -478,20 +481,11 @@ mod tests {
             &initial_credential,
             TransitionId::from_bytes([0xf3; 32]),
             [0xf9; 32],
-            &root,
-            &delegation,
+            &authority,
             &issuer_key,
-            delegation.delegation_epoch(),
         )
         .unwrap();
-        let mut trusted = pairing
-            .establish(
-                &initial_credential,
-                &root,
-                &delegation,
-                delegation.delegation_epoch(),
-            )
-            .unwrap();
+        let mut trusted = pairing.establish(&initial_credential, &authority).unwrap();
         let peer_credential_epoch = 7;
         for epoch in 1..=peer_credential_epoch {
             let successor = DeviceCredential::issue(
@@ -499,8 +493,7 @@ mod tests {
                 peer_device_id,
                 &peer_device_key,
                 epoch,
-                &root,
-                &delegation,
+                &authority,
                 &issuer_key,
             )
             .unwrap();
@@ -509,9 +502,7 @@ mod tests {
             trusted
                 .accept_successor_credential(
                     &successor,
-                    &root,
-                    &delegation,
-                    delegation.delegation_epoch(),
+                    &authority,
                     TransitionId::from_bytes(transition_id),
                 )
                 .unwrap();
@@ -519,12 +510,12 @@ mod tests {
         let transition = TrustTransition::issue_root_revocation(
             &trusted,
             TransitionId::from_bytes([0xf4; 32]),
-            &root,
+            &authority,
             &root_key,
         )
         .unwrap();
         let mut revoked = trusted;
-        transition.apply_root(&mut revoked, &root).unwrap();
+        transition.apply_root(&mut revoked, &authority).unwrap();
 
         let context = SessionContext {
             session_id: SessionId::from_bytes([0xf5; 32]),

@@ -3,7 +3,8 @@ use crosslab_core::{
 };
 use crosslab_crypto::{SigningKey, blake3_256};
 use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,
+    OwnerRootRecord,
 };
 use crosslab_protocol::ProtocolVersion;
 
@@ -120,6 +121,8 @@ fn session_fixture() -> SessionFixture {
         0,
         &root_key,
     );
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(delegation).unwrap();
     let initiator_key = SigningKey::from_secret_bytes([0xe4; 32]);
     let responder_key = SigningKey::from_secret_bytes([0xe5; 32]);
     let initiator_credential = DeviceCredential::issue(
@@ -127,8 +130,7 @@ fn session_fixture() -> SessionFixture {
         DeviceId::from_bytes([0xe6; 32]),
         &initiator_key,
         1,
-        &root,
-        &delegation,
+        &authority,
         &issuer_key,
     )
     .unwrap();
@@ -137,8 +139,7 @@ fn session_fixture() -> SessionFixture {
         DeviceId::from_bytes([0xe7; 32]),
         &responder_key,
         1,
-        &root,
-        &delegation,
+        &authority,
         &issuer_key,
     )
     .unwrap();

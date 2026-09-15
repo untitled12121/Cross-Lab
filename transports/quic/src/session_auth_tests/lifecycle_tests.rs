@@ -620,13 +620,13 @@ fn revoked_responder(fixture: &AuthFixture) -> TrustRecord {
     let transition = TrustTransition::issue_root_revocation(
         &fixture.responder_trust,
         TransitionId::from_bytes([0xa2; 32]),
-        fixture.authority.root(),
+        &fixture.authority,
         &root_key,
     )
     .unwrap();
     let mut revoked = fixture.responder_trust;
     transition
-        .apply_root(&mut revoked, fixture.authority.root())
+        .apply_root(&mut revoked, &fixture.authority)
         .unwrap();
     revoked
 }

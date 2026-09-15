@@ -63,7 +63,6 @@ struct RotationFixture {
     owner_id: OwnerId,
     device_id: DeviceId,
     issuer_key: SigningKey,
-    delegation: AuthorityDelegation,
     authority: OwnerAuthorityState,
 }
 
@@ -87,7 +86,6 @@ impl RotationFixture {
             owner_id,
             device_id: DeviceId::from_bytes([0x23; 32]),
             issuer_key,
-            delegation,
             authority,
         }
     }
@@ -259,12 +257,11 @@ fn successor_credential_rejects_stale_skipped_wrong_device_and_wrong_authority()
     let successor = fixture.credential(fixture.device_id, 1);
     let other_root_key = SigningKey::from_secret_bytes([0x2b; 32]);
     let other_root = OwnerRootRecord::new(fixture.owner_id, &other_root_key, 0);
+    let other_authority = OwnerAuthorityState::new(other_root);
     assert_eq!(
         wrong_authority_record.accept_successor_credential(
             &successor,
-            &other_root,
-            &fixture.delegation,
-            fixture.delegation.delegation_epoch(),
+            &other_authority,
             TransitionId::from_bytes([0x2c; 32]),
         ),
         Err(CredentialRotationError::Identity(
@@ -278,11 +275,13 @@ fn signed_revocation_is_terminal_and_advances_trust_revision() {
     let mut record = trusted_record();
     let root_key = SigningKey::from_secret_bytes([4; 32]);
     let root = OwnerRootRecord::new(record.owner_id(), &root_key, 0);
+    let authority = OwnerAuthorityState::new(root);
     let transition_id = TransitionId::from_bytes([5; 32]);
     let transition =
-        TrustTransition::issue_root_revocation(&record, transition_id, &root, &root_key).unwrap();
+        TrustTransition::issue_root_revocation(&record, transition_id, &authority, &root_key)
+            .unwrap();
 
-    transition.apply_root(&mut record, &root).unwrap();
+    transition.apply_root(&mut record, &authority).unwrap();
 
     assert_eq!(record.state(), TrustState::Revoked);
     assert_eq!(record.trust_revision(), 1);
@@ -291,7 +290,7 @@ fn signed_revocation_is_terminal_and_advances_trust_revision() {
         TrustTransition::issue_root_revocation(
             &record,
             TransitionId::from_bytes([6; 32]),
-            &root,
+            &authority,
             &root_key,
         ),
         Err(TrustTransitionError::AlreadyRevoked)

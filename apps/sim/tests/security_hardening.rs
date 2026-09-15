@@ -262,13 +262,13 @@ impl Fixture {
         let transition = TrustTransition::issue_root_revocation(
             &self.initiator_trust,
             TransitionId::from_bytes([0xdc; 32]),
-            self.authority.root(),
+            &self.authority,
             &self.root_key,
         )
         .unwrap();
         let mut revoked = self.initiator_trust;
         transition
-            .apply_root(&mut revoked, self.authority.root())
+            .apply_root(&mut revoked, &self.authority)
             .unwrap();
         revoked
     }

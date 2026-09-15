@@ -20,36 +20,22 @@ fn fixture() -> (TrustRecord, SigningKey, OwnerRootRecord) {
         0,
         &root_key,
     );
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(delegation).unwrap();
     let device_id = DeviceId::from_bytes([3; 32]);
     let device_key = SigningKey::from_secret_bytes([25; 32]);
-    let initial_credential = DeviceCredential::issue(
-        owner_id,
-        device_id,
-        &device_key,
-        0,
-        &root,
-        &delegation,
-        &issuer_key,
-    )
-    .unwrap();
+    let initial_credential =
+        DeviceCredential::issue(owner_id, device_id, &device_key, 0, &authority, &issuer_key)
+            .unwrap();
     let pairing = PairingTrustTransition::issue(
         &initial_credential,
         TransitionId::from_bytes([4; 32]),
         [26; 32],
-        &root,
-        &delegation,
+        &authority,
         &issuer_key,
-        delegation.delegation_epoch(),
     )
     .unwrap();
-    let mut record = pairing
-        .establish(
-            &initial_credential,
-            &root,
-            &delegation,
-            delegation.delegation_epoch(),
-        )
-        .unwrap();
+    let mut record = pairing.establish(&initial_credential, &authority).unwrap();
 
     for epoch in 1..=4 {
         let successor = DeviceCredential::issue(
@@ -57,8 +43,7 @@ fn fixture() -> (TrustRecord, SigningKey, OwnerRootRecord) {
             device_id,
             &device_key,
             epoch,
-            &root,
-            &delegation,
+            &authority,
             &issuer_key,
         )
         .unwrap();
@@ -67,9 +52,7 @@ fn fixture() -> (TrustRecord, SigningKey, OwnerRootRecord) {
         record
             .accept_successor_credential(
                 &successor,
-                &root,
-                &delegation,
-                delegation.delegation_epoch(),
+                &authority,
                 TransitionId::from_bytes(transition_id),
             )
             .unwrap();
@@ -84,12 +67,10 @@ fn owner_root_signed_revocation_applies_to_matching_trust_record() {
     let authority = OwnerAuthorityState::new(root);
     let transition_id = TransitionId::from_bytes([5; 32]);
     let transition =
-        TrustTransition::issue_root_revocation(&record, transition_id, authority.root(), &root_key)
+        TrustTransition::issue_root_revocation(&record, transition_id, &authority, &root_key)
             .unwrap();
 
-    transition
-        .apply_root(&mut record, authority.root())
-        .unwrap();
+    transition.apply_root(&mut record, &authority).unwrap();
 
     assert_eq!(record.state(), TrustState::Revoked);
     assert_eq!(record.trust_revision(), 5);
@@ -151,27 +132,37 @@ fn device_signing_authority_can_sign_ordinary_revocation() {
 }
 
 #[test]
-fn inactive_delegation_is_rejected() {
+fn superseded_administrative_delegation_is_rejected() {
     let (record, root_key, root) = fixture();
-    let administrative_key = SigningKey::from_secret_bytes([19; 32]);
-    let delegation = AuthorityDelegation::issue(
+    let old_key = SigningKey::from_secret_bytes([19; 32]);
+    let old = AuthorityDelegation::issue(
         record.owner_id(),
         AuthorityRole::Administrative,
-        &administrative_key,
+        &old_key,
         0,
         &root_key,
     );
+    let current_key = SigningKey::from_secret_bytes([20; 32]);
+    let current = AuthorityDelegation::issue(
+        record.owner_id(),
+        AuthorityRole::Administrative,
+        &current_key,
+        1,
+        &root_key,
+    );
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(old).unwrap();
+    authority.accept_delegation(current).unwrap();
 
     assert_eq!(
         TrustTransition::issue_delegated_revocation(
             &record,
-            TransitionId::from_bytes([20; 32]),
-            &root,
-            &delegation,
-            &administrative_key,
-            1,
+            TransitionId::from_bytes([21; 32]),
+            &authority,
+            AuthorityRole::Administrative,
+            &old_key,
         ),
-        Err(TrustTransitionError::InvalidDelegation)
+        Err(TrustTransitionError::UnknownIssuer)
     );
 }
 
@@ -186,15 +177,16 @@ fn recovery_authority_is_rejected_from_ordinary_revocation_path() {
         0,
         &root_key,
     );
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(recovery).unwrap();
 
     assert_eq!(
         TrustTransition::issue_delegated_revocation(
             &record,
             TransitionId::from_bytes([9; 32]),
-            &root,
-            &recovery,
+            &authority,
+            AuthorityRole::Recovery,
             &recovery_key,
-            0,
         ),
         Err(TrustTransitionError::WrongIssuerRole)
     );
@@ -211,15 +203,16 @@ fn delegated_revocation_rejects_the_wrong_private_key() {
         0,
         &root_key,
     );
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(delegation).unwrap();
 
     assert_eq!(
         TrustTransition::issue_delegated_revocation(
             &record,
             TransitionId::from_bytes([11; 32]),
-            &root,
-            &delegation,
+            &authority,
+            AuthorityRole::Administrative,
             &SigningKey::from_secret_bytes([12; 32]),
-            0,
         ),
         Err(TrustTransitionError::UnknownIssuer)
     );
@@ -228,10 +221,11 @@ fn delegated_revocation_rejects_the_wrong_private_key() {
 #[test]
 fn transition_is_bound_to_the_credential_epoch_at_issue_time() {
     let (mut record, root_key, root) = fixture();
+    let mut authority = OwnerAuthorityState::new(root);
     let transition = TrustTransition::issue_root_revocation(
         &record,
         TransitionId::from_bytes([13; 32]),
-        &root,
+        &authority,
         &root_key,
     )
     .unwrap();
@@ -243,28 +237,22 @@ fn transition_is_bound_to_the_credential_epoch_at_issue_time() {
         0,
         &root_key,
     );
+    authority.accept_delegation(delegation).unwrap();
     let successor = DeviceCredential::issue(
         record.owner_id(),
         record.device_id(),
         &SigningKey::from_secret_bytes([22; 32]),
         5,
-        &root,
-        &delegation,
+        &authority,
         &device_signing_key,
     )
     .unwrap();
     record
-        .accept_successor_credential(
-            &successor,
-            &root,
-            &delegation,
-            delegation.delegation_epoch(),
-            TransitionId::from_bytes([23; 32]),
-        )
+        .accept_successor_credential(&successor, &authority, TransitionId::from_bytes([23; 32]))
         .unwrap();
 
     assert_eq!(
-        transition.apply_root(&mut record, &root),
+        transition.apply_root(&mut record, &authority),
         Err(TrustTransitionError::CredentialEpochMismatch)
     );
     assert_eq!(record.state(), TrustState::Trusted);
@@ -273,10 +261,11 @@ fn transition_is_bound_to_the_credential_epoch_at_issue_time() {
 #[test]
 fn forged_root_signature_is_rejected() {
     let (mut record, root_key, root) = fixture();
+    let authority = OwnerAuthorityState::new(root);
     let valid = TrustTransition::issue_root_revocation(
         &record,
         TransitionId::from_bytes([14; 32]),
-        &root,
+        &authority,
         &root_key,
     )
     .unwrap();
@@ -295,7 +284,7 @@ fn forged_root_signature_is_rejected() {
     );
 
     assert_eq!(
-        forged.apply_root(&mut record, &root),
+        forged.apply_root(&mut record, &authority),
         Err(TrustTransitionError::InvalidSignature)
     );
     assert_eq!(record.state(), TrustState::Trusted);
@@ -304,6 +293,7 @@ fn forged_root_signature_is_rejected() {
 #[test]
 fn transition_requires_exact_next_trust_revision() {
     let (mut record, root_key, root) = fixture();
+    let authority = OwnerAuthorityState::new(root);
     let transition_id = TransitionId::from_bytes([16; 32]);
     let unsigned = TrustTransition::from_signed_revocation(
         record.owner_id(),
@@ -330,7 +320,7 @@ fn transition_requires_exact_next_trust_revision() {
     );
 
     assert_eq!(
-        transition.apply_root(&mut record, &root),
+        transition.apply_root(&mut record, &authority),
         Err(TrustTransitionError::InvalidRevision)
     );
     assert_eq!(record.state(), TrustState::Trusted);

@@ -30,6 +30,8 @@ fn rotated_peer_credential_invalidates_old_control_snapshot() {
         0,
         &root_key,
     );
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(delegation).unwrap();
     let local_key = SigningKey::from_secret_bytes([0x43; 32]);
     let peer_old_key = SigningKey::from_secret_bytes([0x44; 32]);
     let peer_new_key = SigningKey::from_secret_bytes([0x45; 32]);
@@ -40,8 +42,7 @@ fn rotated_peer_credential_invalidates_old_control_snapshot() {
         local_device_id,
         &local_key,
         0,
-        &root,
-        &delegation,
+        &authority,
         &issuer_key,
     )
     .unwrap();
@@ -50,8 +51,7 @@ fn rotated_peer_credential_invalidates_old_control_snapshot() {
         peer_device_id,
         &peer_old_key,
         0,
-        &root,
-        &delegation,
+        &authority,
         &issuer_key,
     )
     .unwrap();
@@ -59,22 +59,11 @@ fn rotated_peer_credential_invalidates_old_control_snapshot() {
         &peer_credential,
         TransitionId::from_bytes([0x48; 32]),
         [0x4d; 32],
-        &root,
-        &delegation,
+        &authority,
         &issuer_key,
-        delegation.delegation_epoch(),
     )
     .unwrap();
-    let mut peer_trust = transition
-        .establish(
-            &peer_credential,
-            &root,
-            &delegation,
-            delegation.delegation_epoch(),
-        )
-        .unwrap();
-    let mut authority = OwnerAuthorityState::new(root);
-    authority.accept_delegation(delegation).unwrap();
+    let mut peer_trust = transition.establish(&peer_credential, &authority).unwrap();
     let ranges = [ProtocolRange::new(1, 0, 0).unwrap()];
     let features = FeatureSet::new(&[], &[]).unwrap();
     let binding = ChannelBinding::new("in-process-test", vec![0x49; 32]);
@@ -118,19 +107,12 @@ fn rotated_peer_credential_invalidates_old_control_snapshot() {
         peer_device_id,
         &peer_new_key,
         1,
-        &root,
-        &delegation,
+        &authority,
         &issuer_key,
     )
     .unwrap();
     peer_trust
-        .accept_successor_credential(
-            &successor,
-            &root,
-            &delegation,
-            delegation.delegation_epoch(),
-            TransitionId::from_bytes([0x4c; 32]),
-        )
+        .accept_successor_credential(&successor, &authority, TransitionId::from_bytes([0x4c; 32]))
         .unwrap();
 
     let context = session.context().unwrap();

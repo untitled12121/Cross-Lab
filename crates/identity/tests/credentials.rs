@@ -91,13 +91,14 @@ fn device_credential_verifies_through_current_device_signing_authority() {
 #[test]
 fn device_credential_rejects_mismatched_issuer_key() {
     let (owner_id, _, root, _, delegation) = fixture();
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(delegation).unwrap();
     let result = DeviceCredential::issue(
         owner_id,
         DeviceId::from_bytes([21; 32]),
         &SigningKey::from_secret_bytes([22; 32]),
         0,
-        &root,
-        &delegation,
+        &authority,
         &SigningKey::from_secret_bytes([23; 32]),
     );
 
@@ -107,24 +108,34 @@ fn device_credential_rejects_mismatched_issuer_key() {
 #[test]
 fn device_credential_rejects_wrong_owner_domain() {
     let (owner_id, _, root, issuer_key, delegation) = fixture();
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(delegation).unwrap();
     let credential = DeviceCredential::issue(
         owner_id,
         DeviceId::from_bytes([24; 32]),
         &SigningKey::from_secret_bytes([25; 32]),
         0,
-        &root,
-        &delegation,
+        &authority,
         &issuer_key,
     )
     .unwrap();
-    let wrong_owner_root = OwnerRootRecord::new(
-        OwnerId::from_bytes([26; 32]),
-        &SigningKey::from_secret_bytes([27; 32]),
+
+    let wrong_owner_id = OwnerId::from_bytes([26; 32]);
+    let wrong_root_key = SigningKey::from_secret_bytes([27; 32]);
+    let wrong_root = OwnerRootRecord::new(wrong_owner_id, &wrong_root_key, 0);
+    let wrong_issuer_key = SigningKey::from_secret_bytes([28; 32]);
+    let wrong_delegation = AuthorityDelegation::issue(
+        wrong_owner_id,
+        AuthorityRole::DeviceSigning,
+        &wrong_issuer_key,
         0,
+        &wrong_root_key,
     );
+    let mut wrong_authority = OwnerAuthorityState::new(wrong_root);
+    wrong_authority.accept_delegation(wrong_delegation).unwrap();
 
     assert_eq!(
-        credential.verify(&wrong_owner_root, &delegation, 0, 0),
+        credential.verify(&wrong_authority, 0),
         Err(IdentityError::WrongOwner)
     );
 }
@@ -142,6 +153,8 @@ fn recovery_authority_cannot_issue_ordinary_device_credentials() {
         0,
         &root_key,
     );
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(recovery).unwrap();
     let device_key = SigningKey::from_secret_bytes([10; 32]);
 
     let result = DeviceCredential::issue(
@@ -149,12 +162,11 @@ fn recovery_authority_cannot_issue_ordinary_device_credentials() {
         DeviceId::from_bytes([11; 32]),
         &device_key,
         0,
-        &root,
-        &recovery,
+        &authority,
         &recovery_key,
     );
 
-    assert_eq!(result.unwrap_err(), IdentityError::WrongIssuerRole);
+    assert_eq!(result.unwrap_err(), IdentityError::UnknownIssuer);
 }
 
 #[test]
@@ -183,13 +195,14 @@ fn superseded_device_signing_authority_cannot_verify_current_credentials() {
     let (owner_id, root_key, root, old_issuer_key, old_delegation) = fixture();
     let device_id = DeviceId::from_bytes([35; 32]);
     let device_key = SigningKey::from_secret_bytes([36; 32]);
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(old_delegation).unwrap();
     let credential = DeviceCredential::issue(
         owner_id,
         device_id,
         &device_key,
         0,
-        &root,
-        &old_delegation,
+        &authority,
         &old_issuer_key,
     )
     .unwrap();
@@ -201,8 +214,6 @@ fn superseded_device_signing_authority_cannot_verify_current_credentials() {
         1,
         &root_key,
     );
-    let mut authority = OwnerAuthorityState::new(root);
-    authority.accept_delegation(old_delegation).unwrap();
     authority.accept_delegation(new_delegation).unwrap();
 
     assert_eq!(
@@ -271,14 +282,15 @@ fn device_key_rotation_preserves_device_id_and_advances_epoch() {
 #[test]
 fn device_key_can_prove_possession_for_a_session_digest() {
     let (owner_id, _, root, issuer_key, delegation) = fixture();
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(delegation).unwrap();
     let device_key = SigningKey::from_secret_bytes([28; 32]);
     let credential = DeviceCredential::issue(
         owner_id,
         DeviceId::from_bytes([29; 32]),
         &device_key,
         0,
-        &root,
-        &delegation,
+        &authority,
         &issuer_key,
     )
     .unwrap();

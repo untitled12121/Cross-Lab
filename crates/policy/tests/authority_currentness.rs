@@ -45,15 +45,11 @@ impl TrustFixture {
             &credential,
             TransitionId::from_bytes([0x15; 32]),
             [0x16; 32],
-            authority.root(),
-            &dsa,
+            &authority,
             &dsa_key,
-            dsa.delegation_epoch(),
         )
         .unwrap();
-        let record = pairing
-            .establish(&credential, authority.root(), &dsa, dsa.delegation_epoch())
-            .unwrap();
+        let record = pairing.establish(&credential, &authority).unwrap();
 
         Self {
             owner_id,
@@ -105,14 +101,14 @@ fn superseded_administrative_authority_cannot_verify_current_approval() {
         0,
         &root_key,
     );
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(old).unwrap();
     let evidence = OwnerApprovalEvidence::issue(
         approval_scope(),
         ApprovalInstant::from_ticks(10),
         ApprovalInstant::from_ticks(20),
-        &root,
-        &old,
+        &authority,
         &old_key,
-        0,
     )
     .unwrap();
     let new_key = SigningKey::from_secret_bytes([0x33; 32]);
@@ -123,8 +119,6 @@ fn superseded_administrative_authority_cannot_verify_current_approval() {
         1,
         &root_key,
     );
-    let mut authority = OwnerAuthorityState::new(root);
-    authority.accept_delegation(old).unwrap();
     authority.accept_delegation(new).unwrap();
 
     assert_eq!(
@@ -176,7 +170,7 @@ fn old_root_revocation_cannot_apply_after_root_successor() {
     let transition = TrustTransition::issue_root_revocation(
         &fixture.record,
         TransitionId::from_bytes([0x40; 32]),
-        fixture.authority.root(),
+        &fixture.authority,
         &fixture.root_key,
     )
     .unwrap();
@@ -186,7 +180,7 @@ fn old_root_revocation_cannot_apply_after_root_successor() {
     fixture.authority.accept_root_successor(&successor).unwrap();
 
     assert_eq!(
-        transition.apply_root(&mut fixture.record, fixture.authority.root()),
+        transition.apply_root(&mut fixture.record, &fixture.authority),
         Err(TrustTransitionError::UnknownIssuer)
     );
     assert_eq!(fixture.record.state(), TrustState::Trusted);
@@ -207,10 +201,9 @@ fn superseded_administrative_revocation_cannot_apply_current() {
     let transition = TrustTransition::issue_delegated_revocation(
         &fixture.record,
         TransitionId::from_bytes([0x51; 32]),
-        fixture.authority.root(),
-        &old,
+        &fixture.authority,
+        AuthorityRole::Administrative,
         &old_key,
-        0,
     )
     .unwrap();
     let new_key = SigningKey::from_secret_bytes([0x52; 32]);
@@ -236,10 +229,9 @@ fn superseded_device_signing_revocation_cannot_apply_current() {
     let transition = TrustTransition::issue_delegated_revocation(
         &fixture.record,
         TransitionId::from_bytes([0x53; 32]),
-        fixture.authority.root(),
-        &fixture.dsa,
+        &fixture.authority,
+        AuthorityRole::DeviceSigning,
         &fixture.dsa_key,
-        fixture.dsa.delegation_epoch(),
     )
     .unwrap();
     fixture.rotate_device_signing();
@@ -302,10 +294,8 @@ fn superseded_device_signing_authority_cannot_establish_current_pairing() {
         &fixture.credential,
         TransitionId::from_bytes([0x62; 32]),
         [0x63; 32],
-        fixture.authority.root(),
-        &fixture.dsa,
+        &fixture.authority,
         &fixture.dsa_key,
-        fixture.dsa.delegation_epoch(),
     )
     .unwrap();
     fixture.rotate_device_signing();
@@ -326,8 +316,7 @@ fn successor_credential_rejects_superseded_device_signing_authority_current() {
         fixture.device_id,
         &fixture.device_key,
         1,
-        fixture.authority.root(),
-        &fixture.dsa,
+        &fixture.authority,
         &fixture.dsa_key,
     )
     .unwrap();

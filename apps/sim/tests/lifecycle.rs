@@ -333,12 +333,12 @@ impl Fixture {
         let transition = TrustTransition::issue_root_revocation(
             &revoked,
             TransitionId::from_bytes([transition_byte; 32]),
-            self.authority.root(),
+            &self.authority,
             &self.root_key,
         )
         .unwrap();
         transition
-            .apply_root(&mut revoked, self.authority.root())
+            .apply_root(&mut revoked, &self.authority)
             .unwrap();
         revoked
     }
@@ -357,13 +357,11 @@ impl Fixture {
         let transition = TrustTransition::issue_root_revocation(
             &other,
             TransitionId::from_bytes([transition_byte; 32]),
-            self.authority.root(),
+            &self.authority,
             &self.root_key,
         )
         .unwrap();
-        transition
-            .apply_root(&mut other, self.authority.root())
-            .unwrap();
+        transition.apply_root(&mut other, &self.authority).unwrap();
         other
     }
 }
