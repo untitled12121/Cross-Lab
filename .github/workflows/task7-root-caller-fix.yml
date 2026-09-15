@@ -52,6 +52,18 @@ jobs:
               1,
           )
           replace_count(
+              "apps/sim/tests/stream_scenarios.rs",
+              "            self.authority.root(),\n            &self.root_key,",
+              "            &self.authority,\n            &self.root_key,",
+              1,
+          )
+          replace_count(
+              "apps/sim/tests/stream_scenarios.rs",
+              ".apply_root(&mut revoked, self.authority.root())",
+              ".apply_root(&mut revoked, &self.authority)",
+              1,
+          )
+          replace_count(
               "transports/quic/src/session_auth_tests/lifecycle_tests.rs",
               "        fixture.authority.root(),\n        &root_key,",
               "        &fixture.authority,\n        &root_key,",
@@ -71,6 +83,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           rm .github/workflows/task7-root-caller-fix.yml
-          git add apps/sim/tests/lifecycle.rs transports/quic/src/session_auth_tests/lifecycle_tests.rs .github/workflows/task7-root-caller-fix.yml
+          git add apps/sim/tests/lifecycle.rs apps/sim/tests/stream_scenarios.rs transports/quic/src/session_auth_tests/lifecycle_tests.rs .github/workflows/task7-root-caller-fix.yml
           git commit -m "refactor(security): finish authority-state caller migration"
           git push origin HEAD:m9-authority-replay-remediation
