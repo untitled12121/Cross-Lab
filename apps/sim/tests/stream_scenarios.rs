@@ -1,13 +1,14 @@
 use std::num::{NonZeroU32, NonZeroUsize};
 
 use crosslab_core::{
-    LogicalSession, SessionActivation, SessionAuthRole, SessionAuthTranscriptV1,
+    LogicalSession, SessionActivation, SessionAuthRole, SessionAuthTranscriptV1, SessionError,
     SessionHandshakeSide, SessionState, StreamAcceptError, StreamAdmissionError,
     StreamReceiveError, TransportConnection, TransportSecurityClass,
 };
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,
+    OwnerRootRecord,
 };
 use crosslab_policy::{
     AuthorizationContext, AuthorizedOperation, CapabilityId, CapabilityVersion,
@@ -26,59 +27,47 @@ use crosslab_sim::{
 
 fn establish_trust(
     credential: &DeviceCredential,
-    root: &OwnerRootRecord,
-    delegation: &AuthorityDelegation,
+    authority: &OwnerAuthorityState,
     issuer_key: &SigningKey,
     transition_byte: u8,
 ) -> TrustRecord {
-    let initial_credential = DeviceCredential::issue_for_public_key(
+    let initial_credential = DeviceCredential::issue_for_public_key_current(
         credential.owner_id(),
         credential.device_id(),
         credential.device_public_key(),
         0,
-        root,
-        delegation,
+        authority,
         issuer_key,
     )
     .unwrap();
-    let transition = PairingTrustTransition::issue(
+    let transition = PairingTrustTransition::issue_current(
         &initial_credential,
         TransitionId::from_bytes([transition_byte; 32]),
         [transition_byte.wrapping_add(1); 32],
-        root,
-        delegation,
+        authority,
         issuer_key,
-        delegation.delegation_epoch(),
     )
     .unwrap();
     let mut trust = transition
-        .establish(
-            &initial_credential,
-            root,
-            delegation,
-            delegation.delegation_epoch(),
-        )
+        .establish_current(&initial_credential, authority)
         .unwrap();
 
     for epoch in 1..=credential.credential_epoch() {
-        let successor = DeviceCredential::issue_for_public_key(
+        let successor = DeviceCredential::issue_for_public_key_current(
             credential.owner_id(),
             credential.device_id(),
             credential.device_public_key(),
             epoch,
-            root,
-            delegation,
+            authority,
             issuer_key,
         )
         .unwrap();
         let mut transition_id = [transition_byte; 32];
         transition_id[..8].copy_from_slice(&epoch.to_be_bytes());
         trust
-            .accept_successor_credential(
+            .accept_successor_credential_current(
                 &successor,
-                root,
-                delegation,
-                delegation.delegation_epoch(),
+                authority,
                 TransitionId::from_bytes(transition_id),
             )
             .unwrap();
@@ -88,8 +77,9 @@ fn establish_trust(
 }
 
 struct Fixture {
+    owner_id: OwnerId,
     root_key: SigningKey,
-    root: OwnerRootRecord,
+    authority: OwnerAuthorityState,
     sender_session: Option<LogicalSession>,
     receiver_session: Option<LogicalSession>,
     session_id: SessionId,
@@ -116,32 +106,31 @@ impl Fixture {
             0,
             &root_key,
         );
+        let mut authority = OwnerAuthorityState::new(root);
+        authority.accept_delegation(delegation).unwrap();
+
         let sender_key = SigningKey::from_secret_bytes([0x63; 32]);
         let receiver_key = SigningKey::from_secret_bytes([0x64; 32]);
-        let sender_credential = DeviceCredential::issue(
+        let sender_credential = DeviceCredential::issue_current(
             owner_id,
             DeviceId::from_bytes([0x65; 32]),
             &sender_key,
             1,
-            &root,
-            &delegation,
+            &authority,
             &issuer_key,
         )
         .unwrap();
-        let receiver_credential = DeviceCredential::issue(
+        let receiver_credential = DeviceCredential::issue_current(
             owner_id,
             DeviceId::from_bytes([0x66; 32]),
             &receiver_key,
             1,
-            &root,
-            &delegation,
+            &authority,
             &issuer_key,
         )
         .unwrap();
-        let sender_trust =
-            establish_trust(&sender_credential, &root, &delegation, &issuer_key, 0x67);
-        let receiver_trust =
-            establish_trust(&receiver_credential, &root, &delegation, &issuer_key, 0x68);
+        let sender_trust = establish_trust(&sender_credential, &authority, &issuer_key, 0x67);
+        let receiver_trust = establish_trust(&receiver_credential, &authority, &issuer_key, 0x68);
         let ranges = [ProtocolRange::new(1, 0, 0).unwrap()];
         let features = FeatureSet::new(&[], &[]).unwrap();
         let binding = pair.endpoints().0.channel_binding();
@@ -163,15 +152,13 @@ impl Fixture {
         let receiver_proof = transcript
             .create_proof(SessionAuthRole::Responder, &receiver_key)
             .unwrap();
-        let sender_side =
-            SessionHandshakeSide::new(&sender_credential, &delegation, &ranges, &features);
-        let receiver_side =
-            SessionHandshakeSide::new(&receiver_credential, &delegation, &ranges, &features);
+        let sender_side = SessionHandshakeSide::new(&sender_credential, &ranges, &features);
+        let receiver_side = SessionHandshakeSide::new(&receiver_credential, &ranges, &features);
 
         let mut sender_session = LogicalSession::new();
         sender_session
             .authenticate(SessionActivation::new(
-                &root,
+                &authority,
                 sender_side,
                 receiver_side,
                 SessionAuthRole::Initiator,
@@ -187,7 +174,7 @@ impl Fixture {
         let mut receiver_session = LogicalSession::new();
         receiver_session
             .authenticate(SessionActivation::new(
-                &root,
+                &authority,
                 sender_side,
                 receiver_side,
                 SessionAuthRole::Responder,
@@ -247,8 +234,9 @@ impl Fixture {
         let grant = policy.evaluate(&context).into_grant().unwrap();
 
         Self {
+            owner_id,
             root_key,
-            root,
+            authority,
             sender_session: Some(sender_session),
             receiver_session: Some(receiver_session),
             session_id,
@@ -268,6 +256,18 @@ impl Fixture {
             self.sender_session.take().unwrap(),
             self.receiver_session.take().unwrap(),
         )
+    }
+
+    fn rotate_device_signing(&mut self) {
+        let key = SigningKey::from_secret_bytes([0x6d; 32]);
+        let delegation = AuthorityDelegation::issue(
+            self.owner_id,
+            AuthorityRole::DeviceSigning,
+            &key,
+            1,
+            &self.root_key,
+        );
+        self.authority.accept_delegation(delegation).unwrap();
     }
 
     fn operation(&self, use_policy: UsePolicy) -> AuthorizedOperation {
@@ -329,12 +329,14 @@ impl Fixture {
         let transition = TrustTransition::issue_root_revocation(
             &self.sender_trust,
             TransitionId::from_bytes([transition_byte; 32]),
-            &self.root,
+            self.authority.root(),
             &self.root_key,
         )
         .unwrap();
         let mut revoked = self.sender_trust;
-        transition.apply_root(&mut revoked, &self.root).unwrap();
+        transition
+            .apply_root(&mut revoked, self.authority.root())
+            .unwrap();
         revoked
     }
 }
@@ -674,6 +676,50 @@ fn accepted_peer_revocation_cancels_stream_authority_and_closes_session() {
         .unwrap();
 
     receiver.apply_peer_revocation(&revoked_sender).unwrap();
+    assert_eq!(receiver.session().state(), SessionState::Closed);
+    assert!(receiver_endpoint.is_closed());
+    assert!(send.try_send_chunk(vec![9]).is_err());
+    assert!(matches!(
+        receiver.try_receive_chunk(stream_id),
+        Err(SimStreamError::StreamNotFound)
+    ));
+}
+
+#[test]
+fn device_signing_rotation_cancels_stream_authority_and_closes_session() {
+    let pair = transport_pair();
+    let mut fixture = Fixture::new(&pair);
+    let (sender_endpoint, receiver_endpoint) = pair.endpoints();
+    let operation = fixture.operation(UsePolicy::SingleStream);
+    let open = fixture.open(operation.id(), 0, 0x7d);
+    let (sender_session, receiver_session) = fixture.take_sessions();
+    let mut sender = SimStreamRuntime::new(
+        sender_session,
+        sender_endpoint,
+        NonZeroUsize::new(2).unwrap(),
+    )
+    .unwrap();
+    let mut receiver = SimStreamRuntime::new(
+        receiver_session,
+        receiver_endpoint,
+        NonZeroUsize::new(2).unwrap(),
+    )
+    .unwrap();
+    receiver.register_operation(operation).unwrap();
+
+    let mut send = sender.open_uni(&open).unwrap();
+    let stream_id = receiver
+        .accept_one(15, fixture.trust_revision, fixture.policy_revision)
+        .unwrap();
+
+    fixture.rotate_device_signing();
+
+    assert!(matches!(
+        receiver.revalidate_authority(&fixture.authority),
+        Err(SimStreamError::Session(
+            SessionError::DeviceSigningAuthorityChanged
+        ))
+    ));
     assert_eq!(receiver.session().state(), SessionState::Closed);
     assert!(receiver_endpoint.is_closed());
     assert!(send.try_send_chunk(vec![9]).is_err());
