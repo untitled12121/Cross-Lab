@@ -24,7 +24,7 @@ pub struct ControlBridge {
 }
 
 impl ControlBridge {
-    fn new(
+    pub(crate) fn new(
         connection: Connection,
         send: SendStream,
         recv: RecvStream,
@@ -62,6 +62,10 @@ impl ControlBridge {
             outbound,
             inbound: Mutex::new(inbound),
         }
+    }
+
+    pub(crate) fn runtime(&self) -> &CandidateRuntime {
+        &self.runtime
     }
 
     pub fn try_send(&self, frame: Vec<u8>) -> Result<(), ControlSendError> {
@@ -102,7 +106,7 @@ impl ControlBridge {
         }
     }
 
-    fn close(&self) {
+    pub(crate) fn close(&self) {
         self.runtime.close();
     }
 
@@ -128,6 +132,10 @@ impl ControlPair {
 
     pub fn close_server(&self) {
         self.server.close();
+    }
+
+    pub(crate) fn into_parts(self) -> (DirectPair, ControlBridge, ControlBridge) {
+        (self.direct, self.client, self.server)
     }
 
     pub async fn shutdown(self) {
