@@ -64,7 +64,7 @@ pub struct PairingTrustTransition {
 
 impl PairingTrustTransition {
     #[allow(clippy::too_many_arguments)]
-    pub fn issue(
+    fn issue_with_authority_parts(
         credential: &DeviceCredential,
         transition_id: TransitionId,
         pairing_evidence_digest: [u8; 32],
@@ -101,7 +101,7 @@ impl PairingTrustTransition {
         Ok(transition)
     }
 
-    pub fn issue_current(
+    pub fn issue(
         credential: &DeviceCredential,
         transition_id: TransitionId,
         pairing_evidence_digest: [u8; 32],
@@ -109,7 +109,7 @@ impl PairingTrustTransition {
         issuer_key: &SigningKey,
     ) -> Result<Self, PairingTrustTransitionError> {
         let issuer = authority.current_delegation(AuthorityRole::DeviceSigning)?;
-        Self::issue(
+        Self::issue_with_authority_parts(
             credential,
             transition_id,
             pairing_evidence_digest,
@@ -120,7 +120,7 @@ impl PairingTrustTransition {
         )
     }
 
-    pub fn establish(
+    fn establish_with_authority_parts(
         &self,
         credential: &DeviceCredential,
         root: &OwnerRootRecord,
@@ -160,13 +160,13 @@ impl PairingTrustTransition {
         ))
     }
 
-    pub fn establish_current(
+    pub fn establish(
         &self,
         credential: &DeviceCredential,
         authority: &OwnerAuthorityState,
     ) -> Result<TrustRecord, PairingTrustTransitionError> {
         let issuer = authority.current_delegation(AuthorityRole::DeviceSigning)?;
-        self.establish(
+        self.establish_with_authority_parts(
             credential,
             authority.root(),
             issuer,

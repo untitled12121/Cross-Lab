@@ -51,7 +51,7 @@ impl Fixture {
 
         let local_key = SigningKey::from_secret_bytes([0x73; 32]);
         let peer_key = SigningKey::from_secret_bytes([0x74; 32]);
-        let local_credential = DeviceCredential::issue_current(
+        let local_credential = DeviceCredential::issue(
             owner_id,
             DeviceId::from_bytes([0x75; 32]),
             &local_key,
@@ -60,7 +60,7 @@ impl Fixture {
             &issuer_key,
         )
         .unwrap();
-        let peer_credential = DeviceCredential::issue_current(
+        let peer_credential = DeviceCredential::issue(
             owner_id,
             DeviceId::from_bytes([0x76; 32]),
             &peer_key,
@@ -69,7 +69,7 @@ impl Fixture {
             &issuer_key,
         )
         .unwrap();
-        let pairing = PairingTrustTransition::issue_current(
+        let pairing = PairingTrustTransition::issue(
             &peer_credential,
             TransitionId::from_bytes([0x77; 32]),
             [0x78; 32],
@@ -77,9 +77,7 @@ impl Fixture {
             &issuer_key,
         )
         .unwrap();
-        let peer_trust = pairing
-            .establish_current(&peer_credential, &authority)
-            .unwrap();
+        let peer_trust = pairing.establish(&peer_credential, &authority).unwrap();
 
         let ranges = [ProtocolRange::new(1, 0, 0).unwrap()];
         let features = FeatureSet::new(&[], &[]).unwrap();
@@ -259,7 +257,7 @@ fn admission_rejects_trust_for_a_different_peer_device() {
     admission.register_operation(operation).unwrap();
 
     let other_key = SigningKey::from_secret_bytes([0x85; 32]);
-    let other_credential = DeviceCredential::issue_current(
+    let other_credential = DeviceCredential::issue(
         fixture.authority.root().owner_id(),
         DeviceId::from_bytes([0x86; 32]),
         &other_key,
@@ -268,7 +266,7 @@ fn admission_rejects_trust_for_a_different_peer_device() {
         &fixture.issuer_key,
     )
     .unwrap();
-    let pairing = PairingTrustTransition::issue_current(
+    let pairing = PairingTrustTransition::issue(
         &other_credential,
         TransitionId::from_bytes([0x87; 32]),
         [0x88; 32],
@@ -277,7 +275,7 @@ fn admission_rejects_trust_for_a_different_peer_device() {
     )
     .unwrap();
     let other_trust = pairing
-        .establish_current(&other_credential, &fixture.authority)
+        .establish(&other_credential, &fixture.authority)
         .unwrap();
 
     assert_eq!(

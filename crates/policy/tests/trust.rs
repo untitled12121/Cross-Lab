@@ -15,7 +15,7 @@ fn establish_initial_trust(
     transition_id: TransitionId,
     pairing_evidence_digest: [u8; 32],
 ) -> TrustRecord {
-    let transition = PairingTrustTransition::issue_current(
+    let transition = PairingTrustTransition::issue(
         credential,
         transition_id,
         pairing_evidence_digest,
@@ -23,7 +23,7 @@ fn establish_initial_trust(
         issuer_key,
     )
     .unwrap();
-    transition.establish_current(credential, authority).unwrap()
+    transition.establish(credential, authority).unwrap()
 }
 
 fn trusted_record() -> TrustRecord {
@@ -40,7 +40,7 @@ fn trusted_record() -> TrustRecord {
     );
     let mut authority = OwnerAuthorityState::new(root);
     authority.accept_delegation(delegation).unwrap();
-    let credential = DeviceCredential::issue_current(
+    let credential = DeviceCredential::issue(
         owner_id,
         DeviceId::from_bytes([2; 32]),
         &SigningKey::from_secret_bytes([8; 32]),
@@ -104,7 +104,7 @@ impl RotationFixture {
     }
 
     fn credential(&self, device_id: DeviceId, epoch: u64) -> DeviceCredential {
-        DeviceCredential::issue_current(
+        DeviceCredential::issue(
             self.owner_id,
             device_id,
             &SigningKey::from_secret_bytes([0x25; 32]),
@@ -122,7 +122,7 @@ fn pairing_trust_transition_establishes_initial_membership() {
     let credential = fixture.credential(fixture.device_id, 0);
     let transition_id = TransitionId::from_bytes([0x2d; 32]);
     let pairing_evidence_digest = [0x2e; 32];
-    let transition = PairingTrustTransition::issue_current(
+    let transition = PairingTrustTransition::issue(
         &credential,
         transition_id,
         pairing_evidence_digest,
@@ -132,7 +132,7 @@ fn pairing_trust_transition_establishes_initial_membership() {
     .unwrap();
 
     let record = transition
-        .establish_current(&credential, &fixture.authority)
+        .establish(&credential, &fixture.authority)
         .unwrap();
 
     assert_eq!(record.owner_id(), fixture.owner_id);
@@ -151,7 +151,7 @@ fn pairing_trust_transition_establishes_initial_membership() {
 fn pairing_trust_transition_is_bound_to_the_exact_credential() {
     let fixture = RotationFixture::new();
     let credential = fixture.credential(fixture.device_id, 0);
-    let transition = PairingTrustTransition::issue_current(
+    let transition = PairingTrustTransition::issue(
         &credential,
         TransitionId::from_bytes([0x2f; 32]),
         [0x30; 32],
@@ -159,7 +159,7 @@ fn pairing_trust_transition_is_bound_to_the_exact_credential() {
         &fixture.issuer_key,
     )
     .unwrap();
-    let substituted = DeviceCredential::issue_current(
+    let substituted = DeviceCredential::issue(
         fixture.owner_id,
         fixture.device_id,
         &SigningKey::from_secret_bytes([0x31; 32]),
@@ -170,7 +170,7 @@ fn pairing_trust_transition_is_bound_to_the_exact_credential() {
     .unwrap();
 
     assert_eq!(
-        transition.establish_current(&substituted, &fixture.authority),
+        transition.establish(&substituted, &fixture.authority),
         Err(PairingTrustTransitionError::CredentialMismatch)
     );
 }
@@ -181,7 +181,7 @@ fn pairing_trust_transition_rejects_non_initial_credential_epoch() {
     let credential = fixture.credential(fixture.device_id, 1);
 
     assert_eq!(
-        PairingTrustTransition::issue_current(
+        PairingTrustTransition::issue(
             &credential,
             TransitionId::from_bytes([0x32; 32]),
             [0x33; 32],
@@ -209,7 +209,7 @@ fn verified_successor_credential_advances_epoch_revision_and_transition() {
     let transition_id = TransitionId::from_bytes([0x26; 32]);
 
     record
-        .accept_successor_credential_current(&successor, &fixture.authority, transition_id)
+        .accept_successor_credential(&successor, &fixture.authority, transition_id)
         .unwrap();
 
     assert_eq!(record.state(), TrustState::Trusted);
@@ -225,7 +225,7 @@ fn successor_credential_rejects_stale_skipped_wrong_device_and_wrong_authority()
     let mut stale_record = fixture.trust();
     let stale = fixture.credential(fixture.device_id, 0);
     assert_eq!(
-        stale_record.accept_successor_credential_current(
+        stale_record.accept_successor_credential(
             &stale,
             &fixture.authority,
             TransitionId::from_bytes([0x27; 32]),
@@ -236,7 +236,7 @@ fn successor_credential_rejects_stale_skipped_wrong_device_and_wrong_authority()
     let mut skipped_record = fixture.trust();
     let skipped = fixture.credential(fixture.device_id, 2);
     assert_eq!(
-        skipped_record.accept_successor_credential_current(
+        skipped_record.accept_successor_credential(
             &skipped,
             &fixture.authority,
             TransitionId::from_bytes([0x28; 32]),
@@ -247,7 +247,7 @@ fn successor_credential_rejects_stale_skipped_wrong_device_and_wrong_authority()
     let mut wrong_device_record = fixture.trust();
     let wrong_device = fixture.credential(DeviceId::from_bytes([0x29; 32]), 1);
     assert_eq!(
-        wrong_device_record.accept_successor_credential_current(
+        wrong_device_record.accept_successor_credential(
             &wrong_device,
             &fixture.authority,
             TransitionId::from_bytes([0x2a; 32]),

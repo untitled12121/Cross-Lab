@@ -39,7 +39,7 @@ impl SessionFixture {
 
         let initiator_key = SigningKey::from_secret_bytes([0x13; 32]);
         let responder_key = SigningKey::from_secret_bytes([0x14; 32]);
-        let initiator_credential = DeviceCredential::issue_current(
+        let initiator_credential = DeviceCredential::issue(
             owner_id,
             DeviceId::from_bytes([0x15; 32]),
             &initiator_key,
@@ -48,7 +48,7 @@ impl SessionFixture {
             &issuer_key,
         )
         .unwrap();
-        let responder_credential = DeviceCredential::issue_current(
+        let responder_credential = DeviceCredential::issue(
             owner_id,
             DeviceId::from_bytes([0x16; 32]),
             &responder_key,
@@ -57,7 +57,7 @@ impl SessionFixture {
             &issuer_key,
         )
         .unwrap();
-        let pairing = PairingTrustTransition::issue_current(
+        let pairing = PairingTrustTransition::issue(
             &responder_credential,
             TransitionId::from_bytes([0x17; 32]),
             [0x18; 32],
@@ -66,7 +66,7 @@ impl SessionFixture {
         )
         .unwrap();
         let peer_trust = pairing
-            .establish_current(&responder_credential, &authority)
+            .establish(&responder_credential, &authority)
             .unwrap();
 
         Self {

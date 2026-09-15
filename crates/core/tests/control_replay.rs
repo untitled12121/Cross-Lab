@@ -50,7 +50,7 @@ impl Fixture {
         authority.accept_delegation(delegation).unwrap();
         let local_key = SigningKey::from_secret_bytes([0x13; 32]);
         let peer_key = SigningKey::from_secret_bytes([0x14; 32]);
-        let local_credential = DeviceCredential::issue_current(
+        let local_credential = DeviceCredential::issue(
             owner_id,
             DeviceId::from_bytes([0x15; 32]),
             &local_key,
@@ -59,7 +59,7 @@ impl Fixture {
             &issuer_key,
         )
         .unwrap();
-        let peer_credential = DeviceCredential::issue_current(
+        let peer_credential = DeviceCredential::issue(
             owner_id,
             DeviceId::from_bytes([0x16; 32]),
             &peer_key,
@@ -68,7 +68,7 @@ impl Fixture {
             &issuer_key,
         )
         .unwrap();
-        let transition = PairingTrustTransition::issue_current(
+        let transition = PairingTrustTransition::issue(
             &peer_credential,
             TransitionId::from_bytes([0x17; 32]),
             [0x18; 32],
@@ -76,9 +76,7 @@ impl Fixture {
             &issuer_key,
         )
         .unwrap();
-        let peer_trust = transition
-            .establish_current(&peer_credential, &authority)
-            .unwrap();
+        let peer_trust = transition.establish(&peer_credential, &authority).unwrap();
 
         Self {
             authority,

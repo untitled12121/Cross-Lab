@@ -47,7 +47,7 @@ impl Fixture {
         authority.accept_delegation(delegation).unwrap();
         let initiator_key = SigningKey::from_secret_bytes([0xe6; 32]);
         let responder_key = SigningKey::from_secret_bytes([0xe7; 32]);
-        let initiator_credential = DeviceCredential::issue_current(
+        let initiator_credential = DeviceCredential::issue(
             owner_id,
             DeviceId::from_bytes([0xe8; 32]),
             &initiator_key,
@@ -57,7 +57,7 @@ impl Fixture {
         )
         .unwrap();
         let responder_device_id = DeviceId::from_bytes([0xe9; 32]);
-        let responder_initial_credential = DeviceCredential::issue_current(
+        let responder_initial_credential = DeviceCredential::issue(
             owner_id,
             responder_device_id,
             &responder_key,
@@ -66,7 +66,7 @@ impl Fixture {
             &issuer_key,
         )
         .unwrap();
-        let responder_credential = DeviceCredential::issue_current(
+        let responder_credential = DeviceCredential::issue(
             owner_id,
             responder_device_id,
             &responder_key,
@@ -75,7 +75,7 @@ impl Fixture {
             &issuer_key,
         )
         .unwrap();
-        let transition = PairingTrustTransition::issue_current(
+        let transition = PairingTrustTransition::issue(
             &responder_initial_credential,
             TransitionId::from_bytes([0xea; 32]),
             [0xf1; 32],
@@ -84,10 +84,10 @@ impl Fixture {
         )
         .unwrap();
         let mut peer_trust = transition
-            .establish_current(&responder_initial_credential, &authority)
+            .establish(&responder_initial_credential, &authority)
             .unwrap();
         peer_trust
-            .accept_successor_credential_current(
+            .accept_successor_credential(
                 &responder_credential,
                 &authority,
                 TransitionId::from_bytes([0xf2; 32]),

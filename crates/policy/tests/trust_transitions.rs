@@ -109,7 +109,7 @@ fn administrative_authority_can_sign_ordinary_revocation() {
     );
     let mut authority = OwnerAuthorityState::new(root);
     authority.accept_delegation(delegation).unwrap();
-    let transition = TrustTransition::issue_delegated_revocation_current(
+    let transition = TrustTransition::issue_delegated_revocation(
         &record,
         TransitionId::from_bytes([7; 32]),
         &authority,
@@ -118,9 +118,7 @@ fn administrative_authority_can_sign_ordinary_revocation() {
     )
     .unwrap();
 
-    transition
-        .apply_delegated_current(&mut record, &authority)
-        .unwrap();
+    transition.apply_delegated(&mut record, &authority).unwrap();
 
     assert_eq!(record.state(), TrustState::Revoked);
 }
@@ -138,7 +136,7 @@ fn device_signing_authority_can_sign_ordinary_revocation() {
     );
     let mut authority = OwnerAuthorityState::new(root);
     authority.accept_delegation(delegation).unwrap();
-    let transition = TrustTransition::issue_delegated_revocation_current(
+    let transition = TrustTransition::issue_delegated_revocation(
         &record,
         TransitionId::from_bytes([18; 32]),
         &authority,
@@ -147,9 +145,7 @@ fn device_signing_authority_can_sign_ordinary_revocation() {
     )
     .unwrap();
 
-    transition
-        .apply_delegated_current(&mut record, &authority)
-        .unwrap();
+    transition.apply_delegated(&mut record, &authority).unwrap();
 
     assert_eq!(record.state(), TrustState::Revoked);
 }

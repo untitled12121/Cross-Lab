@@ -31,7 +31,7 @@ fn accepted_peer_rotation_invalidates_old_authenticated_session() {
     let peer_new_key = SigningKey::from_secret_bytes([0x35; 32]);
     let local_device_id = DeviceId::from_bytes([0x36; 32]);
     let peer_device_id = DeviceId::from_bytes([0x37; 32]);
-    let local_credential = DeviceCredential::issue_current(
+    let local_credential = DeviceCredential::issue(
         owner_id,
         local_device_id,
         &local_key,
@@ -40,7 +40,7 @@ fn accepted_peer_rotation_invalidates_old_authenticated_session() {
         &issuer_key,
     )
     .unwrap();
-    let peer_credential = DeviceCredential::issue_current(
+    let peer_credential = DeviceCredential::issue(
         owner_id,
         peer_device_id,
         &peer_old_key,
@@ -49,7 +49,7 @@ fn accepted_peer_rotation_invalidates_old_authenticated_session() {
         &issuer_key,
     )
     .unwrap();
-    let transition = PairingTrustTransition::issue_current(
+    let transition = PairingTrustTransition::issue(
         &peer_credential,
         TransitionId::from_bytes([0x38; 32]),
         [0x3d; 32],
@@ -57,9 +57,7 @@ fn accepted_peer_rotation_invalidates_old_authenticated_session() {
         &issuer_key,
     )
     .unwrap();
-    let mut peer_trust = transition
-        .establish_current(&peer_credential, &authority)
-        .unwrap();
+    let mut peer_trust = transition.establish(&peer_credential, &authority).unwrap();
     let ranges = [ProtocolRange::new(1, 0, 0).unwrap()];
     let features = FeatureSet::new(&[], &[]).unwrap();
     let binding = ChannelBinding::new("in-process-test", vec![0x39; 32]);
@@ -99,7 +97,7 @@ fn accepted_peer_rotation_invalidates_old_authenticated_session() {
         .unwrap();
     assert_eq!(session.state(), SessionState::Active);
 
-    let successor = DeviceCredential::issue_current(
+    let successor = DeviceCredential::issue(
         owner_id,
         peer_device_id,
         &peer_new_key,
@@ -109,11 +107,7 @@ fn accepted_peer_rotation_invalidates_old_authenticated_session() {
     )
     .unwrap();
     peer_trust
-        .accept_successor_credential_current(
-            &successor,
-            &authority,
-            TransitionId::from_bytes([0x3c; 32]),
-        )
+        .accept_successor_credential(&successor, &authority, TransitionId::from_bytes([0x3c; 32]))
         .unwrap();
 
     assert_eq!(

@@ -38,15 +38,9 @@ impl TrustFixture {
         authority.accept_delegation(dsa).unwrap();
         let device_id = DeviceId::from_bytes([0x13; 32]);
         let device_key = SigningKey::from_secret_bytes([0x14; 32]);
-        let credential = DeviceCredential::issue_current(
-            owner_id,
-            device_id,
-            &device_key,
-            0,
-            &authority,
-            &dsa_key,
-        )
-        .unwrap();
+        let credential =
+            DeviceCredential::issue(owner_id, device_id, &device_key, 0, &authority, &dsa_key)
+                .unwrap();
         let pairing = PairingTrustTransition::issue(
             &credential,
             TransitionId::from_bytes([0x15; 32]),
@@ -134,7 +128,7 @@ fn superseded_administrative_authority_cannot_verify_current_approval() {
     authority.accept_delegation(new).unwrap();
 
     assert_eq!(
-        evidence.verify_current(&authority),
+        evidence.verify(&authority),
         Err(ApprovalError::UnknownIssuer)
     );
 }
@@ -165,7 +159,7 @@ fn superseded_administrative_key_cannot_issue_current_approval() {
     authority.accept_delegation(new).unwrap();
 
     assert_eq!(
-        OwnerApprovalEvidence::issue_current(
+        OwnerApprovalEvidence::issue(
             approval_scope(),
             ApprovalInstant::from_ticks(10),
             ApprovalInstant::from_ticks(20),
@@ -230,7 +224,7 @@ fn superseded_administrative_revocation_cannot_apply_current() {
     fixture.authority.accept_delegation(new).unwrap();
 
     assert_eq!(
-        transition.apply_delegated_current(&mut fixture.record, &fixture.authority),
+        transition.apply_delegated(&mut fixture.record, &fixture.authority),
         Err(TrustTransitionError::UnknownIssuer)
     );
     assert_eq!(fixture.record.state(), TrustState::Trusted);
@@ -251,7 +245,7 @@ fn superseded_device_signing_revocation_cannot_apply_current() {
     fixture.rotate_device_signing();
 
     assert_eq!(
-        transition.apply_delegated_current(&mut fixture.record, &fixture.authority),
+        transition.apply_delegated(&mut fixture.record, &fixture.authority),
         Err(TrustTransitionError::UnknownIssuer)
     );
     assert_eq!(fixture.record.state(), TrustState::Trusted);
@@ -271,7 +265,7 @@ fn recovery_remains_invalid_for_current_delegated_revocation() {
     fixture.authority.accept_delegation(recovery).unwrap();
 
     assert_eq!(
-        TrustTransition::issue_delegated_revocation_current(
+        TrustTransition::issue_delegated_revocation(
             &fixture.record,
             TransitionId::from_bytes([0x55; 32]),
             &fixture.authority,
@@ -288,7 +282,7 @@ fn superseded_device_signing_key_cannot_issue_current_pairing_transition() {
     fixture.rotate_device_signing();
 
     assert_eq!(
-        PairingTrustTransition::issue_current(
+        PairingTrustTransition::issue(
             &fixture.credential,
             TransitionId::from_bytes([0x60; 32]),
             [0x61; 32],
@@ -317,7 +311,7 @@ fn superseded_device_signing_authority_cannot_establish_current_pairing() {
     fixture.rotate_device_signing();
 
     assert_eq!(
-        transition.establish_current(&fixture.credential, &fixture.authority),
+        transition.establish(&fixture.credential, &fixture.authority),
         Err(PairingTrustTransitionError::Identity(
             IdentityError::UnknownIssuer
         ))
@@ -340,7 +334,7 @@ fn successor_credential_rejects_superseded_device_signing_authority_current() {
     fixture.rotate_device_signing();
 
     assert_eq!(
-        fixture.record.accept_successor_credential_current(
+        fixture.record.accept_successor_credential(
             &successor,
             &fixture.authority,
             TransitionId::from_bytes([0x64; 32]),

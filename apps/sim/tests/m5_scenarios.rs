@@ -38,7 +38,7 @@ fn establish_trust(
     issuer_key: &SigningKey,
     transition_byte: u8,
 ) -> TrustRecord {
-    let initial_credential = DeviceCredential::issue_for_public_key_current(
+    let initial_credential = DeviceCredential::issue_for_public_key(
         credential.owner_id(),
         credential.device_id(),
         credential.device_public_key(),
@@ -47,7 +47,7 @@ fn establish_trust(
         issuer_key,
     )
     .unwrap();
-    let transition = PairingTrustTransition::issue_current(
+    let transition = PairingTrustTransition::issue(
         &initial_credential,
         TransitionId::from_bytes([transition_byte; 32]),
         [transition_byte.wrapping_add(1); 32],
@@ -56,11 +56,11 @@ fn establish_trust(
     )
     .unwrap();
     let mut trust = transition
-        .establish_current(&initial_credential, authority)
+        .establish(&initial_credential, authority)
         .unwrap();
 
     for epoch in 1..=credential.credential_epoch() {
-        let successor = DeviceCredential::issue_for_public_key_current(
+        let successor = DeviceCredential::issue_for_public_key(
             credential.owner_id(),
             credential.device_id(),
             credential.device_public_key(),
@@ -72,7 +72,7 @@ fn establish_trust(
         let mut transition_id = [transition_byte; 32];
         transition_id[..8].copy_from_slice(&epoch.to_be_bytes());
         trust
-            .accept_successor_credential_current(
+            .accept_successor_credential(
                 &successor,
                 authority,
                 TransitionId::from_bytes(transition_id),
@@ -117,7 +117,7 @@ impl M5Fixture {
         let joiner_key = SigningKey::from_secret_bytes([0x14; 32]);
         let inviter_device_id = DeviceId::from_bytes([0x15; 32]);
         let joiner_device_id = DeviceId::from_bytes([0x16; 32]);
-        let inviter_credential = DeviceCredential::issue_current(
+        let inviter_credential = DeviceCredential::issue(
             owner_id,
             inviter_device_id,
             &inviter_key,
@@ -577,7 +577,7 @@ fn session_proofs_bound_to_another_channel_are_rejected_closed() {
 fn stale_accepted_credential_epoch_is_rejected_before_session_activation() {
     let fixture = M5Fixture::new();
     let (joiner_credential, _) = fixture.complete_pairing(JOINER_EPOCH);
-    let newer_credential = DeviceCredential::issue_for_public_key_current(
+    let newer_credential = DeviceCredential::issue_for_public_key(
         fixture.owner_id,
         fixture.joiner_device_id,
         fixture.joiner_key.verifying_key(),
@@ -634,7 +634,7 @@ fn owner_mismatch_in_peer_trust_is_rejected_before_session_activation() {
     );
     let mut wrong_authority = OwnerAuthorityState::new(wrong_root);
     wrong_authority.accept_delegation(wrong_delegation).unwrap();
-    let wrong_credential = DeviceCredential::issue_for_public_key_current(
+    let wrong_credential = DeviceCredential::issue_for_public_key(
         wrong_owner,
         fixture.joiner_device_id,
         fixture.joiner_key.verifying_key(),

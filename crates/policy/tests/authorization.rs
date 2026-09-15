@@ -93,7 +93,7 @@ impl Fixture {
         expires_at: u64,
     ) -> VerifiedApproval {
         let (authority, administrative_key) = self.administrative_authority();
-        OwnerApprovalEvidence::issue_current(
+        OwnerApprovalEvidence::issue(
             scope,
             ApprovalInstant::from_ticks(issued_at),
             ApprovalInstant::from_ticks(expires_at),
@@ -101,7 +101,7 @@ impl Fixture {
             &administrative_key,
         )
         .unwrap()
-        .verify_current(&authority)
+        .verify(&authority)
         .unwrap()
     }
 }
@@ -333,7 +333,7 @@ fn invalid_approval_lifetime_is_rejected() {
     let (authority, administrative_key) = fixture.administrative_authority();
 
     assert_eq!(
-        OwnerApprovalEvidence::issue_current(
+        OwnerApprovalEvidence::issue(
             ApprovalScope::from_context(&context),
             ApprovalInstant::from_ticks(20),
             ApprovalInstant::from_ticks(20),

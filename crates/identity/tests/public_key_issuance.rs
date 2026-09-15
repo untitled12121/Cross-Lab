@@ -23,7 +23,7 @@ fn device_credential_can_be_issued_from_public_key_without_device_private_key() 
     let device_public_key = device_key.verifying_key();
     let device_id = DeviceId::from_bytes([0x55; 32]);
 
-    let credential = DeviceCredential::issue_for_public_key_current(
+    let credential = DeviceCredential::issue_for_public_key(
         owner_id,
         device_id,
         device_public_key,
@@ -33,7 +33,7 @@ fn device_credential_can_be_issued_from_public_key_without_device_private_key() 
     )
     .unwrap();
 
-    credential.verify_current(&authority, 3).unwrap();
+    credential.verify(&authority, 3).unwrap();
     assert_eq!(credential.device_id(), device_id);
     assert_eq!(credential.device_public_key(), device_public_key);
     assert_eq!(credential.credential_epoch(), 3);

@@ -381,14 +381,8 @@ fn authenticate(activation: SessionActivation<'_>) -> Result<SessionContext, Ses
     let authority = activation.authority;
     let root = authority.root();
     let device_signing = authority.current_delegation(AuthorityRole::DeviceSigning)?;
-    activation
-        .initiator
-        .credential
-        .verify_current(authority, 0)?;
-    activation
-        .responder
-        .credential
-        .verify_current(authority, 0)?;
+    activation.initiator.credential.verify(authority, 0)?;
+    activation.responder.credential.verify(authority, 0)?;
 
     let (local, peer) = activation.local_and_peer();
     if activation.peer_trust.state() != TrustState::Trusted {

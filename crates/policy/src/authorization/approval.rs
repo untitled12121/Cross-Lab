@@ -61,7 +61,7 @@ pub struct OwnerApprovalEvidence {
 
 impl OwnerApprovalEvidence {
     #[allow(clippy::too_many_arguments)]
-    pub fn issue(
+    fn issue_with_authority_parts(
         scope: ApprovalScope,
         issued_at: ApprovalInstant,
         expires_at: ApprovalInstant,
@@ -90,7 +90,7 @@ impl OwnerApprovalEvidence {
         Ok(evidence)
     }
 
-    pub fn issue_current(
+    pub fn issue(
         scope: ApprovalScope,
         issued_at: ApprovalInstant,
         expires_at: ApprovalInstant,
@@ -100,7 +100,7 @@ impl OwnerApprovalEvidence {
         let delegation = authority
             .current_delegation(AuthorityRole::Administrative)
             .map_err(|_| ApprovalError::UnknownIssuer)?;
-        Self::issue(
+        Self::issue_with_authority_parts(
             scope,
             issued_at,
             expires_at,
@@ -111,7 +111,7 @@ impl OwnerApprovalEvidence {
         )
     }
 
-    pub fn verify(
+    fn verify_with_authority_parts(
         &self,
         root: &OwnerRootRecord,
         delegation: &AuthorityDelegation,
@@ -143,14 +143,18 @@ impl OwnerApprovalEvidence {
         })
     }
 
-    pub fn verify_current(
+    pub fn verify(
         &self,
         authority: &OwnerAuthorityState,
     ) -> Result<VerifiedApproval, ApprovalError> {
         let delegation = authority
             .current_delegation(AuthorityRole::Administrative)
             .map_err(|_| ApprovalError::UnknownIssuer)?;
-        self.verify(authority.root(), delegation, delegation.delegation_epoch())
+        self.verify_with_authority_parts(
+            authority.root(),
+            delegation,
+            delegation.delegation_epoch(),
+        )
     }
 
     pub fn transcript_digest(&self) -> [u8; 32] {

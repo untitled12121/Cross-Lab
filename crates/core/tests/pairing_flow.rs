@@ -285,7 +285,7 @@ fn n013_joiner_key_substitution_after_confirmation_is_rejected() {
     let fixture = Fixture::new();
     let (mut inviter, mut joiner) = fixture.confirmed_flows();
     let wrong_joiner_key = SigningKey::from_secret_bytes([0xef; 32]);
-    let substituted = DeviceCredential::issue_for_public_key_current(
+    let substituted = DeviceCredential::issue_for_public_key(
         fixture.owner_id,
         fixture.joiner_device_id,
         wrong_joiner_key.verifying_key(),
@@ -505,7 +505,7 @@ fn inviter_credential_issuance_does_not_require_joiner_private_key() {
         credential.device_public_key(),
         fixture.joiner_key.verifying_key()
     );
-    credential.verify_current(&fixture.authority, 0).unwrap();
+    credential.verify(&fixture.authority, 0).unwrap();
     assert_eq!(
         fixture.inviter_key.verifying_key(),
         fixture.inviter_hello.device_public_key()

@@ -133,7 +133,7 @@ impl TrustRecord {
         }
     }
 
-    pub fn accept_successor_credential(
+    fn accept_successor_credential_with_authority_parts(
         &mut self,
         successor: &DeviceCredential,
         root: &OwnerRootRecord,
@@ -173,14 +173,14 @@ impl TrustRecord {
         Ok(())
     }
 
-    pub fn accept_successor_credential_current(
+    pub fn accept_successor_credential(
         &mut self,
         successor: &DeviceCredential,
         authority: &OwnerAuthorityState,
         transition_id: TransitionId,
     ) -> Result<(), CredentialRotationError> {
         let issuer = authority.current_delegation(AuthorityRole::DeviceSigning)?;
-        self.accept_successor_credential(
+        self.accept_successor_credential_with_authority_parts(
             successor,
             authority.root(),
             issuer,

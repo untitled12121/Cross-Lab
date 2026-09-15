@@ -20,7 +20,7 @@ fn signed_device_credential_can_be_reconstructed_without_private_keys() {
     let mut authority = OwnerAuthorityState::new(root);
     authority.accept_delegation(delegation).unwrap();
     let device_key = SigningKey::from_secret_bytes([0x14; 32]);
-    let credential = DeviceCredential::issue_current(
+    let credential = DeviceCredential::issue(
         owner_id,
         DeviceId::from_bytes([0x15; 32]),
         &device_key,
@@ -44,5 +44,5 @@ fn signed_device_credential_can_be_reconstructed_without_private_keys() {
     .unwrap();
 
     assert_eq!(imported, credential);
-    imported.verify_current(&authority, 7).unwrap();
+    imported.verify(&authority, 7).unwrap();
 }

@@ -226,7 +226,7 @@ impl PairingInviterFlow {
         }
         self.ensure_current(now)?;
 
-        let credential = match DeviceCredential::issue_for_public_key_current(
+        let credential = match DeviceCredential::issue_for_public_key(
             self.context.owner_id,
             self.context.joiner_device_id,
             self.context.joiner_device_key,
@@ -293,7 +293,7 @@ impl PairingInviterFlow {
             SignatureAlgorithm::Ed25519,
             &accepted.signature(),
         );
-        let transition = match PairingTrustTransition::issue_current(
+        let transition = match PairingTrustTransition::issue(
             &credential,
             transition_id,
             pairing_evidence_digest,
@@ -303,7 +303,7 @@ impl PairingInviterFlow {
             Ok(transition) => transition,
             Err(error) => return self.fail(PairingFlowError::TrustTransition(error)),
         };
-        let trust = match transition.establish_current(&credential, authority) {
+        let trust = match transition.establish(&credential, authority) {
             Ok(trust) => trust,
             Err(error) => return self.fail(PairingFlowError::TrustTransition(error)),
         };
@@ -412,7 +412,7 @@ impl PairingJoinerFlow {
             return self.fail(PairingFlowError::UnexpectedState);
         }
 
-        if let Err(error) = credential.verify_current(authority, INITIAL_CREDENTIAL_EPOCH) {
+        if let Err(error) = credential.verify(authority, INITIAL_CREDENTIAL_EPOCH) {
             return self.fail(PairingFlowError::Identity(error));
         }
         if credential.credential_epoch() != INITIAL_CREDENTIAL_EPOCH

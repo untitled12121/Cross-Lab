@@ -40,7 +40,7 @@ fn establish_trust(
     issuer_key: &SigningKey,
     transition_byte: u8,
 ) -> TrustRecord {
-    let initial_credential = DeviceCredential::issue_for_public_key_current(
+    let initial_credential = DeviceCredential::issue_for_public_key(
         credential.owner_id(),
         credential.device_id(),
         credential.device_public_key(),
@@ -49,7 +49,7 @@ fn establish_trust(
         issuer_key,
     )
     .unwrap();
-    let transition = PairingTrustTransition::issue_current(
+    let transition = PairingTrustTransition::issue(
         &initial_credential,
         TransitionId::from_bytes([transition_byte; 32]),
         [transition_byte.wrapping_add(1); 32],
@@ -58,11 +58,11 @@ fn establish_trust(
     )
     .unwrap();
     let mut trust = transition
-        .establish_current(&initial_credential, authority)
+        .establish(&initial_credential, authority)
         .unwrap();
 
     for epoch in 1..=credential.credential_epoch() {
-        let successor = DeviceCredential::issue_for_public_key_current(
+        let successor = DeviceCredential::issue_for_public_key(
             credential.owner_id(),
             credential.device_id(),
             credential.device_public_key(),
@@ -74,7 +74,7 @@ fn establish_trust(
         let mut transition_id = [transition_byte; 32];
         transition_id[..8].copy_from_slice(&epoch.to_be_bytes());
         trust
-            .accept_successor_credential_current(
+            .accept_successor_credential(
                 &successor,
                 authority,
                 TransitionId::from_bytes(transition_id),
@@ -114,7 +114,7 @@ impl AuthFixture {
 
         let initiator_key = SigningKey::from_secret_bytes([0x43; 32]);
         let responder_key = SigningKey::from_secret_bytes([0x44; 32]);
-        let initiator_credential = DeviceCredential::issue_current(
+        let initiator_credential = DeviceCredential::issue(
             owner_id,
             DeviceId::from_bytes([0x45; 32]),
             &initiator_key,
@@ -123,7 +123,7 @@ impl AuthFixture {
             &issuer_key,
         )
         .unwrap();
-        let responder_credential = DeviceCredential::issue_current(
+        let responder_credential = DeviceCredential::issue(
             owner_id,
             DeviceId::from_bytes([0x46; 32]),
             &responder_key,
