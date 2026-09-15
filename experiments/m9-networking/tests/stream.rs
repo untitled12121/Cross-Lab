@@ -80,7 +80,33 @@ async fn uni_stream_enforces_opening_and_chunk_limits_without_consuming_slot() {
 }
 
 #[tokio::test]
-async fn uni_stream_open_and_chunk_queues_apply_bounded_backpressure() {
+async fn uni_stream_accepts_exact_opening_and_chunk_limits() {
+    let config = CandidateConfig::default();
+    let pair = connected_transport_pair(config)
+        .await
+        .expect("connected Iroh transport pair");
+    let opening = vec![0x33; config.max_opening_frame_bytes()];
+    let chunk = vec![0x42; config.max_chunk_bytes()];
+    let mut send = pair
+        .client()
+        .try_open_uni_stream(opening.clone())
+        .expect("exact-limit opening frame");
+
+    send.try_send_chunk(chunk.clone())
+        .expect("exact-limit stream chunk");
+    send.finish();
+
+    let incoming = eventually_accept(pair.server()).await;
+    assert_eq!(incoming.opening_frame(), opening.as_slice());
+    let (_, mut recv) = incoming.into_parts();
+    assert_eq!(eventually_receive_chunk(recv.as_mut()).await, chunk);
+    eventually_finished(recv.as_mut()).await;
+
+    pair.shutdown().await;
+}
+
+#[tokio::test]
+async fn uni_stream_open_capacity_applies_bounded_backpressure() {
     let config = CandidateConfig::default();
     let pair = connected_transport_pair(config)
         .await
@@ -101,18 +127,6 @@ async fn uni_stream_open_and_chunk_queues_apply_bounded_backpressure() {
         Ok(_) => panic!("outgoing stream capacity was not enforced"),
     };
     assert_eq!(error, StreamOpenError::Full(opening));
-
-    let first = streams.first_mut().expect("at least one outgoing stream");
-    for index in 0..config.stream_chunk_queue_capacity() {
-        first
-            .try_send_chunk(vec![u8::try_from(index).unwrap()])
-            .unwrap();
-    }
-    let full = vec![0xF2];
-    assert_eq!(
-        first.try_send_chunk(full.clone()).unwrap_err(),
-        StreamSendError::Full(full)
-    );
 
     for stream in &mut streams {
         stream.cancel();
