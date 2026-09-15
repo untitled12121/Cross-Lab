@@ -1,10 +1,6 @@
 use crosslab_core::{StreamSendError, TransportSendStream};
 
-use super::{
-    endpoint::direct_pair,
-    runtime::CandidateRuntime,
-    stream::new_outgoing_uni_stream,
-};
+use super::{endpoint::direct_pair, runtime::CandidateRuntime, stream::new_outgoing_uni_stream};
 
 #[tokio::test]
 async fn outgoing_chunk_queue_reports_full_at_capacity() {
