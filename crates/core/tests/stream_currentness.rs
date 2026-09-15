@@ -281,13 +281,7 @@ fn admission_rejects_trust_for_a_different_peer_device() {
         .unwrap();
 
     assert_eq!(
-        admission.admit_inbound(
-            &fixture.session,
-            &open,
-            15,
-            &other_trust,
-            &fixture.policy,
-        ),
+        admission.admit_inbound(&fixture.session, &open, 15, &other_trust, &fixture.policy,),
         Err(StreamAdmissionError::PeerTrustMismatch)
     );
 }

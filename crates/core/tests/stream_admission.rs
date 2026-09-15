@@ -197,13 +197,7 @@ impl Fixture {
         open: &DataStreamOpen,
         now: u64,
     ) -> Result<AdmittedStream, StreamAdmissionError> {
-        admission.admit_inbound(
-            &self.session,
-            open,
-            now,
-            &self.peer_trust,
-            &self.policy,
-        )
+        admission.admit_inbound(&self.session, open, now, &self.peer_trust, &self.policy)
     }
 }
 
@@ -294,13 +288,17 @@ fn operation_direction_and_stream_index_are_bound_before_reservation() {
     );
     assert_eq!(
         fixture.admit(&mut admission, &wrong_operation, 15),
-        Err(StreamAdmissionError::Operation(OperationError::BindingMismatch))
+        Err(StreamAdmissionError::Operation(
+            OperationError::BindingMismatch
+        ))
     );
 
     let wrong_direction = fixture.open(operation_id, StreamDirection::DestinationToSource, 0, 0x28);
     assert_eq!(
         fixture.admit(&mut admission, &wrong_direction, 15),
-        Err(StreamAdmissionError::Operation(OperationError::BindingMismatch))
+        Err(StreamAdmissionError::Operation(
+            OperationError::BindingMismatch
+        ))
     );
 
     let invalid_index = fixture.open(operation_id, StreamDirection::SourceToDestination, 1, 0x29);
@@ -336,7 +334,9 @@ fn terminal_and_expired_operations_fail_closed() {
         admission.register_operation(operation).unwrap();
         assert_eq!(
             fixture.admit(&mut admission, &open, 15),
-            Err(StreamAdmissionError::Operation(OperationError::Inactive(state)))
+            Err(StreamAdmissionError::Operation(OperationError::Inactive(
+                state
+            )))
         );
     }
 

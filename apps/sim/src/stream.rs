@@ -168,16 +168,17 @@ impl<'a> SimStreamRuntime<'a> {
                 return Err(error.into());
             }
         };
-        let admitted = match self
-            .admission
-            .admit_inbound(&self.session, &open, now, peer_trust, policy)
-        {
-            Ok(admitted) => admitted,
-            Err(error) => {
-                stream.cancel();
-                return Err(error.into());
-            }
-        };
+        let admitted =
+            match self
+                .admission
+                .admit_inbound(&self.session, &open, now, peer_trust, policy)
+            {
+                Ok(admitted) => admitted,
+                Err(error) => {
+                    stream.cancel();
+                    return Err(error.into());
+                }
+            };
 
         let stream_id = admitted.stream_id();
         self.inbound.push(InboundStream { stream_id, stream });
