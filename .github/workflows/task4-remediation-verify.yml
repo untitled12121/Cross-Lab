@@ -21,3 +21,5 @@ jobs:
         run: cargo test -p crosslab-sim --all-features
       - name: Verify Task 4 Quinn
         run: cargo test -p crosslab-transport-quic --all-features
+      - name: Verify formatting
+        run: cargo fmt --check
