@@ -8,22 +8,24 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 ## Current Milestone
 
-**M9 — Remote Networking ADR. Foundation authority/replay remediation and remote-networking Tasks 1–5 are merged and post-merge verified. Task 6 implementation is complete on PR #26 and is in final integration verification.**
+**M9 — Remote Networking ADR. Foundation authority/replay remediation and remote-networking Tasks 1–6 are merged and post-merge verified. Task 7 is next.**
 
-M1–M8 are complete. ADR-0009 remains undecided; Iroh stays isolated under `experiments/m9-networking` until the M9 evidence gate selects a remote-networking architecture.
+M1–M8 are complete. ADR-0009 remains undecided/reserved; Iroh stays isolated under `experiments/m9-networking` until the M9 evidence gate selects a remote-networking architecture.
 
 ## Canonical Baseline
 
-- Verified `main` documentation baseline before Task 6: `aa49adf0de669d028be476e9210b5499d1fcbb63`.
-- Task 5 merge: `80118866d38525a33ee2f7cae85c2d82c9037f0d` via PR #25; post-merge Rust CI `35011352926` passed the full gate.
-- Task 6 branch: `m9-task6-iroh-lifecycle` via PR **#26 — M9 Task 6: prove direct Iroh lifecycle semantics**.
-- Task 6 RED run `35014990427` failed for the intended missing `scenarios::lifecycle` surface before lifecycle orchestration existed.
-- Task 6 GREEN gate `35015706320` applied the minimal orchestration/auth-fixture changes, formatted them, and passed `cargo test -p crosslab-m9-networking --test lifecycle` before committing implementation `ab5fac2720a594b2fe6cd3411a35f51e0287b06f`.
-- Initial full PR CI `35015978881` passed lockfile/audit/rustfmt/workspace-check and failed only because an unused crate-private Task 6 auth accessor was denied by Clippy `-D warnings`.
-- Minimal fix `d17aec0c80e434cc6e324bd68a20a4df83fbb615` removes only that unused accessor.
-- Focused run `35016582879` passed the lifecycle suite on `d17aec0c80e434cc6e324bd68a20a4df83fbb615`.
-- Full PR CI `35016696594` passed lockfile verification, dependency audit, rustfmt, workspace check, Clippy with `-D warnings`, and complete workspace tests on `d17aec0c80e434cc6e324bd68a20a4df83fbb615`.
-- This checkpoint removes the temporary Task 6 focused workflow. The resulting exact PR head must receive the normal full CI gate before PR #26 is merged.
+- Current verified code baseline: `ec213a20176787c6da18217603e163b8259eae7e` on `main` via PR **#26 — M9 Task 6: prove direct Iroh lifecycle semantics**.
+- Task 6 final PR head: `5bfa734fa2783fdc0bd50af036bc65e6e6f7fe57`.
+- Task 6 exact-head Rust CI `35017602746` passed lockfile verification, dependency audit, rustfmt, full workspace check, Clippy with `-D warnings`, and complete workspace tests.
+- Task 6 merge: `ec213a20176787c6da18217603e163b8259eae7e`.
+- Task 6 post-merge Rust CI `35018281624` passed the same full gate.
+- Task 6 RED run `35014990427` failed for the intended missing `scenarios::lifecycle` surface.
+- Task 6 GREEN focused gate `35015706320` passed before the implementation checkpoint.
+- Initial full CI `35015978881` exposed one unused crate-private accessor under Clippy; minimal fix `d17aec0c80e434cc6e324bd68a20a4df83fbb615` removed only that dead accessor.
+- Focused repair run `35016582879` and full repaired-head CI `35016696594` passed.
+- Task 5 merge: `80118866d38525a33ee2f7cae85c2d82c9037f0d` via PR #25; post-merge Rust CI `35011352926` passed.
+- Task 4 merge: `3a403661ed02bcaf59f6cdfe45ad8425d7e2275a` via PR #24; post-merge Rust CI `35003931830` passed.
+- Foundation remediation merge: `450615a7c361384cfbe68bc8991b7ca03e4482fa` via PR #23; exact-head Rust CI `34974781151`, Fuzz Smoke `34974781112`, and post-merge Rust CI `34979066740` passed.
 - `paste 1.0.15` / `RUSTSEC-2024-0436` remains the sole allowed maintenance warning, isolated to the Iroh experiment and requiring re-evaluation before production networking promotion.
 
 ## Accepted Foundation State
@@ -54,15 +56,12 @@ No Master Architecture revision, protobuf schema change, canonical transcript ch
 
 - Quinn remains the verified local/LAN baseline.
 - Iroh `1.2.0` remains isolated under `experiments/m9-networking` until ADR-0009 selects the remote-networking architecture.
+- M9 networking Tasks 1–6 are complete on `main`.
+- Task 4 established bounded Iroh control/uni-stream semantics behind the existing `TransportConnection` seam; no Iroh type entered Cross-Lab domain/public APIs.
 - Task 5 reuses the existing Cross-Lab hello/proof/session activation protocol over Iroh with ADR-0008 `quic-tls-exporter-v1` binding after the full handshake. Iroh endpoint identity remains routing metadata only.
 - Authenticated Iroh pairs are fixed to `NetworkClass::Remote` with no setter; no 0-RTT authority exists.
-- Task 6 adds experiment-only lifecycle orchestration over existing `SimNode`, `SimStreamRuntime`, policy, trust, operation, and transport seams; it introduces no new Cross-Lab domain API, wire/schema/signature change, or production transport promotion.
-- Task 6 proves capability advertisement and control request/response/event flow over authenticated Iroh.
-- Task 6 proves authorized operation-bound unidirectional streams and rejection of unknown operations.
-- Task 6 proves reconnect creates a fresh exporter binding and `SessionId`, while an old proof, old session envelope, and old operation authority do not carry into the new connection.
-- Task 6 proves accepted signed peer revocation terminates stream/session authority and reconnect using revoked trust is denied.
-- Task 6 proves bounded stream saturation, cancellation, transport close, and joined shutdown behavior.
-- Task 6 proves `Constraint::LocalOnly` fails under the pair's immutable `NetworkClass::Remote`.
+- Task 6 adds experiment-only lifecycle orchestration over existing `SimNode`, `SimStreamRuntime`, policy, trust, operation, and transport seams; it introduces no new Cross-Lab domain API, wire/schema/signature change, dependency change, or production transport promotion.
+- Task 6 proves capability/control request-response-event flow, authorized operation-bound streams, unknown-operation rejection, fresh reconnect binding/`SessionId`, rejection of old proof/session/operation authority, signed revocation termination and reconnect denial, bounded saturation/cancellation/close/joined shutdown, and `Constraint::LocalOnly` rejection under immutable `NetworkClass::Remote`.
 - Route changes must not silently mutate channel binding, `SessionId`, sequence state, policy classification, or operation authority. A new transport connection requires fresh Cross-Lab authentication and authorization state.
 - Security authority remains local and fail-closed.
 
@@ -78,17 +77,20 @@ No Master Architecture revision, protobuf schema change, canonical transcript ch
 
 ## Exact Next Task
 
-Finish **Task 6 integration**: require normal full PR CI on this checkpoint head, review the final PR #26 diff for unintended files, merge only if exact-head CI is green, and verify the merge commit on `main` with the normal full gate.
+Start **M9 remote-networking Task 7 — Owner-controlled relay and path-change invariants** from `docs/plans/phase-1/M9-remote-networking.md` on a fresh feature branch from this checkpoint.
 
-After the Task 6 merge is post-merge green, update this file on `main` and start **M9 remote-networking Task 7 — Owner-controlled relay and path-change invariants** from `docs/plans/phase-1/M9-remote-networking.md` on a fresh feature branch.
+Task 7 must keep owner control and the existing security model: add the self-hosted Iroh relay dependency only to the isolated experiment; use no public relay infrastructure for required tests; retain immutable `NetworkClass::Remote`; preserve the authenticated exporter binding and logical `SessionId` across relay-to-direct path changes; and keep relay/path observation outside domain authorization state.
 
-Task 7 must keep owner control and the existing security model: use a self-hosted Iroh relay only in the isolated experiment, retain immutable `NetworkClass::Remote`, preserve the authenticated binding and logical session across relay-to-direct path changes, and do not rely on public relay infrastructure for required tests.
+Iroh 1.2.0 exposes the required self-hosted relay and path-observation surfaces. Because `iroh_relay::server::ServerConfig` is non-exhaustive, construct it with `ServerConfig::default()` and assign public fields rather than using an external struct literal. This is an implementation compatibility detail, not an architecture change.
+
+Required execution order: RED relay/path tests -> verify intended failure -> minimal owner-relay/path orchestration -> focused relay/session/lifecycle gate -> rustfmt/check/Clippy/full workspace tests -> `CURRENT.md` checkpoint -> PR integration -> post-merge verification.
 
 ## Resume Procedure
 
-1. verify PR #26 head, exact-head CI, this file, and the active M9 plan against repository state;
-2. confirm the Task 6 diff contains only experiment lifecycle/auth orchestration/tests plus this checkpoint and no temporary workflow;
-3. merge PR #26 only after exact-head full CI is green;
-4. wait for and verify the `main` post-merge full CI gate;
-5. update `CURRENT.md` on `main` with the Task 6 merge/post-merge evidence and Task 7 as the exact next task;
-6. branch Task 7 from that verified documentation checkpoint and follow RED -> intended failure -> minimal GREEN -> focused gate -> full gate -> integration.
+1. verify `main`, open PRs, this file, the active M9 plan, Master Architecture, and relevant session/transport ADRs against the repository;
+2. create a fresh Task 7 feature branch from this documentation checkpoint;
+3. inspect the current Iroh candidate endpoint/auth/lifecycle code and the uploaded/local Iroh reference before implementing relay behavior;
+4. add the experiment-only relay dependency and write RED tests for owner-relay-only authenticated control/data plus relay-to-direct invariants;
+5. verify RED fails for the intended missing relay surface;
+6. implement the smallest self-hosted relay lifecycle and path observation required by the plan, with no public relay fallback;
+7. run the focused Task 7 gate, then the full workspace gate before integration.
