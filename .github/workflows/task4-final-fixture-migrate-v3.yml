@@ -1,0 +1,93 @@
+name: Task4 Final Fixture Migration V3
+
+on:
+  push:
+    branches:
+      - m9-authority-replay-remediation
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: m9-authority-replay-remediation
+          fetch-depth: 0
+      - name: Install Rust
+        run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt
+      - name: Run complete Task 4 fixture migration
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/task4-final-fixture-migrate.yml').read_text().splitlines()
+          start = workflow.index("          python3 - <<'PY'") + 1
+          end = workflow.index('          PY', start)
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in workflow[start:end])
+
+          stale_exact = "text = one(text, stale_old, stale_new, 'm5 stale credential test')"
+          stale_region = "text = region(text, '    let newer_credential = DeviceCredential::issue_for_public_key(', '\\n    let pair = transport_pair([0x81; 32]);', stale_new)"
+          wrong_exact = "text = one(text, wrong_old, wrong_new, 'm5 wrong-owner test')"
+          wrong_region = "text = region(text, '    let wrong_delegation = AuthorityDelegation::issue(', '\\n    let pair = transport_pair([0x92; 32]);', wrong_new)"
+          if script.count(stale_exact) != 1 or script.count(wrong_exact) != 1:
+              raise SystemExit('base task 4 migration script shape changed')
+          script = script.replace(stale_exact, stale_region, 1)
+          script = script.replace(wrong_exact, wrong_region, 1)
+          exec(compile(script, '<task4-migration>', 'exec'), {})
+
+          path = Path('crates/core/tests/pairing_initial_epoch.rs')
+          text = path.read_text()
+          old_import = 'use crosslab_identity::{AuthorityDelegation, AuthorityRole, DeviceId, OwnerId, OwnerRootRecord};'
+          new_import = 'use crosslab_identity::{\n    AuthorityDelegation, AuthorityRole, DeviceId, OwnerAuthorityState, OwnerId, OwnerRootRecord,\n};'
+          if text.count(old_import) != 1:
+              raise SystemExit('pairing_initial_epoch import shape changed')
+          text = text.replace(old_import, new_import, 1)
+
+          anchor = '''    let delegation = AuthorityDelegation::issue(
+        owner_id,
+        AuthorityRole::DeviceSigning,
+        &issuer_key,
+        0,
+        &root_key,
+    );'''
+          replacement = anchor + '''
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(delegation).unwrap();'''
+          if text.count(anchor) != 1:
+              raise SystemExit('pairing_initial_epoch delegation setup shape changed')
+          text = text.replace(anchor, replacement, 1)
+
+          old_call = '''        .issue_initial_joiner_credential(
+            &root,
+            &delegation,
+            &issuer_key,
+            PairingInstant::from_ticks(20),
+        )'''
+          new_call = '''        .issue_initial_joiner_credential(
+            &authority,
+            &issuer_key,
+            PairingInstant::from_ticks(20),
+        )'''
+          if text.count(old_call) != 1:
+              raise SystemExit('pairing_initial_epoch issue call shape changed')
+          text = text.replace(old_call, new_call, 1)
+          path.write_text(text)
+          PY
+          cargo fmt
+          cargo check -p crosslab-sim --test session_scenarios --all-features
+          cargo check -p crosslab-sim --test m5_scenarios --all-features
+          cargo check -p crosslab-core --test pairing_initial_epoch --all-features
+          cargo check --workspace --all-targets --all-features
+          rm .github/workflows/task4-final-fixture-migrate.yml
+          rm .github/workflows/task4-final-fixture-migrate-v2.yml
+          rm .github/workflows/task4-final-fixture-migrate-v3.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "test: migrate final task 4 authority fixtures"
+          git push origin HEAD:m9-authority-replay-remediation
