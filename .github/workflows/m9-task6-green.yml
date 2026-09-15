@@ -1,0 +1,39 @@
+name: M9 Task 6 GREEN
+
+on:
+  push:
+    branches:
+      - m9-task6-iroh-lifecycle
+
+permissions:
+  contents: write
+
+jobs:
+  green:
+    name: Apply lifecycle orchestration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: m9-task6-iroh-lifecycle
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Apply minimal GREEN transform
+        run: python3 .github/scripts/task6_green.py
+      - name: Format
+        run: cargo fmt --all
+      - name: Verify focused lifecycle
+        run: cargo test -p crosslab-m9-networking --test lifecycle
+      - name: Commit GREEN
+        run: |
+          rm .github/workflows/m9-task6-green.yml .github/scripts/task6_green.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add experiments/m9-networking/src/scenarios/auth.rs \
+                  experiments/m9-networking/src/scenarios/lifecycle.rs \
+                  experiments/m9-networking/src/scenarios/mod.rs \
+                  experiments/m9-networking/tests/lifecycle.rs \
+                  .github/workflows/m9-task6-green.yml \
+                  .github/scripts/task6_green.py
+          git commit -m "test(networking): prove direct Iroh lifecycle semantics"
+          git push origin HEAD:m9-task6-iroh-lifecycle
