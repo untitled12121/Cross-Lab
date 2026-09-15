@@ -4,10 +4,7 @@ use crosslab_core::{
     IncomingUniStream, StreamAcceptError, StreamOpenError, StreamReceiveError, StreamSendError,
     TransportConnection, TransportReceiveStream, TransportSecurityClass,
 };
-use crosslab_m9_networking::candidate::{
-    connection::connected_transport_pair,
-    runtime::CandidateConfig,
-};
+use crosslab_m9_networking::candidate::{connection::connected_transport_pair, runtime::CandidateConfig};
 use tokio::time::timeout;
 
 #[tokio::test]
