@@ -317,7 +317,7 @@ pub async fn bootstrap_direct_pair(fixture: &AuthFixture) -> Result<BootstrapIro
 pub async fn authenticate_direct_pair(
     fixture: &AuthFixture,
     attempt: AuthAttempt,
-) -> Result<AuthenticatedIrohPair, RejectedAuthentication> {
+) -> Result<AuthenticatedIrohPair, Box<RejectedAuthentication>> {
     let mut bootstrap = bootstrap_direct_pair(fixture)
         .await
         .expect("deterministic Iroh authentication bootstrap");
@@ -463,11 +463,11 @@ pub async fn authenticate_direct_pair(
                 ..
             } = bootstrap;
             direct.shutdown().await;
-            Err(RejectedAuthentication {
+            Err(Box::new(RejectedAuthentication {
                 client_session,
                 server_session,
                 error: client_error,
-            })
+            }))
         }
         _ => {
             bootstrap.shutdown().await;
