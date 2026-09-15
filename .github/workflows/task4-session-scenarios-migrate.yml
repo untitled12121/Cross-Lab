@@ -166,24 +166,17 @@ jobs:
           }'''
           text = text[:start] + replacement + text[end:]
 
-          old_initiator = '''        let initiator = SessionHandshakeSide::new(
-              &self.initiator_credential,
-              &self.delegation,
-              &ranges,
-              &features,
-          );'''
-          new_initiator = '''        let initiator = SessionHandshakeSide::new(&self.initiator_credential, &ranges, &features);'''
-          old_responder = '''        let responder = SessionHandshakeSide::new(
-              &self.responder_credential,
-              &self.delegation,
-              &ranges,
-              &features,
-          );'''
-          new_responder = '''        let responder = SessionHandshakeSide::new(&self.responder_credential, &ranges, &features);'''
-          if old_initiator not in text or old_responder not in text:
-              raise SystemExit('session handshake shape changed')
-          text = text.replace(old_initiator, new_initiator, 1)
-          text = text.replace(old_responder, new_responder, 1)
+          start = text.index('        let initiator = SessionHandshakeSide::new(')
+          end = text.index('\n\n        let mut session_a', start)
+          replacement = '''        let initiator =
+              SessionHandshakeSide::new(&self.initiator_credential, &ranges, &features);
+          let responder =
+              SessionHandshakeSide::new(&self.responder_credential, &ranges, &features);'''
+          text = text[:start] + replacement + text[end:]
+
+          replaced = text.count('                &self.root,\n')
+          if replaced != 2:
+              raise SystemExit(f'expected 2 session root references, found {replaced}')
           text = text.replace('                &self.root,\n', '                &self.authority,\n', 2)
 
           for obsolete in ('&self.root,', '&self.delegation,'):
