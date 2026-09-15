@@ -20,8 +20,14 @@ async fn transport_surface_reuses_exporter_and_authenticated_security_class() {
         pair.client().security_class(),
         TransportSecurityClass::AuthenticatedConfidentialChannel
     );
-    assert_eq!(pair.client().channel_binding(), pair.server().channel_binding());
-    assert_eq!(pair.client().channel_binding().profile_id(), "quic-tls-exporter-v1");
+    assert_eq!(
+        pair.client().channel_binding(),
+        pair.server().channel_binding()
+    );
+    assert_eq!(
+        pair.client().channel_binding().profile_id(),
+        "quic-tls-exporter-v1"
+    );
     assert_eq!(pair.client().channel_binding().bytes().len(), 32);
 
     pair.shutdown().await;
