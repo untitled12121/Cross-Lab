@@ -16,5 +16,5 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Install Rust
         run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt
-      - name: Focused stream test
-        run: cargo test -p crosslab-m9-networking --test stream
+      - name: Focused candidate tests
+        run: cargo test -p crosslab-m9-networking --lib --test control --test stream
