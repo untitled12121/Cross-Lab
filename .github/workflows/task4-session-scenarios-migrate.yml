@@ -1,4 +1,4 @@
-name: Task4 Session Scenarios Migration
+name: Task4 Remaining Fixture Migration
 
 on:
   push:
@@ -19,23 +19,15 @@ jobs:
           fetch-depth: 0
       - name: Install Rust
         run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt
-      - name: Migrate session scenarios fixture
+      - name: Migrate remaining Task 4 fixtures
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
-          path = Path('apps/sim/tests/session_scenarios.rs')
-          text = path.read_text()
+          IMPORT_OLD = '    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,\n'
+          IMPORT_NEW = '    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,\n    OwnerRootRecord,\n'
 
-          old_import = '    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,\n'
-          new_import = '    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,\n    OwnerRootRecord,\n'
-          if old_import not in text:
-              raise SystemExit('identity import shape changed')
-          text = text.replace(old_import, new_import, 1)
-
-          start = text.index('fn establish_trust(')
-          end = text.index('\n\nstruct Fixture', start)
-          replacement = '''fn establish_trust(
+          TRUST_FN = '''fn establish_trust(
               credential: &DeviceCredential,
               authority: &OwnerAuthorityState,
               issuer_key: &SigningKey,
@@ -85,20 +77,24 @@ jobs:
 
               trust
           }'''
-          text = text[:start] + replacement + text[end:]
 
-          old_struct = '''struct Fixture {
-              owner_id: OwnerId,
-              root: OwnerRootRecord,
-              delegation: AuthorityDelegation,
-              initiator_key: SigningKey,
-              responder_key: SigningKey,
-              initiator_credential: DeviceCredential,
-              responder_credential: DeviceCredential,
-              initiator_trust: TrustRecord,
-              responder_trust: TrustRecord,
-          }'''
-          new_struct = '''struct Fixture {
+          def replace_region(text: str, start_marker: str, end_marker: str, replacement: str) -> str:
+              start = text.index(start_marker)
+              end = text.index(end_marker, start)
+              return text[:start] + replacement + text[end:]
+
+          # session_scenarios.rs
+          path = Path('apps/sim/tests/session_scenarios.rs')
+          text = path.read_text()
+          if IMPORT_OLD not in text:
+              raise SystemExit('session_scenarios identity import shape changed')
+          text = text.replace(IMPORT_OLD, IMPORT_NEW, 1)
+          text = replace_region(text, 'fn establish_trust(', '\n\nstruct Fixture', TRUST_FN)
+          text = replace_region(
+              text,
+              'struct Fixture {',
+              '\n\nimpl Fixture',
+              '''struct Fixture {
               owner_id: OwnerId,
               authority: OwnerAuthorityState,
               initiator_key: SigningKey,
@@ -107,14 +103,13 @@ jobs:
               responder_credential: DeviceCredential,
               initiator_trust: TrustRecord,
               responder_trust: TrustRecord,
-          }'''
-          if old_struct not in text:
-              raise SystemExit('fixture struct shape changed')
-          text = text.replace(old_struct, new_struct, 1)
-
-          start = text.index('    fn new() -> Self {')
-          end = text.index('\n\n    fn protocol_ranges', start)
-          replacement = '''    fn new() -> Self {
+          }''',
+          )
+          text = replace_region(
+              text,
+              '    fn new() -> Self {',
+              '\n\n    fn protocol_ranges',
+              '''    fn new() -> Self {
               let owner_id = OwnerId::from_bytes([0x30; 32]);
               let root_key = SigningKey::from_secret_bytes([0x31; 32]);
               let root = OwnerRootRecord::new(owner_id, &root_key, 0);
@@ -163,35 +158,207 @@ jobs:
                   initiator_trust,
                   responder_trust,
               }
-          }'''
-          text = text[:start] + replacement + text[end:]
-
-          start = text.index('        let initiator = SessionHandshakeSide::new(')
-          end = text.index('\n\n        let mut session_a', start)
-          replacement = '''        let initiator =
+          }''',
+          )
+          text = replace_region(
+              text,
+              '        let initiator = SessionHandshakeSide::new(',
+              '\n\n        let mut session_a',
+              '''        let initiator =
               SessionHandshakeSide::new(&self.initiator_credential, &ranges, &features);
           let responder =
-              SessionHandshakeSide::new(&self.responder_credential, &ranges, &features);'''
-          text = text[:start] + replacement + text[end:]
-
-          replaced = text.count('                &self.root,\n')
-          if replaced != 2:
-              raise SystemExit(f'expected 2 session root references, found {replaced}')
+              SessionHandshakeSide::new(&self.responder_credential, &ranges, &features);''',
+          )
+          if text.count('                &self.root,\n') != 2:
+              raise SystemExit('session_scenarios root activation shape changed')
           text = text.replace('                &self.root,\n', '                &self.authority,\n', 2)
-
           for obsolete in ('&self.root,', '&self.delegation,'):
               if obsolete in text:
-                  raise SystemExit(f'obsolete session authority reference remains: {obsolete}')
+                  raise SystemExit(f'session_scenarios obsolete authority reference remains: {obsolete}')
+          path.write_text(text)
 
+          # m5_scenarios.rs
+          path = Path('apps/sim/tests/m5_scenarios.rs')
+          text = path.read_text()
+          if IMPORT_OLD not in text:
+              raise SystemExit('m5 identity import shape changed')
+          text = text.replace(IMPORT_OLD, IMPORT_NEW, 1)
+          text = replace_region(text, 'fn establish_trust(', '\n\nstruct M5Fixture', TRUST_FN)
+          text = replace_region(
+              text,
+              'struct M5Fixture {',
+              '\n\nimpl M5Fixture',
+              '''struct M5Fixture {
+              owner_id: OwnerId,
+              authority: OwnerAuthorityState,
+              issuer_key: SigningKey,
+              inviter_key: SigningKey,
+              joiner_key: SigningKey,
+              inviter_device_id: DeviceId,
+              joiner_device_id: DeviceId,
+              inviter_credential: DeviceCredential,
+              pairing_id: PairingId,
+              pairing_secret: [u8; 32],
+              inviter_hello: PairingHello,
+              joiner_hello: PairingHello,
+          }''',
+          )
+          text = replace_region(
+              text,
+              '    fn new() -> Self {',
+              '\n\n    fn invitation',
+              '''    fn new() -> Self {
+              let owner_id = OwnerId::from_bytes([0x10; 32]);
+              let root_key = SigningKey::from_secret_bytes([0x11; 32]);
+              let root = OwnerRootRecord::new(owner_id, &root_key, 0);
+              let issuer_key = SigningKey::from_secret_bytes([0x12; 32]);
+              let delegation = AuthorityDelegation::issue(
+                  owner_id,
+                  AuthorityRole::DeviceSigning,
+                  &issuer_key,
+                  0,
+                  &root_key,
+              );
+              let mut authority = OwnerAuthorityState::new(root);
+              authority.accept_delegation(delegation).unwrap();
+              let inviter_key = SigningKey::from_secret_bytes([0x13; 32]);
+              let joiner_key = SigningKey::from_secret_bytes([0x14; 32]);
+              let inviter_device_id = DeviceId::from_bytes([0x15; 32]);
+              let joiner_device_id = DeviceId::from_bytes([0x16; 32]);
+              let inviter_credential = DeviceCredential::issue_current(
+                  owner_id,
+                  inviter_device_id,
+                  &inviter_key,
+                  3,
+                  &authority,
+                  &issuer_key,
+              )
+              .unwrap();
+              let pairing_id = PairingId::from_bytes([0x17; 16]);
+              let pairing_secret = [0x18; 32];
+              let inviter_hello = PairingHello::new(
+                  PairingRole::Inviter,
+                  1,
+                  pairing_id.to_bytes(),
+                  owner_id,
+                  inviter_device_id,
+                  inviter_key.verifying_key(),
+                  [0x19; 32],
+              );
+              let joiner_hello = PairingHello::new(
+                  PairingRole::Joiner,
+                  1,
+                  pairing_id.to_bytes(),
+                  owner_id,
+                  joiner_device_id,
+                  joiner_key.verifying_key(),
+                  [0x1a; 32],
+              );
+
+              Self {
+                  owner_id,
+                  authority,
+                  issuer_key,
+                  inviter_key,
+                  joiner_key,
+                  inviter_device_id,
+                  joiner_device_id,
+                  inviter_credential,
+                  pairing_id,
+                  pairing_secret,
+                  inviter_hello,
+                  joiner_hello,
+              }
+          }''',
+          )
+          text = replace_region(
+              text,
+              '        let credential = inviter',
+              '\n\n        (credential, trust)',
+              '''        let credential = inviter
+              .issue_initial_joiner_credential(
+                  &self.authority,
+                  &self.issuer_key,
+                  PairingInstant::from_ticks(20),
+              )
+              .unwrap();
+          let accepted = joiner
+              .accept_credential(&self.authority, &credential, &self.joiner_key)
+              .unwrap();
+          let trust = inviter
+              .commit_trust(
+                  &accepted,
+                  TransitionId::from_bytes([0x1b; 32]),
+                  &self.authority,
+                  &self.issuer_key,
+                  PairingInstant::from_ticks(30),
+              )
+              .unwrap();''',
+          )
+          text = replace_region(
+              text,
+              '    fn inviter_trust(&self) -> TrustRecord {',
+              '\n\n    fn protocol_ranges',
+              '''    fn inviter_trust(&self) -> TrustRecord {
+              establish_trust(
+                  &self.inviter_credential,
+                  &self.authority,
+                  &self.issuer_key,
+                  0x1c,
+              )
+          }''',
+          )
+          text = replace_region(
+              text,
+              '    #[allow(clippy::too_many_arguments)]\n    fn attempt_session(',
+              '\n}\n\nfn transport_pair',
+              '''    #[allow(clippy::too_many_arguments)]
+          fn attempt_session(
+              &self,
+              joiner_credential: &DeviceCredential,
+              local_role: SessionAuthRole,
+              peer_trust: &TrustRecord,
+              binding: &ChannelBinding,
+              initiator_nonce: [u8; 32],
+              responder_nonce: [u8; 32],
+              initiator_proof: &SessionAuthProof,
+              responder_proof: &SessionAuthProof,
+          ) -> (LogicalSession, Result<(), SessionError>) {
+              let ranges = Self::protocol_ranges();
+              let features = Self::features();
+              let initiator =
+                  SessionHandshakeSide::new(&self.inviter_credential, &ranges, &features);
+              let responder = SessionHandshakeSide::new(joiner_credential, &ranges, &features);
+              let mut session = LogicalSession::new();
+              let result = session.authenticate(SessionActivation::new(
+                  &self.authority,
+                  initiator,
+                  responder,
+                  local_role,
+                  peer_trust,
+                  initiator_nonce,
+                  responder_nonce,
+                  binding,
+                  TransportSecurityClass::InProcessTest,
+                  initiator_proof,
+                  responder_proof,
+              ));
+              (session, result)
+          }''',
+          )
+          for obsolete in ('&self.root', '&self.delegation'):
+              if obsolete in text:
+                  raise SystemExit(f'm5 obsolete authority reference remains: {obsolete}')
           path.write_text(text)
           PY
           cargo fmt
           cargo check -p crosslab-sim --test session_scenarios --all-features
+          cargo check -p crosslab-sim --test m5_scenarios --all-features
           cargo check --workspace --all-targets --all-features
           rm .github/workflows/task4-session-scenarios-migrate.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git diff --cached --check
-          git commit -m "test(sim): migrate session scenarios authority fixture"
+          git commit -m "test(sim): migrate remaining task 4 authority fixtures"
           git push origin HEAD:m9-authority-replay-remediation
