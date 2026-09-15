@@ -1,0 +1,25 @@
+name: Task 7 Authority API Discovery
+
+on:
+  push:
+    branches:
+      - m9-authority-replay-remediation
+    paths:
+      - .github/workflows/task7-authority-api-discovery.yml
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Find authority API call sites
+        run: |
+          echo '=== current-suffixed APIs ==='
+          rg -n 'issue_current|issue_for_public_key_current|verify_current|rotate_current|establish_current|accept_successor_credential_current|issue_delegated_revocation_current|apply_delegated_current' crates apps transports || true
+          echo '=== authority-bearing ordinary APIs ==='
+          rg -n 'DeviceCredential::(issue|issue_for_public_key)|OwnerApprovalEvidence::issue|PairingTrustTransition::issue|TrustTransition::(issue_root_revocation|issue_delegated_revocation)|\.accept_successor_credential\(|\.apply_root\(|\.apply_delegated\(' crates apps transports || true
+          echo '=== raw currentness floors ==='
+          rg -n 'minimum_delegation_epoch' crates apps transports || true
