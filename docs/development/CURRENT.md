@@ -10,7 +10,7 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 **M9 — Remote Networking ADR, paused before networking Task 4 until the second foundation security remediation is merged and post-merge verified.**
 
-M1–M8 are complete. M9 networking research Tasks 1–3 are complete. PR #23 contains the accepted ADR-0010/ADR-0011 foundation remediation and is in its final evidence/reconciliation gate.
+M1–M8 are complete. M9 networking research Tasks 1–3 are complete. PR #23 contains the accepted ADR-0010/ADR-0011 foundation remediation and is in its final exact-head verification gate.
 
 ## Canonical Baseline
 
@@ -40,6 +40,8 @@ Draft implementation PR: **#23**
 
 Final code-bearing Task 7 commit: `cf48aaa26fb4099864c6afbd5218043e551745f1`.
 
+Final reconciliation commit before this human verification checkpoint: `4f515d19f99aee3aac069b3c86d66ca6daf739b1`.
+
 ## Remediation Progress
 
 ### Tasks 1–3 — Complete
@@ -58,34 +60,32 @@ ADR-0011 bounded replay semantics are locked with characterization tests. A legi
 
 ### Task 6 — Complete
 
-High-level stream admission accepts local `TrustRecord` and `PolicyState`, validates authenticated-peer trust owner/device/state, and derives trust/policy revisions internally. `SimStreamRuntime::accept_one` no longer accepts caller-selected revision integers. Focused runs `34959306875` and `34960055976` passed core/simulator/Quinn/workspace checks; predecessor Fuzz Smoke `34959517230` passed. The current full exact-head gate below also covers all Task 6 regressions.
+High-level stream admission accepts local `TrustRecord` and `PolicyState`, validates authenticated-peer trust owner/device/state, and derives trust/policy revisions internally. `SimStreamRuntime::accept_one` no longer accepts caller-selected revision integers. Focused runs `34959306875` and `34960055976` passed core/simulator/Quinn/workspace checks; predecessor Fuzz Smoke `34959517230` passed. The full exact-head gates below also cover all Task 6 regressions.
 
-### Task 7 — Complete and exact-head verified
+### Task 7 — Complete and verified
 
 Obsolete caller-selected high-level authority/currentness APIs are removed from ordinary public paths and all ordinary callers use `OwnerAuthorityState`. Clean method names resolve current authority internally. Raw root/delegation/floor validation remains private/low-level; `AuthorityDelegation::verify(root, minimum_epoch)` remains the cryptographic/import primitive and `DeviceCredential::from_unverified_signed_parts` remains the signed-object import boundary.
 
 Migration runner `34972799429` passed formatting and `cargo check --workspace --all-targets --all-features`, producing code commit `cf48aaa26fb4099864c6afbd5218043e551745f1`.
 
-Human-authored verification checkpoint `b3d2b35d8e95103f7e283585ff1951737eae07ab` then passed:
+Human-authored verification checkpoint `b3d2b35d8e95103f7e283585ff1951737eae07ab` passed:
 
 - Rust CI `34973222111`: lockfile verification, `cargo audit`, `cargo fmt --check`, workspace check with all targets/features, Clippy with `-D warnings`, and `cargo test --workspace --all-features`.
 - Fuzz Smoke `34973222116`: exact five-target gate under `nightly-2026-09-12`, 256 runs each.
-- Identity golden vectors for authority delegation and device credentials.
-- Policy trust-revocation golden vector.
-- Protocol control-envelope, pairing-confirmation, data-stream-open, session-close, and system-event wire vectors.
-- Authority-currentness, replay, stream-currentness, debug-redaction, resource-hardening, simulator lifecycle/reconnect, and Quinn lifecycle tests.
+- Identity, policy, and protocol golden/wire vectors unchanged.
+- Authority-currentness, replay, stream-currentness, debug-redaction, resource-hardening, simulator lifecycle/reconnect, and Quinn lifecycle regressions.
 
 The dependency audit exited successfully with only the accepted unsuppressed Iroh-experiment `paste 1.0.15` maintenance warning.
 
-### Task 8 — Final evidence/reconciliation in progress
+### Task 8 — Reconciled; exact-final-head verification pending
 
-Task 8 Steps 1–2 are already satisfied by the exact checkpoint above: the full workspace/audit gate and the exact five fuzz commands passed on the same branch state.
+Task 8 Steps 1–4 and 6 are complete and checked in the active plan. The security assessment and whole-project audit now reflect the verified ADR-0010/ADR-0011 implementation and explicit deferred risks.
 
-Security assessment and whole-project audit have been reconciled to the verified ADR-0010/ADR-0011 implementation. The PR changed-file inventory contains no `.proto` or schema files. Golden-vector source patches only migrate fixture authority lookup to `OwnerAuthorityState`; expected bytes/constants were not rewritten, and all golden/wire-vector tests pass unchanged.
+The PR changed-file inventory contains no `.proto` or schema files. Golden-vector source patches only migrate fixture authority lookup to `OwnerAuthorityState`; expected bytes/constants were not rewritten, and all golden/wire-vector tests pass unchanged.
 
-Two stale Task 7 helper workflows (`task7-authority-api-migration.yml` and `task7-check.yml`) were identified during final diff review and removed before merge.
+Two stale Task 7 helper workflows (`task7-authority-api-migration.yml` and `task7-check.yml`) were removed during final diff review. The temporary Task 8 plan-reconciliation workflow also removed itself after producing `4f515d19f99aee3aac069b3c86d66ca6daf739b1`.
 
-The active remediation plan still needs its evidence-backed checkboxes reconciled. After that documentation checkpoint, the final exact PR head must pass Rust CI and Fuzz Smoke again before merge.
+This human-authored checkpoint exists to trigger normal PR Rust CI and Fuzz Smoke on the complete reconciled state. Task 8 Step 5 remains incomplete until those exact-head runs are green. Task 8 Step 7 remains incomplete until PR #23 is merged at that verified head and post-merge `main` Rust CI is green.
 
 ## Deferred / External Risks
 
@@ -99,11 +99,11 @@ The active remediation plan still needs its evidence-backed checkboxes reconcile
 
 ## Exact Next Task
 
-1. Reconcile evidence-backed checkboxes in `docs/superpowers/plans/2026-09-14-foundation-authority-replay-remediation.md`.
-2. Require fresh Rust CI and Fuzz Smoke success on the resulting exact final PR head.
-3. Re-check PR #23 expected head and diff; merge only that verified SHA.
+1. Require Rust CI and Fuzz Smoke success on this exact human-authored PR head.
+2. Re-check PR #23 head/mergeability and the final changed-file inventory.
+3. Merge only the verified expected head SHA.
 4. Require post-merge `main` Rust CI green.
-5. Only then update durable state so **M9 remote-networking Task 4** becomes the next implementation task.
+5. Update durable state with the final PR and post-merge evidence; only then make **M9 remote-networking Task 4** the next implementation task.
 
 ## M9 Invariants
 
@@ -120,6 +120,6 @@ The active remediation plan still needs its evidence-backed checkboxes reconcile
 
 1. inspect `main`, PR #23, recent workflows, and this file;
 2. require the current exact head to be green before merge or the next remediation step;
-3. reconcile documentation only from verified evidence;
-4. merge PR #23 only at its expected verified head;
-5. do not resume M9 networking Task 4 until post-merge `main` verification is green.
+3. merge PR #23 only at its expected verified head;
+4. require post-merge `main` Rust CI green;
+5. do not resume M9 networking Task 4 until the remediation is merged and post-merge verified.
