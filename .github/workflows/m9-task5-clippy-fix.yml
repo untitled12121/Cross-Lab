@@ -1,0 +1,56 @@
+name: M9 Task 5 Clippy Fix
+
+on:
+  push:
+    branches:
+      - m9-task5-iroh-session-auth
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    name: Box rejection result
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: m9-task5-iroh-session-auth
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Apply minimal clippy fix
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("experiments/m9-networking/src/scenarios/auth.rs")
+          text = path.read_text()
+          old_sig = ") -> Result<AuthenticatedIrohPair, RejectedAuthentication> {"
+          new_sig = ") -> Result<AuthenticatedIrohPair, Box<RejectedAuthentication>> {"
+          old_err = """            Err(RejectedAuthentication {
+                client_session,
+                server_session,
+                error: client_error,
+            })"""
+          new_err = """            Err(Box::new(RejectedAuthentication {
+                client_session,
+                server_session,
+                error: client_error,
+            }))"""
+          assert text.count(old_sig) == 1, text.count(old_sig)
+          assert text.count(old_err) == 1, text.count(old_err)
+          path.write_text(text.replace(old_sig, new_sig).replace(old_err, new_err))
+          PY
+      - name: Verify
+        run: |
+          cargo fmt --check
+          cargo test -p crosslab-m9-networking --test session
+          cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Commit fix
+        run: |
+          rm .github/workflows/m9-task5-clippy-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add experiments/m9-networking/src/scenarios/auth.rs .github/workflows/m9-task5-clippy-fix.yml
+          git commit -m "fix(networking): box rejected authentication result"
+          git push origin HEAD:m9-task5-iroh-session-auth
