@@ -62,12 +62,7 @@ Evidence: exact code head `d117323754a91a845450fb3467bf76cb9d52c2a6`; Rust CI `3
 
 Pairing/session authentication and lifecycle now use current owner authority. Session context snapshots owner-root and Device Signing authority, `LogicalSession::revalidate_authority` closes on root/Device Signing replacement, Administrative/Recovery-only rotation preserves ordinary sessions, and simulator control/stream runtimes cancel session authority before transport close. Quinn fixtures remain transport-only consumers of Cross-Lab authority state rather than authority owners.
 
-Focused exact-branch verification run `34930872045` passed:
-
-- `cargo test -p crosslab-core --all-features`
-- `cargo test -p crosslab-sim --all-features`
-- `cargo test -p crosslab-transport-quic --all-features`
-- `cargo fmt --check`
+Focused exact-branch verification run `34930872045` passed `crosslab-core`, `crosslab-sim`, `crosslab-transport-quic`, and formatting.
 
 ### Task 5 — Complete
 
@@ -75,9 +70,9 @@ ADR-0011 is locked with characterization tests. A legitimately aged-out `Request
 
 Task 5 test commit: `654cfad19108df15ccccbe1c84e9f4116f9a5178`. Focused verification run `34930994570` passed the core/simulator/Quinn/fmt gate.
 
-### Task 6 — Complete
+### Task 6 — Complete, exact-head CI confirmation pending
 
-High-level stream admission now accepts local `TrustRecord` and `PolicyState`, validates that trust belongs to the authenticated peer and is `Trusted`, and derives trust/policy revisions internally. `SimStreamRuntime::accept_one` no longer accepts caller-selected revision integers.
+High-level stream admission accepts local `TrustRecord` and `PolicyState`, validates authenticated-peer trust ownership/state, and derives trust/policy revisions internally. `SimStreamRuntime::accept_one` no longer accepts caller-selected revision integers.
 
 TDD RED: `cb37c0b93c327cda8685bbd25f075c6bf2620870`; CI `34931103468` failed exactly because the old API still required two `u64` revisions and the new trust errors did not exist.
 
@@ -86,22 +81,22 @@ Implementation includes:
 - `StreamAdmissionError::PeerTrustMismatch` and `PeerNotTrusted`;
 - local trust owner/device/state validation before operation reservation;
 - internally derived `TrustRecord::trust_revision()` and `PolicyState::revision()`;
-- simulator and Quinn stream fixture migration to local trust/policy state;
+- simulator, Quinn, lifecycle, and resource-hardening fixture migration to local trust/policy state;
 - tests for changed policy revision, locally revoked peer, and mismatched peer trust.
 
-Final caller-migration code head: `18942c3bf647e7ee1ab36f85fdd32d264a0b4e8b`. Focused Task 6 workflow `34959306875` passed core stream admission, full simulator tests, full Quinn transport tests, and `cargo fmt --check`. The prior red full Rust gate exposed the final stale callers and those callers are now removed.
+Task 6 final code head before this documentation checkpoint: `6952b9dbec62a4c00e469e87bc589e3bd3e989e2`. Focused workflow `34960055976` passed the resource-hardening regression, full Quinn tests, complete workspace `cargo check --all-targets --all-features`, and `cargo fmt --check`. Earlier focused workflow `34959306875` passed core stream admission, full simulator tests, full Quinn transport tests, and formatting. Fuzz Smoke `34959517230` passed all five bounded targets on the immediately preceding checkpoint.
 
 ## Remaining Plan
 
 7. remove obsolete caller-selected high-level authority/currentness APIs, migrate remaining call sites, and prove identity/policy/protocol golden compatibility;
-8. run the final full security/CI/Fuzz reconciliation, update durable evidence, merge PR #23, and verify the resulting `main` commit.
+8. run final full security/CI/Fuzz reconciliation, update durable evidence, merge PR #23, and verify the resulting `main` commit.
 
 ## Exact Next Task
 
-1. Require fresh exact-head Rust CI and Fuzz Smoke success after this Task 6 checkpoint.
-2. When green, execute Task 7 using compiler errors/search as the migration checklist; do not add compatibility shims that recreate caller-selected currentness.
+1. Require fresh exact-head Rust CI and Fuzz Smoke success after this checkpoint.
+2. When green, execute Task 7 using compiler/search output as the migration checklist; do not add compatibility shims that recreate caller-selected currentness.
 3. Preserve `AuthorityDelegation::verify(root, minimum_epoch)` only as the low-level cryptographic/import primitive and preserve `DeviceCredential::from_unverified_signed_parts`.
-4. Verify existing identity, policy, and protocol golden vectors byte-for-byte.
+4. Verify identity, policy, and protocol golden vectors byte-for-byte.
 5. Execute Task 8 and keep M9 networking Task 4 blocked until PR #23 is merged and post-merge `main` is green.
 
 ## M9 Invariants
