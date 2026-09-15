@@ -1,0 +1,121 @@
+name: Task4 Final Fixture Migration V7
+
+on:
+  push:
+    branches:
+      - m9-authority-replay-remediation
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: m9-authority-replay-remediation
+          fetch-depth: 0
+      - name: Install Rust
+        run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt
+      - name: Run complete Task 4 fixture migration
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_one(text: str, old: str, new: str, label: str) -> str:
+              if text.count(old) != 1:
+                  raise SystemExit(f'{label}: expected one match, found {text.count(old)}')
+              return text.replace(old, new, 1)
+
+          workflow = Path('.github/workflows/task4-final-fixture-migrate-v6.yml').read_text().splitlines()
+          start = workflow.index("          python3 - <<'PY'") + 1
+          end = workflow.index('          PY', start)
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in workflow[start:end])
+          exec(compile(script, '<task4-v6-migration>', 'exec'), {})
+
+          path = Path('crates/core/tests/pairing_trust_provenance.rs')
+          text = path.read_text()
+          text = replace_one(
+              text,
+              'use crosslab_identity::{AuthorityDelegation, AuthorityRole, DeviceId, OwnerId, OwnerRootRecord};',
+              'use crosslab_identity::{\n    AuthorityDelegation, AuthorityRole, DeviceId, OwnerAuthorityState, OwnerId, OwnerRootRecord,\n};',
+              'pairing provenance import',
+          )
+          delegation_setup = '\n'.join([
+              '    let delegation = AuthorityDelegation::issue(',
+              '        owner_id,',
+              '        AuthorityRole::DeviceSigning,',
+              '        &issuer_key,',
+              '        0,',
+              '        &root_key,',
+              '    );',
+          ])
+          text = replace_one(
+              text,
+              delegation_setup,
+              delegation_setup + '\n    let mut authority = OwnerAuthorityState::new(root);\n    authority.accept_delegation(delegation).unwrap();',
+              'pairing provenance authority state',
+          )
+          old_issue = '\n'.join([
+              '        .issue_initial_joiner_credential(',
+              '            &root,',
+              '            &delegation,',
+              '            &issuer_key,',
+              '            PairingInstant::from_ticks(20),',
+              '        )',
+          ])
+          new_issue = '\n'.join([
+              '        .issue_initial_joiner_credential(',
+              '            &authority,',
+              '            &issuer_key,',
+              '            PairingInstant::from_ticks(20),',
+              '        )',
+          ])
+          text = replace_one(text, old_issue, new_issue, 'pairing provenance issue')
+          text = replace_one(
+              text,
+              '        .accept_credential(&root, &delegation, &credential, &joiner_key)',
+              '        .accept_credential(&authority, &credential, &joiner_key)',
+              'pairing provenance accept',
+          )
+          old_commit = '\n'.join([
+              '        inviter.commit_trust(',
+              '            &accepted,',
+              '            TransitionId::from_bytes([0x1b; 32]),',
+              '            &root,',
+              '            &delegation,',
+              '            &wrong_issuer_key,',
+              '            delegation.delegation_epoch(),',
+              '            PairingInstant::from_ticks(30),',
+              '        ),',
+          ])
+          new_commit = '\n'.join([
+              '        inviter.commit_trust(',
+              '            &accepted,',
+              '            TransitionId::from_bytes([0x1b; 32]),',
+              '            &authority,',
+              '            &wrong_issuer_key,',
+              '            PairingInstant::from_ticks(30),',
+              '        ),',
+          ])
+          text = replace_one(text, old_commit, new_commit, 'pairing provenance commit')
+          path.write_text(text)
+          PY
+          cargo fmt
+          cargo check -p crosslab-core --test pairing_trust_provenance --all-features
+          cargo check --workspace --all-targets --all-features
+          rm .github/workflows/task4-final-fixture-migrate.yml
+          rm .github/workflows/task4-final-fixture-migrate-v2.yml
+          rm .github/workflows/task4-final-fixture-migrate-v3.yml
+          rm .github/workflows/task4-final-fixture-migrate-v4.yml
+          rm .github/workflows/task4-final-fixture-migrate-v5.yml
+          rm .github/workflows/task4-final-fixture-migrate-v6.yml
+          rm .github/workflows/task4-final-fixture-migrate-v7.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "test: migrate final task 4 authority fixtures"
+          git push origin HEAD:m9-authority-replay-remediation
