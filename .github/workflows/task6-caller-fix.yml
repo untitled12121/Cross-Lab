@@ -68,8 +68,8 @@ jobs:
           path = "transports/quic/src/session_auth_tests/lifecycle_tests.rs"
           replace_exact(
               path,
-              "    trust_revision: u64,\n    policy_revision: u64,",
-              "    peer_trust: TrustRecord,\n    policy: PolicyState,",
+              "    operation: AuthorizedOperation,\n    trust_revision: u64,\n    policy_revision: u64,\n    session_id: crosslab_policy::SessionId,",
+              "    operation: AuthorizedOperation,\n    peer_trust: TrustRecord,\n    policy: PolicyState,\n    session_id: crosslab_policy::SessionId,",
           )
           replace_exact(
               path,
