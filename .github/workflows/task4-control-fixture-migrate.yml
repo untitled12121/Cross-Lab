@@ -27,21 +27,22 @@ jobs:
           path = Path('apps/sim/tests/control_lifecycle.rs')
           text = path.read_text()
 
-          def replace_once(old: str, new: str) -> None:
+          old_import = '    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,\n'
+          new_import = '    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,\n    OwnerRootRecord,\n'
+          if old_import not in text:
+              raise SystemExit('identity import shape changed')
+          text = text.replace(old_import, new_import, 1)
+
+          def replace_region(start_marker: str, end_marker: str, replacement: str) -> None:
               global text
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'expected one match, found {count}: {old[:80]!r}')
-              text = text.replace(old, new, 1)
+              start = text.index(start_marker)
+              end = text.index(end_marker, start)
+              text = text[:start] + replacement + text[end:]
 
-          replace_once(
-              '    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,\n',
-              '    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,\n    OwnerRootRecord,\n',
-          )
-
-          start = text.index('fn establish_trust(')
-          end = text.index('\n\nstruct Fixture', start)
-          trust_fn = '''fn establish_trust(
+          replace_region(
+              'fn establish_trust(',
+              '\n\nstruct Fixture',
+              '''fn establish_trust(
               credential: &DeviceCredential,
               authority: &OwnerAuthorityState,
               issuer_key: &SigningKey,
@@ -90,123 +91,154 @@ jobs:
               }
 
               trust
-          }'''
-          text = text[:start] + trust_fn + text[end:]
-
-          replace_once(
-              '    root: OwnerRootRecord,\n    issuer_key: SigningKey,\n    delegation: AuthorityDelegation,\n',
-              '    authority: OwnerAuthorityState,\n    issuer_key: SigningKey,\n',
-          )
-          replace_once(
-              '''        let delegation = AuthorityDelegation::issue(
-              owner_id,
-              AuthorityRole::DeviceSigning,
-              &issuer_key,
-              0,
-              &root_key,
-          );
-          let initiator_key = SigningKey::from_secret_bytes([0xb3; 32]);''',
-              '''        let delegation = AuthorityDelegation::issue(
-              owner_id,
-              AuthorityRole::DeviceSigning,
-              &issuer_key,
-              0,
-              &root_key,
-          );
-          let mut authority = OwnerAuthorityState::new(root);
-          authority.accept_delegation(delegation).unwrap();
-          let initiator_key = SigningKey::from_secret_bytes([0xb3; 32]);''',
-          )
-          replace_once(
-              '''        let initiator_credential = DeviceCredential::issue(
-              owner_id,
-              DeviceId::from_bytes([0xb5; 32]),
-              &initiator_key,
-              1,
-              &root,
-              &delegation,
-              &issuer_key,
-          )''',
-              '''        let initiator_credential = DeviceCredential::issue_current(
-              owner_id,
-              DeviceId::from_bytes([0xb5; 32]),
-              &initiator_key,
-              1,
-              &authority,
-              &issuer_key,
-          )''',
-          )
-          replace_once(
-              '''        let responder_credential = DeviceCredential::issue(
-              owner_id,
-              DeviceId::from_bytes([0xb6; 32]),
-              &responder_key,
-              1,
-              &root,
-              &delegation,
-              &issuer_key,
-          )''',
-              '''        let responder_credential = DeviceCredential::issue_current(
-              owner_id,
-              DeviceId::from_bytes([0xb6; 32]),
-              &responder_key,
-              1,
-              &authority,
-              &issuer_key,
-          )''',
-          )
-          replace_once(
-              '''        let initiator_trust =
-              establish_trust(&initiator_credential, &root, &delegation, &issuer_key, 0xb7);
-          let responder_trust =
-              establish_trust(&responder_credential, &root, &delegation, &issuer_key, 0xb8);''',
-              '''        let initiator_trust = establish_trust(&initiator_credential, &authority, &issuer_key, 0xb7);
-          let responder_trust = establish_trust(&responder_credential, &authority, &issuer_key, 0xb8);''',
-          )
-          replace_once(
-              '            root,\n            issuer_key,\n            delegation,\n',
-              '            authority,\n            issuer_key,\n',
-          )
-          replace_once(
-              '''        let initiator = SessionHandshakeSide::new(
-              &self.initiator_credential,
-              &self.delegation,
-              &ranges,
-              &features,
-          );
-          let responder = SessionHandshakeSide::new(
-              &self.responder_credential,
-              &self.delegation,
-              &ranges,
-              &features,
-          );''',
-              '''        let initiator =
-              SessionHandshakeSide::new(&self.initiator_credential, &ranges, &features);
-          let responder =
-              SessionHandshakeSide::new(&self.responder_credential, &ranges, &features);''',
+          }''',
           )
 
-          count = text.count('SessionActivation::new(\n            &self.root,')
-          if count != 2:
-              raise SystemExit(f'expected two raw-root activations, found {count}')
-          text = text.replace(
-              'SessionActivation::new(\n            &self.root,',
-              'SessionActivation::new(\n            &self.authority,',
+          replace_region(
+              'struct Fixture {',
+              '\n}\n\nimpl Fixture',
+              '''struct Fixture {
+              owner_id: OwnerId,
+              root_key: SigningKey,
+              authority: OwnerAuthorityState,
+              issuer_key: SigningKey,
+              initiator_key: SigningKey,
+              responder_key: SigningKey,
+              initiator_credential: DeviceCredential,
+              responder_credential: DeviceCredential,
+              initiator_trust: TrustRecord,
+              responder_trust: TrustRecord,
+          }''',
           )
 
-          replace_once(
-              '''    fn revoke(&self, record: TrustRecord, transition_byte: u8) -> TrustRecord {
-              let transition = TrustTransition::issue_root_revocation(
-                  &record,
-                  TransitionId::from_bytes([transition_byte; 32]),
-                  &self.root,
-                  &self.root_key,
+          replace_region(
+              '    fn new() -> Self {',
+              '\n\n    fn sessions',
+              '''    fn new() -> Self {
+              let owner_id = OwnerId::from_bytes([0xb0; 32]);
+              let root_key = SigningKey::from_secret_bytes([0xb1; 32]);
+              let root = OwnerRootRecord::new(owner_id, &root_key, 0);
+              let issuer_key = SigningKey::from_secret_bytes([0xb2; 32]);
+              let delegation = AuthorityDelegation::issue(
+                  owner_id,
+                  AuthorityRole::DeviceSigning,
+                  &issuer_key,
+                  0,
+                  &root_key,
+              );
+              let mut authority = OwnerAuthorityState::new(root);
+              authority.accept_delegation(delegation).unwrap();
+              let initiator_key = SigningKey::from_secret_bytes([0xb3; 32]);
+              let responder_key = SigningKey::from_secret_bytes([0xb4; 32]);
+              let initiator_credential = DeviceCredential::issue_current(
+                  owner_id,
+                  DeviceId::from_bytes([0xb5; 32]),
+                  &initiator_key,
+                  1,
+                  &authority,
+                  &issuer_key,
               )
               .unwrap();
-              let mut revoked = record;
-              transition.apply_root(&mut revoked, &self.root).unwrap();
-              revoked
+              let responder_credential = DeviceCredential::issue_current(
+                  owner_id,
+                  DeviceId::from_bytes([0xb6; 32]),
+                  &responder_key,
+                  1,
+                  &authority,
+                  &issuer_key,
+              )
+              .unwrap();
+              let initiator_trust =
+                  establish_trust(&initiator_credential, &authority, &issuer_key, 0xb7);
+              let responder_trust =
+                  establish_trust(&responder_credential, &authority, &issuer_key, 0xb8);
+
+              Self {
+                  owner_id,
+                  root_key,
+                  authority,
+                  issuer_key,
+                  initiator_key,
+                  responder_key,
+                  initiator_credential,
+                  responder_credential,
+                  initiator_trust,
+                  responder_trust,
+              }
           }''',
+          )
+
+          replace_region(
+              '    fn sessions(&self, pair: &MemoryTransportPair)',
+              '\n\n    fn revoke',
+              '''    fn sessions(&self, pair: &MemoryTransportPair) -> (LogicalSession, LogicalSession) {
+              let ranges = [ProtocolRange::new(1, 0, 0).unwrap()];
+              let features = FeatureSet::new(&[], &[]).unwrap();
+              let binding = pair.endpoints().0.channel_binding();
+              let initiator_nonce = [0xb9; 32];
+              let responder_nonce = [0xba; 32];
+              let transcript = SessionAuthTranscriptV1::new(
+                  self.owner_id,
+                  &self.initiator_credential,
+                  initiator_nonce,
+                  &self.responder_credential,
+                  responder_nonce,
+                  ProtocolVersion::new(1, 0),
+                  &[],
+                  binding.profile_id().as_bytes(),
+                  binding.bytes(),
+              )
+              .unwrap();
+              let initiator_proof = transcript
+                  .create_proof(SessionAuthRole::Initiator, &self.initiator_key)
+                  .unwrap();
+              let responder_proof = transcript
+                  .create_proof(SessionAuthRole::Responder, &self.responder_key)
+                  .unwrap();
+              let initiator =
+                  SessionHandshakeSide::new(&self.initiator_credential, &ranges, &features);
+              let responder =
+                  SessionHandshakeSide::new(&self.responder_credential, &ranges, &features);
+
+              let mut a = LogicalSession::new();
+              a.authenticate(SessionActivation::new(
+                  &self.authority,
+                  initiator,
+                  responder,
+                  SessionAuthRole::Initiator,
+                  &self.responder_trust,
+                  initiator_nonce,
+                  responder_nonce,
+                  binding,
+                  TransportSecurityClass::InProcessTest,
+                  &initiator_proof,
+                  &responder_proof,
+              ))
+              .unwrap();
+
+              let mut b = LogicalSession::new();
+              b.authenticate(SessionActivation::new(
+                  &self.authority,
+                  initiator,
+                  responder,
+                  SessionAuthRole::Responder,
+                  &self.initiator_trust,
+                  initiator_nonce,
+                  responder_nonce,
+                  binding,
+                  TransportSecurityClass::InProcessTest,
+                  &initiator_proof,
+                  &responder_proof,
+              ))
+              .unwrap();
+
+              (a, b)
+          }''',
+          )
+
+          replace_region(
+              '    fn revoke(&self, record: TrustRecord, transition_byte: u8)',
+              '\n    }\n}\n\nfn pair',
               '''    fn revoke(&self, record: TrustRecord, transition_byte: u8) -> TrustRecord {
               let transition = TrustTransition::issue_root_revocation(
                   &record,
@@ -222,39 +254,56 @@ jobs:
               revoked
           }''',
           )
-          replace_once(
-              '''    let wrong_credential = DeviceCredential::issue(
-              fixture.owner_id,
-              DeviceId::from_bytes([0xc4; 32]),
-              &SigningKey::from_secret_bytes([0xcd; 32]),
-              fixture.initiator_credential.credential_epoch(),
-              &fixture.root,
-              &fixture.delegation,
-              &fixture.issuer_key,
-          )
-          .unwrap();
-          let wrong = establish_trust(
-              &wrong_credential,
-              &fixture.root,
-              &fixture.delegation,
-              &fixture.issuer_key,
-              0xc5,
-          );''',
-              '''    let wrong_credential = DeviceCredential::issue_current(
-              fixture.owner_id,
-              DeviceId::from_bytes([0xc4; 32]),
-              &SigningKey::from_secret_bytes([0xcd; 32]),
-              fixture.initiator_credential.credential_epoch(),
-              &fixture.authority,
-              &fixture.issuer_key,
-          )
-          .unwrap();
-          let wrong = establish_trust(&wrong_credential, &fixture.authority, &fixture.issuer_key, 0xc5);''',
+
+          wrong_start = '#[test]\nfn wrong_peer_revocation_cannot_terminate_an_unrelated_session() {'
+          next_test = '\n\n#[test]\nfn shutdown_is_idempotent_and_discards_pending_authority()'
+          replace_region(
+              wrong_start,
+              next_test,
+              '''#[test]
+          fn wrong_peer_revocation_cannot_terminate_an_unrelated_session() {
+              let fixture = Fixture::new();
+              let wrong_credential = DeviceCredential::issue_current(
+                  fixture.owner_id,
+                  DeviceId::from_bytes([0xc4; 32]),
+                  &SigningKey::from_secret_bytes([0xcd; 32]),
+                  fixture.initiator_credential.credential_epoch(),
+                  &fixture.authority,
+                  &fixture.issuer_key,
+              )
+              .unwrap();
+              let wrong = establish_trust(
+                  &wrong_credential,
+                  &fixture.authority,
+                  &fixture.issuer_key,
+                  0xc5,
+              );
+              let wrong = fixture.revoke(wrong, 0xc6);
+              let pair = pair();
+              let (_, session_b) = fixture.sessions(&pair);
+              let (_, endpoint_b) = pair.endpoints();
+              let mut node = SimNode::new(
+                  session_b,
+                  endpoint_b,
+                  PolicyState::new(),
+                  Vec::new(),
+                  NetworkClass::Local,
+                  NonZeroUsize::new(CAPACITY).unwrap(),
+              )
+              .unwrap();
+
+              assert!(matches!(
+                  node.apply_peer_revocation(&wrong),
+                  Err(NodeError::Session(SessionError::PeerTrustMismatch))
+              ));
+              assert_eq!(node.session().state(), SessionState::Active);
+              assert!(!endpoint_b.is_closed());
+          }''',
           )
 
-          for obsolete in ('fixture.root', 'fixture.delegation', 'self.root', 'self.delegation'):
+          for obsolete in ('&fixture.root', '&fixture.delegation', '&self.root', '&self.delegation'):
               if obsolete in text:
-                  raise SystemExit(f'obsolete authority fixture reference remains: {obsolete}')
+                  raise SystemExit(f'obsolete session authority reference remains: {obsolete}')
 
           path.write_text(text)
           PY
