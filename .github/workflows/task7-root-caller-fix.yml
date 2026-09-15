@@ -24,6 +24,7 @@ jobs:
         run: |
           python3 .github/scripts/task7_migrate.py
           python3 .github/scripts/task7_policy_tail.py
+          python3 .github/scripts/task7_currentness_tail.py
           cargo fmt --all
           echo '=== remaining authority migration inventory ==='
           grep -RInE 'issue_current|issue_for_public_key_current|verify_current|rotate_current|establish_current|accept_successor_credential_current|issue_delegated_revocation_current|apply_delegated_current' crates apps transports || true
@@ -33,7 +34,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          rm .github/workflows/task7-root-caller-fix.yml .github/scripts/task7_migrate.py .github/scripts/task7_policy_tail.py
-          git add crates apps transports .github/workflows/task7-root-caller-fix.yml .github/scripts/task7_migrate.py .github/scripts/task7_policy_tail.py
+          rm .github/workflows/task7-root-caller-fix.yml .github/scripts/task7_migrate.py .github/scripts/task7_policy_tail.py .github/scripts/task7_currentness_tail.py
+          git add crates apps transports .github/workflows/task7-root-caller-fix.yml .github/scripts/task7_migrate.py .github/scripts/task7_policy_tail.py .github/scripts/task7_currentness_tail.py
           git commit -m "refactor(security): finish authority-state caller migration"
           git push origin HEAD:m9-authority-replay-remediation
