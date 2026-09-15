@@ -76,13 +76,17 @@ jobs:
               "        trust_revision,\n        policy_revision,\n        session_id,",
               "        peer_trust: fixture.initiator_trust,\n        policy,\n        session_id,",
           )
-          text = Path(path).read_text()
-          old = "        authority.trust_revision,\n        authority.policy_revision,"
-          count = text.count(old)
-          if count != 3:
-              raise SystemExit(f"{path}: expected three stream authority revision call sites, found {count}")
-          text = text.replace(old, "        &authority.peer_trust,\n        &authority.policy,")
-          Path(path).write_text(text)
+          p = Path(path)
+          text = p.read_text()
+          for old, new in [
+              ("authority.trust_revision", "&authority.peer_trust"),
+              ("authority.policy_revision", "&authority.policy"),
+          ]:
+              count = text.count(old)
+              if count != 3:
+                  raise SystemExit(f"{path}: expected three {old} call sites, found {count}")
+              text = text.replace(old, new)
+          p.write_text(text)
           replace_exact(
               path,
               "    assert!(matches!(\n        eventually_accept(&mut receiver, 15, 0, 0).await,",
