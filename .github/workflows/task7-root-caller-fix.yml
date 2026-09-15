@@ -1,4 +1,4 @@
-name: Task 7 Root Caller Fix
+name: Task 7 Authority Caller Migration
 
 on:
   push:
@@ -24,6 +24,7 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           def replace_count(path, old, new, expected):
               p = Path(path)
@@ -33,6 +34,41 @@ jobs:
                   raise SystemExit(f"{path}: expected {expected} matches, found {count}: {old!r}")
               p.write_text(text.replace(old, new))
 
+          def migrate_authority_parts(path, expected_pairing, expected_floor, expected_credential):
+              p = Path(path)
+              text = p.read_text()
+
+              pairing = re.compile(
+                  r"(?P<i>[ \t]*)&root,\n(?P=i)&delegation,\n(?P=i)&issuer_key,\n(?P=i)delegation\.delegation_epoch\(\),"
+              )
+              text, pairing_count = pairing.subn(
+                  lambda m: f"{m.group('i')}&authority,\n{m.group('i')}&issuer_key,",
+                  text,
+              )
+
+              floor = re.compile(
+                  r"(?P<i>[ \t]*)&root,\n(?P=i)&delegation,\n(?P=i)delegation\.delegation_epoch\(\),"
+              )
+              text, floor_count = floor.subn(
+                  lambda m: f"{m.group('i')}&authority,",
+                  text,
+              )
+
+              credential = re.compile(
+                  r"(?P<i>[ \t]*)&root,\n(?P=i)&delegation,\n(?P=i)&issuer_key,"
+              )
+              text, credential_count = credential.subn(
+                  lambda m: f"{m.group('i')}&authority,\n{m.group('i')}&issuer_key,",
+                  text,
+              )
+
+              actual = (pairing_count, floor_count, credential_count)
+              expected = (expected_pairing, expected_floor, expected_credential)
+              if actual != expected:
+                  raise SystemExit(f"{path}: authority-part migration expected {expected}, found {actual}")
+              p.write_text(text)
+
+          # Root-authorized revocation now receives canonical owner authority state.
           for path, issue_count, apply_revoked_count, apply_other_count in [
               ("apps/sim/tests/lifecycle.rs", 2, 1, 1),
               ("apps/sim/tests/stream_scenarios.rs", 1, 1, 0),
@@ -70,12 +106,17 @@ jobs:
                   "        &fixture.authority,\n        &fixture.root_key,",
                   1,
               )
-              replace_count(
-                  path,
-                  ".apply_root(&mut revoked, fixture.authority.root())" if "stream_currentness" in path else ".apply_root(&mut fixture.record, fixture.authority.root())",
-                  ".apply_root(&mut revoked, &fixture.authority)" if "stream_currentness" in path else ".apply_root(&mut fixture.record, &fixture.authority)",
-                  1,
+              old = (
+                  ".apply_root(&mut revoked, fixture.authority.root())"
+                  if "stream_currentness" in path
+                  else ".apply_root(&mut fixture.record, fixture.authority.root())"
               )
+              new = (
+                  ".apply_root(&mut revoked, &fixture.authority)"
+                  if "stream_currentness" in path
+                  else ".apply_root(&mut fixture.record, &fixture.authority)"
+              )
+              replace_count(path, old, new, 1)
 
           replace_count(
               "transports/quic/src/session_auth_tests/lifecycle_tests.rs",
@@ -90,6 +131,122 @@ jobs:
               1,
           )
 
+          # Existing fixtures that already model a current delegation now route ordinary
+          # credential/pairing operations through OwnerAuthorityState.
+          insertions = [
+              (
+                  "crates/core/tests/control_event_authorization.rs",
+                  "        );\n        let local_key = SigningKey::from_secret_bytes([0x43; 32]);",
+                  "        );\n        let mut authority = OwnerAuthorityState::new(root);\n        authority.accept_delegation(delegation).unwrap();\n        let local_key = SigningKey::from_secret_bytes([0x43; 32]);",
+                  (1, 1, 2),
+              ),
+              (
+                  "crates/core/tests/control_rotation.rs",
+                  "    );\n    let local_key = SigningKey::from_secret_bytes([0x43; 32]);",
+                  "    );\n    let mut authority = OwnerAuthorityState::new(root);\n    authority.accept_delegation(delegation).unwrap();\n    let local_key = SigningKey::from_secret_bytes([0x43; 32]);",
+                  (1, 2, 3),
+              ),
+              (
+                  "crates/core/src/session/state.rs",
+                  "        );\n        let peer_device_id = DeviceId::from_bytes([0xf2; 32]);",
+                  "        );\n        let mut authority = OwnerAuthorityState::new(root);\n        authority.accept_delegation(delegation).unwrap();\n        let peer_device_id = DeviceId::from_bytes([0xf2; 32]);",
+                  (1, 2, 2),
+              ),
+              (
+                  "crates/policy/tests/golden_vectors.rs",
+                  "    );\n    let device_key = SigningKey::from_secret_bytes([0x43; 32]);",
+                  "    );\n    let mut authority = OwnerAuthorityState::new(root);\n    authority.accept_delegation(delegation).unwrap();\n    let device_key = SigningKey::from_secret_bytes([0x43; 32]);",
+                  (1, 2, 2),
+              ),
+              (
+                  "crates/policy/tests/trust_transitions.rs",
+                  "    );\n    let device_id = DeviceId::from_bytes([3; 32]);",
+                  "    );\n    let mut authority = OwnerAuthorityState::new(root);\n    authority.accept_delegation(delegation).unwrap();\n    let device_id = DeviceId::from_bytes([3; 32]);",
+                  (1, 2, 2),
+              ),
+          ]
+          for path, marker, replacement, counts in insertions:
+              replace_count(path, marker, replacement, 1)
+              migrate_authority_parts(path, *counts)
+
+          # These two fixtures had no authority state yet.
+          for path, marker, replacement in [
+              (
+                  "crates/core/tests/session_auth.rs",
+                  "        );\n        let initiator_key = SigningKey::from_secret_bytes([0x13; 32]);",
+                  "        );\n        let mut authority = OwnerAuthorityState::new(root);\n        authority.accept_delegation(delegation).unwrap();\n        let initiator_key = SigningKey::from_secret_bytes([0x13; 32]);",
+              ),
+              (
+                  "crates/core/tests/debug_privacy.rs",
+                  "    );\n    let initiator_key = SigningKey::from_secret_bytes([0xe4; 32]);",
+                  "    );\n    let mut authority = OwnerAuthorityState::new(root);\n    authority.accept_delegation(delegation).unwrap();\n    let initiator_key = SigningKey::from_secret_bytes([0xe4; 32]);",
+              ),
+          ]:
+              replace_count(
+                  path,
+                  "    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,\n",
+                  "    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,\n    OwnerRootRecord,\n",
+                  1,
+              )
+              replace_count(path, marker, replacement, 1)
+              migrate_authority_parts(path, 0, 0, 2)
+
+          # Wire/golden-vector fixtures use the same cryptographic inputs; only authority lookup changes.
+          for path, import_old, import_new, marker, replacement in [
+              (
+                  "crates/protocol/tests/session_auth_wire.rs",
+                  "    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,\n",
+                  "    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,\n    OwnerRootRecord,\n",
+                  "    );\n    let device_key = SigningKey::from_secret_bytes([0x13; 32]);",
+                  "    );\n    let mut authority = OwnerAuthorityState::new(root);\n    authority.accept_delegation(delegation).unwrap();\n    let device_key = SigningKey::from_secret_bytes([0x13; 32]);",
+              ),
+              (
+                  "crates/identity/tests/golden_vectors.rs",
+                  "    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,\n",
+                  "    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,\n    OwnerRootRecord,\n",
+                  "    );\n    let device_key = SigningKey::from_secret_bytes([0x55; 32]);",
+                  "    );\n    let mut authority = OwnerAuthorityState::new(root);\n    authority.accept_delegation(delegation).unwrap();\n    let device_key = SigningKey::from_secret_bytes([0x55; 32]);",
+              ),
+          ]:
+              replace_count(path, import_old, import_new, 1)
+              replace_count(path, marker, replacement, 1)
+              migrate_authority_parts(path, 0, 0, 1)
+
+          # Remove authority initializations that were previously placed after the operations.
+          for path in [
+              "crates/core/tests/control_event_authorization.rs",
+              "crates/core/tests/control_rotation.rs",
+          ]:
+              replace_count(
+                  path,
+                  "        let mut authority = OwnerAuthorityState::new(root);\n        authority.accept_delegation(delegation).unwrap();\n\n"
+                  if path.endswith("control_event_authorization.rs")
+                  else "    let mut authority = OwnerAuthorityState::new(root);\n    authority.accept_delegation(delegation).unwrap();\n",
+                  "",
+                  1,
+              )
+
+          # Root operations inside migrated fixtures use the same state.
+          replace_count(
+              "crates/core/src/session/state.rs",
+              "            &root,\n            &root_key,",
+              "            &authority,\n            &root_key,",
+              1,
+          )
+          replace_count(
+              "crates/core/src/session/state.rs",
+              "transition.apply_root(&mut revoked, &root)",
+              "transition.apply_root(&mut revoked, &authority)",
+              1,
+          )
+          replace_count(
+              "crates/policy/tests/golden_vectors.rs",
+              "        &root,\n        &root_key,",
+              "        &authority,\n        &root_key,",
+              1,
+          )
+
+          # One already-stateful root test still passed authority.root().
           replace_count(
               "crates/policy/tests/trust_transitions.rs",
               "TrustTransition::issue_root_revocation(&record, transition_id, authority.root(), &root_key)",
@@ -102,58 +259,13 @@ jobs:
               ".apply_root(&mut record, &authority)",
               1,
           )
-
-          for path in [
-              "crates/core/tests/session_auth.rs",
-              "crates/core/tests/debug_privacy.rs",
-          ]:
-              replace_count(
-                  path,
-                  "    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,\n",
-                  "    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,\n    OwnerRootRecord,\n",
-                  1,
-              )
-              marker = (
-                  "        );\n        let initiator_key = SigningKey::from_secret_bytes([0x13; 32]);"
-                  if path.endswith("session_auth.rs")
-                  else "    );\n    let initiator_key = SigningKey::from_secret_bytes([0xe4; 32]);"
-              )
-              replacement = (
-                  "        );\n        let mut authority = OwnerAuthorityState::new(root);\n        authority.accept_delegation(delegation).unwrap();\n        let initiator_key = SigningKey::from_secret_bytes([0x13; 32]);"
-                  if path.endswith("session_auth.rs")
-                  else "    );\n    let mut authority = OwnerAuthorityState::new(root);\n    authority.accept_delegation(delegation).unwrap();\n    let initiator_key = SigningKey::from_secret_bytes([0xe4; 32]);"
-              )
-              replace_count(path, marker, replacement, 1)
-              replace_count(
-                  path,
-                  "            &root,\n            &delegation,\n            &issuer_key," if path.endswith("session_auth.rs") else "        &root,\n        &delegation,\n        &issuer_key,",
-                  "            &authority,\n            &issuer_key," if path.endswith("session_auth.rs") else "        &authority,\n        &issuer_key,",
-                  2,
-              )
           PY
+
           cargo fmt --all
 
-          echo '=== remaining raw authority call shapes after migration ==='
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          roots = [Path("crates"), Path("apps"), Path("transports")]
-          patterns = {
-              "credential raw parts": re.compile(r"DeviceCredential::issue(?:_for_public_key)?\([\s\S]{0,500}?&(?:root|delegation),[\s\S]{0,160}?&(?:delegation|issuer_key),"),
-              "root revocation raw root": re.compile(r"(?:issue_root_revocation|apply_root)\([\s\S]{0,320}?\.root\(\)"),
-              "current-suffixed API": re.compile(r"\b(?:issue_current|issue_for_public_key_current|verify_current|rotate_current|establish_current|accept_successor_credential_current|issue_delegated_revocation_current|apply_delegated_current)\b"),
-          }
-          for label, pattern in patterns.items():
-              print(f"--- {label} ---")
-              for base in roots:
-                  for path in base.rglob("*.rs"):
-                      text = path.read_text()
-                      for match in pattern.finditer(text):
-                          line = text.count("\n", 0, match.start()) + 1
-                          snippet = " ".join(match.group(0).split())[:220]
-                          print(f"{path}:{line}: {snippet}")
-          PY
+          echo '=== remaining authority migration inventory ==='
+          grep -RInE 'issue_current|issue_for_public_key_current|verify_current|rotate_current|establish_current|accept_successor_credential_current|issue_delegated_revocation_current|apply_delegated_current' crates apps transports || true
+          grep -RIn 'minimum_delegation_epoch' crates apps transports || true
 
           cargo check --workspace --all-targets --all-features
       - name: Commit caller migration
@@ -161,6 +273,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           rm .github/workflows/task7-root-caller-fix.yml
-          git add apps/sim/tests/lifecycle.rs apps/sim/tests/stream_scenarios.rs apps/sim/tests/control_lifecycle.rs apps/sim/tests/security_hardening.rs crates/core/tests/session_lifecycle.rs crates/core/tests/stream_currentness.rs crates/core/tests/session_auth.rs crates/core/tests/debug_privacy.rs crates/policy/tests/authority_currentness.rs crates/policy/tests/trust_transitions.rs transports/quic/src/session_auth_tests/lifecycle_tests.rs .github/workflows/task7-root-caller-fix.yml
+          git add crates apps transports .github/workflows/task7-root-caller-fix.yml
           git commit -m "refactor(security): finish authority-state caller migration"
           git push origin HEAD:m9-authority-replay-remediation
