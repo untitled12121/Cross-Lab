@@ -1,0 +1,269 @@
+name: Task4 Control Fixture Migration
+
+on:
+  push:
+    branches:
+      - m9-authority-replay-remediation
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: m9-authority-replay-remediation
+          fetch-depth: 0
+      - name: Install Rust
+        run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt
+      - name: Migrate control lifecycle fixture
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('apps/sim/tests/control_lifecycle.rs')
+          text = path.read_text()
+
+          def replace_once(old: str, new: str) -> None:
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected one match, found {count}: {old[:80]!r}')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              '    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,\n',
+              '    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,\n    OwnerRootRecord,\n',
+          )
+
+          start = text.index('fn establish_trust(')
+          end = text.index('\n\nstruct Fixture', start)
+          trust_fn = '''fn establish_trust(
+              credential: &DeviceCredential,
+              authority: &OwnerAuthorityState,
+              issuer_key: &SigningKey,
+              transition_byte: u8,
+          ) -> TrustRecord {
+              let initial_credential = DeviceCredential::issue_for_public_key_current(
+                  credential.owner_id(),
+                  credential.device_id(),
+                  credential.device_public_key(),
+                  0,
+                  authority,
+                  issuer_key,
+              )
+              .unwrap();
+              let transition = PairingTrustTransition::issue_current(
+                  &initial_credential,
+                  TransitionId::from_bytes([transition_byte; 32]),
+                  [transition_byte.wrapping_add(1); 32],
+                  authority,
+                  issuer_key,
+              )
+              .unwrap();
+              let mut trust = transition
+                  .establish_current(&initial_credential, authority)
+                  .unwrap();
+
+              for epoch in 1..=credential.credential_epoch() {
+                  let successor = DeviceCredential::issue_for_public_key_current(
+                      credential.owner_id(),
+                      credential.device_id(),
+                      credential.device_public_key(),
+                      epoch,
+                      authority,
+                      issuer_key,
+                  )
+                  .unwrap();
+                  let mut transition_id = [transition_byte; 32];
+                  transition_id[..8].copy_from_slice(&epoch.to_be_bytes());
+                  trust
+                      .accept_successor_credential_current(
+                          &successor,
+                          authority,
+                          TransitionId::from_bytes(transition_id),
+                      )
+                      .unwrap();
+              }
+
+              trust
+          }'''
+          text = text[:start] + trust_fn + text[end:]
+
+          replace_once(
+              '    root: OwnerRootRecord,\n    issuer_key: SigningKey,\n    delegation: AuthorityDelegation,\n',
+              '    authority: OwnerAuthorityState,\n    issuer_key: SigningKey,\n',
+          )
+          replace_once(
+              '''        let delegation = AuthorityDelegation::issue(
+              owner_id,
+              AuthorityRole::DeviceSigning,
+              &issuer_key,
+              0,
+              &root_key,
+          );
+          let initiator_key = SigningKey::from_secret_bytes([0xb3; 32]);''',
+              '''        let delegation = AuthorityDelegation::issue(
+              owner_id,
+              AuthorityRole::DeviceSigning,
+              &issuer_key,
+              0,
+              &root_key,
+          );
+          let mut authority = OwnerAuthorityState::new(root);
+          authority.accept_delegation(delegation).unwrap();
+          let initiator_key = SigningKey::from_secret_bytes([0xb3; 32]);''',
+          )
+          replace_once(
+              '''        let initiator_credential = DeviceCredential::issue(
+              owner_id,
+              DeviceId::from_bytes([0xb5; 32]),
+              &initiator_key,
+              1,
+              &root,
+              &delegation,
+              &issuer_key,
+          )''',
+              '''        let initiator_credential = DeviceCredential::issue_current(
+              owner_id,
+              DeviceId::from_bytes([0xb5; 32]),
+              &initiator_key,
+              1,
+              &authority,
+              &issuer_key,
+          )''',
+          )
+          replace_once(
+              '''        let responder_credential = DeviceCredential::issue(
+              owner_id,
+              DeviceId::from_bytes([0xb6; 32]),
+              &responder_key,
+              1,
+              &root,
+              &delegation,
+              &issuer_key,
+          )''',
+              '''        let responder_credential = DeviceCredential::issue_current(
+              owner_id,
+              DeviceId::from_bytes([0xb6; 32]),
+              &responder_key,
+              1,
+              &authority,
+              &issuer_key,
+          )''',
+          )
+          replace_once(
+              '''        let initiator_trust =
+              establish_trust(&initiator_credential, &root, &delegation, &issuer_key, 0xb7);
+          let responder_trust =
+              establish_trust(&responder_credential, &root, &delegation, &issuer_key, 0xb8);''',
+              '''        let initiator_trust = establish_trust(&initiator_credential, &authority, &issuer_key, 0xb7);
+          let responder_trust = establish_trust(&responder_credential, &authority, &issuer_key, 0xb8);''',
+          )
+          replace_once(
+              '            root,\n            issuer_key,\n            delegation,\n',
+              '            authority,\n            issuer_key,\n',
+          )
+          replace_once(
+              '''        let initiator = SessionHandshakeSide::new(
+              &self.initiator_credential,
+              &self.delegation,
+              &ranges,
+              &features,
+          );
+          let responder = SessionHandshakeSide::new(
+              &self.responder_credential,
+              &self.delegation,
+              &ranges,
+              &features,
+          );''',
+              '''        let initiator =
+              SessionHandshakeSide::new(&self.initiator_credential, &ranges, &features);
+          let responder =
+              SessionHandshakeSide::new(&self.responder_credential, &ranges, &features);''',
+          )
+
+          count = text.count('SessionActivation::new(\n            &self.root,')
+          if count != 2:
+              raise SystemExit(f'expected two raw-root activations, found {count}')
+          text = text.replace(
+              'SessionActivation::new(\n            &self.root,',
+              'SessionActivation::new(\n            &self.authority,',
+          )
+
+          replace_once(
+              '''    fn revoke(&self, record: TrustRecord, transition_byte: u8) -> TrustRecord {
+              let transition = TrustTransition::issue_root_revocation(
+                  &record,
+                  TransitionId::from_bytes([transition_byte; 32]),
+                  &self.root,
+                  &self.root_key,
+              )
+              .unwrap();
+              let mut revoked = record;
+              transition.apply_root(&mut revoked, &self.root).unwrap();
+              revoked
+          }''',
+              '''    fn revoke(&self, record: TrustRecord, transition_byte: u8) -> TrustRecord {
+              let transition = TrustTransition::issue_root_revocation(
+                  &record,
+                  TransitionId::from_bytes([transition_byte; 32]),
+                  self.authority.root(),
+                  &self.root_key,
+              )
+              .unwrap();
+              let mut revoked = record;
+              transition
+                  .apply_root(&mut revoked, self.authority.root())
+                  .unwrap();
+              revoked
+          }''',
+          )
+          replace_once(
+              '''    let wrong_credential = DeviceCredential::issue(
+              fixture.owner_id,
+              DeviceId::from_bytes([0xc4; 32]),
+              &SigningKey::from_secret_bytes([0xcd; 32]),
+              fixture.initiator_credential.credential_epoch(),
+              &fixture.root,
+              &fixture.delegation,
+              &fixture.issuer_key,
+          )
+          .unwrap();
+          let wrong = establish_trust(
+              &wrong_credential,
+              &fixture.root,
+              &fixture.delegation,
+              &fixture.issuer_key,
+              0xc5,
+          );''',
+              '''    let wrong_credential = DeviceCredential::issue_current(
+              fixture.owner_id,
+              DeviceId::from_bytes([0xc4; 32]),
+              &SigningKey::from_secret_bytes([0xcd; 32]),
+              fixture.initiator_credential.credential_epoch(),
+              &fixture.authority,
+              &fixture.issuer_key,
+          )
+          .unwrap();
+          let wrong = establish_trust(&wrong_credential, &fixture.authority, &fixture.issuer_key, 0xc5);''',
+          )
+
+          for obsolete in ('fixture.root', 'fixture.delegation', 'self.root', 'self.delegation'):
+              if obsolete in text:
+                  raise SystemExit(f'obsolete authority fixture reference remains: {obsolete}')
+
+          path.write_text(text)
+          PY
+          cargo fmt
+          cargo check -p crosslab-sim --test control_lifecycle --all-features
+          rm .github/workflows/task4-control-fixture-migrate.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "test(sim): migrate control lifecycle authority fixture"
+          git push origin HEAD:m9-authority-replay-remediation
