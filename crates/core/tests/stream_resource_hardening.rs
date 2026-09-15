@@ -13,7 +13,7 @@ use crosslab_policy::{
     AuthorizationContext, AuthorizedOperation, CapabilityId, CapabilityVersion,
     CapabilityVersionRange, LocalCapability, NetworkClass, OperationError, OperationName,
     OperationState, PairingTrustTransition, PolicyRule, PolicyState, RuleEffect, RuleId,
-    TransitionId, TrustState, UsePolicy,
+    TransitionId, TrustRecord, TrustState, UsePolicy,
 };
 use crosslab_protocol::{
     CapabilityAdvertisement, CapabilityAdvertisementEntry, DataStreamOpen, FeatureSet,
@@ -25,8 +25,8 @@ struct Fixture {
     capability: CapabilityId,
     version: CapabilityVersion,
     operation: OperationName,
-    trust_revision: u64,
-    policy_revision: u64,
+    peer_trust: TrustRecord,
+    policy: PolicyState,
     grant: crosslab_policy::AuthorizationGrant,
 }
 
@@ -179,8 +179,8 @@ impl Fixture {
             capability,
             version,
             operation,
-            trust_revision,
-            policy_revision: policy.revision(),
+            peer_trust,
+            policy,
             grant,
         }
     }
@@ -208,13 +208,7 @@ impl Fixture {
         open: &DataStreamOpen,
         now: u64,
     ) -> Result<crosslab_core::AdmittedStream, StreamAdmissionError> {
-        admission.admit_inbound(
-            &self.session,
-            open,
-            now,
-            self.trust_revision,
-            self.policy_revision,
-        )
+        admission.admit_inbound(&self.session, open, now, &self.peer_trust, &self.policy)
     }
 }
 

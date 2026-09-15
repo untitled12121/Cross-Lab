@@ -572,7 +572,6 @@ fn prepare_stream_authority(
             RuleEffect::Allow,
         ))
         .unwrap();
-    let policy_revision = policy.revision();
     let context = AuthorizationContext::new(
         fixture.initiator_credential.device_id(),
         fixture.responder_credential.device_id(),
