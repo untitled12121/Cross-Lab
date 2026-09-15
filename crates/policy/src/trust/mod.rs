@@ -1,9 +1,6 @@
 use core::fmt;
 
-use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, IdentityError,
-    OwnerAuthorityState, OwnerId, OwnerRootRecord,
-};
+use crosslab_identity::{DeviceCredential, DeviceId, IdentityError, OwnerAuthorityState, OwnerId};
 
 use crate::id_generation::{PolicyIdGenerationError, random_policy_id};
 
@@ -133,12 +130,10 @@ impl TrustRecord {
         }
     }
 
-    fn accept_successor_credential_with_authority_parts(
+    pub fn accept_successor_credential(
         &mut self,
         successor: &DeviceCredential,
-        root: &OwnerRootRecord,
-        issuer: &AuthorityDelegation,
-        minimum_delegation_epoch: u64,
+        authority: &OwnerAuthorityState,
         transition_id: TransitionId,
     ) -> Result<(), CredentialRotationError> {
         if self.state != TrustState::Trusted {
@@ -161,7 +156,7 @@ impl TrustRecord {
             return Err(CredentialRotationError::UnexpectedCredentialEpoch);
         }
 
-        successor.verify(root, issuer, expected_epoch, minimum_delegation_epoch)?;
+        successor.verify(authority, expected_epoch)?;
         let next_revision = self
             .trust_revision
             .checked_add(1)
@@ -171,22 +166,6 @@ impl TrustRecord {
         self.trust_revision = next_revision;
         self.last_transition_id = transition_id;
         Ok(())
-    }
-
-    pub fn accept_successor_credential(
-        &mut self,
-        successor: &DeviceCredential,
-        authority: &OwnerAuthorityState,
-        transition_id: TransitionId,
-    ) -> Result<(), CredentialRotationError> {
-        let issuer = authority.current_delegation(AuthorityRole::DeviceSigning)?;
-        self.accept_successor_credential_with_authority_parts(
-            successor,
-            authority.root(),
-            issuer,
-            issuer.delegation_epoch(),
-            transition_id,
-        )
     }
 
     fn revoke(&mut self, transition_id: TransitionId) -> Result<(), TrustError> {
