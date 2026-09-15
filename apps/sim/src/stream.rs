@@ -6,7 +6,8 @@ use crosslab_core::{
     StreamAdmissionError, StreamOpenError, StreamReceiveError, TransportConnection,
     TransportReceiveStream, TransportSendStream,
 };
-use crosslab_policy::{AuthorizedOperation, TrustRecord};
+use crosslab_identity::OwnerAuthorityState;
+use crosslab_policy::{AuthorizedOperation, PolicyState, TrustRecord};
 use crosslab_protocol::{
     DataStreamOpen, ProtocolWireError, StreamId, decode_data_stream_open, encode_data_stream_open,
 };
@@ -141,8 +142,8 @@ impl<'a> SimStreamRuntime<'a> {
     pub fn accept_one(
         &mut self,
         now: u64,
-        current_trust_revision: u64,
-        current_policy_revision: u64,
+        peer_trust: &TrustRecord,
+        policy: &PolicyState,
     ) -> Result<StreamId, SimStreamError> {
         ensure_active(&self.session)?;
         if self.inbound.len() >= self.capacity {
@@ -167,19 +168,17 @@ impl<'a> SimStreamRuntime<'a> {
                 return Err(error.into());
             }
         };
-        let admitted = match self.admission.admit_inbound(
-            &self.session,
-            &open,
-            now,
-            current_trust_revision,
-            current_policy_revision,
-        ) {
-            Ok(admitted) => admitted,
-            Err(error) => {
-                stream.cancel();
-                return Err(error.into());
-            }
-        };
+        let admitted =
+            match self
+                .admission
+                .admit_inbound(&self.session, &open, now, peer_trust, policy)
+            {
+                Ok(admitted) => admitted,
+                Err(error) => {
+                    stream.cancel();
+                    return Err(error.into());
+                }
+            };
 
         let stream_id = admitted.stream_id();
         self.inbound.push(InboundStream { stream_id, stream });
@@ -235,6 +234,18 @@ impl<'a> SimStreamRuntime<'a> {
         self.cancel_session_authority();
         self.transport.close();
         self.session.finish_close()?;
+        Ok(())
+    }
+
+    pub fn revalidate_authority(
+        &mut self,
+        authority: &OwnerAuthorityState,
+    ) -> Result<(), SimStreamError> {
+        if let Err(error) = self.session.revalidate_authority(authority) {
+            self.cancel_session_authority();
+            self.transport.close();
+            return Err(error.into());
+        }
         Ok(())
     }
 

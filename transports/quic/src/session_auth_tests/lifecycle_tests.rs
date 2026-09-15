@@ -33,8 +33,8 @@ struct StreamAuthority {
     version: CapabilityVersion,
     operation_name: OperationName,
     operation: AuthorizedOperation,
-    trust_revision: u64,
-    policy_revision: u64,
+    peer_trust: TrustRecord,
+    policy: PolicyState,
     session_id: crosslab_policy::SessionId,
 }
 
@@ -176,14 +176,9 @@ async fn m8_operation_bound_stream_flows_and_unknown_operation_is_rejected() {
         StreamId::from_bytes([0x92; 16]),
     );
     let mut send = sender.open_uni(&open).unwrap();
-    let stream_id = eventually_accept(
-        &mut receiver,
-        15,
-        authority.trust_revision,
-        authority.policy_revision,
-    )
-    .await
-    .expect("authorized stream should be admitted");
+    let stream_id = eventually_accept(&mut receiver, 15, &authority.peer_trust, &authority.policy)
+        .await
+        .expect("authorized stream should be admitted");
     assert_eq!(stream_id, open.stream_id());
 
     send.try_send_chunk(b"payload".to_vec()).unwrap();
@@ -201,13 +196,7 @@ async fn m8_operation_bound_stream_flows_and_unknown_operation_is_rejected() {
     );
     let mut unknown_send = sender.open_uni(&unknown).unwrap();
     assert!(matches!(
-        eventually_accept(
-            &mut receiver,
-            15,
-            authority.trust_revision,
-            authority.policy_revision,
-        )
-        .await,
+        eventually_accept(&mut receiver, 15, &authority.peer_trust, &authority.policy,).await,
         Err(SimStreamError::Admission(
             StreamAdmissionError::OperationNotFound
         ))
@@ -329,8 +318,9 @@ async fn m8_old_operation_state_is_rejected_after_reconnect() {
         0,
     );
     let mut send = sender.open_uni(&open).unwrap();
+    let policy = PolicyState::new();
     assert!(matches!(
-        eventually_accept(&mut receiver, 15, 0, 0).await,
+        eventually_accept(&mut receiver, 15, &fixture.initiator_trust, &policy).await,
         Err(SimStreamError::Admission(
             StreamAdmissionError::InvalidSession
         ))
@@ -372,14 +362,9 @@ async fn m8_active_revocation_cancels_stream_authority_and_fresh_reconnect_is_de
         StreamId::from_bytes([0x98; 16]),
     );
     let mut send = sender.open_uni(&open).unwrap();
-    let stream_id = eventually_accept(
-        &mut receiver,
-        15,
-        authority.trust_revision,
-        authority.policy_revision,
-    )
-    .await
-    .unwrap();
+    let stream_id = eventually_accept(&mut receiver, 15, &authority.peer_trust, &authority.policy)
+        .await
+        .unwrap();
 
     let revoked = revoked_responder(&fixture);
     sender.apply_peer_revocation(&revoked).unwrap();
@@ -424,22 +409,14 @@ async fn m8_active_revocation_cancels_stream_authority_and_fresh_reconnect_is_de
     let responder_proof = transcript
         .create_proof(CoreSessionAuthRole::Responder, &fixture.responder_key)
         .unwrap();
-    let initiator_side = SessionHandshakeSide::new(
-        &fixture.initiator_credential,
-        &fixture.delegation,
-        &ranges_a,
-        &features_a,
-    );
-    let responder_side = SessionHandshakeSide::new(
-        &fixture.responder_credential,
-        &fixture.delegation,
-        &ranges_b,
-        &features_b,
-    );
+    let initiator_side =
+        SessionHandshakeSide::new(&fixture.initiator_credential, &ranges_a, &features_a);
+    let responder_side =
+        SessionHandshakeSide::new(&fixture.responder_credential, &ranges_b, &features_b);
     let mut reconnect_session = LogicalSession::new();
     assert_eq!(
         reconnect_session.authenticate(SessionActivation::new(
-            &fixture.root,
+            &fixture.authority,
             initiator_side,
             responder_side,
             CoreSessionAuthRole::Initiator,
@@ -595,7 +572,6 @@ fn prepare_stream_authority(
             RuleEffect::Allow,
         ))
         .unwrap();
-    let policy_revision = policy.revision();
     let context = AuthorizationContext::new(
         fixture.initiator_credential.device_id(),
         fixture.responder_credential.device_id(),
@@ -616,8 +592,8 @@ fn prepare_stream_authority(
         version,
         operation_name,
         operation,
-        trust_revision,
-        policy_revision,
+        peer_trust: fixture.initiator_trust,
+        policy,
         session_id,
     }
 }
@@ -644,12 +620,14 @@ fn revoked_responder(fixture: &AuthFixture) -> TrustRecord {
     let transition = TrustTransition::issue_root_revocation(
         &fixture.responder_trust,
         TransitionId::from_bytes([0xa2; 32]),
-        &fixture.root,
+        &fixture.authority,
         &root_key,
     )
     .unwrap();
     let mut revoked = fixture.responder_trust;
-    transition.apply_root(&mut revoked, &fixture.root).unwrap();
+    transition
+        .apply_root(&mut revoked, &fixture.authority)
+        .unwrap();
     revoked
 }
 
@@ -689,12 +667,12 @@ async fn eventually_node_transport_loss(node: &mut SimNode<'_>, peer_trust: &Tru
 async fn eventually_accept(
     runtime: &mut SimStreamRuntime<'_>,
     now: u64,
-    trust_revision: u64,
-    policy_revision: u64,
+    peer_trust: &TrustRecord,
+    policy: &PolicyState,
 ) -> Result<StreamId, SimStreamError> {
     timeout(WAIT, async {
         loop {
-            match runtime.accept_one(now, trust_revision, policy_revision) {
+            match runtime.accept_one(now, peer_trust, policy) {
                 Err(SimStreamError::Accept(StreamAcceptError::Empty)) => {
                     tokio::task::yield_now().await
                 }

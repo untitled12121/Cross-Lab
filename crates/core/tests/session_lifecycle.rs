@@ -4,15 +4,15 @@ use crosslab_core::{
 };
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,
+    OwnerRootRecord,
 };
 use crosslab_policy::{PairingTrustTransition, TransitionId, TrustRecord, TrustTransition};
 use crosslab_protocol::{FeatureSet, ProtocolRange, ProtocolVersion};
 
 fn establish_trust(
     credential: &DeviceCredential,
-    root: &OwnerRootRecord,
-    delegation: &AuthorityDelegation,
+    authority: &OwnerAuthorityState,
     issuer_key: &SigningKey,
     transition_byte: u8,
 ) -> TrustRecord {
@@ -21,8 +21,7 @@ fn establish_trust(
         credential.device_id(),
         credential.device_public_key(),
         0,
-        root,
-        delegation,
+        authority,
         issuer_key,
     )
     .unwrap();
@@ -30,19 +29,12 @@ fn establish_trust(
         &initial_credential,
         TransitionId::from_bytes([transition_byte; 32]),
         [transition_byte.wrapping_add(1); 32],
-        root,
-        delegation,
+        authority,
         issuer_key,
-        delegation.delegation_epoch(),
     )
     .unwrap();
     let mut trust = transition
-        .establish(
-            &initial_credential,
-            root,
-            delegation,
-            delegation.delegation_epoch(),
-        )
+        .establish(&initial_credential, authority)
         .unwrap();
 
     for epoch in 1..=credential.credential_epoch() {
@@ -51,8 +43,7 @@ fn establish_trust(
             credential.device_id(),
             credential.device_public_key(),
             epoch,
-            root,
-            delegation,
+            authority,
             issuer_key,
         )
         .unwrap();
@@ -61,9 +52,7 @@ fn establish_trust(
         trust
             .accept_successor_credential(
                 &successor,
-                root,
-                delegation,
-                delegation.delegation_epoch(),
+                authority,
                 TransitionId::from_bytes(transition_id),
             )
             .unwrap();
@@ -75,8 +64,7 @@ fn establish_trust(
 struct Fixture {
     owner_id: OwnerId,
     root_key: SigningKey,
-    root: OwnerRootRecord,
-    delegation: AuthorityDelegation,
+    authority: OwnerAuthorityState,
     issuer_key: SigningKey,
     initiator_key: SigningKey,
     responder_key: SigningKey,
@@ -98,6 +86,9 @@ impl Fixture {
             0,
             &root_key,
         );
+        let mut authority = OwnerAuthorityState::new(root);
+        authority.accept_delegation(delegation).unwrap();
+
         let initiator_key = SigningKey::from_secret_bytes([0x93; 32]);
         let responder_key = SigningKey::from_secret_bytes([0x94; 32]);
         let initiator_credential = DeviceCredential::issue(
@@ -105,8 +96,7 @@ impl Fixture {
             DeviceId::from_bytes([0x95; 32]),
             &initiator_key,
             2,
-            &root,
-            &delegation,
+            &authority,
             &issuer_key,
         )
         .unwrap();
@@ -115,19 +105,16 @@ impl Fixture {
             DeviceId::from_bytes([0x96; 32]),
             &responder_key,
             5,
-            &root,
-            &delegation,
+            &authority,
             &issuer_key,
         )
         .unwrap();
-        let responder_trust =
-            establish_trust(&responder_credential, &root, &delegation, &issuer_key, 0x97);
+        let responder_trust = establish_trust(&responder_credential, &authority, &issuer_key, 0x97);
 
         Self {
             owner_id,
             root_key,
-            root,
-            delegation,
+            authority,
             issuer_key,
             initiator_key,
             responder_key,
@@ -161,22 +148,12 @@ impl Fixture {
         let responder_proof = transcript
             .create_proof(SessionAuthRole::Responder, &self.responder_key)
             .unwrap();
-        let initiator = SessionHandshakeSide::new(
-            &self.initiator_credential,
-            &self.delegation,
-            &ranges,
-            &features,
-        );
-        let responder = SessionHandshakeSide::new(
-            &self.responder_credential,
-            &self.delegation,
-            &ranges,
-            &features,
-        );
+        let initiator = SessionHandshakeSide::new(&self.initiator_credential, &ranges, &features);
+        let responder = SessionHandshakeSide::new(&self.responder_credential, &ranges, &features);
         let mut session = LogicalSession::new();
         session
             .authenticate(SessionActivation::new(
-                &self.root,
+                &self.authority,
                 initiator,
                 responder,
                 SessionAuthRole::Initiator,
@@ -196,12 +173,14 @@ impl Fixture {
         let transition = TrustTransition::issue_root_revocation(
             &record,
             TransitionId::from_bytes([transition_byte; 32]),
-            &self.root,
+            &self.authority,
             &self.root_key,
         )
         .unwrap();
         let mut revoked = record;
-        transition.apply_root(&mut revoked, &self.root).unwrap();
+        transition
+            .apply_root(&mut revoked, &self.authority)
+            .unwrap();
         revoked
     }
 }
@@ -252,15 +231,13 @@ fn peer_revocation_rejects_unrevoked_mismatched_or_wrong_epoch_record() {
         DeviceId::from_bytes([0xa1; 32]),
         &fixture.responder_key,
         fixture.responder_credential.credential_epoch(),
-        &fixture.root,
-        &fixture.delegation,
+        &fixture.authority,
         &fixture.issuer_key,
     )
     .unwrap();
     let wrong_device = establish_trust(
         &wrong_device_credential,
-        &fixture.root,
-        &fixture.delegation,
+        &fixture.authority,
         &fixture.issuer_key,
         0xa2,
     );
@@ -276,15 +253,13 @@ fn peer_revocation_rejects_unrevoked_mismatched_or_wrong_epoch_record() {
         fixture.responder_credential.device_id(),
         &fixture.responder_key,
         fixture.responder_credential.credential_epoch() + 1,
-        &fixture.root,
-        &fixture.delegation,
+        &fixture.authority,
         &fixture.issuer_key,
     )
     .unwrap();
     let wrong_epoch = establish_trust(
         &wrong_epoch_credential,
-        &fixture.root,
-        &fixture.delegation,
+        &fixture.authority,
         &fixture.issuer_key,
         0xa4,
     );

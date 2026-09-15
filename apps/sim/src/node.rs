@@ -5,6 +5,7 @@ use crosslab_core::{
     EventSubscription, InboundControl, LogicalSession, SessionError, SessionState,
     TransportConnection,
 };
+use crosslab_identity::OwnerAuthorityState;
 use crosslab_policy::{
     ApprovalInstant, DecisionReason, LocalCapability, NetworkClass, PolicyState, TrustRecord,
 };
@@ -143,6 +144,18 @@ impl<'a> SimNode<'a> {
         self.dispatcher.cancel_session_state();
         self.transport.close();
         self.session.finish_close().map_err(NodeError::Session)
+    }
+
+    pub fn revalidate_authority(
+        &mut self,
+        authority: &OwnerAuthorityState,
+    ) -> Result<(), NodeError> {
+        if let Err(error) = self.session.revalidate_authority(authority) {
+            self.dispatcher.cancel_session_state();
+            self.transport.close();
+            return Err(NodeError::Session(error));
+        }
+        Ok(())
     }
 
     pub fn shutdown(&mut self) {

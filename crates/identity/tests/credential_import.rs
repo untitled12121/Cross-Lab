@@ -1,6 +1,7 @@
 use crosslab_crypto::{SignatureAlgorithm, SigningKey};
 use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,
+    OwnerRootRecord,
 };
 
 #[test]
@@ -16,14 +17,15 @@ fn signed_device_credential_can_be_reconstructed_without_private_keys() {
         4,
         &root_key,
     );
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(delegation).unwrap();
     let device_key = SigningKey::from_secret_bytes([0x14; 32]);
     let credential = DeviceCredential::issue(
         owner_id,
         DeviceId::from_bytes([0x15; 32]),
         &device_key,
         7,
-        &root,
-        &delegation,
+        &authority,
         &issuer_key,
     )
     .unwrap();
@@ -42,5 +44,5 @@ fn signed_device_credential_can_be_reconstructed_without_private_keys() {
     .unwrap();
 
     assert_eq!(imported, credential);
-    imported.verify(&root, &delegation, 7, 4).unwrap();
+    imported.verify(&authority, 7).unwrap();
 }

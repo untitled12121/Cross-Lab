@@ -1,7 +1,7 @@
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, IdentityError, OwnerId,
-    OwnerRootRecord,
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, IdentityError,
+    OwnerAuthorityState, OwnerId, OwnerRootRecord,
 };
 use crosslab_policy::{
     CredentialRotationError, PairingTrustTransition, PairingTrustTransitionError, TransitionId,
@@ -10,8 +10,7 @@ use crosslab_policy::{
 
 fn establish_initial_trust(
     credential: &DeviceCredential,
-    root: &OwnerRootRecord,
-    delegation: &AuthorityDelegation,
+    authority: &OwnerAuthorityState,
     issuer_key: &SigningKey,
     transition_id: TransitionId,
     pairing_evidence_digest: [u8; 32],
@@ -20,15 +19,11 @@ fn establish_initial_trust(
         credential,
         transition_id,
         pairing_evidence_digest,
-        root,
-        delegation,
+        authority,
         issuer_key,
-        delegation.delegation_epoch(),
     )
     .unwrap();
-    transition
-        .establish(credential, root, delegation, delegation.delegation_epoch())
-        .unwrap()
+    transition.establish(credential, authority).unwrap()
 }
 
 fn trusted_record() -> TrustRecord {
@@ -43,21 +38,21 @@ fn trusted_record() -> TrustRecord {
         0,
         &root_key,
     );
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(delegation).unwrap();
     let credential = DeviceCredential::issue(
         owner_id,
         DeviceId::from_bytes([2; 32]),
         &SigningKey::from_secret_bytes([8; 32]),
         0,
-        &root,
-        &delegation,
+        &authority,
         &issuer_key,
     )
     .unwrap();
 
     establish_initial_trust(
         &credential,
-        &root,
-        &delegation,
+        &authority,
         &issuer_key,
         TransitionId::from_bytes([3; 32]),
         [9; 32],
@@ -67,9 +62,8 @@ fn trusted_record() -> TrustRecord {
 struct RotationFixture {
     owner_id: OwnerId,
     device_id: DeviceId,
-    root: OwnerRootRecord,
     issuer_key: SigningKey,
-    delegation: AuthorityDelegation,
+    authority: OwnerAuthorityState,
 }
 
 impl RotationFixture {
@@ -85,13 +79,14 @@ impl RotationFixture {
             0,
             &root_key,
         );
+        let mut authority = OwnerAuthorityState::new(root);
+        authority.accept_delegation(delegation).unwrap();
 
         Self {
             owner_id,
             device_id: DeviceId::from_bytes([0x23; 32]),
-            root,
             issuer_key,
-            delegation,
+            authority,
         }
     }
 
@@ -99,8 +94,7 @@ impl RotationFixture {
         let credential = self.credential(self.device_id, 0);
         establish_initial_trust(
             &credential,
-            &self.root,
-            &self.delegation,
+            &self.authority,
             &self.issuer_key,
             TransitionId::from_bytes([0x24; 32]),
             [0x34; 32],
@@ -113,8 +107,7 @@ impl RotationFixture {
             device_id,
             &SigningKey::from_secret_bytes([0x25; 32]),
             epoch,
-            &self.root,
-            &self.delegation,
+            &self.authority,
             &self.issuer_key,
         )
         .unwrap()
@@ -131,20 +124,13 @@ fn pairing_trust_transition_establishes_initial_membership() {
         &credential,
         transition_id,
         pairing_evidence_digest,
-        &fixture.root,
-        &fixture.delegation,
+        &fixture.authority,
         &fixture.issuer_key,
-        fixture.delegation.delegation_epoch(),
     )
     .unwrap();
 
     let record = transition
-        .establish(
-            &credential,
-            &fixture.root,
-            &fixture.delegation,
-            fixture.delegation.delegation_epoch(),
-        )
+        .establish(&credential, &fixture.authority)
         .unwrap();
 
     assert_eq!(record.owner_id(), fixture.owner_id);
@@ -167,10 +153,8 @@ fn pairing_trust_transition_is_bound_to_the_exact_credential() {
         &credential,
         TransitionId::from_bytes([0x2f; 32]),
         [0x30; 32],
-        &fixture.root,
-        &fixture.delegation,
+        &fixture.authority,
         &fixture.issuer_key,
-        fixture.delegation.delegation_epoch(),
     )
     .unwrap();
     let substituted = DeviceCredential::issue(
@@ -178,19 +162,13 @@ fn pairing_trust_transition_is_bound_to_the_exact_credential() {
         fixture.device_id,
         &SigningKey::from_secret_bytes([0x31; 32]),
         0,
-        &fixture.root,
-        &fixture.delegation,
+        &fixture.authority,
         &fixture.issuer_key,
     )
     .unwrap();
 
     assert_eq!(
-        transition.establish(
-            &substituted,
-            &fixture.root,
-            &fixture.delegation,
-            fixture.delegation.delegation_epoch(),
-        ),
+        transition.establish(&substituted, &fixture.authority),
         Err(PairingTrustTransitionError::CredentialMismatch)
     );
 }
@@ -205,10 +183,8 @@ fn pairing_trust_transition_rejects_non_initial_credential_epoch() {
             &credential,
             TransitionId::from_bytes([0x32; 32]),
             [0x33; 32],
-            &fixture.root,
-            &fixture.delegation,
+            &fixture.authority,
             &fixture.issuer_key,
-            fixture.delegation.delegation_epoch(),
         ),
         Err(PairingTrustTransitionError::NonInitialCredentialEpoch)
     );
@@ -231,13 +207,7 @@ fn verified_successor_credential_advances_epoch_revision_and_transition() {
     let transition_id = TransitionId::from_bytes([0x26; 32]);
 
     record
-        .accept_successor_credential(
-            &successor,
-            &fixture.root,
-            &fixture.delegation,
-            fixture.delegation.delegation_epoch(),
-            transition_id,
-        )
+        .accept_successor_credential(&successor, &fixture.authority, transition_id)
         .unwrap();
 
     assert_eq!(record.state(), TrustState::Trusted);
@@ -255,9 +225,7 @@ fn successor_credential_rejects_stale_skipped_wrong_device_and_wrong_authority()
     assert_eq!(
         stale_record.accept_successor_credential(
             &stale,
-            &fixture.root,
-            &fixture.delegation,
-            fixture.delegation.delegation_epoch(),
+            &fixture.authority,
             TransitionId::from_bytes([0x27; 32]),
         ),
         Err(CredentialRotationError::StaleCredentialEpoch)
@@ -268,9 +236,7 @@ fn successor_credential_rejects_stale_skipped_wrong_device_and_wrong_authority()
     assert_eq!(
         skipped_record.accept_successor_credential(
             &skipped,
-            &fixture.root,
-            &fixture.delegation,
-            fixture.delegation.delegation_epoch(),
+            &fixture.authority,
             TransitionId::from_bytes([0x28; 32]),
         ),
         Err(CredentialRotationError::UnexpectedCredentialEpoch)
@@ -281,9 +247,7 @@ fn successor_credential_rejects_stale_skipped_wrong_device_and_wrong_authority()
     assert_eq!(
         wrong_device_record.accept_successor_credential(
             &wrong_device,
-            &fixture.root,
-            &fixture.delegation,
-            fixture.delegation.delegation_epoch(),
+            &fixture.authority,
             TransitionId::from_bytes([0x2a; 32]),
         ),
         Err(CredentialRotationError::WrongDevice)
@@ -293,12 +257,11 @@ fn successor_credential_rejects_stale_skipped_wrong_device_and_wrong_authority()
     let successor = fixture.credential(fixture.device_id, 1);
     let other_root_key = SigningKey::from_secret_bytes([0x2b; 32]);
     let other_root = OwnerRootRecord::new(fixture.owner_id, &other_root_key, 0);
+    let other_authority = OwnerAuthorityState::new(other_root);
     assert_eq!(
         wrong_authority_record.accept_successor_credential(
             &successor,
-            &other_root,
-            &fixture.delegation,
-            fixture.delegation.delegation_epoch(),
+            &other_authority,
             TransitionId::from_bytes([0x2c; 32]),
         ),
         Err(CredentialRotationError::Identity(
@@ -312,11 +275,13 @@ fn signed_revocation_is_terminal_and_advances_trust_revision() {
     let mut record = trusted_record();
     let root_key = SigningKey::from_secret_bytes([4; 32]);
     let root = OwnerRootRecord::new(record.owner_id(), &root_key, 0);
+    let authority = OwnerAuthorityState::new(root);
     let transition_id = TransitionId::from_bytes([5; 32]);
     let transition =
-        TrustTransition::issue_root_revocation(&record, transition_id, &root, &root_key).unwrap();
+        TrustTransition::issue_root_revocation(&record, transition_id, &authority, &root_key)
+            .unwrap();
 
-    transition.apply_root(&mut record, &root).unwrap();
+    transition.apply_root(&mut record, &authority).unwrap();
 
     assert_eq!(record.state(), TrustState::Revoked);
     assert_eq!(record.trust_revision(), 1);
@@ -325,7 +290,7 @@ fn signed_revocation_is_terminal_and_advances_trust_revision() {
         TrustTransition::issue_root_revocation(
             &record,
             TransitionId::from_bytes([6; 32]),
-            &root,
+            &authority,
             &root_key,
         ),
         Err(TrustTransitionError::AlreadyRevoked)

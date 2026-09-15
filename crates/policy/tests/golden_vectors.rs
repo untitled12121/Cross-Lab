@@ -1,6 +1,7 @@
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,
+    OwnerRootRecord,
 };
 use crosslab_policy::{PairingTrustTransition, TransitionId, TrustTransition};
 
@@ -17,35 +18,23 @@ fn trust_revocation_transition_v1_golden_vector() {
         0,
         &root_key,
     );
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(delegation).unwrap();
     let device_key = SigningKey::from_secret_bytes([0x43; 32]);
     let device_id = DeviceId::from_bytes([0x44; 32]);
-    let initial_credential = DeviceCredential::issue(
-        owner_id,
-        device_id,
-        &device_key,
-        0,
-        &root,
-        &delegation,
-        &issuer_key,
-    )
-    .unwrap();
+    let initial_credential =
+        DeviceCredential::issue(owner_id, device_id, &device_key, 0, &authority, &issuer_key)
+            .unwrap();
     let pairing_transition = PairingTrustTransition::issue(
         &initial_credential,
         TransitionId::from_bytes([0x55; 32]),
         [0x45; 32],
-        &root,
-        &delegation,
+        &authority,
         &issuer_key,
-        delegation.delegation_epoch(),
     )
     .unwrap();
     let mut record = pairing_transition
-        .establish(
-            &initial_credential,
-            &root,
-            &delegation,
-            delegation.delegation_epoch(),
-        )
+        .establish(&initial_credential, &authority)
         .unwrap();
 
     for epoch in 1_u64..=9 {
@@ -54,8 +43,7 @@ fn trust_revocation_transition_v1_golden_vector() {
             device_id,
             &device_key,
             epoch,
-            &root,
-            &delegation,
+            &authority,
             &issuer_key,
         )
         .unwrap();
@@ -64,9 +52,7 @@ fn trust_revocation_transition_v1_golden_vector() {
         record
             .accept_successor_credential(
                 &credential,
-                &root,
-                &delegation,
-                delegation.delegation_epoch(),
+                &authority,
                 TransitionId::from_bytes(transition_id),
             )
             .unwrap();
@@ -75,7 +61,7 @@ fn trust_revocation_transition_v1_golden_vector() {
     let transition = TrustTransition::issue_root_revocation(
         &record,
         TransitionId::from_bytes([0x66; 32]),
-        &root,
+        &authority,
         &root_key,
     )
     .unwrap();

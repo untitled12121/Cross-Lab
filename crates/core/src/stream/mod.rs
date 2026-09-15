@@ -3,7 +3,7 @@ use std::num::NonZeroUsize;
 
 use crosslab_policy::{
     AuthorizedOperation, OperationError, OperationId, OperationState, OperationUseContext,
-    UsePolicy,
+    PolicyState, TrustRecord, TrustState, UsePolicy,
 };
 use crosslab_protocol::{DataStreamOpen, StreamDirection, StreamId};
 
@@ -35,6 +35,8 @@ pub enum StreamAdmissionError {
     InactiveSession,
     InvalidSession,
     CapabilityNotNegotiated,
+    PeerTrustMismatch,
+    PeerNotTrusted,
     OperationNotFound,
     DuplicateOperation,
     DuplicateStreamId,
@@ -51,6 +53,10 @@ impl fmt::Display for StreamAdmissionError {
             Self::InactiveSession => "logical session is not active",
             Self::InvalidSession => "data stream belongs to a different logical session",
             Self::CapabilityNotNegotiated => "data stream capability/version is not negotiated",
+            Self::PeerTrustMismatch => {
+                "peer trust record does not match the authenticated session peer"
+            }
+            Self::PeerNotTrusted => "peer trust is not active",
             Self::OperationNotFound => "authorized operation is not registered",
             Self::DuplicateOperation => "authorized operation is already registered",
             Self::DuplicateStreamId => "data stream identifier is already active",
@@ -118,8 +124,8 @@ impl StreamAdmission {
         session: &LogicalSession,
         open: &DataStreamOpen,
         now: u64,
-        current_trust_revision: u64,
-        current_policy_revision: u64,
+        peer_trust: &TrustRecord,
+        policy: &PolicyState,
     ) -> Result<AdmittedStream, StreamAdmissionError> {
         if session.state() != SessionState::Active {
             return Err(StreamAdmissionError::InactiveSession);
@@ -135,6 +141,14 @@ impl StreamAdmission {
                 && capability.version() == open.capability_version()
         }) {
             return Err(StreamAdmissionError::CapabilityNotNegotiated);
+        }
+        if peer_trust.owner_id() != context.owner_id()
+            || peer_trust.device_id() != context.peer_device_id()
+        {
+            return Err(StreamAdmissionError::PeerTrustMismatch);
+        }
+        if peer_trust.state() != TrustState::Trusted {
+            return Err(StreamAdmissionError::PeerNotTrusted);
         }
         if self
             .active_streams
@@ -186,8 +200,8 @@ impl StreamAdmission {
             .reserve_stream_use(
                 &use_context,
                 now,
-                current_trust_revision,
-                current_policy_revision,
+                peer_trust.trust_revision(),
+                policy.revision(),
             );
         if let Err(error) = reservation {
             if self.operations[operation_position].operation.state() != OperationState::Active {

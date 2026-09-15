@@ -1,3 +1,4 @@
+use crosslab_identity::{AuthorityRole, OwnerAuthorityState};
 use crosslab_policy::{TrustRecord, TrustState};
 
 use super::{LogicalSession, SessionError, SessionState};
@@ -26,11 +27,52 @@ impl LogicalSession {
         };
 
         if let Err(error) = validation {
-            let _ = self.begin_close();
-            let _ = self.finish_close();
+            self.close_after_currentness_failure();
             return Err(error);
         }
 
         Ok(())
+    }
+
+    pub fn revalidate_authority(
+        &mut self,
+        authority: &OwnerAuthorityState,
+    ) -> Result<(), SessionError> {
+        if self.state() != SessionState::Active {
+            return Err(SessionError::InvalidState);
+        }
+
+        let validation = {
+            let context = self.context().ok_or(SessionError::InvalidState)?;
+            let root = authority.root();
+            if root.owner_id() != context.owner_id()
+                || root.root_key_id() != context.root_key_id()
+                || root.root_epoch() != context.root_epoch()
+            {
+                Err(SessionError::OwnerAuthorityChanged)
+            } else {
+                match authority.current_delegation(AuthorityRole::DeviceSigning) {
+                    Ok(delegation)
+                        if delegation.delegated_key_id() == context.device_signing_key_id()
+                            && delegation.delegation_epoch() == context.device_signing_epoch() =>
+                    {
+                        Ok(())
+                    }
+                    _ => Err(SessionError::DeviceSigningAuthorityChanged),
+                }
+            }
+        };
+
+        if let Err(error) = validation {
+            self.close_after_currentness_failure();
+            return Err(error);
+        }
+
+        Ok(())
+    }
+
+    fn close_after_currentness_failure(&mut self) {
+        let _ = self.begin_close();
+        let _ = self.finish_close();
     }
 }

@@ -4,7 +4,8 @@ use crosslab_core::{
 };
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,
+    OwnerRootRecord,
 };
 use crosslab_policy::{PairingTrustTransition, TransitionId};
 use crosslab_protocol::{FeatureSet, ProtocolRange, ProtocolVersion};
@@ -22,6 +23,9 @@ fn accepted_peer_rotation_invalidates_old_authenticated_session() {
         0,
         &root_key,
     );
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(delegation).unwrap();
+
     let local_key = SigningKey::from_secret_bytes([0x33; 32]);
     let peer_old_key = SigningKey::from_secret_bytes([0x34; 32]);
     let peer_new_key = SigningKey::from_secret_bytes([0x35; 32]);
@@ -32,8 +36,7 @@ fn accepted_peer_rotation_invalidates_old_authenticated_session() {
         local_device_id,
         &local_key,
         0,
-        &root,
-        &delegation,
+        &authority,
         &issuer_key,
     )
     .unwrap();
@@ -42,8 +45,7 @@ fn accepted_peer_rotation_invalidates_old_authenticated_session() {
         peer_device_id,
         &peer_old_key,
         0,
-        &root,
-        &delegation,
+        &authority,
         &issuer_key,
     )
     .unwrap();
@@ -51,20 +53,11 @@ fn accepted_peer_rotation_invalidates_old_authenticated_session() {
         &peer_credential,
         TransitionId::from_bytes([0x38; 32]),
         [0x3d; 32],
-        &root,
-        &delegation,
+        &authority,
         &issuer_key,
-        delegation.delegation_epoch(),
     )
     .unwrap();
-    let mut peer_trust = transition
-        .establish(
-            &peer_credential,
-            &root,
-            &delegation,
-            delegation.delegation_epoch(),
-        )
-        .unwrap();
+    let mut peer_trust = transition.establish(&peer_credential, &authority).unwrap();
     let ranges = [ProtocolRange::new(1, 0, 0).unwrap()];
     let features = FeatureSet::new(&[], &[]).unwrap();
     let binding = ChannelBinding::new("in-process-test", vec![0x39; 32]);
@@ -89,9 +82,9 @@ fn accepted_peer_rotation_invalidates_old_authenticated_session() {
     let mut session = LogicalSession::new();
     session
         .authenticate(SessionActivation::new(
-            &root,
-            SessionHandshakeSide::new(&local_credential, &delegation, &ranges, &features),
-            SessionHandshakeSide::new(&peer_credential, &delegation, &ranges, &features),
+            &authority,
+            SessionHandshakeSide::new(&local_credential, &ranges, &features),
+            SessionHandshakeSide::new(&peer_credential, &ranges, &features),
             SessionAuthRole::Initiator,
             &peer_trust,
             [0x3a; 32],
@@ -109,19 +102,12 @@ fn accepted_peer_rotation_invalidates_old_authenticated_session() {
         peer_device_id,
         &peer_new_key,
         1,
-        &root,
-        &delegation,
+        &authority,
         &issuer_key,
     )
     .unwrap();
     peer_trust
-        .accept_successor_credential(
-            &successor,
-            &root,
-            &delegation,
-            delegation.delegation_epoch(),
-            TransitionId::from_bytes([0x3c; 32]),
-        )
+        .accept_successor_credential(&successor, &authority, TransitionId::from_bytes([0x3c; 32]))
         .unwrap();
 
     assert_eq!(

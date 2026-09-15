@@ -1,7 +1,9 @@
 use core::fmt;
 
 use crosslab_crypto::{CanonicalTranscript, Signature, SigningKey};
-use crosslab_identity::{AuthorityDelegation, AuthorityRole, KeyId, OwnerId, OwnerRootRecord};
+use crosslab_identity::{
+    AuthorityDelegation, AuthorityRole, KeyId, OwnerAuthorityState, OwnerId, OwnerRootRecord,
+};
 
 use super::{ApprovalScope, Obligation};
 
@@ -59,7 +61,7 @@ pub struct OwnerApprovalEvidence {
 
 impl OwnerApprovalEvidence {
     #[allow(clippy::too_many_arguments)]
-    pub fn issue(
+    fn issue_with_authority_parts(
         scope: ApprovalScope,
         issued_at: ApprovalInstant,
         expires_at: ApprovalInstant,
@@ -88,7 +90,28 @@ impl OwnerApprovalEvidence {
         Ok(evidence)
     }
 
-    pub fn verify(
+    pub fn issue(
+        scope: ApprovalScope,
+        issued_at: ApprovalInstant,
+        expires_at: ApprovalInstant,
+        authority: &OwnerAuthorityState,
+        issuer_key: &SigningKey,
+    ) -> Result<Self, ApprovalError> {
+        let delegation = authority
+            .current_delegation(AuthorityRole::Administrative)
+            .map_err(|_| ApprovalError::UnknownIssuer)?;
+        Self::issue_with_authority_parts(
+            scope,
+            issued_at,
+            expires_at,
+            authority.root(),
+            delegation,
+            issuer_key,
+            delegation.delegation_epoch(),
+        )
+    }
+
+    fn verify_with_authority_parts(
         &self,
         root: &OwnerRootRecord,
         delegation: &AuthorityDelegation,
@@ -118,6 +141,20 @@ impl OwnerApprovalEvidence {
             valid_from: self.issued_at,
             expires_at: self.expires_at,
         })
+    }
+
+    pub fn verify(
+        &self,
+        authority: &OwnerAuthorityState,
+    ) -> Result<VerifiedApproval, ApprovalError> {
+        let delegation = authority
+            .current_delegation(AuthorityRole::Administrative)
+            .map_err(|_| ApprovalError::UnknownIssuer)?;
+        self.verify_with_authority_parts(
+            authority.root(),
+            delegation,
+            delegation.delegation_epoch(),
+        )
     }
 
     pub fn transcript_digest(&self) -> [u8; 32] {

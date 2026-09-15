@@ -4,7 +4,7 @@ use crosslab_crypto::{
     CanonicalTranscript, Signature, SignatureAlgorithm, SigningKey, signed_object_digest,
 };
 use crosslab_identity::{
-    AuthorityDelegation, DeviceCredential, DeviceId, IdentityError, KeyId, OwnerId, OwnerRootRecord,
+    AuthorityRole, DeviceCredential, DeviceId, IdentityError, KeyId, OwnerAuthorityState, OwnerId,
 };
 
 use super::{TransitionId, TrustRecord};
@@ -62,25 +62,18 @@ pub struct PairingTrustTransition {
 }
 
 impl PairingTrustTransition {
-    #[allow(clippy::too_many_arguments)]
     pub fn issue(
         credential: &DeviceCredential,
         transition_id: TransitionId,
         pairing_evidence_digest: [u8; 32],
-        root: &OwnerRootRecord,
-        issuer: &AuthorityDelegation,
+        authority: &OwnerAuthorityState,
         issuer_key: &SigningKey,
-        minimum_delegation_epoch: u64,
     ) -> Result<Self, PairingTrustTransitionError> {
         if credential.credential_epoch() != INITIAL_CREDENTIAL_EPOCH {
             return Err(PairingTrustTransitionError::NonInitialCredentialEpoch);
         }
-        credential.verify(
-            root,
-            issuer,
-            INITIAL_CREDENTIAL_EPOCH,
-            minimum_delegation_epoch,
-        )?;
+        credential.verify(authority, INITIAL_CREDENTIAL_EPOCH)?;
+        let issuer = authority.current_delegation(AuthorityRole::DeviceSigning)?;
         if issuer_key.verifying_key() != issuer.delegated_public_key() {
             return Err(PairingTrustTransitionError::UnknownIssuer);
         }
@@ -103,27 +96,22 @@ impl PairingTrustTransition {
     pub fn establish(
         &self,
         credential: &DeviceCredential,
-        root: &OwnerRootRecord,
-        issuer: &AuthorityDelegation,
-        minimum_delegation_epoch: u64,
+        authority: &OwnerAuthorityState,
     ) -> Result<TrustRecord, PairingTrustTransitionError> {
         if self.credential_epoch != INITIAL_CREDENTIAL_EPOCH
             || credential.credential_epoch() != INITIAL_CREDENTIAL_EPOCH
         {
             return Err(PairingTrustTransitionError::NonInitialCredentialEpoch);
         }
-        credential.verify(
-            root,
-            issuer,
-            INITIAL_CREDENTIAL_EPOCH,
-            minimum_delegation_epoch,
-        )?;
+        credential.verify(authority, INITIAL_CREDENTIAL_EPOCH)?;
         if credential.owner_id() != self.owner_id
             || credential.device_id() != self.device_id
             || credential_signed_object_digest(credential) != self.credential_signed_object_digest
         {
             return Err(PairingTrustTransitionError::CredentialMismatch);
         }
+
+        let issuer = authority.current_delegation(AuthorityRole::DeviceSigning)?;
         if issuer.delegated_key_id() != self.issuer_key_id {
             return Err(PairingTrustTransitionError::UnknownIssuer);
         }

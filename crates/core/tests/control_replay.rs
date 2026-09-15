@@ -7,25 +7,25 @@ use crosslab_core::{
 };
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,
+    OwnerRootRecord,
 };
 use crosslab_policy::{
-    ApprovalInstant, CapabilityId, CapabilityVersion, CapabilityVersionRange, LocalCapability,
-    NetworkClass, OperationName, PairingTrustTransition, PolicyRule, PolicyState, RuleEffect,
-    RuleId, TransitionId, TrustRecord,
+    ApprovalInstant, CapabilityId, CapabilityVersion, CapabilityVersionRange, DecisionReason,
+    LocalCapability, NetworkClass, OperationName, PairingTrustTransition, PolicyRule, PolicyState,
+    RuleEffect, RuleId, TransitionId, TrustRecord,
 };
 use crosslab_protocol::{
     CancelRequest, CapabilityAdvertisement, CapabilityAdvertisementEntry, ControlEnvelope,
     ControlRequest, ControlResponse, ControlResponseResult, EnvelopeBody, FeatureSet,
-    ProtocolRange, ProtocolVersion, RequestId, RetryClass,
+    ProtocolRange, ProtocolVersion, RequestId, RetryClass, SequenceError,
 };
 
 const CAPABILITY: &str = "clipboard.write";
 const OPERATION: &str = "set";
 
 struct Fixture {
-    root: OwnerRootRecord,
-    delegation: AuthorityDelegation,
+    authority: OwnerAuthorityState,
     local_key: SigningKey,
     peer_key: SigningKey,
     local_credential: DeviceCredential,
@@ -46,6 +46,8 @@ impl Fixture {
             0,
             &root_key,
         );
+        let mut authority = OwnerAuthorityState::new(root);
+        authority.accept_delegation(delegation).unwrap();
         let local_key = SigningKey::from_secret_bytes([0x13; 32]);
         let peer_key = SigningKey::from_secret_bytes([0x14; 32]);
         let local_credential = DeviceCredential::issue(
@@ -53,8 +55,7 @@ impl Fixture {
             DeviceId::from_bytes([0x15; 32]),
             &local_key,
             0,
-            &root,
-            &delegation,
+            &authority,
             &issuer_key,
         )
         .unwrap();
@@ -63,8 +64,7 @@ impl Fixture {
             DeviceId::from_bytes([0x16; 32]),
             &peer_key,
             0,
-            &root,
-            &delegation,
+            &authority,
             &issuer_key,
         )
         .unwrap();
@@ -72,24 +72,14 @@ impl Fixture {
             &peer_credential,
             TransitionId::from_bytes([0x17; 32]),
             [0x18; 32],
-            &root,
-            &delegation,
+            &authority,
             &issuer_key,
-            delegation.delegation_epoch(),
         )
         .unwrap();
-        let peer_trust = transition
-            .establish(
-                &peer_credential,
-                &root,
-                &delegation,
-                delegation.delegation_epoch(),
-            )
-            .unwrap();
+        let peer_trust = transition.establish(&peer_credential, &authority).unwrap();
 
         Self {
-            root,
-            delegation,
+            authority,
             local_key,
             peer_key,
             local_credential,
@@ -111,7 +101,7 @@ impl Fixture {
         let features = FeatureSet::new(&[], &[]).unwrap();
         let binding = ChannelBinding::new("in-process-test", vec![0x19; 32]);
         let transcript = SessionAuthTranscriptV1::new(
-            self.root.owner_id(),
+            self.authority.root().owner_id(),
             &self.local_credential,
             [0x1a; 32],
             &self.peer_credential,
@@ -131,19 +121,9 @@ impl Fixture {
         let mut session = LogicalSession::new();
         session
             .authenticate(SessionActivation::new(
-                &self.root,
-                SessionHandshakeSide::new(
-                    &self.local_credential,
-                    &self.delegation,
-                    &ranges,
-                    &features,
-                ),
-                SessionHandshakeSide::new(
-                    &self.peer_credential,
-                    &self.delegation,
-                    &ranges,
-                    &features,
-                ),
+                &self.authority,
+                SessionHandshakeSide::new(&self.local_credential, &ranges, &features),
+                SessionHandshakeSide::new(&self.peer_credential, &ranges, &features),
                 SessionAuthRole::Initiator,
                 &self.peer_trust,
                 [0x1a; 32],
@@ -355,5 +335,123 @@ fn cancelled_request_id_remains_in_local_replay_window() {
             &policy,
         ),
         Err(ControlDispatchError::DuplicateRequest)
+    );
+}
+
+#[test]
+fn aged_out_request_id_is_a_new_authenticated_request_attempt() {
+    let fixture = Fixture::new();
+    let session = fixture.session();
+    let policy = fixture.allow_policy();
+    let mut dispatcher =
+        ControlDispatcher::new(session.context().unwrap(), NonZeroUsize::new(2).unwrap());
+    let a = RequestId::from_bytes([0x40; 16]);
+    let b = RequestId::from_bytes([0x41; 16]);
+    let c = RequestId::from_bytes([0x42; 16]);
+
+    for (sequence, id) in [(0, a), (1, b), (2, c)] {
+        assert!(matches!(
+            accept_request(
+                &mut dispatcher,
+                &session,
+                request(id, RetryClass::NonRetryable),
+                sequence,
+                &fixture,
+                &policy,
+            ),
+            Ok(InboundControl::Request(_))
+        ));
+        complete_request(&mut dispatcher, &session, id);
+    }
+
+    assert!(matches!(
+        accept_request(
+            &mut dispatcher,
+            &session,
+            request(a, RetryClass::NonRetryable),
+            3,
+            &fixture,
+            &policy,
+        ),
+        Ok(InboundControl::Request(_))
+    ));
+}
+
+#[test]
+fn aged_out_request_id_still_requires_current_policy_authorization() {
+    let fixture = Fixture::new();
+    let session = fixture.session();
+    let policy = fixture.allow_policy();
+    let mut dispatcher =
+        ControlDispatcher::new(session.context().unwrap(), NonZeroUsize::new(2).unwrap());
+    let a = RequestId::from_bytes([0x43; 16]);
+    let b = RequestId::from_bytes([0x44; 16]);
+    let c = RequestId::from_bytes([0x45; 16]);
+
+    for (sequence, id) in [(0, a), (1, b), (2, c)] {
+        assert!(matches!(
+            accept_request(
+                &mut dispatcher,
+                &session,
+                request(id, RetryClass::NonRetryable),
+                sequence,
+                &fixture,
+                &policy,
+            ),
+            Ok(InboundControl::Request(_))
+        ));
+        complete_request(&mut dispatcher, &session, id);
+    }
+
+    assert_eq!(
+        accept_request(
+            &mut dispatcher,
+            &session,
+            request(a, RetryClass::NonRetryable),
+            3,
+            &fixture,
+            &PolicyState::new(),
+        ),
+        Err(ControlDispatchError::AuthorizationDenied(
+            DecisionReason::NoMatchingRule
+        ))
+    );
+}
+
+#[test]
+fn exact_envelope_sequence_replay_remains_rejected() {
+    let fixture = Fixture::new();
+    let session = fixture.session();
+    let policy = fixture.allow_policy();
+    let mut dispatcher =
+        ControlDispatcher::new(session.context().unwrap(), NonZeroUsize::new(2).unwrap());
+
+    assert!(matches!(
+        accept_request(
+            &mut dispatcher,
+            &session,
+            request(RequestId::from_bytes([0x50; 16]), RetryClass::NonRetryable),
+            0,
+            &fixture,
+            &policy,
+        ),
+        Ok(InboundControl::Request(_))
+    ));
+
+    assert_eq!(
+        accept_request(
+            &mut dispatcher,
+            &session,
+            request(RequestId::from_bytes([0x51; 16]), RetryClass::NonRetryable),
+            0,
+            &fixture,
+            &policy,
+        ),
+        Err(ControlDispatchError::Sequence(
+            SequenceError::ReplayDetected {
+                expected: 1,
+                received: 0,
+            }
+        ))
     );
 }

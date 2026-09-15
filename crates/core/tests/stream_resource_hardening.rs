@@ -6,13 +6,14 @@ use crosslab_core::{
 };
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,
+    OwnerRootRecord,
 };
 use crosslab_policy::{
     AuthorizationContext, AuthorizedOperation, CapabilityId, CapabilityVersion,
     CapabilityVersionRange, LocalCapability, NetworkClass, OperationError, OperationName,
     OperationState, PairingTrustTransition, PolicyRule, PolicyState, RuleEffect, RuleId,
-    TransitionId, TrustState, UsePolicy,
+    TransitionId, TrustRecord, TrustState, UsePolicy,
 };
 use crosslab_protocol::{
     CapabilityAdvertisement, CapabilityAdvertisementEntry, DataStreamOpen, FeatureSet,
@@ -24,8 +25,8 @@ struct Fixture {
     capability: CapabilityId,
     version: CapabilityVersion,
     operation: OperationName,
-    trust_revision: u64,
-    policy_revision: u64,
+    peer_trust: TrustRecord,
+    policy: PolicyState,
     grant: crosslab_policy::AuthorizationGrant,
 }
 
@@ -42,6 +43,8 @@ impl Fixture {
             0,
             &root_key,
         );
+        let mut authority = OwnerAuthorityState::new(root);
+        authority.accept_delegation(delegation).unwrap();
         let initiator_key = SigningKey::from_secret_bytes([0xe6; 32]);
         let responder_key = SigningKey::from_secret_bytes([0xe7; 32]);
         let initiator_credential = DeviceCredential::issue(
@@ -49,8 +52,7 @@ impl Fixture {
             DeviceId::from_bytes([0xe8; 32]),
             &initiator_key,
             1,
-            &root,
-            &delegation,
+            &authority,
             &issuer_key,
         )
         .unwrap();
@@ -60,8 +62,7 @@ impl Fixture {
             responder_device_id,
             &responder_key,
             0,
-            &root,
-            &delegation,
+            &authority,
             &issuer_key,
         )
         .unwrap();
@@ -70,8 +71,7 @@ impl Fixture {
             responder_device_id,
             &responder_key,
             1,
-            &root,
-            &delegation,
+            &authority,
             &issuer_key,
         )
         .unwrap();
@@ -79,26 +79,17 @@ impl Fixture {
             &responder_initial_credential,
             TransitionId::from_bytes([0xea; 32]),
             [0xf1; 32],
-            &root,
-            &delegation,
+            &authority,
             &issuer_key,
-            delegation.delegation_epoch(),
         )
         .unwrap();
         let mut peer_trust = transition
-            .establish(
-                &responder_initial_credential,
-                &root,
-                &delegation,
-                delegation.delegation_epoch(),
-            )
+            .establish(&responder_initial_credential, &authority)
             .unwrap();
         peer_trust
             .accept_successor_credential(
                 &responder_credential,
-                &root,
-                &delegation,
-                delegation.delegation_epoch(),
+                &authority,
                 TransitionId::from_bytes([0xf2; 32]),
             )
             .unwrap();
@@ -126,9 +117,9 @@ impl Fixture {
         let mut session = LogicalSession::new();
         session
             .authenticate(SessionActivation::new(
-                &root,
-                SessionHandshakeSide::new(&initiator_credential, &delegation, &ranges, &features),
-                SessionHandshakeSide::new(&responder_credential, &delegation, &ranges, &features),
+                &authority,
+                SessionHandshakeSide::new(&initiator_credential, &ranges, &features),
+                SessionHandshakeSide::new(&responder_credential, &ranges, &features),
                 SessionAuthRole::Initiator,
                 &peer_trust,
                 [0xec; 32],
@@ -188,8 +179,8 @@ impl Fixture {
             capability,
             version,
             operation,
-            trust_revision,
-            policy_revision: policy.revision(),
+            peer_trust,
+            policy,
             grant,
         }
     }
@@ -217,13 +208,7 @@ impl Fixture {
         open: &DataStreamOpen,
         now: u64,
     ) -> Result<crosslab_core::AdmittedStream, StreamAdmissionError> {
-        admission.admit_inbound(
-            &self.session,
-            open,
-            now,
-            self.trust_revision,
-            self.policy_revision,
-        )
+        admission.admit_inbound(&self.session, open, now, &self.peer_trust, &self.policy)
     }
 }
 

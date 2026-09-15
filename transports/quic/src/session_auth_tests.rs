@@ -10,7 +10,8 @@ use crosslab_core::{
 };
 use crosslab_crypto::{SigningKey, blake3_256};
 use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerId, OwnerRootRecord,
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,
+    OwnerRootRecord,
 };
 use crosslab_policy::{PairingTrustTransition, TransitionId, TrustRecord};
 use crosslab_protocol::{
@@ -35,8 +36,7 @@ mod lifecycle_tests;
 
 fn establish_trust(
     credential: &DeviceCredential,
-    root: &OwnerRootRecord,
-    delegation: &AuthorityDelegation,
+    authority: &OwnerAuthorityState,
     issuer_key: &SigningKey,
     transition_byte: u8,
 ) -> TrustRecord {
@@ -45,8 +45,7 @@ fn establish_trust(
         credential.device_id(),
         credential.device_public_key(),
         0,
-        root,
-        delegation,
+        authority,
         issuer_key,
     )
     .unwrap();
@@ -54,19 +53,12 @@ fn establish_trust(
         &initial_credential,
         TransitionId::from_bytes([transition_byte; 32]),
         [transition_byte.wrapping_add(1); 32],
-        root,
-        delegation,
+        authority,
         issuer_key,
-        delegation.delegation_epoch(),
     )
     .unwrap();
     let mut trust = transition
-        .establish(
-            &initial_credential,
-            root,
-            delegation,
-            delegation.delegation_epoch(),
-        )
+        .establish(&initial_credential, authority)
         .unwrap();
 
     for epoch in 1..=credential.credential_epoch() {
@@ -75,8 +67,7 @@ fn establish_trust(
             credential.device_id(),
             credential.device_public_key(),
             epoch,
-            root,
-            delegation,
+            authority,
             issuer_key,
         )
         .unwrap();
@@ -85,9 +76,7 @@ fn establish_trust(
         trust
             .accept_successor_credential(
                 &successor,
-                root,
-                delegation,
-                delegation.delegation_epoch(),
+                authority,
                 TransitionId::from_bytes(transition_id),
             )
             .unwrap();
@@ -98,8 +87,7 @@ fn establish_trust(
 
 struct AuthFixture {
     owner_id: OwnerId,
-    root: OwnerRootRecord,
-    delegation: AuthorityDelegation,
+    authority: OwnerAuthorityState,
     initiator_key: SigningKey,
     responder_key: SigningKey,
     initiator_credential: DeviceCredential,
@@ -121,6 +109,9 @@ impl AuthFixture {
             0,
             &root_key,
         );
+        let mut authority = OwnerAuthorityState::new(root);
+        authority.accept_delegation(delegation).unwrap();
+
         let initiator_key = SigningKey::from_secret_bytes([0x43; 32]);
         let responder_key = SigningKey::from_secret_bytes([0x44; 32]);
         let initiator_credential = DeviceCredential::issue(
@@ -128,8 +119,7 @@ impl AuthFixture {
             DeviceId::from_bytes([0x45; 32]),
             &initiator_key,
             2,
-            &root,
-            &delegation,
+            &authority,
             &issuer_key,
         )
         .unwrap();
@@ -138,20 +128,16 @@ impl AuthFixture {
             DeviceId::from_bytes([0x46; 32]),
             &responder_key,
             5,
-            &root,
-            &delegation,
+            &authority,
             &issuer_key,
         )
         .unwrap();
-        let initiator_trust =
-            establish_trust(&initiator_credential, &root, &delegation, &issuer_key, 0x47);
-        let responder_trust =
-            establish_trust(&responder_credential, &root, &delegation, &issuer_key, 0x48);
+        let initiator_trust = establish_trust(&initiator_credential, &authority, &issuer_key, 0x47);
+        let responder_trust = establish_trust(&responder_credential, &authority, &issuer_key, 0x48);
 
         Self {
             owner_id,
-            root,
-            delegation,
+            authority,
             initiator_key,
             responder_key,
             initiator_credential,
@@ -429,13 +415,11 @@ async fn authenticate_loopback_session_pair(
     let responder_credential = responder_hello.device_credential();
     let initiator_side = SessionHandshakeSide::new(
         &initiator_credential,
-        &fixture.delegation,
         initiator_hello.protocol_ranges(),
         initiator_hello.features(),
     );
     let responder_side = SessionHandshakeSide::new(
         &responder_credential,
-        &fixture.delegation,
         responder_hello.protocol_ranges(),
         responder_hello.features(),
     );
@@ -443,7 +427,7 @@ async fn authenticate_loopback_session_pair(
     let client_result = bootstrap
         .client_session
         .authenticate(SessionActivation::new(
-            &fixture.root,
+            &fixture.authority,
             initiator_side,
             responder_side,
             CoreSessionAuthRole::Initiator,
@@ -458,7 +442,7 @@ async fn authenticate_loopback_session_pair(
     let server_result = bootstrap
         .server_session
         .authenticate(SessionActivation::new(
-            &fixture.root,
+            &fixture.authority,
             initiator_side,
             responder_side,
             CoreSessionAuthRole::Responder,
