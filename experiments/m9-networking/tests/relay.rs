@@ -27,7 +27,10 @@ async fn relay_only_pair_carries_authenticated_control_and_data() {
     pair.client_transport()
         .try_send_control(control.clone())
         .expect("queue relay control frame");
-    assert_eq!(eventually_receive_control(pair.server_transport()).await, control);
+    assert_eq!(
+        eventually_receive_control(pair.server_transport()).await,
+        control
+    );
 
     let opening = b"owner-relay-stream".to_vec();
     let payload = b"owner-relay-payload".to_vec();

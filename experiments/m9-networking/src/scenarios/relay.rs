@@ -75,9 +75,7 @@ pub async fn relay_only_pair(fixture: &AuthFixture) -> Result<RelayObservedPair,
     relay_pair(fixture, false).await
 }
 
-pub async fn relay_then_direct_pair(
-    fixture: &AuthFixture,
-) -> Result<RelayObservedPair, EvalError> {
+pub async fn relay_then_direct_pair(fixture: &AuthFixture) -> Result<RelayObservedPair, EvalError> {
     relay_pair(fixture, true).await
 }
 
