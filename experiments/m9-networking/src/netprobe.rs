@@ -269,6 +269,9 @@ where
         .is_some_and(|context| context.session_id() == session_before);
 
     send_control(&transport, DIRECT_OK).await?;
+    timeout(READY_TIMEOUT, observed_connection.closed())
+        .await
+        .map_err(|_| EvalError::Timeout)?;
 
     emit("phase", "direct_verified")?;
     emit(
