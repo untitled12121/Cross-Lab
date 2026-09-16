@@ -17,5 +17,5 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Install Rust
         run: rustup toolchain install 1.98.1 --profile minimal
-      - name: Task 8 focused tests
-        run: cargo test -p crosslab-m9-networking --test metrics --test baseline --test relay -- --nocapture
+      - name: Task 8 diagnostic
+        run: cargo test -p crosslab-m9-networking --test task8_diagnostic -- --nocapture
