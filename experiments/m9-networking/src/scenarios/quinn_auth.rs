@@ -38,7 +38,8 @@ pub(crate) async fn measure_session_auth(
 
     let fixture = AuthFixture::new();
     let started = Instant::now();
-    let (mut client_send, mut client_recv) = client.open_bi().await.map_err(|_| EvalError::Control)?;
+    let (mut client_send, mut client_recv) =
+        client.open_bi().await.map_err(|_| EvalError::Control)?;
     let initiator_hello = SessionAuthHello::new(
         fixture.initiator_credential,
         AuthFixture::initiator_ranges(),
@@ -144,7 +145,8 @@ pub(crate) async fn measure_session_auth(
         ))
         .map_err(|_| EvalError::Control)?;
 
-    if client_session.state() != SessionState::Active || server_session.state() != SessionState::Active
+    if client_session.state() != SessionState::Active
+        || server_session.state() != SessionState::Active
     {
         return Err(EvalError::Control);
     }
@@ -300,8 +302,9 @@ fn transcript_for(
 ) -> SessionAuthTranscriptV1 {
     let initiator_credential = initiator.device_credential();
     let responder_credential = responder.device_credential();
-    let protocol = negotiate_protocol_version(initiator.protocol_ranges(), responder.protocol_ranges())
-        .unwrap();
+    let protocol =
+        negotiate_protocol_version(initiator.protocol_ranges(), responder.protocol_ranges())
+            .unwrap();
     let features = negotiate_features(initiator.features(), responder.features()).unwrap();
 
     SessionAuthTranscriptV1::new(
@@ -334,7 +337,9 @@ async fn send_bootstrap(
     write_record(send, &frame).await
 }
 
-async fn receive_bootstrap(recv: &mut RecvStream) -> Result<SessionAuthBootstrapMessage, EvalError> {
+async fn receive_bootstrap(
+    recv: &mut RecvStream,
+) -> Result<SessionAuthBootstrapMessage, EvalError> {
     let frame = read_record(recv).await?;
     decode_session_auth_bootstrap(&frame).map_err(|_| EvalError::Control)
 }
