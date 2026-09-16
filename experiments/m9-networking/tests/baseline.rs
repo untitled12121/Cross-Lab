@@ -18,9 +18,11 @@ async fn quinn_baseline_records_connect_control_bulk_and_shutdown() {
 
 #[tokio::test]
 async fn iroh_direct_records_connect_auth_control_bulk_and_shutdown() {
-    let report = crosslab_m9_networking::baseline::run_iroh_direct_sample(EvalConfig::test())
+    let config = EvalConfig::with_limits(1, 64 * 1024).expect("valid diagnostic limits");
+    let report = crosslab_m9_networking::baseline::run_iroh_direct_sample(config)
         .await
         .expect("Iroh direct benchmark should complete");
+    eprintln!("direct benchmark diagnostics: {report:?}");
 
     for metric in [
         MetricKind::ProtectedConnectMicros,
