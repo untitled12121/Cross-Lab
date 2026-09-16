@@ -1,4 +1,4 @@
-name: M9 Task 8 Reconnect RED
+name: M9 Task 8 Netns Marker RED
 
 on:
   push:
@@ -11,11 +11,11 @@ permissions:
 
 jobs:
   focused:
-    name: Forced reconnect authority RED
+    name: Netns TSV phase marker RED
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Install Rust
         run: rustup toolchain install 1.98.1 --profile minimal
-      - name: Reconnect contract
-        run: cargo test -p crosslab-m9-networking --test netprobe_runtime forced_reconnect_refreshes_binding_session_and_control -- --nocapture
+      - name: Netns marker contract
+        run: cargo test -p crosslab-m9-networking --test netns netns_script_owns_forwarding_nat_path_gate_and_cleanup -- --nocapture
