@@ -17,6 +17,7 @@ use crate::{
         endpoint::{ConnectedPair, direct_pair},
         runtime::CandidateConfig,
     },
+    command::Command,
     config::EvalConfig,
     error::EvalError,
     metrics::{Measurement, MetricKind, Report, TransportKind},
@@ -37,6 +38,20 @@ struct RawLoopbackPair {
     server_endpoint: Endpoint,
     client: Connection,
     server: Connection,
+}
+
+pub async fn run_local(command: Command) -> Result<Report, EvalError> {
+    match command {
+        Command::LocalQuinn(config) => run_quinn_loopback_sample(config).await,
+        Command::LocalIrohDirect(config) => run_iroh_direct_sample(config).await,
+        Command::LocalIrohRelay(config) => run_iroh_relay_sample(config).await,
+        Command::LocalAll(config) => {
+            let mut report = run_quinn_loopback_sample(config).await?;
+            report.append(run_iroh_direct_sample(config).await?);
+            report.append(run_iroh_relay_sample(config).await?);
+            Ok(report)
+        }
+    }
 }
 
 pub async fn run_quinn_loopback_sample(config: EvalConfig) -> Result<Report, EvalError> {
