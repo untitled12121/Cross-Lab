@@ -38,7 +38,7 @@ fn netns_script_owns_forwarding_nat_path_gate_and_cleanup() {
 
     let block = NETNS_SCRIPT.find("udp drop").expect("direct UDP block");
     let allow = NETNS_SCRIPT[block..]
-        .find("nft delete rule")
+        .find("nft delete table ip cl_m9_gate")
         .map(|offset| block + offset)
         .expect("direct UDP unblock");
     assert!(block < allow, "direct UDP must be blocked before it is allowed");
