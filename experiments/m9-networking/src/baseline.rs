@@ -24,6 +24,7 @@ use crate::{
     relay::OwnerRelay,
     scenarios::{
         auth::{AuthFixture, authenticate_connected_pair},
+        quinn_auth::measure_session_auth,
         relay::connect_relay_pair,
     },
 };
@@ -55,7 +56,7 @@ pub async fn run_local(command: Command) -> Result<Report, EvalError> {
 }
 
 pub async fn run_quinn_loopback_sample(config: EvalConfig) -> Result<Report, EvalError> {
-    let mut report = Report::for_run(config, Vec::with_capacity(config.samples() * 4));
+    let mut report = Report::for_run(config, Vec::with_capacity(config.samples() * 5));
 
     for sample in 0..config.samples() {
         let measurements = timeout(
@@ -142,6 +143,7 @@ async fn run_quinn_sample(
     bulk_payload_bytes: usize,
 ) -> Result<Vec<Measurement>, EvalError> {
     let (pair, protected_connect_us) = loopback_connection_pair().await?;
+    let session_auth_us = measure_session_auth(&pair.client, &pair.server).await?;
     let control_rtt_us = measure_quinn_control_rtt(&pair).await?;
     let bulk_bytes_per_second = measure_quinn_bulk_transfer(&pair, bulk_payload_bytes).await?;
     let shutdown_us = pair.shutdown().await;
@@ -152,6 +154,12 @@ async fn run_quinn_sample(
             MetricKind::ProtectedConnectMicros,
             sample,
             protected_connect_us,
+        ),
+        Measurement::new(
+            TransportKind::Quinn,
+            MetricKind::SessionAuthMicros,
+            sample,
+            session_auth_us,
         ),
         Measurement::new(
             TransportKind::Quinn,
