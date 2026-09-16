@@ -16,10 +16,7 @@ use iroh::{Endpoint, EndpointAddr, EndpointId, RelayMode, RelayUrl, endpoint::pr
 use tokio::time::{sleep, timeout};
 
 use crate::{
-    candidate::{
-        binding::derive_channel_binding,
-        endpoint::M9_ALPN,
-    },
+    candidate::{binding::derive_channel_binding, endpoint::M9_ALPN},
     error::EvalError,
     relay::OwnerRelay,
     scenarios::{
@@ -36,7 +33,6 @@ const DATA_OPEN: &[u8] = b"crosslab-m9-data-v1";
 const DATA_PROBE: &[u8] = b"crosslab-m9-data-probe";
 const DATA_OK: &[u8] = b"crosslab-m9-data-ok";
 const DIRECT_OK: &[u8] = b"crosslab-m9-direct-ok";
-const FINISH: &[u8] = b"crosslab-m9-finish";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NetprobeRelayArgs {
@@ -192,8 +188,6 @@ pub async fn run_server(args: NetprobePeerArgs) -> Result<(), EvalError> {
     send_control(&transport, DATA_OK).await?;
 
     expect_control(&transport, DIRECT_OK).await?;
-    send_control(&transport, FINISH).await?;
-
     transport.shutdown().await;
     endpoint.close().await;
     Ok(())
@@ -275,7 +269,6 @@ where
         .is_some_and(|context| context.session_id() == session_before);
 
     send_control(&transport, DIRECT_OK).await?;
-    expect_control(&transport, FINISH).await?;
 
     emit("phase", "direct_verified")?;
     emit(
