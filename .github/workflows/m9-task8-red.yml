@@ -50,6 +50,7 @@ jobs:
             grep -Fx "$expected" /tmp/m9-netns.tsv
           done
       - name: Environment evidence
+        if: ${{ always() }}
         run: |
           echo '=== M9_ENVIRONMENT ==='
           uname -a
@@ -61,6 +62,7 @@ jobs:
           uptime
           cat /proc/loadavg
       - name: Same-host measurements
+        if: ${{ always() }}
         run: |
           cargo run -p crosslab-m9-networking --bin m9-networking -- local-all --samples 10 --payload-bytes 4194304 > /tmp/m9-local.tsv
           /usr/bin/time -v cargo run -p crosslab-m9-networking --bin m9-networking -- local-all --samples 10 --payload-bytes 4194304 > /tmp/m9-local-time.tsv 2> /tmp/m9-local-time.txt
