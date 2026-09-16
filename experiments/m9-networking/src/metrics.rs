@@ -74,10 +74,48 @@ impl Measurement {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+struct ResourceObservations {
+    rss_kib: Option<u64>,
+    fd_count: Option<usize>,
+}
+
+impl ResourceObservations {
+    #[cfg(target_os = "linux")]
+    fn capture() -> Self {
+        Self {
+            rss_kib: linux_rss_kib(),
+            fd_count: std::fs::read_dir("/proc/self/fd")
+                .ok()
+                .map(|entries| entries.filter_map(Result::ok).count()),
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    const fn capture() -> Self {
+        Self {
+            rss_kib: None,
+            fd_count: None,
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_rss_kib() -> Option<u64> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    let value = status
+        .lines()
+        .find_map(|line| line.strip_prefix("VmRSS:"))?
+        .split_whitespace()
+        .next()?;
+    value.parse().ok()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RunMetadata {
     samples: usize,
     payload_bytes: usize,
+    resources: ResourceObservations,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -99,6 +137,7 @@ impl Report {
             metadata: Some(RunMetadata {
                 samples: config.samples(),
                 payload_bytes: config.bulk_payload_bytes(),
+                resources: ResourceObservations::default(),
             }),
             measurements,
         }
@@ -140,6 +179,8 @@ impl Report {
             output.push_str("# iroh=");
             output.push_str(IROH_VERSION);
             output.push('\n');
+            push_optional_header(&mut output, "rss_kib", metadata.resources.rss_kib);
+            push_optional_header(&mut output, "fd_count", metadata.resources.fd_count);
         }
 
         output.push_str("transport\tmetric\tsample\tvalue\n");
@@ -163,4 +204,24 @@ impl Report {
     pub(crate) fn append(&mut self, mut other: Self) {
         self.measurements.append(&mut other.measurements);
     }
+
+    pub(crate) fn capture_resources(&mut self) {
+        if let Some(metadata) = &mut self.metadata {
+            metadata.resources = ResourceObservations::capture();
+        }
+    }
+}
+
+fn push_optional_header<T>(output: &mut String, name: &str, value: Option<T>)
+where
+    T: std::fmt::Display,
+{
+    output.push_str("# ");
+    output.push_str(name);
+    output.push('=');
+    match value {
+        Some(value) => output.push_str(&value.to_string()),
+        None => output.push('-'),
+    }
+    output.push('\n');
 }
