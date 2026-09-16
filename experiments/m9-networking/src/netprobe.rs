@@ -576,6 +576,10 @@ async fn wait_for_direct_path(
     connection: &iroh::endpoint::Connection,
     wait: Duration,
 ) -> Result<(), EvalError> {
+    if wait.is_zero() {
+        return Err(EvalError::Timeout);
+    }
+
     let mut paths = connection.paths_stream();
     timeout(wait, async {
         while let Some(paths) = paths.next().await {
