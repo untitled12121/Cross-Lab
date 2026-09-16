@@ -22,12 +22,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y iproute2 nftables tcpdump time
-      - name: M9 package gate
+      - name: Dependency feature tree
+        run: cargo tree -p crosslab-m9-networking -e features
+      - name: Full workspace gate
         run: |
           cargo test -p crosslab-m9-networking
           cargo fmt --all -- --check
-          cargo check -p crosslab-m9-networking --all-targets
-          cargo clippy -p crosslab-m9-networking --all-targets -- -D warnings
+          cargo check --workspace --all-targets --all-features
+          cargo clippy --workspace --all-targets --all-features -- -D warnings
+          cargo test --workspace --all-features
       - name: Build netprobe binary
         run: cargo build -p crosslab-m9-networking --bin m9-networking
       - name: Controlled namespace NAT relay gate
