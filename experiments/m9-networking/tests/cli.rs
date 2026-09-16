@@ -2,7 +2,7 @@ use std::process::Command as ProcessCommand;
 
 #[test]
 fn local_quinn_binary_emits_reproducible_tsv() {
-    let binary = option_env!("CARGO_BIN_EXE_m9-networking").expect("m9-networking binary target");
+    let binary = env!("CARGO_BIN_EXE_m9-networking");
     let output = ProcessCommand::new(binary)
         .args(["local-quinn", "--samples", "1", "--payload-bytes", "1024"])
         .output()
