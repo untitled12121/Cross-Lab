@@ -1,8 +1,9 @@
 use std::{env, net::SocketAddr, path::PathBuf};
 
 use crosslab_m9_networking::{
-    Command,
+    Command, baseline,
     config::EvalConfig,
+    error::EvalError,
     metrics::{Measurement, MetricKind, Report, TransportKind},
     netprobe::{NetprobePeerArgs, NetprobeRelayArgs},
 };
@@ -50,6 +51,14 @@ fn netprobe_commands_parse_typed_routing_arguments() {
     .expect("typed netprobe client");
     assert_eq!(client, Command::NetprobeClient(peer_args));
     assert_eq!(client.eval_config(), None);
+}
+
+#[tokio::test]
+async fn netprobe_commands_are_rejected_by_local_runner() {
+    let command = Command::parse(["netprobe-relay", "--bind", "172.30.90.1:3340"])
+        .expect("typed netprobe relay");
+
+    assert_eq!(baseline::run_local(command).await, Err(EvalError::InvalidCommand));
 }
 
 #[test]
