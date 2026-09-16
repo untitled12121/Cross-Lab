@@ -115,7 +115,6 @@ fn linux_rss_kib() -> Option<u64> {
 struct RunMetadata {
     samples: usize,
     payload_bytes: usize,
-    resources: ResourceObservations,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -137,7 +136,6 @@ impl Report {
             metadata: Some(RunMetadata {
                 samples: config.samples(),
                 payload_bytes: config.bulk_payload_bytes(),
-                resources: ResourceObservations::default(),
             }),
             measurements,
         }
@@ -158,6 +156,8 @@ impl Report {
     pub fn to_tsv(&self) -> String {
         let mut output = String::new();
         if let Some(metadata) = self.metadata {
+            let resources = ResourceObservations::capture();
+
             output.push_str("# os=");
             output.push_str(std::env::consts::OS);
             output.push('\n');
@@ -179,8 +179,8 @@ impl Report {
             output.push_str("# iroh=");
             output.push_str(IROH_VERSION);
             output.push('\n');
-            push_optional_header(&mut output, "rss_kib", metadata.resources.rss_kib);
-            push_optional_header(&mut output, "fd_count", metadata.resources.fd_count);
+            push_optional_header(&mut output, "rss_kib", resources.rss_kib);
+            push_optional_header(&mut output, "fd_count", resources.fd_count);
         }
 
         output.push_str("transport\tmetric\tsample\tvalue\n");
@@ -203,12 +203,6 @@ impl Report {
 
     pub(crate) fn append(&mut self, mut other: Self) {
         self.measurements.append(&mut other.measurements);
-    }
-
-    pub(crate) fn capture_resources(&mut self) {
-        if let Some(metadata) = &mut self.metadata {
-            metadata.resources = ResourceObservations::capture();
-        }
     }
 }
 
