@@ -1,10 +1,12 @@
-use std::env;
+use std::{env, net::SocketAddr, path::PathBuf};
 
 use crosslab_m9_networking::{
     Command,
     config::EvalConfig,
     metrics::{Measurement, MetricKind, Report, TransportKind},
+    netprobe::{NetprobePeerArgs, NetprobeRelayArgs},
 };
+use iroh::RelayUrl;
 
 #[test]
 fn local_command_parses_typed_sample_and_payload_limits() {
@@ -14,6 +16,40 @@ fn local_command_parses_typed_sample_and_payload_limits() {
 
     assert_eq!(config.samples(), 3);
     assert_eq!(config.bulk_payload_bytes(), 1_048_576);
+}
+
+#[test]
+fn netprobe_commands_parse_typed_routing_arguments() {
+    let bind: SocketAddr = "172.30.90.1:3340".parse().expect("relay bind");
+    assert_eq!(
+        Command::parse(["netprobe-relay", "--bind", "172.30.90.1:3340"]),
+        Ok(Command::NetprobeRelay(NetprobeRelayArgs::new(bind)))
+    );
+
+    let rendezvous = PathBuf::from("/tmp/crosslab-m9-server.addr");
+    let relay_url: RelayUrl = "http://172.30.90.1:3340".parse().expect("relay URL");
+    let peer_args = NetprobePeerArgs::new(rendezvous, relay_url);
+
+    assert_eq!(
+        Command::parse([
+            "netprobe-server",
+            "--rendezvous",
+            "/tmp/crosslab-m9-server.addr",
+            "--relay-url",
+            "http://172.30.90.1:3340",
+        ]),
+        Ok(Command::NetprobeServer(peer_args.clone()))
+    );
+    let client = Command::parse([
+        "netprobe-client",
+        "--rendezvous",
+        "/tmp/crosslab-m9-server.addr",
+        "--relay-url",
+        "http://172.30.90.1:3340",
+    ])
+    .expect("typed netprobe client");
+    assert_eq!(client, Command::NetprobeClient(peer_args));
+    assert_eq!(client.eval_config(), None);
 }
 
 #[test]
