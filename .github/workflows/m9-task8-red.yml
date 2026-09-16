@@ -1,4 +1,4 @@
-name: M9 Task 8 Step 5 Netprobe Runtime RED
+name: M9 Task 8 Reconnect RED
 
 on:
   push:
@@ -11,11 +11,11 @@ permissions:
 
 jobs:
   focused:
-    name: Executable netprobe runtime RED
+    name: Forced reconnect authority RED
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Install Rust
         run: rustup toolchain install 1.98.1 --profile minimal
-      - name: Netprobe runtime contract
-        run: cargo test -p crosslab-m9-networking --lib netprobe_runtime_authenticates_control_data_and_observes_direct_path -- --nocapture
+      - name: Reconnect contract
+        run: cargo test -p crosslab-m9-networking --test netprobe_runtime forced_reconnect_refreshes_binding_session_and_control -- --nocapture
