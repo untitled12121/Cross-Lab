@@ -6,7 +6,10 @@ use crosslab_core::{
 };
 use crosslab_m9_networking::scenarios::{
     auth::AuthFixture,
-    relay::{relay_only_pair, relay_then_direct_pair},
+    relay::{
+        exercise_relay_operation_invariant, exercise_relay_sequence_invariant, relay_only_pair,
+        relay_then_direct_pair,
+    },
 };
 use crosslab_policy::NetworkClass;
 use tokio::time::{sleep, timeout};
@@ -69,6 +72,27 @@ async fn relay_to_direct_keeps_remote_class_binding_and_session() {
     assert_eq!(session_id, pair.session_id());
 
     pair.shutdown().await.expect("owner relay shutdown");
+}
+
+#[tokio::test]
+async fn relay_to_direct_keeps_control_sequence_space() {
+    let evidence = exercise_relay_sequence_invariant(&AuthFixture::new())
+        .await
+        .expect("relay path sequence evidence");
+
+    assert_eq!(evidence.before_send_sequence, Some(1));
+    assert_eq!(evidence.before_receive_sequence, Some(1));
+    assert_eq!(evidence.after_send_sequence, Some(2));
+    assert_eq!(evidence.after_receive_sequence, Some(2));
+}
+
+#[tokio::test]
+async fn relay_to_direct_keeps_active_operation_authority() {
+    let payload = exercise_relay_operation_invariant(&AuthFixture::new())
+        .await
+        .expect("relay path operation evidence");
+
+    assert_eq!(payload, b"path-operation");
 }
 
 async fn eventually_receive_control(transport: &dyn TransportConnection) -> Vec<u8> {
