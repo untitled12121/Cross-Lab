@@ -8,14 +8,8 @@ use crosslab_m9_networking::{
 
 #[test]
 fn local_command_parses_typed_sample_and_payload_limits() {
-    let command = Command::parse([
-        "local-all",
-        "--samples",
-        "3",
-        "--payload-bytes",
-        "1048576",
-    ])
-    .expect("typed local command");
+    let command = Command::parse(["local-all", "--samples", "3", "--payload-bytes", "1048576"])
+        .expect("typed local command");
     let config = command.eval_config().expect("local evaluation config");
 
     assert_eq!(config.samples(), 3);
@@ -45,7 +39,10 @@ fn report_tsv_records_reproducibility_header() {
         "# quinn=0.11.11".to_owned(),
         "# iroh=1.2.0".to_owned(),
     ] {
-        assert!(output.lines().any(|line| line == expected), "missing {expected}");
+        assert!(
+            output.lines().any(|line| line == expected),
+            "missing {expected}"
+        );
     }
     assert!(output.contains("transport\tmetric\tsample\tvalue\n"));
     assert!(output.contains("quinn\tprotected_connect_us\t0\t42\n"));
