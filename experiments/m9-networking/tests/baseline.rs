@@ -52,7 +52,10 @@ async fn local_all_combines_quinn_direct_and_relay_reports() {
         TransportKind::IrohDirect,
         TransportKind::IrohRelay,
     ] {
-        assert!(report.contains_transport(transport), "missing {transport:?}");
+        assert!(
+            report.contains_transport(transport),
+            "missing {transport:?}"
+        );
     }
 }
 
