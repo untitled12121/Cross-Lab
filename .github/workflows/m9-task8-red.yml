@@ -1,4 +1,4 @@
-name: M9 Task 8 Step 3 Verification
+name: M9 Task 8 Step 4 RED
 
 on:
   push:
@@ -11,17 +11,11 @@ permissions:
 
 jobs:
   focused:
-    name: Step 3 local benchmark verification
+    name: Safe rendezvous RED
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Install Rust
-        run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt,clippy
-      - name: M9 networking tests
-        run: cargo test -p crosslab-m9-networking
-      - name: Format
-        run: cargo fmt --all -- --check
-      - name: Check M9 networking
-        run: cargo check -p crosslab-m9-networking --all-targets
-      - name: Clippy M9 networking
-        run: cargo clippy -p crosslab-m9-networking --all-targets -- -D warnings
+        run: rustup toolchain install 1.98.1 --profile minimal
+      - name: Safe rendezvous contract
+        run: cargo test -p crosslab-m9-networking --test relay rendezvous_ -- --nocapture
