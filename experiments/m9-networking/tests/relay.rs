@@ -32,9 +32,7 @@ fn rendezvous_serializes_only_public_routing_metadata() {
 
     assert_eq!(
         rendezvous.to_text(),
-        format!(
-            "endpoint_id={endpoint_id}\nrelay_url={relay_url}\nip={ip}\n"
-        )
+        format!("endpoint_id={endpoint_id}\nrelay_url={relay_url}\nip={ip}\n")
     );
 }
 
@@ -43,15 +41,16 @@ fn rendezvous_round_trip_reconstructs_endpoint_addr() {
     let endpoint_id = SecretKey::from_bytes(&[0x72; 32]).public();
     let relay_url: RelayUrl = "http://127.0.0.1:3341".parse().expect("relay URL");
     let ip: SocketAddr = "198.51.100.20:4343".parse().expect("socket address");
-    let text = format!(
-        "endpoint_id={endpoint_id}\nrelay_url={relay_url}\nip={ip}\n"
-    );
+    let text = format!("endpoint_id={endpoint_id}\nrelay_url={relay_url}\nip={ip}\n");
 
     let parsed = Rendezvous::parse(&text).expect("valid rendezvous");
     let addr = parsed.endpoint_addr();
 
     assert_eq!(addr.id, endpoint_id);
-    assert_eq!(addr.relay_urls().copied().collect::<Vec<_>>(), vec![relay_url]);
+    assert_eq!(
+        addr.relay_urls().cloned().collect::<Vec<_>>(),
+        vec![relay_url]
+    );
     assert_eq!(addr.ip_addrs().copied().collect::<Vec<_>>(), vec![ip]);
 }
 
