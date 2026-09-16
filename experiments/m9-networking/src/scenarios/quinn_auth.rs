@@ -110,8 +110,8 @@ pub(crate) async fn measure_session_auth(
         responder_hello.protocol_ranges(),
         responder_hello.features(),
     );
-    let client_session = LogicalSession::new();
-    let server_session = LogicalSession::new();
+    let mut client_session = LogicalSession::new();
+    let mut server_session = LogicalSession::new();
 
     client_session
         .authenticate(SessionActivation::new(
