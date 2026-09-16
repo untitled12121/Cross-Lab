@@ -25,8 +25,8 @@ use crate::{
 };
 
 const READY_TIMEOUT: Duration = Duration::from_secs(10);
-// Covers Iroh 1.2.0's 20-26s periodic direct-address refresh when no link event fires.
-const PATH_CHANGE_TIMEOUT: Duration = Duration::from_secs(35);
+// Covers Iroh 1.2.0's 20-26s periodic direct-address refresh plus scheduling margin.
+const PATH_CHANGE_TIMEOUT: Duration = Duration::from_secs(30);
 const READY_POLL: Duration = Duration::from_millis(25);
 const CONTROL_PROBE: &[u8] = b"crosslab-m9-control-probe";
 const CONTROL_OK: &[u8] = b"crosslab-m9-control-ok";
@@ -34,6 +34,7 @@ const DATA_OPEN: &[u8] = b"crosslab-m9-data-v1";
 const DATA_PROBE: &[u8] = b"crosslab-m9-data-probe";
 const DATA_OK: &[u8] = b"crosslab-m9-data-ok";
 const DIRECT_OK: &[u8] = b"crosslab-m9-direct-ok";
+const DIRECT_UNAVAILABLE: &[u8] = b"crosslab-m9-direct-unavailable";
 const RECONNECT_PROBE: &[u8] = b"crosslab-m9-reconnect-probe";
 const RECONNECT_OK: &[u8] = b"crosslab-m9-reconnect-ok";
 
@@ -56,6 +57,7 @@ impl NetprobeRelayArgs {
 pub struct NetprobePeerArgs {
     rendezvous: PathBuf,
     relay_url: RelayUrl,
+    path_change_timeout: Duration,
 }
 
 impl NetprobePeerArgs {
@@ -63,7 +65,13 @@ impl NetprobePeerArgs {
         Self {
             rendezvous,
             relay_url,
+            path_change_timeout: PATH_CHANGE_TIMEOUT,
         }
+    }
+
+    pub fn with_path_change_timeout(mut self, timeout: Duration) -> Self {
+        self.path_change_timeout = timeout;
+        self
     }
 
     pub fn rendezvous(&self) -> &Path {
@@ -72,6 +80,10 @@ impl NetprobePeerArgs {
 
     pub const fn relay_url(&self) -> &RelayUrl {
         &self.relay_url
+    }
+
+    pub const fn path_change_timeout(&self) -> Duration {
+        self.path_change_timeout
     }
 }
 
@@ -183,7 +195,16 @@ pub async fn run_server(args: NetprobePeerArgs) -> Result<(), EvalError> {
     expect_finished(stream.as_mut()).await?;
     send_control(&transport, DATA_OK).await?;
 
-    expect_control(&transport, DIRECT_OK, PATH_CHANGE_TIMEOUT).await?;
+    let direct_status = receive_control(
+        &transport,
+        args.path_change_timeout().saturating_add(READY_TIMEOUT),
+    )
+    .await?;
+    if direct_status != DIRECT_OK && direct_status != DIRECT_UNAVAILABLE {
+        transport.shutdown().await;
+        endpoint.close().await;
+        return Err(EvalError::Control);
+    }
     transport.shutdown().await;
 
     let connection = accept_connection(&endpoint).await?;
@@ -273,26 +294,40 @@ where
     emit("control_verified", "true")?;
     emit("data_verified", "true")?;
 
-    wait_for_direct_path(&observed_connection, PATH_CHANGE_TIMEOUT).await?;
+    let direct_available = match wait_for_direct_path(&observed_connection, args.path_change_timeout()).await {
+        Ok(()) => true,
+        Err(EvalError::Timeout) => false,
+        Err(error) => return Err(error),
+    };
     let binding_unchanged = transport.channel_binding() == &binding_before;
     let session_unchanged = session
         .context()
         .is_some_and(|context| context.session_id() == session_before);
 
-    send_control(&transport, DIRECT_OK).await?;
+    if direct_available {
+        send_control(&transport, DIRECT_OK).await?;
+    } else {
+        send_control(&transport, DIRECT_UNAVAILABLE).await?;
+    }
     timeout(READY_TIMEOUT, observed_connection.closed())
         .await
         .map_err(|_| EvalError::Timeout)?;
 
-    emit("phase", "direct_verified")?;
-    emit(
-        "binding_unchanged",
-        if binding_unchanged { "true" } else { "false" },
-    )?;
-    emit(
-        "session_unchanged",
-        if session_unchanged { "true" } else { "false" },
-    )?;
+    if direct_available {
+        emit("phase", "direct_verified")?;
+        emit("direct_path_available", "true")?;
+        emit(
+            "binding_unchanged",
+            if binding_unchanged { "true" } else { "false" },
+        )?;
+        emit(
+            "session_unchanged",
+            if session_unchanged { "true" } else { "false" },
+        )?;
+    } else {
+        emit("phase", "direct_unavailable")?;
+        emit("direct_path_available", "false")?;
+    }
     transport.shutdown().await;
 
     let connection = connect_connection(&endpoint, &rendezvous).await?;
@@ -418,12 +453,11 @@ async fn send_control(transport: &dyn TransportConnection, frame: &[u8]) -> Resu
     .map_err(|_| EvalError::Timeout)?
 }
 
-async fn expect_control(
+async fn receive_control(
     transport: &dyn TransportConnection,
-    expected: &[u8],
     wait: Duration,
-) -> Result<(), EvalError> {
-    let frame = timeout(wait, async {
+) -> Result<Vec<u8>, EvalError> {
+    timeout(wait, async {
         loop {
             match transport.try_receive_control() {
                 Ok(frame) => return Ok(frame),
@@ -433,8 +467,15 @@ async fn expect_control(
         }
     })
     .await
-    .map_err(|_| EvalError::Timeout)??;
+    .map_err(|_| EvalError::Timeout)?
+}
 
+async fn expect_control(
+    transport: &dyn TransportConnection,
+    expected: &[u8],
+    wait: Duration,
+) -> Result<(), EvalError> {
+    let frame = receive_control(transport, wait).await?;
     if frame == expected {
         Ok(())
     } else {
