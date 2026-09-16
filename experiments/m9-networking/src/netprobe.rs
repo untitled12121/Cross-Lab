@@ -1,11 +1,42 @@
 use std::{
+    fs,
+    future,
+    io::{self, Write},
     net::SocketAddr,
     path::{Path, PathBuf},
+    time::Duration,
 };
 
-use iroh::{EndpointAddr, EndpointId, RelayUrl};
+use crosslab_core::{
+    ControlReceiveError, ControlSendError, StreamAcceptError, StreamOpenError, StreamReceiveError,
+    StreamSendError, TransportConnection, TransportReceiveStream, TransportSendStream,
+};
+use futures_util::StreamExt;
+use iroh::{Endpoint, EndpointAddr, EndpointId, RelayMode, RelayUrl, endpoint::presets};
+use tokio::time::{sleep, timeout};
 
-use crate::error::EvalError;
+use crate::{
+    candidate::{
+        binding::derive_channel_binding,
+        endpoint::M9_ALPN,
+    },
+    error::EvalError,
+    relay::OwnerRelay,
+    scenarios::{
+        auth::AuthFixture,
+        split_auth::{authenticate_side, reserve_control_initiator, reserve_control_responder},
+    },
+};
+
+const READY_TIMEOUT: Duration = Duration::from_secs(10);
+const READY_POLL: Duration = Duration::from_millis(25);
+const CONTROL_PROBE: &[u8] = b"crosslab-m9-control-probe";
+const CONTROL_OK: &[u8] = b"crosslab-m9-control-ok";
+const DATA_OPEN: &[u8] = b"crosslab-m9-data-v1";
+const DATA_PROBE: &[u8] = b"crosslab-m9-data-probe";
+const DATA_OK: &[u8] = b"crosslab-m9-data-ok";
+const DIRECT_OK: &[u8] = b"crosslab-m9-direct-ok";
+const FINISH: &[u8] = b"crosslab-m9-finish";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NetprobeRelayArgs {
@@ -106,6 +137,351 @@ impl Rendezvous {
         }
         addr
     }
+}
+
+pub async fn run_relay(args: NetprobeRelayArgs) -> Result<(), EvalError> {
+    let _relay = OwnerRelay::start_on(args.bind()).await?;
+    future::pending::<()>().await;
+    Ok(())
+}
+
+pub async fn run_server(args: NetprobePeerArgs) -> Result<(), EvalError> {
+    let endpoint = peer_endpoint(args.relay_url()).await?;
+    let rendezvous = Rendezvous::new(endpoint.id(), Some(args.relay_url().clone()), None);
+    fs::write(args.rendezvous(), rendezvous.to_text()).map_err(|_| EvalError::Setup)?;
+
+    let incoming = timeout(READY_TIMEOUT, endpoint.accept())
+        .await
+        .map_err(|_| EvalError::Timeout)?
+        .ok_or(EvalError::Connect)?;
+    let connection = timeout(READY_TIMEOUT, incoming)
+        .await
+        .map_err(|_| EvalError::Timeout)?
+        .map_err(|_| EvalError::Connect)?;
+    let binding = derive_channel_binding(&connection)?;
+    let (send, recv) = reserve_control_responder(&connection).await?;
+    let fixture = AuthFixture::new();
+    let side = authenticate_side(
+        &fixture,
+        crosslab_core::SessionAuthRole::Responder,
+        connection,
+        binding,
+        send,
+        recv,
+    )
+    .await?;
+    let transport = side.transport;
+
+    expect_control(&transport, CONTROL_PROBE).await?;
+    send_control(&transport, CONTROL_OK).await?;
+
+    let incoming = accept_uni(&transport).await?;
+    if incoming.opening_frame() != DATA_OPEN {
+        transport.shutdown().await;
+        endpoint.close().await;
+        return Err(EvalError::Bulk);
+    }
+    let (_, mut stream) = incoming.into_parts();
+    let payload = receive_chunk(stream.as_mut()).await?;
+    if payload != DATA_PROBE {
+        transport.shutdown().await;
+        endpoint.close().await;
+        return Err(EvalError::Bulk);
+    }
+    expect_finished(stream.as_mut()).await?;
+    send_control(&transport, DATA_OK).await?;
+
+    expect_control(&transport, DIRECT_OK).await?;
+    send_control(&transport, FINISH).await?;
+
+    transport.shutdown().await;
+    endpoint.close().await;
+    Ok(())
+}
+
+pub async fn run_client(args: NetprobePeerArgs) -> Result<String, EvalError> {
+    let mut output = String::new();
+    run_client_inner(args, |key, value| {
+        output.push_str(key);
+        output.push('\t');
+        output.push_str(value);
+        output.push('\n');
+        Ok(())
+    })
+    .await?;
+    Ok(output)
+}
+
+pub async fn run_client_streaming(args: NetprobePeerArgs) -> Result<(), EvalError> {
+    let mut stdout = io::stdout();
+    run_client_inner(args, |key, value| {
+        writeln!(stdout, "{key}\t{value}").map_err(|_| EvalError::Setup)?;
+        stdout.flush().map_err(|_| EvalError::Setup)
+    })
+    .await
+}
+
+async fn run_client_inner<F>(args: NetprobePeerArgs, mut emit: F) -> Result<(), EvalError>
+where
+    F: FnMut(&str, &str) -> Result<(), EvalError>,
+{
+    let rendezvous = wait_for_rendezvous(args.rendezvous()).await?;
+    let endpoint = peer_endpoint(args.relay_url()).await?;
+    let connection = timeout(
+        READY_TIMEOUT,
+        endpoint.connect(rendezvous.endpoint_addr(), M9_ALPN),
+    )
+    .await
+    .map_err(|_| EvalError::Timeout)?
+    .map_err(|_| EvalError::Connect)?;
+    let observed_connection = connection.clone();
+    let binding = derive_channel_binding(&connection)?;
+    let (send, recv) = reserve_control_initiator(&connection).await?;
+    let fixture = AuthFixture::new();
+    let side = authenticate_side(
+        &fixture,
+        crosslab_core::SessionAuthRole::Initiator,
+        connection,
+        binding,
+        send,
+        recv,
+    )
+    .await?;
+    let transport = side.transport;
+    let session = side.session;
+    let binding_before = transport.channel_binding().clone();
+    let session_before = session
+        .context()
+        .ok_or(EvalError::Control)?
+        .session_id();
+
+    send_control(&transport, CONTROL_PROBE).await?;
+    expect_control(&transport, CONTROL_OK).await?;
+
+    let mut stream = open_uni(&transport, DATA_OPEN).await?;
+    send_chunk(stream.as_mut(), DATA_PROBE).await?;
+    stream.finish();
+    expect_control(&transport, DATA_OK).await?;
+
+    emit("phase", "relay_verified")?;
+    emit("network_class", "remote")?;
+    emit("control_verified", "true")?;
+    emit("data_verified", "true")?;
+
+    wait_for_direct_path(&observed_connection).await?;
+    let binding_unchanged = transport.channel_binding() == &binding_before;
+    let session_unchanged = session
+        .context()
+        .is_some_and(|context| context.session_id() == session_before);
+
+    send_control(&transport, DIRECT_OK).await?;
+    expect_control(&transport, FINISH).await?;
+
+    emit("phase", "direct_verified")?;
+    emit(
+        "binding_unchanged",
+        if binding_unchanged { "true" } else { "false" },
+    )?;
+    emit(
+        "session_unchanged",
+        if session_unchanged { "true" } else { "false" },
+    )?;
+
+    transport.shutdown().await;
+    endpoint.close().await;
+    Ok(())
+}
+
+async fn peer_endpoint(relay_url: &RelayUrl) -> Result<Endpoint, EvalError> {
+    let endpoint = Endpoint::builder(presets::Minimal)
+        .relay_mode(RelayMode::custom([relay_url.clone()]))
+        .alpns(vec![M9_ALPN.to_vec()])
+        .bind_addr("0.0.0.0:0")
+        .map_err(|_| EvalError::Setup)?
+        .bind()
+        .await
+        .map_err(|_| EvalError::Setup)?;
+    wait_for_relay(&endpoint, relay_url).await?;
+    Ok(endpoint)
+}
+
+async fn wait_for_relay(endpoint: &Endpoint, relay_url: &RelayUrl) -> Result<(), EvalError> {
+    timeout(READY_TIMEOUT, async {
+        loop {
+            if endpoint.addr().relay_urls().any(|url| url == relay_url) {
+                return;
+            }
+            sleep(READY_POLL).await;
+        }
+    })
+    .await
+    .map_err(|_| EvalError::Timeout)
+}
+
+async fn wait_for_rendezvous(path: &Path) -> Result<Rendezvous, EvalError> {
+    timeout(READY_TIMEOUT, async {
+        loop {
+            match fs::read_to_string(path) {
+                Ok(text) => return Rendezvous::parse(&text),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => sleep(READY_POLL).await,
+                Err(_) => return Err(EvalError::Setup),
+            }
+        }
+    })
+    .await
+    .map_err(|_| EvalError::Timeout)?
+}
+
+async fn send_control(
+    transport: &dyn TransportConnection,
+    frame: &[u8],
+) -> Result<(), EvalError> {
+    let mut frame = frame.to_vec();
+    timeout(READY_TIMEOUT, async {
+        loop {
+            match transport.try_send_control(frame) {
+                Ok(()) => return Ok(()),
+                Err(ControlSendError::Full(returned)) => {
+                    frame = returned;
+                    tokio::task::yield_now().await;
+                }
+                Err(ControlSendError::TooLarge(_) | ControlSendError::Closed(_)) => {
+                    return Err(EvalError::Control);
+                }
+            }
+        }
+    })
+    .await
+    .map_err(|_| EvalError::Timeout)?
+}
+
+async fn expect_control(
+    transport: &dyn TransportConnection,
+    expected: &[u8],
+) -> Result<(), EvalError> {
+    let frame = timeout(READY_TIMEOUT, async {
+        loop {
+            match transport.try_receive_control() {
+                Ok(frame) => return Ok(frame),
+                Err(ControlReceiveError::Empty) => tokio::task::yield_now().await,
+                Err(ControlReceiveError::Closed) => return Err(EvalError::Control),
+            }
+        }
+    })
+    .await
+    .map_err(|_| EvalError::Timeout)??;
+
+    if frame == expected {
+        Ok(())
+    } else {
+        Err(EvalError::Control)
+    }
+}
+
+async fn open_uni(
+    transport: &dyn TransportConnection,
+    opening: &[u8],
+) -> Result<Box<dyn TransportSendStream>, EvalError> {
+    let mut opening = opening.to_vec();
+    timeout(READY_TIMEOUT, async {
+        loop {
+            match transport.try_open_uni_stream(opening) {
+                Ok(stream) => return Ok(stream),
+                Err(StreamOpenError::Full(returned)) => {
+                    opening = returned;
+                    tokio::task::yield_now().await;
+                }
+                Err(StreamOpenError::TooLarge(_) | StreamOpenError::Closed(_)) => {
+                    return Err(EvalError::Bulk);
+                }
+            }
+        }
+    })
+    .await
+    .map_err(|_| EvalError::Timeout)?
+}
+
+async fn send_chunk(
+    stream: &mut dyn TransportSendStream,
+    chunk: &[u8],
+) -> Result<(), EvalError> {
+    let mut chunk = chunk.to_vec();
+    timeout(READY_TIMEOUT, async {
+        loop {
+            match stream.try_send_chunk(chunk) {
+                Ok(()) => return Ok(()),
+                Err(StreamSendError::Full(returned)) => {
+                    chunk = returned;
+                    tokio::task::yield_now().await;
+                }
+                Err(StreamSendError::TooLarge(_) | StreamSendError::Closed(_)) => {
+                    return Err(EvalError::Bulk);
+                }
+            }
+        }
+    })
+    .await
+    .map_err(|_| EvalError::Timeout)?
+}
+
+async fn accept_uni(
+    transport: &dyn TransportConnection,
+) -> Result<crosslab_core::IncomingUniStream, EvalError> {
+    timeout(READY_TIMEOUT, async {
+        loop {
+            match transport.try_accept_uni_stream() {
+                Ok(stream) => return Ok(stream),
+                Err(StreamAcceptError::Empty) => tokio::task::yield_now().await,
+                Err(StreamAcceptError::Closed) => return Err(EvalError::Bulk),
+            }
+        }
+    })
+    .await
+    .map_err(|_| EvalError::Timeout)?
+}
+
+async fn receive_chunk(stream: &mut dyn TransportReceiveStream) -> Result<Vec<u8>, EvalError> {
+    timeout(READY_TIMEOUT, async {
+        loop {
+            match stream.try_receive_chunk() {
+                Ok(chunk) => return Ok(chunk),
+                Err(StreamReceiveError::Empty) => tokio::task::yield_now().await,
+                Err(StreamReceiveError::Finished | StreamReceiveError::Cancelled) => {
+                    return Err(EvalError::Bulk);
+                }
+            }
+        }
+    })
+    .await
+    .map_err(|_| EvalError::Timeout)?
+}
+
+async fn expect_finished(stream: &mut dyn TransportReceiveStream) -> Result<(), EvalError> {
+    timeout(READY_TIMEOUT, async {
+        loop {
+            match stream.try_receive_chunk() {
+                Err(StreamReceiveError::Empty) => tokio::task::yield_now().await,
+                Err(StreamReceiveError::Finished) => return Ok(()),
+                Ok(_) | Err(StreamReceiveError::Cancelled) => return Err(EvalError::Bulk),
+            }
+        }
+    })
+    .await
+    .map_err(|_| EvalError::Timeout)?
+}
+
+async fn wait_for_direct_path(connection: &iroh::endpoint::Connection) -> Result<(), EvalError> {
+    let mut paths = connection.paths_stream();
+    timeout(READY_TIMEOUT, async {
+        while let Some(paths) = paths.next().await {
+            if paths.iter().any(|path| path.remote_addr().is_ip()) {
+                return Ok(());
+            }
+        }
+        Err(EvalError::Connect)
+    })
+    .await
+    .map_err(|_| EvalError::Timeout)?
 }
 
 fn parse_required<'a>(line: Option<&'a str>, key: &str) -> Result<&'a str, EvalError> {

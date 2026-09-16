@@ -12,7 +12,10 @@ pub(crate) struct OwnerRelay {
 
 impl OwnerRelay {
     pub(crate) async fn start() -> Result<Self, EvalError> {
-        let bind_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
+        Self::start_on(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).await
+    }
+
+    pub(crate) async fn start_on(bind_addr: SocketAddr) -> Result<Self, EvalError> {
         let mut config = ServerConfig::default();
         config.relay = Some(RelayConfig::new(bind_addr));
         let server = Server::spawn(config).await.map_err(|_| EvalError::Setup)?;
