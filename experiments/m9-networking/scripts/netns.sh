@@ -189,11 +189,11 @@ ip netns exec "$PEER_A" "$BIN" netprobe-client \
 client_pid=$!
 
 for ((attempt = 0; attempt < 400; attempt++)); do
-    grep -Fq 'phase=relay_verified' "$CLIENT_LOG" && break
+    grep -Fq $'phase\trelay_verified' "$CLIENT_LOG" && break
     kill -0 "$client_pid" 2>/dev/null || fail "netprobe client exited before relay verification"
     sleep 0.05
 done
-grep -Fq 'phase=relay_verified' "$CLIENT_LOG" || fail "timed out waiting for relay verification"
+grep -Fq $'phase\trelay_verified' "$CLIENT_LOG" || fail "timed out waiting for relay verification"
 
 allow_direct_udp
 
