@@ -20,10 +20,8 @@ async fn direct_path_timeout_is_recorded_and_reconnect_still_verifies() {
     let relay = tokio::spawn(run_relay(NetprobeRelayArgs::new(bind)));
     wait_for_listener(bind).await;
 
-    let rendezvous = std::env::temp_dir().join(format!(
-        "crosslab-m9-direct-timeout-{}.addr",
-        process::id(),
-    ));
+    let rendezvous =
+        std::env::temp_dir().join(format!("crosslab-m9-direct-timeout-{}.addr", process::id(),));
     let _ = fs::remove_file(&rendezvous);
     let args = NetprobePeerArgs::new(rendezvous.clone(), relay_url)
         .with_path_change_timeout(Duration::ZERO);
