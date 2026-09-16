@@ -11,11 +11,11 @@ permissions:
 
 jobs:
   focused:
-    name: Resource observations RED
+    name: Benchmark binary RED
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Install Rust
         run: rustup toolchain install 1.98.1 --profile minimal
-      - name: Resource observations contract
-        run: cargo test -p crosslab-m9-networking --test baseline local_benchmark_records_platform_resource_observations -- --nocapture
+      - name: Benchmark binary contract
+        run: cargo test -p crosslab-m9-networking --test cli -- --nocapture
