@@ -4,11 +4,15 @@ use crosslab_core::{
     ControlReceiveError, IncomingUniStream, StreamAcceptError, StreamReceiveError,
     TransportConnection, TransportReceiveStream,
 };
-use crosslab_m9_networking::scenarios::{
-    auth::AuthFixture,
-    relay::{
-        exercise_relay_operation_invariant, exercise_relay_sequence_invariant, relay_only_pair,
-        relay_then_direct_pair,
+use crosslab_m9_networking::{
+    config::EvalConfig,
+    metrics::MetricKind,
+    scenarios::{
+        auth::AuthFixture,
+        relay::{
+            exercise_relay_operation_invariant, exercise_relay_sequence_invariant, relay_only_pair,
+            relay_then_direct_pair,
+        },
     },
 };
 use crosslab_policy::NetworkClass;
@@ -16,6 +20,23 @@ use tokio::time::{sleep, timeout};
 
 const WAIT: Duration = Duration::from_secs(10);
 const POLL: Duration = Duration::from_millis(5);
+
+#[tokio::test]
+async fn iroh_relay_records_connect_auth_control_bulk_and_shutdown() {
+    let report = crosslab_m9_networking::baseline::run_iroh_relay_sample(EvalConfig::test())
+        .await
+        .expect("Iroh relay benchmark should complete");
+
+    for metric in [
+        MetricKind::ProtectedConnectMicros,
+        MetricKind::SessionAuthMicros,
+        MetricKind::ControlRttMicros,
+        MetricKind::BulkBytesPerSecond,
+        MetricKind::ShutdownMicros,
+    ] {
+        assert!(report.contains(metric), "missing {metric:?}");
+    }
+}
 
 #[tokio::test]
 async fn relay_only_pair_carries_authenticated_control_and_data() {
