@@ -21,7 +21,7 @@ jobs:
       - name: Install namespace tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y iproute2 nftables time
+          sudo apt-get install -y iproute2 nftables tcpdump time
       - name: M9 package gate
         run: |
           cargo test -p crosslab-m9-networking
