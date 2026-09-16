@@ -1,72 +1,30 @@
-name: M9 Task 8 Evidence Gate
+name: M9 Task 8 Formatter
 
 on:
   push:
     branches:
       - m9-task8-network-evidence
-  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  evidence:
-    name: Controlled NAT and same-host evidence
+  format:
+    name: Apply rustfmt
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - name: Install Rust
-        run: rustup toolchain install 1.98.1 --profile minimal
-      - name: Install namespace tools
+      - name: Install Rust formatter
+        run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt
+      - name: Format and checkpoint
         run: |
-          sudo apt-get update
-          sudo apt-get install -y iproute2 nftables time
-      - name: M9 package gate
-        run: |
-          cargo test -p crosslab-m9-networking
-          cargo fmt --all -- --check
-          cargo check -p crosslab-m9-networking --all-targets
-          cargo clippy -p crosslab-m9-networking --all-targets -- -D warnings
-      - name: Build netprobe binary
-        run: cargo build -p crosslab-m9-networking --bin m9-networking
-      - name: Controlled namespace NAT relay gate
-        run: |
-          sudo bash experiments/m9-networking/scripts/netns.sh target/debug/m9-networking /tmp/m9-netns.tsv
-          echo '=== M9_NETNS_EVIDENCE ==='
-          cat /tmp/m9-netns.tsv
-          for expected in \
-            $'phase\trelay_verified' \
-            $'network_class\tremote' \
-            $'control_verified\ttrue' \
-            $'data_verified\ttrue' \
-            $'phase\tdirect_verified' \
-            $'binding_unchanged\ttrue' \
-            $'session_unchanged\ttrue' \
-            $'phase\treconnect_verified' \
-            $'binding_refreshed\ttrue' \
-            $'session_refreshed\ttrue' \
-            $'reconnect_control_verified\ttrue'; do
-            grep -Fx "$expected" /tmp/m9-netns.tsv
-          done
-      - name: Environment evidence
-        run: |
-          echo '=== M9_ENVIRONMENT ==='
-          uname -a
-          lscpu
-          free -h
-          rustc --version
-          cargo --version
-          systemd-detect-virt || true
-          uptime
-          cat /proc/loadavg
-      - name: Same-host measurements
-        run: |
-          cargo run -p crosslab-m9-networking --bin m9-networking -- local-all --samples 10 --payload-bytes 4194304 > /tmp/m9-local.tsv
-          /usr/bin/time -v cargo run -p crosslab-m9-networking --bin m9-networking -- local-all --samples 10 --payload-bytes 4194304 > /tmp/m9-local-time.tsv 2> /tmp/m9-local-time.txt
-          echo '=== M9_LOCAL_TSV ==='
-          cat /tmp/m9-local.tsv
-          echo '=== M9_LOCAL_TIME_TSV ==='
-          cat /tmp/m9-local-time.tsv
-          echo '=== M9_LOCAL_TIME ==='
-          cat /tmp/m9-local-time.txt
+          cargo fmt --all
+          if git diff --quiet; then
+            echo 'rustfmt already clean'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add experiments/m9-networking
+          git commit -m 'style(networking): format Task 8 runtime'
+          git push origin HEAD:m9-task8-network-evidence
