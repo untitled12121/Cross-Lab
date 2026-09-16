@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   evidence:
@@ -16,100 +16,21 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - name: Apply direct-path timeout hypothesis
-        id: patch
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          path = Path("experiments/m9-networking/src/netprobe.rs")
-          text = path.read_text()
-          replacements = [
-              (
-                  "const READY_TIMEOUT: Duration = Duration::from_secs(10);\nconst READY_POLL: Duration = Duration::from_millis(25);",
-                  "const READY_TIMEOUT: Duration = Duration::from_secs(10);\n// Covers Iroh 1.2.0's 20-26s periodic direct-address refresh when no link event fires.\nconst PATH_CHANGE_TIMEOUT: Duration = Duration::from_secs(35);\nconst READY_POLL: Duration = Duration::from_millis(25);",
-              ),
-              (
-                  "expect_control(&transport, CONTROL_PROBE).await?;",
-                  "expect_control(&transport, CONTROL_PROBE, READY_TIMEOUT).await?;",
-              ),
-              (
-                  "expect_control(&transport, DIRECT_OK).await?;",
-                  "expect_control(&transport, DIRECT_OK, PATH_CHANGE_TIMEOUT).await?;",
-              ),
-              (
-                  "expect_control(&transport, RECONNECT_PROBE).await?;",
-                  "expect_control(&transport, RECONNECT_PROBE, READY_TIMEOUT).await?;",
-              ),
-              (
-                  "expect_control(&transport, CONTROL_OK).await?;",
-                  "expect_control(&transport, CONTROL_OK, READY_TIMEOUT).await?;",
-              ),
-              (
-                  "expect_control(&transport, DATA_OK).await?;",
-                  "expect_control(&transport, DATA_OK, READY_TIMEOUT).await?;",
-              ),
-              (
-                  "expect_control(&transport, RECONNECT_OK).await?;",
-                  "expect_control(&transport, RECONNECT_OK, READY_TIMEOUT).await?;",
-              ),
-              (
-                  "wait_for_direct_path(&observed_connection).await?;",
-                  "wait_for_direct_path(&observed_connection, PATH_CHANGE_TIMEOUT).await?;",
-              ),
-              (
-                  "async fn expect_control(\n    transport: &dyn TransportConnection,\n    expected: &[u8],\n) -> Result<(), EvalError> {\n    let frame = timeout(READY_TIMEOUT, async {",
-                  "async fn expect_control(\n    transport: &dyn TransportConnection,\n    expected: &[u8],\n    wait: Duration,\n) -> Result<(), EvalError> {\n    let frame = timeout(wait, async {",
-              ),
-              (
-                  "async fn wait_for_direct_path(connection: &iroh::endpoint::Connection) -> Result<(), EvalError> {\n    let mut paths = connection.paths_stream();\n    timeout(READY_TIMEOUT, async {",
-                  "async fn wait_for_direct_path(\n    connection: &iroh::endpoint::Connection,\n    wait: Duration,\n) -> Result<(), EvalError> {\n    let mut paths = connection.paths_stream();\n    timeout(wait, async {",
-              ),
-          ]
-
-          changed = False
-          for old, new in replacements:
-              if new in text:
-                  continue
-              if old not in text:
-                  raise SystemExit(f"expected patch anchor missing: {old!r}")
-              text = text.replace(old, new)
-              changed = True
-
-          if changed:
-              path.write_text(text)
-          PY
-          if git diff --quiet -- experiments/m9-networking/src/netprobe.rs; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add experiments/m9-networking/src/netprobe.rs
-          git commit -m "fix(networking): cover delayed direct-path refresh"
-          git push origin HEAD:m9-task8-network-evidence
-          echo "changed=true" >> "$GITHUB_OUTPUT"
       - name: Install Rust
-        if: steps.patch.outputs.changed != 'true'
         run: rustup toolchain install 1.98.1 --profile minimal --component clippy,rustfmt
       - name: Install namespace tools
-        if: steps.patch.outputs.changed != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y iproute2 nftables time
       - name: M9 package gate
-        if: steps.patch.outputs.changed != 'true'
         run: |
           cargo test -p crosslab-m9-networking
           cargo fmt --all -- --check
           cargo check -p crosslab-m9-networking --all-targets
           cargo clippy -p crosslab-m9-networking --all-targets -- -D warnings
       - name: Build netprobe binary
-        if: steps.patch.outputs.changed != 'true'
         run: cargo build -p crosslab-m9-networking --bin m9-networking
       - name: Controlled namespace NAT relay gate
-        if: steps.patch.outputs.changed != 'true'
         run: |
           sudo bash experiments/m9-networking/scripts/netns.sh target/debug/m9-networking /tmp/m9-netns.tsv
           echo '=== M9_NETNS_EVIDENCE ==='
@@ -129,7 +50,7 @@ jobs:
             grep -Fx "$expected" /tmp/m9-netns.tsv
           done
       - name: Environment evidence
-        if: steps.patch.outputs.changed != 'true' && always()
+        if: ${{ always() }}
         run: |
           echo '=== M9_ENVIRONMENT ==='
           uname -a
@@ -141,7 +62,7 @@ jobs:
           uptime
           cat /proc/loadavg
       - name: Same-host measurements
-        if: steps.patch.outputs.changed != 'true' && always()
+        if: ${{ always() }}
         run: |
           cargo run -p crosslab-m9-networking --bin m9-networking -- local-all --samples 10 --payload-bytes 4194304 > /tmp/m9-local.tsv
           /usr/bin/time -v cargo run -p crosslab-m9-networking --bin m9-networking -- local-all --samples 10 --payload-bytes 4194304 > /tmp/m9-local-time.tsv 2> /tmp/m9-local-time.txt
