@@ -1,7 +1,12 @@
-use std::time::Duration;
+use std::{num::NonZeroUsize, time::Duration};
 
-use crosslab_core::{ChannelBinding, TransportConnection};
-use crosslab_policy::{NetworkClass, SessionId};
+use crosslab_core::{ChannelBinding, ControlReceiveError, TransportConnection};
+use crosslab_policy::{NetworkClass, PolicyState, SessionId, TrustRecord};
+use crosslab_protocol::{CapabilityAdvertisement, StreamId};
+use crosslab_sim::{
+    node::{NodeError, NodeEvent, SimNode},
+    stream::SimStreamRuntime,
+};
 use futures_util::StreamExt;
 use iroh::{
     Endpoint, EndpointAddr, RelayMode,
@@ -13,7 +18,14 @@ use crate::{
     candidate::endpoint::{ConnectedPair, M9_ALPN, connect_endpoints},
     error::EvalError,
     relay::OwnerRelay,
-    scenarios::auth::{AuthFixture, AuthenticatedIrohPair, authenticate_connected_pair},
+    scenarios::{
+        auth::{
+            AuthFixture, AuthenticatedIrohPair, AuthenticatedIrohParts, authenticate_connected_pair,
+        },
+        lifecycle::{
+            eventually_accept, eventually_finished, eventually_receive, prepare_stream_authority,
+        },
+    },
 };
 
 const RELAY_READY_TIMEOUT: Duration = Duration::from_secs(10);
@@ -51,17 +63,7 @@ impl RelayObservedPair {
     }
 
     pub async fn wait_for_direct_path(&mut self, wait: Duration) -> Result<(), EvalError> {
-        let mut paths = self.observed_connection.paths_stream();
-        timeout(wait, async {
-            while let Some(paths) = paths.next().await {
-                if paths.iter().any(|path| path.remote_addr().is_ip()) {
-                    return Ok(());
-                }
-            }
-            Err(EvalError::Connect)
-        })
-        .await
-        .map_err(|_| EvalError::Timeout)?
+        wait_for_direct_path_on(&self.observed_connection, wait).await
     }
 
     pub async fn shutdown(self) -> Result<(), EvalError> {
@@ -95,6 +97,172 @@ async fn relay_pair(
         pair,
         observed_connection,
     })
+}
+
+pub struct RelaySequenceEvidence {
+    pub before_send_sequence: Option<u64>,
+    pub before_receive_sequence: Option<u64>,
+    pub after_send_sequence: Option<u64>,
+    pub after_receive_sequence: Option<u64>,
+}
+
+pub async fn exercise_relay_sequence_invariant(
+    fixture: &AuthFixture,
+) -> Result<RelaySequenceEvidence, EvalError> {
+    let RelayObservedPair {
+        relay,
+        pair,
+        observed_connection,
+    } = relay_then_direct_pair(fixture).await?;
+    let AuthenticatedIrohParts {
+        direct,
+        client_transport,
+        server_transport,
+        client_session,
+        server_session,
+    } = pair.into_parts();
+    let capacity = NonZeroUsize::new(16).expect("nonzero Task 7 state capacity");
+    let mut client = SimNode::new(
+        client_session,
+        &client_transport,
+        PolicyState::new(),
+        Vec::new(),
+        NetworkClass::Remote,
+        capacity,
+    )
+    .map_err(|_| EvalError::Control)?;
+    let mut server = SimNode::new(
+        server_session,
+        &server_transport,
+        PolicyState::new(),
+        Vec::new(),
+        NetworkClass::Remote,
+        capacity,
+    )
+    .map_err(|_| EvalError::Control)?;
+    let peer_trust = fixture.initiator_trust();
+
+    send_empty_capabilities(&mut client)?;
+    wait_for_capability_update(&mut server, &peer_trust).await?;
+    let before_send_sequence = client.next_send_sequence();
+    let before_receive_sequence = server.expected_receive_sequence();
+
+    wait_for_direct_path_on(&observed_connection, RELAY_READY_TIMEOUT).await?;
+
+    send_empty_capabilities(&mut client)?;
+    wait_for_capability_update(&mut server, &peer_trust).await?;
+    let after_send_sequence = client.next_send_sequence();
+    let after_receive_sequence = server.expected_receive_sequence();
+
+    client.shutdown();
+    server.shutdown();
+    drop((client, server));
+    tokio::join!(client_transport.shutdown(), server_transport.shutdown());
+    direct.shutdown().await;
+    relay.shutdown().await?;
+
+    Ok(RelaySequenceEvidence {
+        before_send_sequence,
+        before_receive_sequence,
+        after_send_sequence,
+        after_receive_sequence,
+    })
+}
+
+pub async fn exercise_relay_operation_invariant(
+    fixture: &AuthFixture,
+) -> Result<Vec<u8>, EvalError> {
+    let RelayObservedPair {
+        relay,
+        pair,
+        observed_connection,
+    } = relay_then_direct_pair(fixture).await?;
+    let AuthenticatedIrohParts {
+        direct,
+        client_transport,
+        server_transport,
+        mut client_session,
+        mut server_session,
+    } = pair.into_parts();
+    let authority = prepare_stream_authority(fixture, &mut client_session, &mut server_session);
+    let capacity = NonZeroUsize::new(8).expect("nonzero Task 7 stream capacity");
+    let mut sender = SimStreamRuntime::new(client_session, &client_transport, capacity)
+        .map_err(|_| EvalError::Bulk)?;
+    let mut receiver = SimStreamRuntime::new(server_session, &server_transport, capacity)
+        .map_err(|_| EvalError::Bulk)?;
+    receiver
+        .register_operation(authority.operation().clone())
+        .map_err(|_| EvalError::Bulk)?;
+
+    wait_for_direct_path_on(&observed_connection, RELAY_READY_TIMEOUT).await?;
+
+    let open = authority.open(StreamId::from_bytes([0xd1; 16]));
+    let mut send = sender.open_uni(&open).map_err(|_| EvalError::Bulk)?;
+    let stream_id = eventually_accept(
+        &mut receiver,
+        15,
+        authority.peer_trust(),
+        authority.policy(),
+    )
+    .await
+    .map_err(|_| EvalError::Bulk)?;
+    let expected = b"path-operation".to_vec();
+    send.try_send_chunk(expected.clone())
+        .map_err(|_| EvalError::Bulk)?;
+    let payload = eventually_receive(&mut receiver, stream_id).await;
+    send.finish();
+    eventually_finished(&mut receiver, stream_id).await;
+
+    sender.shutdown();
+    receiver.shutdown();
+    drop((sender, receiver));
+    tokio::join!(client_transport.shutdown(), server_transport.shutdown());
+    direct.shutdown().await;
+    relay.shutdown().await?;
+
+    if payload != expected {
+        return Err(EvalError::Bulk);
+    }
+    Ok(payload)
+}
+
+fn send_empty_capabilities(node: &mut SimNode<'_>) -> Result<(), EvalError> {
+    let advertisement = CapabilityAdvertisement::new(Vec::new()).map_err(|_| EvalError::Control)?;
+    node.send_capability_advertisement(advertisement)
+        .map_err(|_| EvalError::Control)
+}
+
+async fn wait_for_capability_update(
+    node: &mut SimNode<'_>,
+    peer_trust: &TrustRecord,
+) -> Result<(), EvalError> {
+    timeout(RELAY_READY_TIMEOUT, async {
+        loop {
+            match node.receive_one(peer_trust) {
+                Ok(NodeEvent::CapabilitiesUpdated) => return Ok(()),
+                Err(NodeError::Receive(ControlReceiveError::Empty)) => {
+                    tokio::task::yield_now().await;
+                }
+                Ok(_) | Err(_) => return Err(EvalError::Control),
+            }
+        }
+    })
+    .await
+    .map_err(|_| EvalError::Timeout)?
+}
+
+async fn wait_for_direct_path_on(connection: &Connection, wait: Duration) -> Result<(), EvalError> {
+    let mut paths = connection.paths_stream();
+    timeout(wait, async {
+        while let Some(paths) = paths.next().await {
+            if paths.iter().any(|path| path.remote_addr().is_ip()) {
+                return Ok(());
+            }
+        }
+        Err(EvalError::Connect)
+    })
+    .await
+    .map_err(|_| EvalError::Timeout)?
 }
 
 async fn connect_relay_pair(

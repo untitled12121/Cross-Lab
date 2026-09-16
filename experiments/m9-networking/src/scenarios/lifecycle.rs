@@ -66,7 +66,7 @@ pub struct RevocationLifecycleEvidence {
     pub reconnect_error: SessionError,
 }
 
-struct StreamAuthority {
+pub(crate) struct StreamAuthority {
     capability: CapabilityId,
     version: CapabilityVersion,
     operation_name: OperationName,
@@ -74,6 +74,24 @@ struct StreamAuthority {
     peer_trust: TrustRecord,
     policy: PolicyState,
     session_id: SessionId,
+}
+
+impl StreamAuthority {
+    pub(crate) fn operation(&self) -> &AuthorizedOperation {
+        &self.operation
+    }
+
+    pub(crate) fn peer_trust(&self) -> &TrustRecord {
+        &self.peer_trust
+    }
+
+    pub(crate) fn policy(&self) -> &PolicyState {
+        &self.policy
+    }
+
+    pub(crate) fn open(&self, stream_id: StreamId) -> DataStreamOpen {
+        stream_open(self, self.operation.id(), stream_id)
+    }
 }
 
 struct StreamContext {
@@ -520,7 +538,7 @@ fn clipboard_event(event_id: EventId, body: &[u8]) -> Event {
     .unwrap()
 }
 
-fn prepare_stream_authority(
+pub(crate) fn prepare_stream_authority(
     fixture: &AuthFixture,
     client_session: &mut LogicalSession,
     server_session: &mut LogicalSession,
@@ -657,7 +675,7 @@ async fn eventually_node_dispatch_error(
     .expect("node dispatch error was not delivered before timeout")
 }
 
-async fn eventually_accept(
+pub(crate) async fn eventually_accept(
     runtime: &mut SimStreamRuntime<'_>,
     now: u64,
     peer_trust: &TrustRecord,
@@ -677,7 +695,10 @@ async fn eventually_accept(
     .expect("stream accept did not resolve before timeout")
 }
 
-async fn eventually_receive(runtime: &mut SimStreamRuntime<'_>, stream_id: StreamId) -> Vec<u8> {
+pub(crate) async fn eventually_receive(
+    runtime: &mut SimStreamRuntime<'_>,
+    stream_id: StreamId,
+) -> Vec<u8> {
     match eventually_receive_result(runtime, stream_id).await {
         Ok(chunk) => chunk,
         Err(error) => panic!("stream failed before payload arrived: {error:?}"),
@@ -702,7 +723,7 @@ async fn eventually_receive_result(
     .expect("stream terminal result did not arrive before timeout")
 }
 
-async fn eventually_finished(runtime: &mut SimStreamRuntime<'_>, stream_id: StreamId) {
+pub(crate) async fn eventually_finished(runtime: &mut SimStreamRuntime<'_>, stream_id: StreamId) {
     assert!(matches!(
         eventually_receive_result(runtime, stream_id).await,
         Err(SimStreamError::Receive(StreamReceiveError::Finished))
