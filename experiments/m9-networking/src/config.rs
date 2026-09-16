@@ -1,5 +1,7 @@
 use std::{num::NonZeroUsize, time::Duration};
 
+use crate::error::EvalError;
+
 const TEST_BULK_BYTES: usize = 64 * 1024;
 const DEFAULT_BULK_BYTES: usize = 4 * 1024 * 1024;
 
@@ -17,6 +19,15 @@ impl EvalConfig {
             bulk_payload_bytes: nonzero(TEST_BULK_BYTES),
             timeout: Duration::from_secs(5),
         }
+    }
+
+    pub fn with_limits(samples: usize, bulk_payload_bytes: usize) -> Result<Self, EvalError> {
+        Ok(Self {
+            samples: NonZeroUsize::new(samples).ok_or(EvalError::InvalidValue)?,
+            bulk_payload_bytes: NonZeroUsize::new(bulk_payload_bytes)
+                .ok_or(EvalError::InvalidValue)?,
+            ..Self::default()
+        })
     }
 
     pub const fn samples(self) -> usize {
