@@ -22,16 +22,16 @@ impl OwnerRelay {
         let mut config = ServerConfig::default();
         config.relay = Some(RelayConfig::new(bind_addr));
 
-        let (_, server_config) =
-            iroh_relay::server::testing::self_signed_tls_certs_and_config();
-        let quic_port = if bind_addr.port() == 0 {
-            0
-        } else {
-            DEFAULT_RELAY_QUIC_PORT
-        };
-        let mut quic = QuicConfig::new(SocketAddr::new(bind_addr.ip(), quic_port));
-        quic.server_config = Some(server_config);
-        config.quic = Some(quic);
+        if !bind_addr.ip().is_loopback() {
+            let (_, server_config) =
+                iroh_relay::server::testing::self_signed_tls_certs_and_config();
+            let mut quic = QuicConfig::new(SocketAddr::new(
+                bind_addr.ip(),
+                DEFAULT_RELAY_QUIC_PORT,
+            ));
+            quic.server_config = Some(server_config);
+            config.quic = Some(quic);
+        }
 
         let server = Server::spawn(config).await.map_err(|_| EvalError::Setup)?;
         let url = server.http_url().ok_or(EvalError::Setup)?;
@@ -53,12 +53,13 @@ mod tests {
     use super::OwnerRelay;
 
     #[tokio::test]
-    async fn owner_relay_starts_quic_address_discovery() {
-        let relay = OwnerRelay::start().await.expect("owner relay");
+    async fn routed_owner_relay_starts_quic_address_discovery() {
+        let bind = "0.0.0.0:0".parse().expect("routed bind");
+        let relay = OwnerRelay::start_on(bind).await.expect("owner relay");
 
         assert!(
             relay.server.quic_addr().is_some(),
-            "owner relay must expose QUIC address discovery"
+            "routed owner relay must expose QUIC address discovery"
         );
 
         relay.shutdown().await.expect("owner relay shutdown");
