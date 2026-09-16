@@ -25,6 +25,8 @@ use crate::{
 };
 
 const READY_TIMEOUT: Duration = Duration::from_secs(10);
+// Covers Iroh 1.2.0's 20-26s periodic direct-address refresh when no link event fires.
+const PATH_CHANGE_TIMEOUT: Duration = Duration::from_secs(35);
 const READY_POLL: Duration = Duration::from_millis(25);
 const CONTROL_PROBE: &[u8] = b"crosslab-m9-control-probe";
 const CONTROL_OK: &[u8] = b"crosslab-m9-control-ok";
@@ -162,7 +164,7 @@ pub async fn run_server(args: NetprobePeerArgs) -> Result<(), EvalError> {
     .await?;
     let transport = side.transport;
 
-    expect_control(&transport, CONTROL_PROBE).await?;
+    expect_control(&transport, CONTROL_PROBE, READY_TIMEOUT).await?;
     send_control(&transport, CONTROL_OK).await?;
 
     let incoming = accept_uni(&transport).await?;
@@ -181,7 +183,7 @@ pub async fn run_server(args: NetprobePeerArgs) -> Result<(), EvalError> {
     expect_finished(stream.as_mut()).await?;
     send_control(&transport, DATA_OK).await?;
 
-    expect_control(&transport, DIRECT_OK).await?;
+    expect_control(&transport, DIRECT_OK, PATH_CHANGE_TIMEOUT).await?;
     transport.shutdown().await;
 
     let connection = accept_connection(&endpoint).await?;
@@ -199,7 +201,7 @@ pub async fn run_server(args: NetprobePeerArgs) -> Result<(), EvalError> {
     .await?;
     let transport = side.transport;
 
-    expect_control(&transport, RECONNECT_PROBE).await?;
+    expect_control(&transport, RECONNECT_PROBE, READY_TIMEOUT).await?;
     send_control(&transport, RECONNECT_OK).await?;
     timeout(READY_TIMEOUT, observed_connection.closed())
         .await
@@ -259,19 +261,19 @@ where
     let session_before = session.context().ok_or(EvalError::Control)?.session_id();
 
     send_control(&transport, CONTROL_PROBE).await?;
-    expect_control(&transport, CONTROL_OK).await?;
+    expect_control(&transport, CONTROL_OK, READY_TIMEOUT).await?;
 
     let mut stream = open_uni(&transport, DATA_OPEN).await?;
     send_chunk(stream.as_mut(), DATA_PROBE).await?;
     stream.finish();
-    expect_control(&transport, DATA_OK).await?;
+    expect_control(&transport, DATA_OK, READY_TIMEOUT).await?;
 
     emit("phase", "relay_verified")?;
     emit("network_class", "remote")?;
     emit("control_verified", "true")?;
     emit("data_verified", "true")?;
 
-    wait_for_direct_path(&observed_connection).await?;
+    wait_for_direct_path(&observed_connection, PATH_CHANGE_TIMEOUT).await?;
     let binding_unchanged = transport.channel_binding() == &binding_before;
     let session_unchanged = session
         .context()
@@ -313,7 +315,7 @@ where
         .is_some_and(|context| context.session_id() != session_before);
 
     send_control(&transport, RECONNECT_PROBE).await?;
-    expect_control(&transport, RECONNECT_OK).await?;
+    expect_control(&transport, RECONNECT_OK, READY_TIMEOUT).await?;
 
     emit("phase", "reconnect_verified")?;
     emit(
@@ -418,8 +420,9 @@ async fn send_control(transport: &dyn TransportConnection, frame: &[u8]) -> Resu
 async fn expect_control(
     transport: &dyn TransportConnection,
     expected: &[u8],
+    wait: Duration,
 ) -> Result<(), EvalError> {
-    let frame = timeout(READY_TIMEOUT, async {
+    let frame = timeout(wait, async {
         loop {
             match transport.try_receive_control() {
                 Ok(frame) => return Ok(frame),
@@ -527,9 +530,12 @@ async fn expect_finished(stream: &mut dyn TransportReceiveStream) -> Result<(), 
     .map_err(|_| EvalError::Timeout)?
 }
 
-async fn wait_for_direct_path(connection: &iroh::endpoint::Connection) -> Result<(), EvalError> {
+async fn wait_for_direct_path(
+    connection: &iroh::endpoint::Connection,
+    wait: Duration,
+) -> Result<(), EvalError> {
     let mut paths = connection.paths_stream();
-    timeout(READY_TIMEOUT, async {
+    timeout(wait, async {
         while let Some(paths) = paths.next().await {
             if paths.iter().any(|path| path.remote_addr().is_ip()) {
                 return Ok(());
