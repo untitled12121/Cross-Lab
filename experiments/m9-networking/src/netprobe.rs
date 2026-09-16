@@ -294,11 +294,12 @@ where
     emit("control_verified", "true")?;
     emit("data_verified", "true")?;
 
-    let direct_available = match wait_for_direct_path(&observed_connection, args.path_change_timeout()).await {
-        Ok(()) => true,
-        Err(EvalError::Timeout) => false,
-        Err(error) => return Err(error),
-    };
+    let direct_available =
+        match wait_for_direct_path(&observed_connection, args.path_change_timeout()).await {
+            Ok(()) => true,
+            Err(EvalError::Timeout) => false,
+            Err(error) => return Err(error),
+        };
     let binding_unchanged = transport.channel_binding() == &binding_before;
     let session_unchanged = session
         .context()
