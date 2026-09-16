@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{net::SocketAddr, time::Duration};
 
 use crosslab_core::{
     ControlReceiveError, IncomingUniStream, StreamAcceptError, StreamReceiveError,
@@ -7,6 +7,7 @@ use crosslab_core::{
 use crosslab_m9_networking::{
     config::EvalConfig,
     metrics::MetricKind,
+    netprobe::Rendezvous,
     scenarios::{
         auth::AuthFixture,
         relay::{
@@ -16,10 +17,54 @@ use crosslab_m9_networking::{
     },
 };
 use crosslab_policy::NetworkClass;
+use iroh::{RelayUrl, SecretKey};
 use tokio::time::{sleep, timeout};
 
 const WAIT: Duration = Duration::from_secs(10);
 const POLL: Duration = Duration::from_millis(5);
+
+#[test]
+fn rendezvous_serializes_only_public_routing_metadata() {
+    let endpoint_id = SecretKey::from_bytes(&[0x71; 32]).public();
+    let relay_url: RelayUrl = "http://127.0.0.1:3340".parse().expect("relay URL");
+    let ip: SocketAddr = "203.0.113.10:4242".parse().expect("socket address");
+    let rendezvous = Rendezvous::new(endpoint_id, Some(relay_url.clone()), Some(ip));
+
+    assert_eq!(
+        rendezvous.to_text(),
+        format!(
+            "endpoint_id={endpoint_id}\nrelay_url={relay_url}\nip={ip}\n"
+        )
+    );
+}
+
+#[test]
+fn rendezvous_round_trip_reconstructs_endpoint_addr() {
+    let endpoint_id = SecretKey::from_bytes(&[0x72; 32]).public();
+    let relay_url: RelayUrl = "http://127.0.0.1:3341".parse().expect("relay URL");
+    let ip: SocketAddr = "198.51.100.20:4343".parse().expect("socket address");
+    let text = format!(
+        "endpoint_id={endpoint_id}\nrelay_url={relay_url}\nip={ip}\n"
+    );
+
+    let parsed = Rendezvous::parse(&text).expect("valid rendezvous");
+    let addr = parsed.endpoint_addr();
+
+    assert_eq!(addr.id, endpoint_id);
+    assert_eq!(addr.relay_urls().copied().collect::<Vec<_>>(), vec![relay_url]);
+    assert_eq!(addr.ip_addrs().copied().collect::<Vec<_>>(), vec![ip]);
+}
+
+#[test]
+fn rendezvous_uses_dash_for_absent_optional_routes_and_rejects_extra_fields() {
+    let endpoint_id = SecretKey::from_bytes(&[0x73; 32]).public();
+    let text = format!("endpoint_id={endpoint_id}\nrelay_url=-\nip=-\n");
+    let parsed = Rendezvous::parse(&text).expect("minimal public rendezvous");
+
+    assert_eq!(parsed.to_text(), text);
+    assert!(parsed.endpoint_addr().is_empty());
+    assert!(Rendezvous::parse(&format!("{text}private_key=forbidden\n")).is_err());
+}
 
 #[tokio::test]
 async fn iroh_relay_records_connect_auth_control_bulk_and_shutdown() {
