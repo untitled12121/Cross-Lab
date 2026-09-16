@@ -52,6 +52,9 @@ pub async fn run_local(command: Command) -> Result<Report, EvalError> {
             report.append(run_iroh_relay_sample(config).await?);
             Ok(report)
         }
+        Command::NetprobeRelay(_) | Command::NetprobeServer(_) | Command::NetprobeClient(_) => {
+            Err(EvalError::InvalidCommand)
+        }
     }
 }
 
