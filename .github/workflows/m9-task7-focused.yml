@@ -1,4 +1,4 @@
-name: M9 Task 7 Focused
+name: M9 Task 7 Pre-PR
 
 on:
   push:
@@ -9,12 +9,24 @@ permissions:
   contents: read
 
 jobs:
-  relay:
-    name: Owner Relay
+  rust:
+    name: Rust
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Install Rust
-        run: rustup toolchain install 1.98.1 --profile minimal
-      - name: Task 7 semantic gate
-        run: cargo test -p crosslab-m9-networking --test relay --test session --test lifecycle
+        run: rustup toolchain install 1.98.1 --profile minimal --component clippy,rustfmt
+      - name: Verify lockfile
+        run: cargo metadata --locked --no-deps --format-version 1 > /dev/null
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --version 0.22.2 --locked
+      - name: Audit dependencies
+        run: cargo audit
+      - name: Format
+        run: cargo fmt --check
+      - name: Check
+        run: cargo check --workspace --all-targets --all-features
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Test
+        run: cargo test --workspace --all-features
