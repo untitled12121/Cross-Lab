@@ -30,14 +30,21 @@ fn netns_script_owns_forwarding_nat_path_gate_and_cleanup() {
         "--bind 172.30.90.1:3340",
         "netprobe-server",
         "netprobe-client",
-        "udp drop",
+        "ip protocol udp drop",
         "$'phase\\trelay_verified'",
         "trap cleanup EXIT INT TERM",
     ] {
         assert!(NETNS_SCRIPT.contains(required), "missing {required}");
     }
 
-    let block = NETNS_SCRIPT.find("udp drop").expect("direct UDP block");
+    assert!(
+        !NETNS_SCRIPT.lines().any(|line| line.trim() == "udp drop"),
+        "bare nft udp expression is invalid"
+    );
+
+    let block = NETNS_SCRIPT
+        .find("ip protocol udp drop")
+        .expect("direct UDP block");
     let allow = NETNS_SCRIPT[block..]
         .find("nft delete table ip cl_m9_gate")
         .map(|offset| block + offset)
