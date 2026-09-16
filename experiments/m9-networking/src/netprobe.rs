@@ -336,6 +336,7 @@ where
 async fn peer_endpoint(relay_url: &RelayUrl) -> Result<Endpoint, EvalError> {
     let endpoint = Endpoint::builder(presets::Minimal)
         .relay_mode(RelayMode::custom([relay_url.clone()]))
+        .ca_tls_config(iroh_relay::tls::CaTlsConfig::insecure_skip_verify())
         .alpns(vec![M9_ALPN.to_vec()])
         .bind_addr("0.0.0.0:0")
         .map_err(|_| EvalError::Setup)?
