@@ -239,12 +239,7 @@ async fn run_authenticated_iroh_sample(
             sample,
             bulk_bytes_per_second,
         ),
-        Measurement::new(
-            transport,
-            MetricKind::ShutdownMicros,
-            sample,
-            shutdown_us,
-        ),
+        Measurement::new(transport, MetricKind::ShutdownMicros, sample, shutdown_us),
     ])
 }
 
