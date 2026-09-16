@@ -18,4 +18,4 @@ jobs:
       - name: Install Rust
         run: rustup toolchain install 1.98.1 --profile minimal
       - name: Task 8 focused tests
-        run: cargo test -p crosslab-m9-networking --test metrics --test baseline --test relay
+        run: cargo test -p crosslab-m9-networking --test metrics --test baseline --test relay -- --nocapture
