@@ -1,11 +1,11 @@
 use crosslab_core::ChannelBinding;
-use iroh::{Endpoint, RelayMode, endpoint::Connection, endpoint::presets};
+use iroh::{Endpoint, EndpointAddr, RelayMode, endpoint::Connection, endpoint::presets};
 
 use crate::{candidate::binding::derive_channel_binding, error::EvalError};
 
 pub const M9_ALPN: &[u8] = b"crosslab-m9-networking-eval";
 
-pub struct DirectPair {
+pub struct ConnectedPair {
     client_endpoint: Endpoint,
     server_endpoint: Endpoint,
     client_connection: Connection,
@@ -14,7 +14,9 @@ pub struct DirectPair {
     server_binding: ChannelBinding,
 }
 
-impl DirectPair {
+pub type DirectPair = ConnectedPair;
+
+impl ConnectedPair {
     pub fn client_binding(&self) -> &ChannelBinding {
         &self.client_binding
     }
@@ -64,7 +66,14 @@ pub async fn direct_pair() -> Result<DirectPair, EvalError> {
     let client_endpoint = direct_endpoint().await?;
     let server_endpoint = direct_endpoint().await?;
     let server_addr = server_endpoint.addr();
+    connect_endpoints(client_endpoint, server_endpoint, server_addr).await
+}
 
+pub(crate) async fn connect_endpoints(
+    client_endpoint: Endpoint,
+    server_endpoint: Endpoint,
+    server_addr: EndpointAddr,
+) -> Result<ConnectedPair, EvalError> {
     let client_connect = client_endpoint.connect(server_addr, M9_ALPN);
     let server_accept = async {
         let incoming = server_endpoint.accept().await.ok_or(EvalError::Connect)?;
@@ -76,7 +85,7 @@ pub async fn direct_pair() -> Result<DirectPair, EvalError> {
     let client_binding = derive_channel_binding(&client_connection)?;
     let server_binding = derive_channel_binding(&server_connection)?;
 
-    Ok(DirectPair {
+    Ok(ConnectedPair {
         client_endpoint,
         server_endpoint,
         client_connection,
