@@ -110,6 +110,12 @@ impl Report {
             .any(|measurement| measurement.metric() == metric)
     }
 
+    pub fn contains_transport(&self, transport: TransportKind) -> bool {
+        self.measurements
+            .iter()
+            .any(|measurement| measurement.transport == transport)
+    }
+
     pub fn to_tsv(&self) -> String {
         let mut output = String::new();
         if let Some(metadata) = self.metadata {
@@ -152,5 +158,9 @@ impl Report {
 
     pub fn extend(&mut self, measurements: impl IntoIterator<Item = Measurement>) {
         self.measurements.extend(measurements);
+    }
+
+    pub(crate) fn append(&mut self, mut other: Self) {
+        self.measurements.append(&mut other.measurements);
     }
 }
