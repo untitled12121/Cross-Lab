@@ -8,6 +8,9 @@ pub enum EvalError {
     Control,
     Bulk,
     Timeout,
+    InvalidCommand,
+    InvalidArgument,
+    InvalidValue,
 }
 
 impl fmt::Display for EvalError {
@@ -19,6 +22,9 @@ impl fmt::Display for EvalError {
             Self::Control => "control round trip failed",
             Self::Bulk => "bulk transfer failed",
             Self::Timeout => "networking evaluation timed out",
+            Self::InvalidCommand => "unknown networking evaluation command",
+            Self::InvalidArgument => "invalid networking evaluation argument",
+            Self::InvalidValue => "invalid networking evaluation value",
         })
     }
 }
