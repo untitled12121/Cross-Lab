@@ -76,6 +76,8 @@ async fn one_chunk_transfer(client: &dyn TransportConnection, server: &dyn Trans
             .try_open_uni_stream(opening.clone())
             .expect("Task 8 diagnostic: open uni");
         eprintln!("task8 diagnostic: uni opened");
+        yield_now().await;
+        eprintln!("task8 diagnostic: yielded after open");
         send.try_send_chunk(payload.clone())
             .expect("Task 8 diagnostic: send chunk");
         eprintln!("task8 diagnostic: chunk queued");
