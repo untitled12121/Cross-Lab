@@ -42,5 +42,8 @@ fn netns_script_owns_forwarding_nat_path_gate_and_cleanup() {
         .find("nft delete table ip cl_m9_gate")
         .map(|offset| block + offset)
         .expect("direct UDP unblock");
-    assert!(block < allow, "direct UDP must be blocked before it is allowed");
+    assert!(
+        block < allow,
+        "direct UDP must be blocked before it is allowed"
+    );
 }

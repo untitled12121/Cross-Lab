@@ -1,6 +1,5 @@
 use std::{
-    fs,
-    future,
+    fs, future,
     io::{self, Write},
     net::SocketAddr,
     path::{Path, PathBuf},
@@ -257,10 +256,7 @@ where
     let transport = side.transport;
     let session = side.session;
     let binding_before = transport.channel_binding().clone();
-    let session_before = session
-        .context()
-        .ok_or(EvalError::Control)?
-        .session_id();
+    let session_before = session.context().ok_or(EvalError::Control)?.session_id();
 
     send_control(&transport, CONTROL_PROBE).await?;
     expect_control(&transport, CONTROL_OK).await?;
@@ -399,10 +395,7 @@ async fn wait_for_rendezvous(path: &Path) -> Result<Rendezvous, EvalError> {
     .map_err(|_| EvalError::Timeout)?
 }
 
-async fn send_control(
-    transport: &dyn TransportConnection,
-    frame: &[u8],
-) -> Result<(), EvalError> {
+async fn send_control(transport: &dyn TransportConnection, frame: &[u8]) -> Result<(), EvalError> {
     let mut frame = frame.to_vec();
     timeout(READY_TIMEOUT, async {
         loop {
@@ -468,10 +461,7 @@ async fn open_uni(
     .map_err(|_| EvalError::Timeout)?
 }
 
-async fn send_chunk(
-    stream: &mut dyn TransportSendStream,
-    chunk: &[u8],
-) -> Result<(), EvalError> {
+async fn send_chunk(stream: &mut dyn TransportSendStream, chunk: &[u8]) -> Result<(), EvalError> {
     let mut chunk = chunk.to_vec();
     timeout(READY_TIMEOUT, async {
         loop {
@@ -606,7 +596,10 @@ mod tests {
             "session_refreshed\ttrue",
             "control_after_reconnect\ttrue",
         ] {
-            assert!(output.lines().any(|line| line == expected), "missing {expected}");
+            assert!(
+                output.lines().any(|line| line == expected),
+                "missing {expected}"
+            );
         }
 
         let _ = fs::remove_file(rendezvous);

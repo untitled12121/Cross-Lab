@@ -118,16 +118,23 @@ pub(crate) async fn reserve_control_initiator(
     connection: &Connection,
 ) -> Result<(SendStream, RecvStream), EvalError> {
     let (mut send, recv) = connection.open_bi().await.map_err(|_| EvalError::Control)?;
-    write_record(&mut send, CONTROL_STREAM_MARKER, CONTROL_STREAM_MARKER.len())
-        .await
-        .map_err(|_| EvalError::Control)?;
+    write_record(
+        &mut send,
+        CONTROL_STREAM_MARKER,
+        CONTROL_STREAM_MARKER.len(),
+    )
+    .await
+    .map_err(|_| EvalError::Control)?;
     Ok((send, recv))
 }
 
 pub(crate) async fn reserve_control_responder(
     connection: &Connection,
 ) -> Result<(SendStream, RecvStream), EvalError> {
-    let (send, mut recv) = connection.accept_bi().await.map_err(|_| EvalError::Control)?;
+    let (send, mut recv) = connection
+        .accept_bi()
+        .await
+        .map_err(|_| EvalError::Control)?;
     let marker = read_record(&mut recv, CONTROL_STREAM_MARKER.len(), false)
         .await
         .map_err(|_| EvalError::Control)?;

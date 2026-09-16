@@ -8,7 +8,10 @@ use std::{
 use crosslab_m9_networking::netprobe::{
     NetprobePeerArgs, NetprobeRelayArgs, run_client, run_relay, run_server,
 };
-use tokio::{net::TcpStream, time::{sleep, timeout}};
+use tokio::{
+    net::TcpStream,
+    time::{sleep, timeout},
+};
 
 #[tokio::test]
 async fn forced_reconnect_refreshes_binding_session_and_control() {
@@ -17,10 +20,8 @@ async fn forced_reconnect_refreshes_binding_session_and_control() {
     let relay = tokio::spawn(run_relay(NetprobeRelayArgs::new(bind)));
     wait_for_listener(bind).await;
 
-    let rendezvous = std::env::temp_dir().join(format!(
-        "crosslab-m9-reconnect-{}.addr",
-        process::id(),
-    ));
+    let rendezvous =
+        std::env::temp_dir().join(format!("crosslab-m9-reconnect-{}.addr", process::id(),));
     let _ = fs::remove_file(&rendezvous);
     let args = NetprobePeerArgs::new(rendezvous.clone(), relay_url);
 
@@ -38,7 +39,10 @@ async fn forced_reconnect_refreshes_binding_session_and_control() {
         "session_refreshed\ttrue",
         "control_after_reconnect\ttrue",
     ] {
-        assert!(output.lines().any(|line| line == expected), "missing {expected}");
+        assert!(
+            output.lines().any(|line| line == expected),
+            "missing {expected}"
+        );
     }
 
     let _ = fs::remove_file(rendezvous);
