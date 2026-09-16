@@ -31,6 +31,7 @@ fn netns_script_owns_forwarding_nat_path_gate_and_cleanup() {
         "netprobe-server",
         "netprobe-client",
         "udp drop",
+        "$'phase\\trelay_verified'",
         "trap cleanup EXIT INT TERM",
     ] {
         assert!(NETNS_SCRIPT.contains(required), "missing {required}");
