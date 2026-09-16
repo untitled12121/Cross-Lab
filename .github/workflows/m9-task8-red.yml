@@ -40,9 +40,8 @@ jobs:
             $'network_class\tremote' \
             $'control_verified\ttrue' \
             $'data_verified\ttrue' \
-            $'phase\tdirect_verified' \
-            $'binding_unchanged\ttrue' \
-            $'session_unchanged\ttrue' \
+            $'phase\tdirect_unavailable' \
+            $'direct_path_available\tfalse' \
             $'phase\treconnect_verified' \
             $'binding_refreshed\ttrue' \
             $'session_refreshed\ttrue' \
