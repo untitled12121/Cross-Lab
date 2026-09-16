@@ -121,3 +121,48 @@ fn parse_optional<'a>(line: Option<&'a str>, key: &str) -> Result<Option<&'a str
     let value = parse_required(line, key)?;
     Ok((value != "-").then_some(value))
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, process, time::Duration};
+
+    use tokio::time::timeout;
+
+    use super::{NetprobePeerArgs, run_client, run_server};
+    use crate::relay::OwnerRelay;
+
+    #[tokio::test]
+    async fn netprobe_runtime_authenticates_control_data_and_observes_direct_path() {
+        let relay = OwnerRelay::start().await.expect("owner relay");
+        let rendezvous = std::env::temp_dir().join(format!(
+            "crosslab-m9-netprobe-{}-{}.addr",
+            process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        let _ = fs::remove_file(&rendezvous);
+        let args = NetprobePeerArgs::new(rendezvous.clone(), relay.url().clone());
+
+        let (server, client) = timeout(Duration::from_secs(15), async {
+            tokio::join!(run_server(args.clone()), run_client(args))
+        })
+        .await
+        .expect("bounded netprobe runtime");
+        server.expect("netprobe server");
+        let output = client.expect("netprobe client");
+
+        for expected in [
+            "phase\trelay_verified",
+            "network_class\tremote",
+            "control_verified\ttrue",
+            "data_verified\ttrue",
+            "phase\tdirect_verified",
+            "binding_unchanged\ttrue",
+            "session_unchanged\ttrue",
+        ] {
+            assert!(output.lines().any(|line| line == expected), "missing {expected}");
+        }
+
+        let _ = fs::remove_file(rendezvous);
+        relay.shutdown().await.expect("owner relay shutdown");
+    }
+}
