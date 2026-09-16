@@ -55,8 +55,24 @@ relay_pid=
 server_pid=
 client_pid=
 
+dump_log() {
+    local label=$1
+    local path=$2
+    if [[ -f "$path" ]]; then
+        echo "=== $label ===" >&2
+        cat "$path" >&2
+    fi
+}
+
 cleanup() {
+    local status=$?
     set +e
+
+    if ((status != 0)); then
+        dump_log m9-relay-log "$RELAY_LOG"
+        dump_log m9-server-log "$SERVER_LOG"
+        dump_log m9-client-log "$CLIENT_LOG"
+    fi
 
     for pid in "$client_pid" "$server_pid" "$relay_pid"; do
         if [[ -n "$pid" ]]; then
@@ -81,6 +97,7 @@ cleanup() {
     done
     ip link delete "$BRIDGE" 2>/dev/null || true
     rm -rf "$WORKDIR"
+    return "$status"
 }
 trap cleanup EXIT INT TERM
 
