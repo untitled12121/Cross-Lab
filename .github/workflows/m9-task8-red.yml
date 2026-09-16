@@ -1,4 +1,4 @@
-name: M9 Task 8 Verification
+name: M9 Task 8 RED
 
 on:
   push:
@@ -11,17 +11,11 @@ permissions:
 
 jobs:
   focused:
-    name: Task 8 focused verification
+    name: Local benchmark modes RED
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Install Rust
         run: rustup toolchain install 1.98.1 --profile minimal
-      - name: Stream lifecycle
-        run: cargo test -p crosslab-m9-networking --test stream
-      - name: Authenticated lifecycle
-        run: cargo test -p crosslab-m9-networking --test lifecycle
-      - name: Local Quinn and Iroh direct benchmarks
-        run: cargo test -p crosslab-m9-networking --test baseline -- --nocapture
-      - name: Owner-relay benchmark
-        run: cargo test -p crosslab-m9-networking --test relay iroh_relay_records_connect_auth_control_bulk_and_shutdown -- --nocapture
+      - name: Local-all contract
+        run: cargo test -p crosslab-m9-networking --test baseline local_all_combines_quinn_direct_and_relay_reports -- --nocapture
