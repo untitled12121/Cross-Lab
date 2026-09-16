@@ -96,6 +96,7 @@ pub(crate) struct IrohSendStream {
 pub(crate) struct OutgoingUniDriver {
     state: Arc<SendState>,
     outbound: mpsc::Receiver<Vec<u8>>,
+    _cancel_tx: watch::Sender<bool>,
     cancel_rx: watch::Receiver<bool>,
     max_chunk_bytes: usize,
 }
@@ -114,12 +115,13 @@ pub(crate) fn new_outgoing_uni_stream(
             shared,
             state: Arc::clone(&state),
             outbound: Some(outbound),
-            cancel_tx,
+            cancel_tx: cancel_tx.clone(),
             max_chunk_bytes,
         },
         OutgoingUniDriver {
             state,
             outbound: outbound_rx,
+            _cancel_tx: cancel_tx,
             cancel_rx,
             max_chunk_bytes,
         },

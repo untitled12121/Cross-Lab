@@ -265,7 +265,7 @@ async fn wait_for_direct_path_on(connection: &Connection, wait: Duration) -> Res
     .map_err(|_| EvalError::Timeout)?
 }
 
-async fn connect_relay_pair(
+pub(crate) async fn connect_relay_pair(
     relay_url: &iroh::RelayUrl,
     enable_ip_transports: bool,
 ) -> Result<ConnectedPair, EvalError> {

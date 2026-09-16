@@ -54,6 +54,31 @@ async fn uni_stream_carries_opening_and_chunks_in_order_then_finishes() {
 }
 
 #[tokio::test]
+async fn finished_sender_can_drop_before_driver_runs() {
+    let pair = connected_transport_pair(CandidateConfig::default())
+        .await
+        .expect("connected Iroh transport pair");
+    let opening = vec![0x11];
+    let chunk = vec![0x22; CandidateConfig::default().max_chunk_bytes()];
+    let mut send = pair
+        .client()
+        .try_open_uni_stream(opening.clone())
+        .expect("uni stream");
+
+    send.try_send_chunk(chunk.clone()).expect("stream chunk");
+    send.finish();
+    drop(send);
+
+    let incoming = eventually_accept(pair.server()).await;
+    assert_eq!(incoming.opening_frame(), opening.as_slice());
+    let (_, mut recv) = incoming.into_parts();
+    assert_eq!(eventually_receive_chunk(recv.as_mut()).await, chunk);
+    eventually_finished(recv.as_mut()).await;
+
+    pair.shutdown().await;
+}
+
+#[tokio::test]
 async fn uni_stream_enforces_opening_and_chunk_limits_without_consuming_slot() {
     let config = CandidateConfig::default();
     let pair = connected_transport_pair(config)
