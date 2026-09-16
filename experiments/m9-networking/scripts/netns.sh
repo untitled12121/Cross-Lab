@@ -25,7 +25,7 @@ fail() {
 BIN=$(readlink -f "$1")
 OUTPUT=$2
 
-for command in ip nft sysctl awk grep readlink mktemp sleep; do
+for command in ip nft sysctl awk grep readlink mktemp sleep ss tcpdump; do
     command -v "$command" >/dev/null 2>&1 || fail "missing required command: $command"
 done
 
@@ -51,9 +51,11 @@ RENDEZVOUS="$WORKDIR/server.addr"
 RELAY_LOG="$WORKDIR/relay.log"
 SERVER_LOG="$WORKDIR/server.log"
 CLIENT_LOG="$WORKDIR/client.log"
+PACKET_LOG="$WORKDIR/transit-udp.log"
 relay_pid=
 server_pid=
 client_pid=
+tcpdump_pid=
 
 dump_log() {
     local label=$1
@@ -64,11 +66,32 @@ dump_log() {
     fi
 }
 
+dump_network_diag() {
+    echo "=== m9-root-udp-sockets ===" >&2
+    ss -lunp >&2 || true
+    for namespace in "$ROUTER_A" "$ROUTER_B" "$PEER_A" "$PEER_B"; do
+        if ip netns list | awk '{print $1}' | grep -Fxq "$namespace"; then
+            echo "=== m9-$namespace-routes ===" >&2
+            ip -n "$namespace" route show >&2 || true
+            echo "=== m9-$namespace-udp-sockets ===" >&2
+            ip netns exec "$namespace" ss -unap >&2 || true
+        fi
+    done
+}
+
 cleanup() {
     local status=$?
     set +e
 
+    if [[ -n "$tcpdump_pid" ]]; then
+        kill "$tcpdump_pid" 2>/dev/null || true
+        wait "$tcpdump_pid" 2>/dev/null || true
+        tcpdump_pid=
+    fi
+
     if ((status != 0)); then
+        dump_network_diag
+        dump_log m9-transit-udp-log "$PACKET_LOG"
         dump_log m9-relay-log "$RELAY_LOG"
         dump_log m9-server-log "$SERVER_LOG"
         dump_log m9-client-log "$CLIENT_LOG"
@@ -109,6 +132,9 @@ ip netns add "$PEER_B"
 ip link add "$BRIDGE" type bridge
 ip addr add 172.30.90.1/24 dev "$BRIDGE"
 ip link set "$BRIDGE" up
+
+tcpdump -ni "$BRIDGE" udp -tt >"$PACKET_LOG" 2>&1 &
+tcpdump_pid=$!
 
 setup_router() {
     local router=$1
