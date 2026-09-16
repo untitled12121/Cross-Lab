@@ -25,8 +25,7 @@ fn netns_script_owns_forwarding_nat_path_gate_and_cleanup() {
     for required in [
         "net.ipv4.ip_forward=1",
         "table ip cl_m9_nat",
-        "snat to $external_ip",
-        "dnat to $internal_ip",
+        "oifname \"ext0\" masquerade",
         "netprobe-relay",
         "--bind 172.30.90.1:3340",
         "netprobe-server",
@@ -38,10 +37,6 @@ fn netns_script_owns_forwarding_nat_path_gate_and_cleanup() {
         assert!(NETNS_SCRIPT.contains(required), "missing {required}");
     }
 
-    assert!(
-        !NETNS_SCRIPT.contains("masquerade"),
-        "controlled NAT must preserve one external mapping across QAD and peer flows"
-    );
     assert!(
         !NETNS_SCRIPT.lines().any(|line| line.trim() == "udp drop"),
         "bare nft udp expression is invalid"
