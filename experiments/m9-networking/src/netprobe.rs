@@ -1,8 +1,49 @@
-use std::net::SocketAddr;
+use std::{
+    net::SocketAddr,
+    path::{Path, PathBuf},
+};
 
 use iroh::{EndpointAddr, EndpointId, RelayUrl};
 
 use crate::error::EvalError;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetprobeRelayArgs {
+    bind: SocketAddr,
+}
+
+impl NetprobeRelayArgs {
+    pub const fn new(bind: SocketAddr) -> Self {
+        Self { bind }
+    }
+
+    pub const fn bind(&self) -> SocketAddr {
+        self.bind
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetprobePeerArgs {
+    rendezvous: PathBuf,
+    relay_url: RelayUrl,
+}
+
+impl NetprobePeerArgs {
+    pub fn new(rendezvous: PathBuf, relay_url: RelayUrl) -> Self {
+        Self {
+            rendezvous,
+            relay_url,
+        }
+    }
+
+    pub fn rendezvous(&self) -> &Path {
+        &self.rendezvous
+    }
+
+    pub const fn relay_url(&self) -> &RelayUrl {
+        &self.relay_url
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rendezvous {

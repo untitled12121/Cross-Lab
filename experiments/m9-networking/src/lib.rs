@@ -1,3 +1,5 @@
+//! M9 remote-networking evaluation harness.
+
 pub mod baseline;
 pub mod candidate;
 pub mod command;
@@ -7,4 +9,5 @@ pub mod metrics;
 pub mod netprobe;
 pub(crate) mod relay;
 pub mod scenarios;
+
 pub use command::Command;
