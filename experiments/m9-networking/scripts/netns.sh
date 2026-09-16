@@ -152,7 +152,7 @@ block_direct_udp() {
 table ip cl_m9_gate {
     chain forward {
         type filter hook forward priority filter; policy accept;
-        udp drop
+        ip protocol udp drop
     }
 }
 NFT
