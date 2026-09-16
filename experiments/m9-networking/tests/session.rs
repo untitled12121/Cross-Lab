@@ -1,7 +1,7 @@
 use crosslab_core::{SessionAuthError, SessionError, SessionState, TransportSecurityClass};
-use crosslab_m9_networking::scenarios::auth::{
-    AuthAttempt, AuthFixture, BootstrapError, authenticate_direct_pair,
-    authenticate_split_direct_pair, bootstrap_direct_pair,
+use crosslab_m9_networking::scenarios::{
+    auth::{AuthAttempt, AuthFixture, BootstrapError, authenticate_direct_pair, bootstrap_direct_pair},
+    split_auth::authenticate_split_direct_pair,
 };
 use crosslab_policy::NetworkClass;
 
