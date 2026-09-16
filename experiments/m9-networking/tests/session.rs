@@ -1,6 +1,7 @@
 use crosslab_core::{SessionAuthError, SessionError, SessionState, TransportSecurityClass};
 use crosslab_m9_networking::scenarios::auth::{
-    AuthAttempt, AuthFixture, BootstrapError, authenticate_direct_pair, bootstrap_direct_pair,
+    AuthAttempt, AuthFixture, BootstrapError, authenticate_direct_pair,
+    authenticate_split_direct_pair, bootstrap_direct_pair,
 };
 use crosslab_policy::NetworkClass;
 
@@ -23,6 +24,28 @@ async fn trusted_peers_activate_over_iroh_exporter() {
     assert_eq!(
         server_context.transport_security_class(),
         TransportSecurityClass::AuthenticatedConfidentialChannel
+    );
+    assert_eq!(
+        pair.client_transport().channel_binding(),
+        pair.server_transport().channel_binding()
+    );
+    assert_eq!(pair.network_class(), NetworkClass::Remote);
+
+    pair.shutdown().await;
+}
+
+#[tokio::test]
+async fn split_side_authentication_preserves_session_and_binding_semantics() {
+    let fixture = AuthFixture::new();
+    let pair = authenticate_split_direct_pair(&fixture)
+        .await
+        .expect("split-side Iroh authentication");
+
+    assert_eq!(pair.client_session().state(), SessionState::Active);
+    assert_eq!(pair.server_session().state(), SessionState::Active);
+    assert_eq!(
+        pair.client_session().context().unwrap().session_id(),
+        pair.server_session().context().unwrap().session_id()
     );
     assert_eq!(
         pair.client_transport().channel_binding(),
