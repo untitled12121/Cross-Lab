@@ -53,7 +53,11 @@ pub struct Rendezvous {
 }
 
 impl Rendezvous {
-    pub fn new(endpoint_id: EndpointId, relay_url: Option<RelayUrl>, ip: Option<SocketAddr>) -> Self {
+    pub fn new(
+        endpoint_id: EndpointId,
+        relay_url: Option<RelayUrl>,
+        ip: Option<SocketAddr>,
+    ) -> Self {
         Self {
             endpoint_id,
             relay_url,

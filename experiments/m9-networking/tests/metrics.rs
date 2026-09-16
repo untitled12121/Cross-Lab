@@ -58,7 +58,10 @@ async fn netprobe_commands_are_rejected_by_local_runner() {
     let command = Command::parse(["netprobe-relay", "--bind", "172.30.90.1:3340"])
         .expect("typed netprobe relay");
 
-    assert_eq!(baseline::run_local(command).await, Err(EvalError::InvalidCommand));
+    assert_eq!(
+        baseline::run_local(command).await,
+        Err(EvalError::InvalidCommand)
+    );
 }
 
 #[test]
