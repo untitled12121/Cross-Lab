@@ -343,6 +343,13 @@ impl RejectedAuthentication {
 
 pub async fn bootstrap_direct_pair(fixture: &AuthFixture) -> Result<BootstrapIrohPair, EvalError> {
     let direct = direct_pair().await?;
+    bootstrap_connected_pair(fixture, direct).await
+}
+
+async fn bootstrap_connected_pair(
+    fixture: &AuthFixture,
+    direct: DirectPair,
+) -> Result<BootstrapIrohPair, EvalError> {
     let ReservedControlStreams {
         mut client_send,
         client_recv,
@@ -387,13 +394,47 @@ pub async fn authenticate_direct_pair(
     .await
 }
 
+pub(crate) async fn authenticate_connected_pair(
+    fixture: &AuthFixture,
+    direct: DirectPair,
+) -> Result<AuthenticatedIrohPair, Box<RejectedAuthentication>> {
+    authenticate_connected_pair_with_peer_trust(
+        fixture,
+        AuthAttempt::Normal,
+        direct,
+        &fixture.responder_trust,
+        &fixture.initiator_trust,
+    )
+    .await
+}
+
 pub(crate) async fn authenticate_direct_pair_with_peer_trust(
     fixture: &AuthFixture,
     attempt: AuthAttempt,
     client_peer_trust: &TrustRecord,
     server_peer_trust: &TrustRecord,
 ) -> Result<AuthenticatedIrohPair, Box<RejectedAuthentication>> {
-    let mut bootstrap = bootstrap_direct_pair(fixture)
+    let direct = direct_pair()
+        .await
+        .expect("deterministic Iroh connection bootstrap");
+    authenticate_connected_pair_with_peer_trust(
+        fixture,
+        attempt,
+        direct,
+        client_peer_trust,
+        server_peer_trust,
+    )
+    .await
+}
+
+async fn authenticate_connected_pair_with_peer_trust(
+    fixture: &AuthFixture,
+    attempt: AuthAttempt,
+    direct: DirectPair,
+    client_peer_trust: &TrustRecord,
+    server_peer_trust: &TrustRecord,
+) -> Result<AuthenticatedIrohPair, Box<RejectedAuthentication>> {
+    let mut bootstrap = bootstrap_connected_pair(fixture, direct)
         .await
         .expect("deterministic Iroh authentication bootstrap");
 
