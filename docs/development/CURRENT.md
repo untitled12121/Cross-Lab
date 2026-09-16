@@ -8,22 +8,25 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 ## Current Milestone
 
-**M9 — Remote Networking ADR. Tasks 1–7 are merged and post-merge verified. Task 8 is active: reproducible local benchmarks and safe cross-process rendezvous through Step 4 are complete and verified; Step 5 controlled Linux namespace/NAT/relay orchestration is next.**
+**M9 — Remote Networking ADR. Tasks 1–7 are merged and post-merge verified. Task 8 implementation and evidence collection are complete on `m9-task8-network-evidence`; the branch now needs temporary-workflow cleanup, final exact-head verification, PR integration, and post-merge verification.**
 
-M1–M8 are complete. ADR-0009 remains undecided/reserved. Iroh stays isolated under `experiments/m9-networking` until the evidence gate selects a remote-networking architecture.
+M1–M8 are complete. ADR-0009 remains undecided/reserved. Iroh stays isolated under `experiments/m9-networking` until ADR-0009 selects the remote-networking architecture.
 
 ## Canonical Baseline
 
-- Active Task 8 branch: `m9-task8-network-evidence`.
-- Task 8 Step 4 exact verified head: `95acc6f94f1b5b828363337938450061f24cb3df`.
-- Task 8 Step 4 widened verification CI `35078260860` passed `cargo test -p crosslab-m9-networking`, `cargo fmt --all -- --check`, `cargo check -p crosslab-m9-networking --all-targets`, and `cargo clippy -p crosslab-m9-networking --all-targets -- -D warnings`.
-- Safe-rendezvous RED CI `35063846134` failed for the intended missing `netprobe` module; focused rendezvous GREEN CI `35064080543` passed on `26c487480ec23bd1cec96cb7dd627638b25354c4`.
-- Typed-netprobe-command RED CI `35064311543` failed for the intended missing argument types/command variants.
-- The first typed-command GREEN attempt exposed the intended runner seam: `baseline::run_local` became non-exhaustive once top-level netprobe variants existed. Boundary RED CI `35077091137` reproduced that exact failure after adding the regression test.
-- Focused typed-command/local-runner GREEN CI `35077644965` passed on `717eca6a7e2edd2cf0251daca563f66b962480b5`; netprobe commands are explicitly rejected by the local benchmark runner rather than leaking process orchestration into baseline logic.
-- The first widened Step 4 run `35077889864` passed the full M9 test suite and failed only rustfmt; formatter-only commit `95acc6f94f1b5b828363337938450061f24cb3df` produced the final green gate above.
-- Task 8 Step 3 exact verified head: `bf499d60501355b8f83f44a1a168340f1bf969eb`; CI `35063462476` passed the same crate-level tests/fmt/check/Clippy gate.
-- Task 8 local benchmark modes now include typed `local-quinn`, `local-iroh-direct`, `local-iroh-relay`, and `local-all`; reproducibility headers; the `m9-networking` binary; Linux RSS/FD observations; and protected-connect, Cross-Lab-auth, control-RTT, fixed uni-throughput, and shutdown measurements.
+- Active branch: `m9-task8-network-evidence`.
+- Task 8 exact successful implementation/evidence head: `99b168101e9fc31bdfbcea110bdb95d26978dac4`.
+- Exact successful evidence run: GitHub Actions `35107158922`, job `104831250278`.
+- That run passed the Task 8 dependency-tree step, full deterministic workspace gate, netprobe build, controlled Linux namespace/NAT/relay gate, environment capture, and same-host measurements.
+- Evidence report commit: `4986b8064bdf47ad6ed52eb1907be11d82a0129f` (`docs/research/M9-networking-evidence.md`).
+- Controlled NAT result on the successful evidence run:
+  - owner-relay fallback verified;
+  - immutable `NetworkClass::Remote` verified;
+  - authenticated control verified;
+  - authenticated data verified;
+  - direct path remained unavailable in the endpoint-dependent/symmetric NAT topology within the bounded observation window;
+  - forced reconnect verified a fresh channel binding, fresh Cross-Lab session, and authenticated control after reconnect.
+- The evidence report explicitly records **`Libp2p trigger: no`**. Task 9 is therefore skipped and `rust-libp2p` must not be added for M9.
 - Task 7 exact PR head: `dfad21610e1b1b93bb1bc81eb8cc989324fd2960` via PR #27; exact-head CI `35042144793` and post-merge main CI `35042588052` passed the complete repository gate. Task 7 merge: `d897e803c9b66236344101b400c002e86dcc5523`.
 - Foundation remediation merge: `450615a7c361384cfbe68bc8991b7ca03e4482fa` via PR #23; exact-head Rust CI `34974781151`, Fuzz Smoke `34974781112`, and post-merge Rust CI `34979066740` passed.
 - `paste 1.0.15` / `RUSTSEC-2024-0436` remains the sole allowed maintenance warning, isolated to the Iroh experiment and requiring re-evaluation before any production networking promotion.
@@ -39,20 +42,22 @@ Accepted artifacts remain:
 
 The accepted foundation keeps identity-owned `OwnerAuthorityState` authoritative for owner/delegated-role currentness; root or Device Signing replacement invalidates ordinary sessions and session-scoped authority; Administrative/Recovery-only rotation does not; `(SessionId, message_seq)` remains exact-envelope replay/order protection; `RequestId` remains bounded retry/correlation history; high-level stream admission derives currentness from local trust/policy state; and canonical identity/protocol wire vectors remain unchanged.
 
-No Task 8 work has changed the Master Architecture, protobuf schemas, canonical transcripts, signature formats, ADR-0008 exporter profile, production Quinn transport, or ADR-0009 status.
+No Task 8 work changed the Master Architecture, protobuf schemas, canonical transcripts, signature formats, ADR-0008 exporter profile, production Quinn transport, or ADR-0009 status.
 
-## M9 Networking State
+## M9 Task 8 Evidence State
 
-- Quinn remains the verified local/LAN baseline.
-- Iroh `1.2.0` remains isolated under `experiments/m9-networking`; no Iroh type has entered Cross-Lab domain/public production APIs.
-- Authenticated Iroh sessions remain immutable `NetworkClass::Remote`; endpoint identity/path state is routing metadata only and cannot create policy/session/operation authority.
-- Task 7 proves owner-controlled relay operation, authenticated control/data over relay, relay-to-direct path observation on one live authenticated session, sequence continuity, operation-authority continuity, unchanged Remote classification/binding/session through the live path change, and fresh auth/binding/session requirements on reconnect.
-- Task 8 Step 3 provides reproducible same-host benchmark/report machinery and measures protected connect, Cross-Lab session auth, control RTT, fixed-size unidirectional throughput, shutdown, and Linux RSS/FD observations across Quinn/Iroh modes.
-- Task 8 Step 4 adds strict public-routing-only rendezvous serialization/parsing/reconstruction. The persisted format can contain only `endpoint_id`, optional `relay_url`, and optional `ip`; extra fields are rejected, including secret-bearing additions.
-- `Rendezvous::endpoint_addr` reconstructs Iroh routing explicitly from those public values. Private keys, relay tokens, Cross-Lab credentials/proofs, exporter bytes, and payloads are not represented by the persisted type.
-- Top-level `Command` now includes typed `netprobe-relay`, `netprobe-server`, and `netprobe-client` arguments. Netprobe commands have no `EvalConfig` and are explicitly outside `baseline::run_local`.
-- Step 5 controlled namespace/process orchestration, Step 6 deterministic full workspace gate, Step 7 same-host evidence capture, Step 8 controlled NAT/relay evidence, and Step 9 evidence report remain unfinished.
-- Security authority remains local and fail-closed.
+- Quinn remains the verified local/LAN production baseline.
+- Iroh `1.2.0` and `iroh-relay 1.2.0` remain isolated under `experiments/m9-networking`; no Iroh type has entered Cross-Lab domain/public production APIs.
+- Reproducible local modes cover Quinn, Iroh direct, Iroh owner relay, and combined runs with protected-connect, Cross-Lab-auth, control-RTT, fixed uni-throughput, shutdown, Linux RSS, and Linux FD observations.
+- The `m9-networking` netprobe supports typed owner-relay/server/client process modes.
+- Persisted rendezvous metadata contains only `endpoint_id`, optional `relay_url`, and optional `ip`; extra fields are rejected. Private keys, tokens, credentials/proofs, exporter bytes, and payload contents are not persisted by the rendezvous/evidence path.
+- The Linux namespace harness owns fixed namespaces `cl-m9-ra`, `cl-m9-rb`, `cl-m9-a`, `cl-m9-b`, bridge `cl-m9-br`, transit `172.30.90.0/24`, peer networks `10.90.1.0/24` and `10.90.2.0/24`, owner relay `172.30.90.1`, namespace-local forwarding/NAT, direct-UDP gating, collision refusal, and cleanup.
+- The controlled topology successfully uses owner relay for authenticated Remote control/data but does not obtain a direct path after UDP is enabled. This is recorded as `direct_unavailable`, not hidden or converted into weaker auth/session semantics.
+- Separate deterministic relay-to-direct tests verify unchanged Remote classification, exporter binding, `SessionId`, control sequence state, and active operation authority through a live path change.
+- Forced reconnect requires fresh authentication/binding/session state and succeeds after the controlled direct-path miss.
+- Task 8 Linux evidence does not close Android, iOS, Windows, macOS, real-device lifecycle, background-networking, entitlement, firewall, or secure-keystore obligations.
+- Evidence report: `docs/research/M9-networking-evidence.md`.
+- **Libp2p trigger: no. Task 9 is skipped.**
 
 ## Deferred / External Risks
 
@@ -62,27 +67,27 @@ No Task 8 work has changed the Master Architecture, protobuf schemas, canonical 
 - `main` branch protection and other repository-administration controls.
 - Windows/macOS/mobile CI matrices as their platform slices land.
 - `paste 1.0.15` / `RUSTSEC-2024-0436` in the isolated Iroh experiment.
-- Controlled Linux NAT/relay topology evidence, recovery/path-change evidence under forced topology, and final same-host/resource measurements required before ADR-0009 can select a production remote-connectivity architecture.
+- ADR-0009 must explicitly account for the controlled symmetric-NAT direct-path limitation and the remaining mobile/platform evidence obligations before any production promotion.
 
 ## Exact Next Task
 
-Continue **M9 remote-networking Task 8 Step 5 — Linux namespace topology and netprobe process orchestration** from `docs/plans/phase-1/M9-remote-networking.md` on branch `m9-task8-network-evidence`.
+Finish **M9 Task 8 integration** on `m9-task8-network-evidence`:
 
-Start with RED tests for the fixed topology contract. The script must use namespaces `cl-m9-ra`, `cl-m9-rb`, `cl-m9-a`, `cl-m9-b`; bridge `cl-m9-br`; transit `172.30.90.0/24`; peer networks `10.90.1.0/24` and `10.90.2.0/24`; refuse pre-existing planned namespaces/bridge; enable forwarding only inside router namespaces; add namespace-local nftables masquerade; run the owner relay on `172.30.90.1`; block router-to-router direct UDP before allowing it; and install `trap cleanup EXIT INT TERM` that removes owned processes/network state/rendezvous files.
-
-The script must orchestrate real `netprobe-relay`, `netprobe-server`, and `netprobe-client` runtime behavior. Keep ephemeral Iroh/private Cross-Lab test keys in process memory only. Persist routing metadata and boolean/measurement evidence only—never private keys, credentials/proofs, exporter bytes, relay credentials, or payload contents.
-
-After Step 5 is focused/widened green, run the Step 6 full workspace gate, then collect Step 7/8 measurements and write `docs/research/M9-networking-evidence.md`. Do not start Task 9 unless that report explicitly records `Libp2p trigger: yes` with a concrete failed Iroh criterion that libp2p plausibly addresses.
+1. verify the evidence-report/CURRENT documentation head;
+2. delete the temporary branch-only `.github/workflows/m9-task8-red.yml` evidence workflow;
+3. inspect the final branch diff and run/trigger the repository's normal exact-head CI path;
+4. open the Task 8 PR only after the final branch contains no temporary workflow;
+5. require exact-head PR CI to be green before merge;
+6. merge Task 8 and verify `main` post-merge;
+7. checkpoint `CURRENT.md` on `main` if the merge state/run IDs need to be recorded;
+8. proceed directly to **Task 10 / ADR-0009**. Do not start Task 9 because the evidence report records `Libp2p trigger: no`.
 
 ## Resume Procedure
 
-1. verify branch `m9-task8-network-evidence`, this file, the active M9 plan, Master Architecture, relevant session/transport ADRs, recent commits, and repository state;
-2. preserve Step 4 exact verified head `95acc6f94f1b5b828363337938450061f24cb3df` and CI `35078260860` as the safe-rendezvous checkpoint;
-3. attach/verify Step 5 RED tests for the fixed namespace/NAT/relay script before creating `scripts/netns.sh`;
-4. implement the smallest deterministic topology script with collision refusal and owned cleanup;
-5. implement/finish explicit binary dispatch and netprobe relay/server/client runtime needed by the script, reusing existing owner-relay, Iroh endpoint, auth, lifecycle, and path-observation code rather than duplicating authority logic;
-6. verify focused Step 5 tests and the M9 crate gate, then run the required full workspace Step 6 gate;
-7. collect same-host and controlled NAT/relay evidence without persisting private keys, credentials/proofs, exporter bytes, relay credentials, or payloads;
-8. record relay fallback, authenticated control/data, direct-path appearance, unchanged Remote/binding/session through live path change, fresh binding/session after reconnect, recovery/path-change behavior, resource observations, and failures/anomalies;
-9. write `docs/research/M9-networking-evidence.md` with an explicit evidence-grounded `Libp2p trigger: yes/no` decision;
-10. remove temporary Task 8 workflows, checkpoint `CURRENT.md`, integrate Task 8 only after exact-head CI is green, and verify `main` post-merge before any conditional Task 9 work.
+1. verify branch `m9-task8-network-evidence`, this file, `docs/research/M9-networking-evidence.md`, the active M9 plan, Master Architecture, recent commits, and repository state;
+2. preserve Task 8 evidence head `99b168101e9fc31bdfbcea110bdb95d26978dac4` and successful evidence run `35107158922` as the implementation/evidence checkpoint;
+3. preserve evidence report commit `4986b8064bdf47ad6ed52eb1907be11d82a0129f` and its explicit `Libp2p trigger: no` decision;
+4. remove only the temporary Task 8 workflow, not normal repository CI;
+5. verify the real final branch/PR head before claiming Task 8 complete;
+6. verify post-merge `main` before starting ADR-0009;
+7. do not add `rust-libp2p` or start Task 9 unless an approved future evidence change explicitly reverses the recorded trigger.
