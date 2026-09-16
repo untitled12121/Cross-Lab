@@ -32,3 +32,20 @@ impl OwnerRelay {
         self.server.shutdown().await.map_err(|_| EvalError::Setup)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::OwnerRelay;
+
+    #[tokio::test]
+    async fn owner_relay_starts_quic_address_discovery() {
+        let relay = OwnerRelay::start().await.expect("owner relay");
+
+        assert!(
+            relay.server.quic_addr().is_some(),
+            "owner relay must expose QUIC address discovery"
+        );
+
+        relay.shutdown().await.expect("owner relay shutdown");
+    }
+}
