@@ -75,9 +75,12 @@ async fn one_chunk_transfer(client: &dyn TransportConnection, server: &dyn Trans
         let mut send = client
             .try_open_uni_stream(opening.clone())
             .expect("Task 8 diagnostic: open uni");
+        eprintln!("task8 diagnostic: uni opened");
         send.try_send_chunk(payload.clone())
             .expect("Task 8 diagnostic: send chunk");
+        eprintln!("task8 diagnostic: chunk queued");
         send.finish();
+        eprintln!("task8 diagnostic: sender finished");
     };
 
     let receiver = async {
@@ -88,6 +91,7 @@ async fn one_chunk_transfer(client: &dyn TransportConnection, server: &dyn Trans
                 Err(error) => panic!("Task 8 diagnostic: accept failed: {error:?}"),
             }
         };
+        eprintln!("task8 diagnostic: uni accepted");
         assert_eq!(incoming.opening_frame(), opening);
         let (_, mut recv) = incoming.into_parts();
         let received = loop {
@@ -97,6 +101,7 @@ async fn one_chunk_transfer(client: &dyn TransportConnection, server: &dyn Trans
                 Err(error) => panic!("Task 8 diagnostic: receive failed: {error:?}"),
             }
         };
+        eprintln!("task8 diagnostic: chunk received");
         assert_eq!(received, payload);
         loop {
             match recv.try_receive_chunk() {
@@ -106,6 +111,7 @@ async fn one_chunk_transfer(client: &dyn TransportConnection, server: &dyn Trans
                 Err(error) => panic!("Task 8 diagnostic: finish failed: {error:?}"),
             }
         }
+        eprintln!("task8 diagnostic: receiver finished");
     };
 
     tokio::join!(sender, receiver);
