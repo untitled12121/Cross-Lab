@@ -33,6 +33,8 @@ const DATA_OPEN: &[u8] = b"crosslab-m9-data-v1";
 const DATA_PROBE: &[u8] = b"crosslab-m9-data-probe";
 const DATA_OK: &[u8] = b"crosslab-m9-data-ok";
 const DIRECT_OK: &[u8] = b"crosslab-m9-direct-ok";
+const RECONNECT_PROBE: &[u8] = b"crosslab-m9-reconnect-probe";
+const RECONNECT_OK: &[u8] = b"crosslab-m9-reconnect-ok";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NetprobeRelayArgs {
@@ -145,18 +147,11 @@ pub async fn run_server(args: NetprobePeerArgs) -> Result<(), EvalError> {
     let endpoint = peer_endpoint(args.relay_url()).await?;
     let rendezvous = Rendezvous::new(endpoint.id(), Some(args.relay_url().clone()), None);
     fs::write(args.rendezvous(), rendezvous.to_text()).map_err(|_| EvalError::Setup)?;
+    let fixture = AuthFixture::new();
 
-    let incoming = timeout(READY_TIMEOUT, endpoint.accept())
-        .await
-        .map_err(|_| EvalError::Timeout)?
-        .ok_or(EvalError::Connect)?;
-    let connection = timeout(READY_TIMEOUT, incoming)
-        .await
-        .map_err(|_| EvalError::Timeout)?
-        .map_err(|_| EvalError::Connect)?;
+    let connection = accept_connection(&endpoint).await?;
     let binding = derive_channel_binding(&connection)?;
     let (send, recv) = reserve_control_responder(&connection).await?;
-    let fixture = AuthFixture::new();
     let side = authenticate_side(
         &fixture,
         crosslab_core::SessionAuthRole::Responder,
@@ -188,6 +183,29 @@ pub async fn run_server(args: NetprobePeerArgs) -> Result<(), EvalError> {
     send_control(&transport, DATA_OK).await?;
 
     expect_control(&transport, DIRECT_OK).await?;
+    transport.shutdown().await;
+
+    let connection = accept_connection(&endpoint).await?;
+    let observed_connection = connection.clone();
+    let binding = derive_channel_binding(&connection)?;
+    let (send, recv) = reserve_control_responder(&connection).await?;
+    let side = authenticate_side(
+        &fixture,
+        crosslab_core::SessionAuthRole::Responder,
+        connection,
+        binding,
+        send,
+        recv,
+    )
+    .await?;
+    let transport = side.transport;
+
+    expect_control(&transport, RECONNECT_PROBE).await?;
+    send_control(&transport, RECONNECT_OK).await?;
+    timeout(READY_TIMEOUT, observed_connection.closed())
+        .await
+        .map_err(|_| EvalError::Timeout)?;
+
     transport.shutdown().await;
     endpoint.close().await;
     Ok(())
@@ -221,17 +239,12 @@ where
 {
     let rendezvous = wait_for_rendezvous(args.rendezvous()).await?;
     let endpoint = peer_endpoint(args.relay_url()).await?;
-    let connection = timeout(
-        READY_TIMEOUT,
-        endpoint.connect(rendezvous.endpoint_addr(), M9_ALPN),
-    )
-    .await
-    .map_err(|_| EvalError::Timeout)?
-    .map_err(|_| EvalError::Connect)?;
+    let fixture = AuthFixture::new();
+
+    let connection = connect_connection(&endpoint, &rendezvous).await?;
     let observed_connection = connection.clone();
     let binding = derive_channel_binding(&connection)?;
     let (send, recv) = reserve_control_initiator(&connection).await?;
-    let fixture = AuthFixture::new();
     let side = authenticate_side(
         &fixture,
         crosslab_core::SessionAuthRole::Initiator,
@@ -282,6 +295,40 @@ where
         "session_unchanged",
         if session_unchanged { "true" } else { "false" },
     )?;
+    transport.shutdown().await;
+
+    let connection = connect_connection(&endpoint, &rendezvous).await?;
+    let binding = derive_channel_binding(&connection)?;
+    let (send, recv) = reserve_control_initiator(&connection).await?;
+    let side = authenticate_side(
+        &fixture,
+        crosslab_core::SessionAuthRole::Initiator,
+        connection,
+        binding,
+        send,
+        recv,
+    )
+    .await?;
+    let transport = side.transport;
+    let session = side.session;
+    let binding_refreshed = transport.channel_binding() != &binding_before;
+    let session_refreshed = session
+        .context()
+        .is_some_and(|context| context.session_id() != session_before);
+
+    send_control(&transport, RECONNECT_PROBE).await?;
+    expect_control(&transport, RECONNECT_OK).await?;
+
+    emit("phase", "reconnect_verified")?;
+    emit(
+        "binding_refreshed",
+        if binding_refreshed { "true" } else { "false" },
+    )?;
+    emit(
+        "session_refreshed",
+        if session_refreshed { "true" } else { "false" },
+    )?;
+    emit("control_after_reconnect", "true")?;
 
     transport.shutdown().await;
     endpoint.close().await;
@@ -299,6 +346,30 @@ async fn peer_endpoint(relay_url: &RelayUrl) -> Result<Endpoint, EvalError> {
         .map_err(|_| EvalError::Setup)?;
     wait_for_relay(&endpoint, relay_url).await?;
     Ok(endpoint)
+}
+
+async fn accept_connection(endpoint: &Endpoint) -> Result<iroh::endpoint::Connection, EvalError> {
+    let incoming = timeout(READY_TIMEOUT, endpoint.accept())
+        .await
+        .map_err(|_| EvalError::Timeout)?
+        .ok_or(EvalError::Connect)?;
+    timeout(READY_TIMEOUT, incoming)
+        .await
+        .map_err(|_| EvalError::Timeout)?
+        .map_err(|_| EvalError::Connect)
+}
+
+async fn connect_connection(
+    endpoint: &Endpoint,
+    rendezvous: &Rendezvous,
+) -> Result<iroh::endpoint::Connection, EvalError> {
+    timeout(
+        READY_TIMEOUT,
+        endpoint.connect(rendezvous.endpoint_addr(), M9_ALPN),
+    )
+    .await
+    .map_err(|_| EvalError::Timeout)?
+    .map_err(|_| EvalError::Connect)
 }
 
 async fn wait_for_relay(endpoint: &Endpoint, relay_url: &RelayUrl) -> Result<(), EvalError> {
@@ -514,7 +585,7 @@ mod tests {
         let _ = fs::remove_file(&rendezvous);
         let args = NetprobePeerArgs::new(rendezvous.clone(), relay.url().clone());
 
-        let (server, client) = timeout(Duration::from_secs(15), async {
+        let (server, client) = timeout(Duration::from_secs(25), async {
             tokio::join!(run_server(args.clone()), run_client(args))
         })
         .await
@@ -530,6 +601,10 @@ mod tests {
             "phase\tdirect_verified",
             "binding_unchanged\ttrue",
             "session_unchanged\ttrue",
+            "phase\treconnect_verified",
+            "binding_refreshed\ttrue",
+            "session_refreshed\ttrue",
+            "control_after_reconnect\ttrue",
         ] {
             assert!(output.lines().any(|line| line == expected), "missing {expected}");
         }
