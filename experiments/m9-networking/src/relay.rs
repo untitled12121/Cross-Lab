@@ -25,10 +25,8 @@ impl OwnerRelay {
         if !bind_addr.ip().is_loopback() {
             let (_, server_config) =
                 iroh_relay::server::testing::self_signed_tls_certs_and_config();
-            let mut quic = QuicConfig::new(SocketAddr::new(
-                bind_addr.ip(),
-                DEFAULT_RELAY_QUIC_PORT,
-            ));
+            let mut quic =
+                QuicConfig::new(SocketAddr::new(bind_addr.ip(), DEFAULT_RELAY_QUIC_PORT));
             quic.server_config = Some(server_config);
             config.quic = Some(quic);
         }
