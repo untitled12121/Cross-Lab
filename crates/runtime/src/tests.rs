@@ -16,11 +16,11 @@ use crosslab_identity::{
     OwnerRootRecord,
 };
 use crosslab_policy::{
-    NetworkClass, PairingTrustTransition, PolicyState, TrustRecord, TrustState, TrustTransition,
-    TransitionId,
+    NetworkClass, OperationName, PairingTrustTransition, PolicyState, TrustRecord, TrustState,
+    TrustTransition, TransitionId,
 };
 use crosslab_protocol::{
-    ControlRequest, FeatureSet, OperationName, ProtocolRange, ProtocolVersion, RequestId, RetryClass,
+    ControlRequest, FeatureSet, ProtocolRange, ProtocolVersion, RequestId, RetryClass,
 };
 
 use crate::{ConnectivityState, NodeError, RuntimeNode};
