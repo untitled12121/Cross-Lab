@@ -126,9 +126,7 @@ impl RuntimeActor {
         self.task.as_ref().is_some_and(|task| !task.is_finished())
     }
 
-    pub fn subscribe_status(
-        &self,
-    ) -> Result<watch::Receiver<RuntimeStatus>, RuntimeActorError> {
+    pub fn subscribe_status(&self) -> Result<watch::Receiver<RuntimeStatus>, RuntimeActorError> {
         self.status_rx
             .as_ref()
             .cloned()
@@ -145,10 +143,7 @@ impl RuntimeActor {
             .map_err(map_try_send_error)
     }
 
-    pub async fn reconnect(
-        &self,
-        session: RuntimeActorSession,
-    ) -> Result<(), RuntimeActorError> {
+    pub async fn reconnect(&self, session: RuntimeActorSession) -> Result<(), RuntimeActorError> {
         let command_tx = self
             .command_tx
             .as_ref()
