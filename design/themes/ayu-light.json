@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "id": "ayu-light",
+  "display_name": "Ayu Light",
+  "appearance": "light",
+  "colors": {
+    "background": { "l": 0.991, "c": 0.0, "h": 0.0 },
+    "foreground": { "l": 0.493, "c": 0.011, "h": 248.0 },
+    "surface": { "l": 0.967, "c": 0.002, "h": 247.84 },
+    "surface_foreground": { "l": 0.5105, "c": 0.021, "h": 249.0 },
+    "primary": { "l": 0.727, "c": 0.099, "h": 220.0 },
+    "primary_foreground": { "l": 0.9851, "c": 0.0, "h": 0.0 },
+    "secondary": { "l": 0.9435, "c": 0.0014, "h": 286.35 },
+    "secondary_foreground": { "l": 0.5105, "c": 0.021, "h": 249.0 },
+    "muted": { "l": 0.9703, "c": 0.0013, "h": 286.35 },
+    "muted_foreground": { "l": 0.704, "c": 0.012, "h": 248.0 },
+    "accent": { "l": 0.88895, "c": 0.00271, "h": 286.34 },
+    "accent_foreground": { "l": 0.5105, "c": 0.021, "h": 249.0 },
+    "destructive": { "l": 0.702, "c": 0.151, "h": 22.9 },
+    "destructive_foreground": { "l": 0.9851, "c": 0.0, "h": 0.0 },
+    "border": { "l": 0.854, "c": 0.0057, "h": 238.0 },
+    "input": { "l": 0.8942, "c": 0.0101, "h": 267.35 },
+    "ring": { "l": 0.7825, "c": 0.157, "h": 59.0 },
+    "selection": { "l": 0.728, "c": 0.1, "h": 220.0, "alpha": 0.133333 }
+  },
+  "typography": {
+    "families": {
+      "sans": ["Inter", "system-ui"],
+      "mono": ["JetBrains Mono", "monospace"]
+    },
+    "scales": {
+      "caption": { "size": 11.0, "line_height": 16.0, "weight": 400 },
+      "body": { "size": 13.0, "line_height": 20.0, "weight": 400 },
+      "label": { "size": 13.0, "line_height": 20.0, "weight": 500 },
+      "title": { "size": 18.0, "line_height": 24.0, "weight": 600 }
+    }
+  },
+  "radius": {
+    "none": 0.0,
+    "sm": 0.0,
+    "md": 0.0,
+    "lg": 0.0,
+    "xl": 0.0,
+    "full": 0.0
+  },
+  "spacing": {
+    "xxs": 2.0,
+    "xs": 4.0,
+    "sm": 6.0,
+    "md": 8.0,
+    "lg": 12.0,
+    "xl": 16.0,
+    "xxl": 24.0
+  },
+  "metrics": {
+    "density": 1.0,
+    "border_width": 1.0,
+    "control_height_compact": 28.0,
+    "control_height_default": 32.0,
+    "row_height": 32.0,
+    "icon_size": 16.0,
+    "icon_stroke": 1.5
+  },
+  "elevation": {
+    "none": {
+      "offset_x": 0.0,
+      "offset_y": 0.0,
+      "blur": 0.0,
+      "spread": 0.0,
+      "color": { "l": 0.0, "c": 0.0, "h": 0.0, "alpha": 0.0 }
+    },
+    "raised": {
+      "offset_x": 0.0,
+      "offset_y": 2.0,
+      "blur": 8.0,
+      "spread": 0.0,
+      "color": { "l": 0.0, "c": 0.0, "h": 0.0, "alpha": 0.08 }
+    }
+  },
+  "motion": {
+    "fast_ms": 100,
+    "normal_ms": 160,
+    "easing_standard": [0.2, 0.0, 0.0, 1.0]
+  }
+}

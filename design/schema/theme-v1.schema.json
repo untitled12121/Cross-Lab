@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cross-lab:design:theme:v1",
+  "title": "Cross-Lab Theme v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "display_name",
+    "appearance",
+    "colors",
+    "typography",
+    "radius",
+    "spacing",
+    "metrics",
+    "elevation",
+    "motion"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "display_name": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "appearance": { "enum": ["light", "dark"] },
+    "colors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "background",
+        "foreground",
+        "surface",
+        "surface_foreground",
+        "primary",
+        "primary_foreground",
+        "secondary",
+        "secondary_foreground",
+        "muted",
+        "muted_foreground",
+        "accent",
+        "accent_foreground",
+        "destructive",
+        "destructive_foreground",
+        "border",
+        "input",
+        "ring",
+        "selection"
+      ],
+      "properties": {
+        "background": { "$ref": "#/$defs/oklch" },
+        "foreground": { "$ref": "#/$defs/oklch" },
+        "surface": { "$ref": "#/$defs/oklch" },
+        "surface_foreground": { "$ref": "#/$defs/oklch" },
+        "primary": { "$ref": "#/$defs/oklch" },
+        "primary_foreground": { "$ref": "#/$defs/oklch" },
+        "secondary": { "$ref": "#/$defs/oklch" },
+        "secondary_foreground": { "$ref": "#/$defs/oklch" },
+        "muted": { "$ref": "#/$defs/oklch" },
+        "muted_foreground": { "$ref": "#/$defs/oklch" },
+        "accent": { "$ref": "#/$defs/oklch" },
+        "accent_foreground": { "$ref": "#/$defs/oklch" },
+        "destructive": { "$ref": "#/$defs/oklch" },
+        "destructive_foreground": { "$ref": "#/$defs/oklch" },
+        "border": { "$ref": "#/$defs/oklch" },
+        "input": { "$ref": "#/$defs/oklch" },
+        "ring": { "$ref": "#/$defs/oklch" },
+        "selection": { "$ref": "#/$defs/oklch" }
+      }
+    },
+    "typography": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["families", "scales"],
+      "properties": {
+        "families": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sans", "mono"],
+          "properties": {
+            "sans": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+            "mono": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+          }
+        },
+        "scales": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["caption", "body", "label", "title"],
+          "properties": {
+            "caption": { "$ref": "#/$defs/text_scale" },
+            "body": { "$ref": "#/$defs/text_scale" },
+            "label": { "$ref": "#/$defs/text_scale" },
+            "title": { "$ref": "#/$defs/text_scale" }
+          }
+        }
+      }
+    },
+    "radius": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["none", "sm", "md", "lg", "xl", "full"],
+      "properties": {
+        "none": { "$ref": "#/$defs/non_negative_number" },
+        "sm": { "$ref": "#/$defs/non_negative_number" },
+        "md": { "$ref": "#/$defs/non_negative_number" },
+        "lg": { "$ref": "#/$defs/non_negative_number" },
+        "xl": { "$ref": "#/$defs/non_negative_number" },
+        "full": { "$ref": "#/$defs/non_negative_number" }
+      }
+    },
+    "spacing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["xxs", "xs", "sm", "md", "lg", "xl", "xxl"],
+      "properties": {
+        "xxs": { "$ref": "#/$defs/non_negative_number" },
+        "xs": { "$ref": "#/$defs/non_negative_number" },
+        "sm": { "$ref": "#/$defs/non_negative_number" },
+        "md": { "$ref": "#/$defs/non_negative_number" },
+        "lg": { "$ref": "#/$defs/non_negative_number" },
+        "xl": { "$ref": "#/$defs/non_negative_number" },
+        "xxl": { "$ref": "#/$defs/non_negative_number" }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "density",
+        "border_width",
+        "control_height_compact",
+        "control_height_default",
+        "row_height",
+        "icon_size",
+        "icon_stroke"
+      ],
+      "properties": {
+        "density": { "type": "number", "exclusiveMinimum": 0, "maximum": 2 },
+        "border_width": { "$ref": "#/$defs/non_negative_number" },
+        "control_height_compact": { "$ref": "#/$defs/positive_number" },
+        "control_height_default": { "$ref": "#/$defs/positive_number" },
+        "row_height": { "$ref": "#/$defs/positive_number" },
+        "icon_size": { "$ref": "#/$defs/positive_number" },
+        "icon_stroke": { "$ref": "#/$defs/positive_number" }
+      }
+    },
+    "elevation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["none", "raised"],
+      "properties": {
+        "none": { "$ref": "#/$defs/shadow" },
+        "raised": { "$ref": "#/$defs/shadow" }
+      }
+    },
+    "motion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fast_ms", "normal_ms", "easing_standard"],
+      "properties": {
+        "fast_ms": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "normal_ms": { "type": "integer", "minimum": 0, "maximum": 2000 },
+        "easing_standard": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "oklch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["l", "c", "h"],
+      "properties": {
+        "l": { "type": "number", "minimum": 0, "maximum": 1 },
+        "c": { "type": "number", "minimum": 0, "maximum": 0.5 },
+        "h": { "type": "number", "minimum": 0, "maximum": 360 },
+        "alpha": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "text_scale": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["size", "line_height", "weight"],
+      "properties": {
+        "size": { "$ref": "#/$defs/positive_number" },
+        "line_height": { "$ref": "#/$defs/positive_number" },
+        "weight": { "type": "integer", "minimum": 100, "maximum": 900, "multipleOf": 100 }
+      }
+    },
+    "shadow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["offset_x", "offset_y", "blur", "spread", "color"],
+      "properties": {
+        "offset_x": { "type": "number" },
+        "offset_y": { "type": "number" },
+        "blur": { "$ref": "#/$defs/non_negative_number" },
+        "spread": { "type": "number" },
+        "color": { "$ref": "#/$defs/oklch" }
+      }
+    },
+    "non_negative_number": { "type": "number", "minimum": 0 },
+    "positive_number": { "type": "number", "exclusiveMinimum": 0 }
+  }
+}

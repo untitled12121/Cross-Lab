@@ -19,6 +19,24 @@ jobs:
         run: rustup toolchain install 1.98.1 --profile minimal --component clippy,rustfmt
       - name: Verify lockfile
         run: cargo metadata --locked --no-deps --format-version 1 > /dev/null
+      - name: Validate theme JSON syntax
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          paths = sorted(
+              [*Path("design/schema").glob("*.json"),
+               *Path("design/themes").glob("*.json"),
+               *Path("design/fixtures").glob("*.json")]
+          )
+          if not paths:
+              raise SystemExit("no theme JSON files found")
+          for path in paths:
+              with path.open("r", encoding="utf-8") as source:
+                  json.load(source)
+              print(f"validated {path}")
+          PY
       - name: Install cargo-audit
         run: cargo install cargo-audit --version 0.22.2 --locked
       - name: Audit dependencies
