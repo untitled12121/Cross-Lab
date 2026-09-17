@@ -16,8 +16,8 @@ use crosslab_identity::{
     OwnerRootRecord,
 };
 use crosslab_policy::{
-    NetworkClass, OperationName, PairingTrustTransition, PolicyState, TrustRecord, TrustState,
-    TrustTransition, TransitionId,
+    NetworkClass, OperationName, PairingTrustTransition, PolicyState, TransitionId, TrustRecord,
+    TrustState, TrustTransition,
 };
 use crosslab_protocol::{
     ControlRequest, FeatureSet, ProtocolRange, ProtocolVersion, RequestId, RetryClass,
@@ -113,7 +113,6 @@ struct Fixture {
     owner_id: OwnerId,
     root_key: SigningKey,
     authority: OwnerAuthorityState,
-    issuer_key: SigningKey,
     local_key: SigningKey,
     peer_key: SigningKey,
     local_credential: DeviceCredential,
@@ -172,7 +171,6 @@ impl Fixture {
             owner_id,
             root_key,
             authority,
-            issuer_key,
             local_key,
             peer_key,
             local_credential,
@@ -232,7 +230,9 @@ impl Fixture {
             &self.root_key,
         )
         .unwrap();
-        transition.apply_root(&mut revoked, &self.authority).unwrap();
+        transition
+            .apply_root(&mut revoked, &self.authority)
+            .unwrap();
         revoked
     }
 
@@ -344,7 +344,9 @@ fn peer_revocation_clears_dispatcher_state_and_transport() {
     .unwrap();
     runtime.send_request(request(0x67)).unwrap();
 
-    runtime.apply_peer_revocation(&fixture.revoked_peer()).unwrap();
+    runtime
+        .apply_peer_revocation(&fixture.revoked_peer())
+        .unwrap();
     assert_eq!(runtime.session().state(), SessionState::Closed);
     assert_eq!(runtime.pending_request_count(), 0);
     assert!(transport.is_closed());
