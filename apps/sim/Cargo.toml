@@ -15,6 +15,7 @@ crosslab-core = { path = "../../crates/core" }
 crosslab-identity = { path = "../../crates/identity" }
 crosslab-policy = { path = "../../crates/policy" }
 crosslab-protocol = { path = "../../crates/protocol" }
+crosslab-runtime = { path = "../../crates/runtime" }
 
 [dev-dependencies]
 crosslab-crypto = { path = "../../crates/crypto" }

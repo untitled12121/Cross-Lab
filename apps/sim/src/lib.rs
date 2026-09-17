@@ -3,5 +3,5 @@ pub mod stream;
 pub mod transport;
 
 pub mod runtime {
-    pub use crate::node::{NodeError, SimNode as RuntimeNode};
+    pub use crosslab_runtime::{NodeError, NodeEvent, RuntimeNode};
 }
