@@ -115,8 +115,17 @@ impl ControlDispatcher {
         self.pending_outgoing.len()
     }
 
-    pub fn subscribe_event(&mut self, subscription: EventSubscription) -> bool {
-        self.event_subscriptions.insert(subscription)
+    pub fn subscribe_event(
+        &mut self,
+        subscription: EventSubscription,
+    ) -> Result<bool, ControlDispatchError> {
+        if self.event_subscriptions.contains(&subscription) {
+            return Ok(false);
+        }
+        if self.event_subscriptions.len() >= self.state_capacity {
+            return Err(ControlDispatchError::ResourceLimit);
+        }
+        Ok(self.event_subscriptions.insert(subscription))
     }
 
     pub fn unsubscribe_event(&mut self, subscription: &EventSubscription) -> bool {

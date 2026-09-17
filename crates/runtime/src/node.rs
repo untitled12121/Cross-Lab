@@ -101,7 +101,9 @@ impl<'a> RuntimeNode<'a> {
         if self.session.state() != SessionState::Active {
             return Err(NodeError::Session(SessionError::InvalidState));
         }
-        Ok(self.dispatcher.subscribe_event(subscription))
+        self.dispatcher
+            .subscribe_event(subscription)
+            .map_err(NodeError::Dispatch)
     }
 
     pub fn unsubscribe_event(
