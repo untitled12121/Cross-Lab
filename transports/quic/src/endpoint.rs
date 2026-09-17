@@ -71,8 +71,7 @@ impl QuicClientEndpoint {
             .map_err(|_| QuicEndpointError::InvalidTlsMaterial)?;
         client_config.transport_config(build_transport_config(transport_config)?);
 
-        let mut endpoint =
-            Endpoint::client(bind_addr).map_err(|_| QuicEndpointError::Bind)?;
+        let mut endpoint = Endpoint::client(bind_addr).map_err(|_| QuicEndpointError::Bind)?;
         endpoint.set_default_client_config(client_config);
         Ok(Self {
             endpoint,
@@ -124,11 +123,13 @@ impl QuicServerEndpoint {
             .map(CertificateDer::from)
             .collect();
         let private_key = PrivatePkcs8KeyDer::from(tls.private_key_pkcs8_der);
-        let mut server_config = ServerConfig::with_single_cert(certificate_chain, private_key.into())
-            .map_err(|_| QuicEndpointError::InvalidTlsMaterial)?;
+        let mut server_config =
+            ServerConfig::with_single_cert(certificate_chain, private_key.into())
+                .map_err(|_| QuicEndpointError::InvalidTlsMaterial)?;
         server_config.transport_config(build_transport_config(transport_config)?);
 
-        let endpoint = Endpoint::server(server_config, bind_addr).map_err(|_| QuicEndpointError::Bind)?;
+        let endpoint =
+            Endpoint::server(server_config, bind_addr).map_err(|_| QuicEndpointError::Bind)?;
         Ok(Self {
             endpoint,
             transport_config,
@@ -162,12 +163,8 @@ fn build_transport_config(
 
     let mut transport = TransportConfig::default();
     transport
-        .max_concurrent_uni_streams(VarInt::from_u32(
-            config.max_concurrent_remote_uni_streams(),
-        ))
-        .max_concurrent_bidi_streams(VarInt::from_u32(
-            config.max_concurrent_remote_bi_streams(),
-        ))
+        .max_concurrent_uni_streams(VarInt::from_u32(config.max_concurrent_remote_uni_streams()))
+        .max_concurrent_bidi_streams(VarInt::from_u32(config.max_concurrent_remote_bi_streams()))
         .stream_receive_window(stream_receive_window)
         .receive_window(connection_receive_window)
         .max_idle_timeout(Some(idle_timeout));

@@ -198,16 +198,25 @@ async fn authenticate_with_timeout(
     let bootstrap = match result {
         Ok(Ok(bootstrap)) => bootstrap,
         Ok(Err(error)) => {
-            connection.close(SESSION_FAILURE_CODE, b"crosslab session authentication failed");
+            connection.close(
+                SESSION_FAILURE_CODE,
+                b"crosslab session authentication failed",
+            );
             return Err(error);
         }
         Err(_) => {
-            connection.close(SESSION_FAILURE_CODE, b"crosslab session authentication timed out");
+            connection.close(
+                SESSION_FAILURE_CODE,
+                b"crosslab session authentication timed out",
+            );
             return Err(QuicSessionError::Timeout);
         }
     };
 
-    let local_endpoint = endpoint.local_addr().ok().map(|address| address.to_string());
+    let local_endpoint = endpoint
+        .local_addr()
+        .ok()
+        .map(|address| address.to_string());
     let remote_endpoint = Some(connection.remote_address().to_string());
     let metadata = ConnectionMetadata::new(local_endpoint, remote_endpoint, None);
     let transport = QuicTransportConnection::new_owned(
@@ -236,7 +245,8 @@ async fn bootstrap_initiator(
     connection: &Connection,
     auth: &QuicSessionAuthConfig<'_>,
 ) -> Result<AuthenticatedBootstrap, QuicSessionError> {
-    let binding = derive_channel_binding(connection).map_err(|_| QuicSessionError::ChannelBinding)?;
+    let binding =
+        derive_channel_binding(connection).map_err(|_| QuicSessionError::ChannelBinding)?;
     let initiator_hello = local_hello(auth)?;
     let (mut control_send, mut control_recv) = connection
         .open_bi()
@@ -257,9 +267,8 @@ async fn bootstrap_initiator(
         &SessionAuthBootstrapMessage::Proof(proof_message(initiator_proof)),
     )
     .await?;
-    let responder_proof = proof_from_message(expect_proof(
-        receive_bootstrap(&mut control_recv).await?,
-    )?);
+    let responder_proof =
+        proof_from_message(expect_proof(receive_bootstrap(&mut control_recv).await?)?);
     let session = authenticate_session(
         auth,
         &initiator_hello,
@@ -282,7 +291,8 @@ async fn bootstrap_responder(
     connection: &Connection,
     auth: &QuicSessionAuthConfig<'_>,
 ) -> Result<AuthenticatedBootstrap, QuicSessionError> {
-    let binding = derive_channel_binding(connection).map_err(|_| QuicSessionError::ChannelBinding)?;
+    let binding =
+        derive_channel_binding(connection).map_err(|_| QuicSessionError::ChannelBinding)?;
     let (mut control_send, mut control_recv) = connection
         .accept_bi()
         .await
@@ -295,9 +305,8 @@ async fn bootstrap_responder(
     )
     .await?;
     let transcript = transcript_for(auth, &initiator_hello, &responder_hello, &binding)?;
-    let initiator_proof = proof_from_message(expect_proof(
-        receive_bootstrap(&mut control_recv).await?,
-    )?);
+    let initiator_proof =
+        proof_from_message(expect_proof(receive_bootstrap(&mut control_recv).await?)?);
     let responder_proof = transcript
         .create_proof(CoreSessionAuthRole::Responder, auth.local_signing_key)
         .map_err(|error| QuicSessionError::Session(SessionError::Auth(error)))?;
@@ -324,9 +333,7 @@ async fn bootstrap_responder(
     })
 }
 
-fn local_hello(
-    auth: &QuicSessionAuthConfig<'_>,
-) -> Result<SessionAuthHello, QuicSessionError> {
+fn local_hello(auth: &QuicSessionAuthConfig<'_>) -> Result<SessionAuthHello, QuicSessionError> {
     let nonce = random_bytes::<32>().map_err(|_| QuicSessionError::Random)?;
     Ok(SessionAuthHello::new(
         auth.local_credential,
@@ -344,8 +351,9 @@ fn transcript_for(
 ) -> Result<SessionAuthTranscriptV1, QuicSessionError> {
     let initiator_credential = initiator.device_credential();
     let responder_credential = responder.device_credential();
-    let protocol = negotiate_protocol_version(initiator.protocol_ranges(), responder.protocol_ranges())
-        .map_err(SessionError::Protocol)?;
+    let protocol =
+        negotiate_protocol_version(initiator.protocol_ranges(), responder.protocol_ranges())
+            .map_err(SessionError::Protocol)?;
     let features = negotiate_features(initiator.features(), responder.features())
         .map_err(SessionError::Feature)?;
     SessionAuthTranscriptV1::new(
