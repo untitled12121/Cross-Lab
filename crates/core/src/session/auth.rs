@@ -66,6 +66,19 @@ impl fmt::Debug for SessionAuthProof {
 }
 
 impl SessionAuthProof {
+    /// Reconstructs a decoded proof for verification by the session authenticator.
+    pub const fn from_parts(
+        role: SessionAuthRole,
+        transcript_digest: [u8; 32],
+        signature: Signature,
+    ) -> Self {
+        Self {
+            role,
+            transcript_digest,
+            signature,
+        }
+    }
+
     pub const fn role(&self) -> SessionAuthRole {
         self.role
     }
