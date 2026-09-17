@@ -250,8 +250,8 @@ impl Fixture {
 
     fn rotate_owner_root(&mut self) {
         let replacement = SigningKey::from_secret_bytes([0x5e; 32]);
-        let successor = RootSuccessor::issue(self.authority.root(), &self.root_key, &replacement)
-            .unwrap();
+        let successor =
+            RootSuccessor::issue(self.authority.root(), &self.root_key, &replacement).unwrap();
         self.authority.accept_root_successor(&successor).unwrap();
     }
 }
