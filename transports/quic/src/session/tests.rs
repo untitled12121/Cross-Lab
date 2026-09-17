@@ -10,12 +10,8 @@ use crosslab_identity::{
     AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,
     OwnerRootRecord,
 };
-use crosslab_policy::{
-    PairingTrustTransition, TransitionId, TrustRecord, TrustTransition,
-};
-use crosslab_protocol::{
-    FeatureSet, ProtocolRange, SessionAuthBootstrapMessage, SessionAuthHello,
-};
+use crosslab_policy::{PairingTrustTransition, TransitionId, TrustRecord, TrustTransition};
+use crosslab_protocol::{FeatureSet, ProtocolRange, SessionAuthBootstrapMessage, SessionAuthHello};
 use quinn::{ClientConfig, Connection, Endpoint, RecvStream, SendStream};
 use rustls::{RootCertStore, pki_types::CertificateDer};
 
@@ -131,7 +127,9 @@ impl AuthFixture {
             &self.issuer_key,
         )
         .unwrap();
-        revocation.apply_delegated(&mut trust, &self.authority).unwrap();
+        revocation
+            .apply_delegated(&mut trust, &self.authority)
+            .unwrap();
         trust
     }
 }
@@ -296,12 +294,9 @@ async fn cancelling_bootstrap_closes_the_connection() {
             initiator_features(),
             [0x2a; 32],
         );
-        send_bootstrap(
-            &mut send,
-            &SessionAuthBootstrapMessage::Hello(hello),
-        )
-        .await
-        .unwrap();
+        send_bootstrap(&mut send, &SessionAuthBootstrapMessage::Hello(hello))
+            .await
+            .unwrap();
         match receive_bootstrap(&mut recv).await.unwrap() {
             SessionAuthBootstrapMessage::Hello(_) => {}
             SessionAuthBootstrapMessage::Proof(_) => panic!("responder sent proof before hello"),
@@ -429,9 +424,8 @@ async fn raw_client_connect(
         .add(CertificateDer::from(certificate_der.to_vec()))
         .unwrap();
     let mut endpoint = Endpoint::client(localhost_ephemeral()).unwrap();
-    endpoint.set_default_client_config(
-        ClientConfig::with_root_certificates(Arc::new(roots)).unwrap(),
-    );
+    endpoint
+        .set_default_client_config(ClientConfig::with_root_certificates(Arc::new(roots)).unwrap());
     let connection = endpoint
         .connect(server_addr, "localhost")
         .unwrap()
