@@ -15,6 +15,7 @@ crosslab-core = { path = "../core" }
 crosslab-identity = { path = "../identity" }
 crosslab-policy = { path = "../policy" }
 crosslab-protocol = { path = "../protocol" }
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
 
 [dev-dependencies]
 crosslab-crypto = { path = "../crypto" }
