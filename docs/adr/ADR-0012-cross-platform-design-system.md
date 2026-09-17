@@ -1,6 +1,6 @@
 # ADR-0012: Cross-platform design system and theme contract
 
-**Status:** Proposed  
+**Status:** Accepted  
 **Date:** 2026-09-17
 
 ## Context
@@ -86,4 +86,4 @@ Desktop can reuse GPUI Kit's mature theme/component infrastructure through an ad
 
 React/CSS references supplied later can be reproduced closely without changing the native application architecture.
 
-Accepting this ADR requires the Master Architecture desktop design section to be reconciled before production implementation depends on the new contract.
+The Master Architecture is reconciled as part of the same M10 design integration checkpoint before production implementation depends on the contract.
