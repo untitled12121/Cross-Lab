@@ -12,7 +12,7 @@ use crosslab_core::{
     StreamAcceptError, StreamOpenError, TransportConnection, TransportSecurityClass,
     TransportSendStream,
 };
-use quinn::{Connection, RecvStream, SendStream, VarInt};
+use quinn::{Connection, Endpoint, RecvStream, SendStream, VarInt};
 use tokio::{
     sync::{Semaphore, mpsc, watch},
     task::JoinHandle,
@@ -108,6 +108,7 @@ impl TaskRegistry {
 }
 
 pub struct QuicTransportConnection {
+    _endpoint: Option<Endpoint>,
     connection: Connection,
     channel_binding: ChannelBinding,
     metadata: ConnectionMetadata,
@@ -122,6 +123,47 @@ pub struct QuicTransportConnection {
 
 impl QuicTransportConnection {
     pub(crate) fn new(
+        connection: Connection,
+        control_send: SendStream,
+        control_recv: RecvStream,
+        channel_binding: ChannelBinding,
+        metadata: ConnectionMetadata,
+        config: QuicTransportConfig,
+    ) -> Self {
+        Self::new_inner(
+            None,
+            connection,
+            control_send,
+            control_recv,
+            channel_binding,
+            metadata,
+            config,
+        )
+    }
+
+    pub(crate) fn new_owned(
+        endpoint: Endpoint,
+        connection: Connection,
+        control_send: SendStream,
+        control_recv: RecvStream,
+        channel_binding: ChannelBinding,
+        metadata: ConnectionMetadata,
+        config: QuicTransportConfig,
+    ) -> Self {
+        Self::new_inner(
+            Some(endpoint),
+            connection,
+            control_send,
+            control_recv,
+            channel_binding,
+            metadata,
+            config,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn new_inner(
+        endpoint: Option<Endpoint>,
         connection: Connection,
         control_send: SendStream,
         control_recv: RecvStream,
@@ -172,6 +214,7 @@ impl QuicTransportConnection {
         ));
 
         Self {
+            _endpoint: endpoint,
             connection,
             channel_binding,
             metadata,
