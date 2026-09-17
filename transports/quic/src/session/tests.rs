@@ -12,7 +12,7 @@ use crosslab_identity::{
 };
 use crosslab_policy::{PairingTrustTransition, TransitionId, TrustRecord, TrustTransition};
 use crosslab_protocol::{FeatureSet, ProtocolRange, SessionAuthBootstrapMessage, SessionAuthHello};
-use quinn::{ClientConfig, Connection, Endpoint, RecvStream, SendStream};
+use quinn::{ClientConfig, Connection, Endpoint};
 use rustls::{RootCertStore, pki_types::CertificateDer};
 
 use super::{BOOTSTRAP_RECORD_MAX, receive_bootstrap, send_bootstrap};
