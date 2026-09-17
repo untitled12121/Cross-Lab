@@ -4,104 +4,106 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 ## Current Phase
 
-**Phase 1 foundation complete; transitioning into the first real Linux + Android platform slice.**
+**Phase 1 foundation complete; M10 first real Linux + Android platform slice is approved and entering implementation.**
 
 ## Current Milestone
 
-**M10 — First Platform Vertical Slice, design/planning.**
+**M10 — First Platform Vertical Slice, architecture/design integration checkpoint.**
 
-M1–M9 are complete. M9 selected Quinn for local/LAN and Iroh for remote/NAT/relay connectivity through accepted ADR-0009. Production Iroh promotion remains gated by the real-device, lifecycle, secure-key-storage, and dependency-review obligations recorded below.
+M1–M9 are complete. M9 selected Quinn for local/LAN and Iroh for remote/NAT/relay through accepted ADR-0009. M10 design and ADR-0012 were owner-approved on 2026-09-17; production code starts only after this design checkpoint is merged and verified on `main`.
 
 ## Canonical Baseline
 
-- Canonical `main`: `918a2988eb0d79dc57797e1e9d35dc46e9a97b58` — M9 Task 10 merge.
+- Verified pre-M10 canonical `main`: `064526f688aed0a92dd5b0ae4815f54d5b97d6f6` (`docs: checkpoint M9 completion and M10 handoff`).
+- Exact `main` CI for that checkpoint: GitHub Actions `35180292718` — passed.
 - M9 Task 10 PR: #29 (`docs(networking): accept ADR-0009 and complete M9`).
-- Final Task 10 PR head: `bec61d122bca277bb9b50aa5ab164e882817758e`.
-- Task 10 exact-head PR CI: GitHub Actions `35176929570` — passed.
-- Task 10 merge commit: `918a2988eb0d79dc57797e1e9d35dc46e9a97b58`.
-- Task 10 post-merge `main` CI: GitHub Actions `35179839850` — passed.
-- Task 8 merge remains `e14ff354f7eeb3c61eec10cef687c9af08876311` with post-merge CI `35124835955` — passed.
-- M9 evidence report: `docs/research/M9-networking-evidence.md`.
+- M9 Task 10 merge commit: `918a2988eb0d79dc57797e1e9d35dc46e9a97b58`.
 - Accepted remote-networking decision: `docs/adr/ADR-0009-remote-networking.md`.
+- M9 evidence report: `docs/research/M9-networking-evidence.md`.
 
-## Completed M9 Decision
+## Approved M10 Design
 
-ADR-0009 selects **Quinn local/LAN + Iroh remote/NAT/relay** while preserving the existing Cross-Lab logical-session and security boundaries.
+- Active design branch: `m10-platform-shell-design`.
+- Branch base: verified `main` `064526f688aed0a92dd5b0ae4815f54d5b97d6f6`.
+- Approved design: `docs/superpowers/specs/2026-09-17-m10-platform-shell-design.md`.
+- Accepted design-system decision: `docs/adr/ADR-0012-cross-platform-design-system.md`.
+- Detailed implementation plan: `docs/superpowers/plans/2026-09-17-m10-first-platform-slice.md`.
+- Master Architecture revision 2.3 integrates ADR-0012.
+- No M10 production code is part of this design branch.
 
-The accepted invariants are:
+## First M10 Slice
 
-- Cross-Lab identity, trust, policy, session, capability, operation, and stream authority remain Cross-Lab domain state;
-- Iroh `EndpointId`, transport keys, relay URLs/tokens, paths, and addresses remain transport/routing state only;
-- Iroh reuses ADR-0008 `quic-tls-exporter-v1` exactly after a full handshake;
-- no 0-RTT or early-data path carries Cross-Lab authority;
-- every Iroh-backed Cross-Lab session remains `NetworkClass::Remote` through relay/direct path changes;
-- a live path change does not mint new authority or reset binding, `SessionId`, sequence state, or active operation grants;
-- a new connection requires fresh exporter binding, authentication, `SessionId`, negotiated state, and operation authority;
-- owner-selected/self-hosted relay operation is required with no mandatory Cross-Lab-operated public service or vendor account;
-- direct-path availability is opportunistic and endpoint-dependent/symmetric NAT may remain relay-only;
-- seamless Quinn/Iroh session migration and adaptive route scoring remain later decisions.
+The first slice is **authenticated local device connection + device status** between Linux desktop and Android:
 
-The M9 experiment remains isolated under `experiments/m9-networking`; accepting ADR-0009 does not create or authorize a production `transports/iroh` adapter by itself.
+- Linux desktop: Rust + GPUI + GPUI Kit using the feature-first page/layout/_components/components-ui/features organization.
+- Android: Kotlin-native application with Jetpack Compose for the M10 shell over one narrow shared-Rust mobile façade.
+- Shared application coordination: a small platform-neutral Rust runtime boundary is introduced only because desktop and mobile are immediate consumers.
+- Mobile FFI: one narrow UniFFI façade; internal crates are not exported independently.
+- Transport: existing Quinn local/LAN baseline and existing Cross-Lab channel-bound authentication/session semantics.
+- Scope: authenticated connection, safe device/trust/connectivity/session status, clean disconnect/fresh reconnect, revocation behavior, and bounded lifecycle ownership.
+- Pairing/bootstrap UI, clipboard, file transfer, BLE/Wi-Fi Direct, iOS, Windows, and production Iroh promotion are outside this first slice.
 
-## Task 9 Decision
+## Cross-Platform Design Contract
 
-**Libp2p trigger: no. Task 9 was intentionally skipped.**
+ADR-0012 establishes one Cross-Lab-owned renderer-neutral semantic theme contract used by native renderers.
 
-The controlled endpoint-dependent/symmetric-NAT topology did not obtain a direct path after UDP was enabled, but owner-relay fallback, authenticated control/data, and fresh reconnect semantics succeeded. The evidence did not identify an Iroh-specific failure that rust-libp2p Relay v2/DCUtR/AutoNAT would plausibly remove, so `rust-libp2p` was not added.
+- `Darkmatter` is the baseline dark theme.
+- `Ayu Light` is the baseline light theme.
+- `System` resolves OS dark/light appearance to one of those named themes.
+- Canonical theme data is semantic and renderer-neutral: OKLCH color roles, typography, radius, spacing, density, borders, control/list metrics, icon metrics, elevation/shadow, and motion values.
+- Radius `0` remains the sharp baseline default but is a token, not a hard-coded renderer invariant.
+- GPUI/GPUI Kit, Android Kotlin/Compose, and future iOS Swift map the same contract locally; presentation data does not travel through the Cross-Lab peer protocol or mobile core FFI.
+- React/CSS/Tailwind/screenshots supplied by the owner are visual references translated into native Cross-Lab UI, not a web runtime dependency.
+- The authoritative Darkmatter source is still absent from the verified project context. Do not invent or infer its palette. M10 may progress on schema/runtime/UI structure and Ayu Light, but Darkmatter visual completion stays open until the source is supplied.
 
-## M10 Handoff Constraints
+## Verified Dependency/Tooling References for the Plan
 
-M10 must build the smallest real Linux desktop + Android vertical slice on the stable Cross-Lab core/session/protocol foundation.
+Verified on 2026-09-17 and re-check before each first dependency commit:
 
-Architecture constraints:
+- GPUI Kit `0.6.1` (Apache-2.0).
+- UniFFI `0.32.1` (MPL-2.0 dependency; depend on it, do not copy its source).
+- Android Gradle Plugin `9.4.0`, Gradle `9.6.0`, JDK `17`.
+- Kotlin `2.4.20`.
+- Compose BOM `2026.08.00`.
+- Android compile/target API `36` for the first Android shell; minimum supported API remains to be evidence-based before first release build.
 
-- Linux desktop uses Rust + GPUI + GPUI Kit and follows the feature-first `pages/<feature>/page.rs`, `layout.rs`, `_components/`, `components/ui/`, `features/` organization.
-- Android uses Kotlin for platform/UI code with one deliberately designed shared-Rust mobile façade; internal crates are not exported independently.
-- Platform-specific behavior remains behind narrow adapters; UI code does not own networking, crypto, persistence, or privileged operations.
-- Quinn remains the proven local/LAN baseline for the first real-device slice.
-- Do not promote Iroh into production merely because ADR-0009 selected it architecturally.
+## Security / Lifecycle Constraints
 
-Before production Iroh use, M10 or the consuming milestone must:
-
-- re-evaluate the Iroh dependency tree, including `paste 1.0.15` / `RUSTSEC-2024-0436`;
-- validate Android background/network lifecycle and Kotlin/Rust integration on real devices;
-- validate real-device network transitions, suspend/resume, sleep/wake, and reconnect behavior;
-- define storage, rotation, and privacy rules for any persistent Iroh transport key;
-- use Android Keystore/StrongBox or another appropriate platform key store for production key material;
-- retain owner-controlled relay configuration and no mandatory public infrastructure.
-
-## Accepted Foundation State
-
-- ADR-0010: authoritative active-root/delegated-role currentness and fail-closed session invalidation.
-- ADR-0011: bounded `RequestId` retry history with `(SessionId, message_seq)` as the exact-envelope replay/order boundary.
-- `OwnerAuthorityState` remains authoritative for owner/delegated-role currentness.
-- Root or Device Signing replacement invalidates ordinary sessions and session-scoped authority; Administrative/Recovery-only rotation does not.
+- UI code does not own networking, cryptography, persistence internals, or privileged operations.
+- Android UI composables do not own the Rust runtime; a Kotlin application/service-scoped lifecycle owner sends typed lifecycle/network commands.
+- Status snapshots/FFI DTOs must never expose private keys, credentials, authentication secrets, channel-binding bytes, or sensitive payloads.
+- Development/test provisioning for already owner-authorized credentials and Quinn TLS material must be explicit and unavailable as an implicit release fallback.
+- ADR-0008 left production Quinn certificate provisioning undecided. M10 must not add accept-all certificate verification or silently define certificate identity as Cross-Lab identity.
+- Persistent Android production identity material requires an Android Keystore/StrongBox-backed adapter or another explicitly reviewed secure-storage path.
+- Do not promote Iroh in the first M10 slice. ADR-0009's Android lifecycle, real-device transitions, secure key storage, dependency audit, and transport-key privacy/rotation gates remain open for future production Iroh use.
 
 ## Deferred / External Risks
 
 - Durable rollback-resistant persistence for `OwnerAuthorityState` and accepted authority epochs.
-- Real Android/iOS lifecycle, background-networking, entitlement, firewall, and secure-keystore evidence.
+- Real Android/iOS lifecycle, background-networking, entitlement, firewall, and secure-keystore evidence beyond the M10 slice.
 - Windows/macOS platform networking and firewall evidence.
-- Production persistence/rotation/privacy policy for any stable Iroh transport key.
+- Production Quinn certificate provisioning/pinning lifecycle when a release consumer requires it.
+- Production persistence/rotation/privacy policy for stable Iroh transport keys.
 - `paste 1.0.15` / `RUSTSEC-2024-0436` in the isolated Iroh dependency graph.
 - Explicit authorization/subscription design for future authority-sensitive system-event families.
 - `main` branch protection and other repository-administration controls.
 
 ## Exact Next Task
 
-Design **M10 — First Platform Vertical Slice** before implementation:
+Integrate the approved design checkpoint before production code:
 
-1. inspect the current Cross-Lab platform-facing seams and relevant GPUI Kit / UniFFI / cross-device research material;
-2. select the smallest useful Linux + Android end-to-end slice and its exact success criteria;
-3. define desktop, Android, shared-Rust façade, transport, lifecycle, storage, and test boundaries;
-4. review and approve the M10 design;
-5. write the M10 design spec and implementation plan;
-6. create a fresh M10 feature branch from verified `main` and implement in small verified milestones.
+1. open a PR from `m10-platform-shell-design` to `main`;
+2. require exact-head CI and merge only the verified head;
+3. verify post-merge `main` CI;
+4. create a fresh implementation branch from that verified `main`;
+5. execute `docs/superpowers/plans/2026-09-17-m10-first-platform-slice.md` beginning with the canonical theme-contract foundation and shared runtime extraction, using tests first where meaningful;
+6. update this file at each durable implementation checkpoint.
 
 ## Resume Procedure
 
-1. start from canonical `main` and verify this M9 completion checkpoint plus the latest `main` CI;
-2. preserve ADR-0009 and the explicit `Libp2p trigger: no` result;
-3. do not auto-promote the M9 Iroh experiment or add `rust-libp2p`;
-4. finish the M10 design/approval gate before implementation;
-5. after approval, create the M10 feature branch, implement the documented first vertical slice, verify, commit, push, and update this file with the next exact task.
+1. verify canonical `main`, active M10 branch, recent commits, and CI before editing;
+2. read Master Architecture revision 2.3, ADR-0012, the approved M10 design, and the implementation plan;
+3. preserve ADR-0009 and `Libp2p trigger: no`; do not auto-promote Iroh;
+4. do not invent Darkmatter palette values while its authoritative source is absent;
+5. keep dev/test credential and TLS provisioning explicit and non-release;
+6. verify, commit/push, and checkpoint `CURRENT.md` after each meaningful M10 milestone.

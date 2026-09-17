@@ -1,7 +1,7 @@
 # Cross-Lab Master Architecture & Development Plan
 
 **Document status:** Architecture Baseline — Source of Truth  
-**Revision:** 2.2  
+**Revision:** 2.3  
 **Date:** 2026-09-17  
 **Project:** Cross-Lab  
 **Scope:** Architecture, security boundaries, repository structure, protocol foundations, platform strategy, development phases, and technology evaluation rules
@@ -26,7 +26,7 @@ The following rules apply:
 - License compatibility, security implications, platform support, maintenance status, and performance impact must be reviewed before code is reused or adapted.
 - The smallest architecture that cleanly satisfies the current milestone is preferred over speculative extensibility.
 
-Revision 2.2 incorporates accepted ADR-0009 remote-networking architecture while preserving the previously accepted Phase 0 and Phase 1 foundation decisions. Detailed protocol/security mechanics live in their focused specifications; this document records the governing architecture and dependency boundaries.
+Revision 2.3 incorporates accepted ADR-0012 cross-platform design-system and theme-contract architecture in addition to ADR-0009 remote-networking architecture, while preserving the previously accepted Phase 0 and Phase 1 foundation decisions. Detailed protocol/security mechanics live in their focused specifications; this document records the governing architecture and dependency boundaries.
 
 ---
 
@@ -909,23 +909,36 @@ GPUI components must not directly implement:
 - privileged operations,
 - large business workflows.
 
-### 22.1 Desktop Design Direction
+### 22.1 Cross-Platform Design Direction
 
-Cross-Lab desktop UI uses:
+Cross-Lab owns one renderer-neutral semantic design contract used by desktop and mobile product UIs under ADR-0012. Native renderer code remains platform-specific; the product visual identity and semantic presentation roles are shared.
 
-- semantic OKLCH design tokens,
-- strong light and dark themes,
-- radius `0`,
-- sharp geometry,
-- professional native control-center presentation,
-- restrained semantic status colors,
-- compact information density,
-- clear connection/security/device state,
-- keyboard navigation,
-- accessibility,
+The baseline visual direction uses:
+
+- semantic OKLCH color roles;
+- `Darkmatter` as the default dark theme and `Ayu Light` as the default light theme;
+- `System` as a selector resolving to the appropriate named baseline theme rather than a third palette;
+- sharp geometry with radius `0` as the baseline default;
+- radius, typography, spacing, density, borders, control/list metrics, icon metrics, elevation, and motion represented as theme tokens rather than feature-local constants;
+- professional native control-center presentation;
+- restrained semantic status colors;
+- compact information density;
+- clear connection/security/device state;
+- keyboard navigation and strong focus behavior on desktop;
+- accessible touch/input behavior on mobile;
 - progressive disclosure for advanced controls.
 
-GPUI Kit is used for compatible primitives and GPUI integration. Cross-Lab owns its design language and must not inherit another application's visual identity wholesale.
+The canonical theme document belongs to Cross-Lab under the repository `design/` boundary and is independent of GPUI, GPUI Kit, Compose, SwiftUI, CSS, React, or the peer protocol. GPUI/GPUI Kit, Android Kotlin UI, and future iOS Swift each map that contract into their native renderer types.
+
+Radius `0` remains Cross-Lab's baseline geometry, but it is a theme value rather than a hard-coded renderer invariant. A theme may intentionally select another approved radius, typography, density, or spacing profile without feature code branching on theme names.
+
+Theme selection and token data are local presentation state only. They must not influence trust, risk, authorization, capability availability, network classification, logical-session state, or any other security-domain decision.
+
+CSS/React/Tailwind/screenshots supplied as design references are translated into native Cross-Lab components and semantic tokens; they do not introduce a browser runtime or web application architecture.
+
+GPUI Kit is used for compatible primitives and desktop integration. It does not define the cross-platform semantic contract, and Cross-Lab must not inherit another application's visual identity wholesale.
+
+The exact Darkmatter palette must come from the owner-provided authoritative source. It must not be inferred from screenshots or approximated in production theme data.
 
 ---
 
@@ -945,6 +958,8 @@ Narrow Cross-Lab mobile FFI façade
 Shared Rust domain/core
 ```
 
+M10 selects **Jetpack Compose** for the first Android product UI shell. Compose is a native rendering/toolkit dependency, not the Cross-Lab product-design authority. Android maps the Cross-Lab renderer-neutral theme contract locally and must not let stock Material styling redefine product semantics.
+
 Platform-specific Android integrations remain in Kotlin or Android-native code where appropriate:
 
 - foreground/background lifecycle,
@@ -957,6 +972,8 @@ Platform-specific Android integrations remain in Kotlin or Android-native code w
 - Biometrics,
 - Storage Access Framework,
 - VPNService where justified.
+
+A composable must not own the Rust networking/session runtime. Runtime lifetime belongs to an application/service-scoped lifecycle owner with explicit start, stop, suspend/resume, network-change, and shutdown behavior.
 
 Support may later distinguish:
 
@@ -982,11 +999,15 @@ Potential device classes include:
 
 Unsupported capabilities are not simulated or advertised as available.
 
+The same Cross-Lab theme contract is mapped into the future iOS renderer, while layout may adapt to Apple input, safe-area, accessibility, and platform conventions without adopting stock Cupertino styling as Cross-Lab's product identity.
+
 ### 23.3 UniFFI
 
-UniFFI is the preferred initial candidate for Kotlin/Swift bindings.
+UniFFI is the preferred initial candidate for Kotlin/Swift bindings and is evaluated/introduced only through the deliberately narrow mobile façade required by the consuming milestone.
 
 Cross-Lab must expose one deliberately designed mobile façade rather than exporting every internal crate independently. FFI DTOs, callbacks, threading rules, and lifecycle behavior belong at the façade boundary, not in domain crates.
+
+The theme contract is local presentation data and does not travel through the mobile core FFI merely to synchronize appearance.
 
 ---
 
@@ -1735,14 +1756,14 @@ Cross-Lab's project license does not make incompatible third-party source reusab
 
 | Project | Cross-Lab area | Direction | Architectural use |
 |---|---|---|---|
-| GPUI Kit | Desktop UI | Reuse / wrap | GPUI integration and reusable UI primitives; Cross-Lab owns visual language |
+| GPUI Kit | Desktop UI | Reuse / wrap | GPUI integration and reusable desktop primitives behind the Cross-Lab-owned renderer-neutral design contract |
 | Quinn | IP transport | Reuse | Selected local/LAN QUIC transport baseline |
 | Iroh | Internet/NAT/relay | Reuse / wrap when promoted | Selected remote/NAT/relay substrate under ADR-0009; production adapter remains gated |
 | rust-libp2p | P2P networking | Study | Not selected for M9; future re-evaluation requires a concrete requirement and reviewed security fit |
 | Fungi | Networking/agent/extensions | Study / adapt patterns | Stream authorization, negotiation, testing, extension isolation |
 | KDE Connect | Cross-device ecosystem | Study / reimplement concepts | Capability/plugin decomposition, multiplexing, interoperability lessons |
 | COSMIC Connect Core | Shared Rust ecosystem | Study | Rust + UniFFI cross-device implementation lessons; avoid overly broad core boundary |
-| UniFFI | Mobile FFI | Reuse later | Narrow Kotlin/Swift façade over Rust core |
+| UniFFI | Mobile FFI | Reuse / wrap in M10 | Narrow Kotlin/Swift façade over Rust core; internal crates are not exported independently |
 | nusb | USB | Wrap later | Host-side USB transport/platform implementation |
 | btleplug | BLE | Wrap partially | BLE central/client roles; native adapters required for missing peripheral/platform roles |
 | Flying Carpet | Nearby/offline | Study / reimplement patterns | BLE bootstrap, hotspot/peer-Wi-Fi roles, offline transfer design |
@@ -2116,7 +2137,7 @@ Prove reconnect, replay rejection, active revocation, reconnect-after-revocation
 
 ### M10 — First Platform Vertical Slice
 
-**Next.** Begin Linux desktop and Android integration only after the M9 integration checkpoint is verified. Keep platform code behind narrow adapters and a deliberately designed mobile FFI façade. Carry ADR-0009's Android lifecycle, secure-key-storage, network-transition, and production Iroh dependency-review obligations into the platform work.
+**Design approved; implementation active.** Build the first Linux desktop + Android device-status slice over the verified Quinn local/LAN and Cross-Lab session foundation. Use Rust + GPUI + GPUI Kit for desktop, Kotlin + Jetpack Compose over one narrow Rust mobile façade for Android, and the ADR-0012 renderer-neutral design contract for both product UIs. Keep platform code behind narrow adapters and carry ADR-0009's Android lifecycle, secure-key-storage, network-transition, and production Iroh dependency-review obligations forward. Do not promote Iroh merely because the remote architecture is selected.
 
 ---
 
@@ -2183,7 +2204,7 @@ Introduce `cargo xtask` or equivalent when the project has real cross-platform a
 
 ## 51. Open Architecture Decisions
 
-Phase 0 resolved the repository license, v1 identity cryptographic profile, v1 pairing bootstrap, v1 wire/canonical-signing model, v1 update trust model, and the focused Phase 1 `crosslab-crypto` boundary through ADR-0001 through ADR-0006. ADR-0009 resolves the remote NAT/relay architecture as Quinn local/LAN + Iroh remote/NAT/relay, with production promotion gated as specified by that ADR.
+Phase 0 resolved the repository license, v1 identity cryptographic profile, v1 pairing bootstrap, v1 wire/canonical-signing model, v1 update trust model, and the focused Phase 1 `crosslab-crypto` boundary through ADR-0001 through ADR-0006. ADR-0009 resolves the remote NAT/relay architecture as Quinn local/LAN + Iroh remote/NAT/relay, with production promotion gated as specified by that ADR. ADR-0012 resolves the cross-platform presentation contract as one Cross-Lab-owned renderer-neutral semantic theme system mapped locally into native desktop/mobile renderers.
 
 The following items remain intentionally unresolved until evidence is available.
 
