@@ -1,7 +1,8 @@
 # ADR-0009: Remote networking architecture
 
-**Status:** Proposed  
-**Date:** 2026-09-17
+**Status:** Accepted  
+**Date:** 2026-09-17  
+**Accepted:** 2026-09-17
 
 ## Context
 
@@ -22,15 +23,15 @@ The M9 evidence records the following:
 - The evidence report records `Libp2p trigger: no`; no M9 failure identified a concrete gap that rust-libp2p Relay v2/DCUtR/AutoNAT would plausibly remove.
 - Real Android, iOS, Windows, macOS, sleep/wake, background-networking, firewall, entitlement, and secure-keystore validation remains open.
 
-The Iroh experiment currently carries the repository's documented `paste 1.0.15` / `RUSTSEC-2024-0436` maintenance warning. M9 evidence is sufficient to make the architecture decision, but it is not a waiver for production dependency review.
+The Iroh experiment currently carries the repository's documented `paste 1.0.15` / `RUSTSEC-2024-0436` maintenance warning. M9 evidence is sufficient to select the architecture, but it is not a waiver for production dependency review.
 
 ## Decision
 
-Cross-Lab selects the following remote-networking architecture, subject to acceptance of this ADR:
+Cross-Lab selects the following remote-networking architecture:
 
 1. **Quinn remains the local/LAN IP transport baseline.** M9 does not replace the verified M8 Quinn adapter.
 2. **Iroh is the selected remote/NAT/relay connection substrate.** It is used beneath the existing Cross-Lab transport/session boundary and is not adopted as the Cross-Lab identity model, trust model, policy model, or universal connection fabric.
-3. **Selection does not auto-promote the M9 experiment into production.** `experiments/m9-networking` and its Iroh dependencies are retained as evidence/regression material. A production Iroh adapter is introduced only by a consuming M10 platform slice after the remaining platform, lifecycle, key-storage, and dependency-review obligations are addressed.
+3. **Selection does not auto-promote the M9 experiment into production.** `experiments/m9-networking` and its Iroh dependencies are retained as evidence/regression material. A production Iroh adapter is introduced only by a consuming platform milestone after the remaining platform, lifecycle, key-storage, and dependency-review obligations are addressed.
 4. **Cross-Lab identity remains independent from Iroh transport identity.** `DeviceId` and owner-authorized device credentials remain authoritative. Iroh `EndpointId`, Iroh `SecretKey`, relay URLs/tokens, path identifiers, and transport addresses are routing/infrastructure state only.
 5. **Iroh connections reuse ADR-0008 exactly.** After the full QUIC/TLS handshake, an eligible implementation derives:
    - profile ID `quic-tls-exporter-v1`;
@@ -106,9 +107,8 @@ M10 must validate at least Android background/network lifecycle, Kotlin/Rust int
 
 - M9 Task 9 remains skipped and `rust-libp2p` is not added.
 - Quinn remains the verified local/LAN baseline.
-- Iroh becomes the selected remote/NAT/relay architecture only when this Proposed ADR is reviewed and accepted.
+- Iroh is the selected remote/NAT/relay architecture, while production promotion remains gated by the obligations above.
 - The M9 Iroh experiment and dependencies are retained, but no production `transports/iroh` crate is created merely by accepting this ADR.
 - A future production Iroh adapter must preserve the existing Cross-Lab `TransportConnection`/logical-session boundary and the security invariants in this ADR.
 - The controlled symmetric-NAT direct-path limitation is an explicit architectural constraint; relay fallback remains required.
-- Master Architecture candidate/selected status and the open-decision table are updated only after this ADR is accepted.
 - The next platform milestone inherits explicit mobile lifecycle, secure-key-storage, and dependency-review obligations rather than assuming M9 Linux evidence covered them.
