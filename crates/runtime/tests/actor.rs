@@ -1,9 +1,13 @@
-use std::{num::NonZeroUsize, sync::{Arc, Mutex}};
+use std::{
+    num::NonZeroUsize,
+    sync::{Arc, Mutex},
+};
 
 use crosslab_core::{
     ChannelBinding, ConnectionMetadata, ControlReceiveError, ControlSendError, IncomingUniStream,
-    LogicalSession, SessionActivation, SessionAuthRole, SessionAuthTranscriptV1, SessionHandshakeSide,
-    SessionState, StreamAcceptError, StreamOpenError, TransportConnection, TransportSecurityClass,
+    LogicalSession, SessionActivation, SessionAuthRole, SessionAuthTranscriptV1,
+    SessionHandshakeSide, SessionState, StreamAcceptError, StreamOpenError, TransportConnection,
+    TransportSecurityClass,
 };
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
@@ -157,7 +161,7 @@ impl Fixture {
         &self,
         binding: [u8; 32],
         nonce: u8,
-    ) -> (RuntimeActorSession<TestTransport>, Arc<TestTransport>) {
+    ) -> (RuntimeActorSession, Arc<TestTransport>) {
         let transport = Arc::new(TestTransport::new(binding));
         let ranges = [ProtocolRange::new(1, 0, 0).unwrap()];
         let features = FeatureSet::new(&[], &[]).unwrap();
@@ -197,7 +201,7 @@ impl Fixture {
                 &responder_proof,
             ))
             .unwrap();
-        let node = RuntimeNode::new(
+        let node = RuntimeNode::new_owned(
             session,
             Arc::clone(&transport),
             PolicyState::new(),
@@ -255,7 +259,10 @@ fn stop_closes_active_transport_and_actor_task() {
         assert!(!actor.is_running());
         assert!(transport.is_closed());
         let _ = status.changed().await;
-        assert_eq!(status.borrow().connectivity(), ConnectivityState::Disconnected);
+        assert_eq!(
+            status.borrow().connectivity(),
+            ConnectivityState::Disconnected
+        );
         assert_eq!(status.borrow().session_id(), None);
     });
 }
@@ -273,7 +280,10 @@ fn network_loss_drops_session_authority_before_reconnect() {
         status.changed().await.unwrap();
 
         assert!(transport.is_closed());
-        assert_eq!(status.borrow().connectivity(), ConnectivityState::Disconnected);
+        assert_eq!(
+            status.borrow().connectivity(),
+            ConnectivityState::Disconnected
+        );
         assert_eq!(status.borrow().session_state(), SessionState::Closed);
         assert_eq!(status.borrow().session_id(), None);
         actor.stop().await.unwrap();
@@ -349,7 +359,10 @@ fn slow_status_subscriber_only_observes_latest_snapshot() {
         actor.try_network_lost().unwrap();
         tokio::task::yield_now().await;
 
-        assert_eq!(status.borrow().connectivity(), ConnectivityState::Disconnected);
+        assert_eq!(
+            status.borrow().connectivity(),
+            ConnectivityState::Disconnected
+        );
         assert_eq!(status.borrow().session_id(), None);
         actor.stop().await.unwrap();
     });
