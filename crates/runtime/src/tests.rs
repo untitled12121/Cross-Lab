@@ -5,22 +5,22 @@ use std::{
 };
 
 use crosslab_core::{
-    ChannelBinding, ConnectionMetadata, ControlReceiveError, ControlSendError, IncomingUniStream,
-    LogicalSession, SessionActivation, SessionAuthRole, SessionAuthTranscriptV1, SessionError,
-    SessionHandshakeSide, SessionState, StreamAcceptError, StreamOpenError, TransportConnection,
-    TransportSecurityClass,
+    ChannelBinding, ConnectionMetadata, ControlReceiveError, ControlSendError, EventSubscription,
+    IncomingUniStream, LogicalSession, SessionActivation, SessionAuthRole, SessionAuthTranscriptV1,
+    SessionError, SessionHandshakeSide, SessionState, StreamAcceptError, StreamOpenError,
+    TransportConnection, TransportSecurityClass,
 };
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
     AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,
-    OwnerRootRecord,
+    OwnerRootRecord, RootSuccessor,
 };
 use crosslab_policy::{
-    NetworkClass, OperationName, PairingTrustTransition, PolicyState, TransitionId, TrustRecord,
-    TrustState, TrustTransition,
+    CapabilityId, NetworkClass, OperationName, PairingTrustTransition, PolicyState, TransitionId,
+    TrustRecord, TrustState, TrustTransition,
 };
 use crosslab_protocol::{
-    ControlRequest, FeatureSet, ProtocolRange, ProtocolVersion, RequestId, RetryClass,
+    ControlRequest, EventType, FeatureSet, ProtocolRange, ProtocolVersion, RequestId, RetryClass,
 };
 
 use crate::{ConnectivityState, NodeError, RuntimeNode};
@@ -247,16 +247,30 @@ impl Fixture {
         );
         self.authority.accept_delegation(delegation).unwrap();
     }
+
+    fn rotate_owner_root(&mut self) {
+        let replacement = SigningKey::from_secret_bytes([0x5e; 32]);
+        let successor = RootSuccessor::issue(self.authority.root(), &self.root_key, &replacement)
+            .unwrap();
+        self.authority.accept_root_successor(&successor).unwrap();
+    }
 }
 
 fn request(byte: u8) -> ControlRequest {
     ControlRequest::new(
         RequestId::from_bytes([byte; 16]),
-        crosslab_policy::CapabilityId::parse("files.transfer").unwrap(),
+        CapabilityId::parse("files.transfer").unwrap(),
         crosslab_policy::CapabilityVersion::new(1, 0),
         OperationName::parse("send").unwrap(),
         RetryClass::NonRetryable,
         vec![byte],
+    )
+}
+
+fn subscription(event_type: &str) -> EventSubscription {
+    EventSubscription::new(
+        CapabilityId::parse("files.transfer").unwrap(),
+        EventType::parse(event_type).unwrap(),
     )
 }
 
@@ -297,6 +311,32 @@ fn dispatcher_request_state_remains_bounded() {
     assert_eq!(runtime.pending_request_count(), 1);
     assert!(matches!(
         runtime.send_request(request(0x63)),
+        Err(NodeError::Dispatch(
+            crosslab_core::ControlDispatchError::ResourceLimit
+        ))
+    ));
+}
+
+#[test]
+fn dispatcher_event_subscriptions_remain_bounded() {
+    let fixture = Fixture::new();
+    let transport = TestTransport::new([0x6a; 32]);
+    let session = fixture.active_session(&transport);
+    let mut runtime = RuntimeNode::new(
+        session,
+        &transport,
+        PolicyState::new(),
+        Vec::new(),
+        NetworkClass::Local,
+        NonZeroUsize::new(1).unwrap(),
+    )
+    .unwrap();
+    let first = subscription("files.progress");
+
+    assert!(runtime.subscribe_event(first.clone()).unwrap());
+    assert!(!runtime.subscribe_event(first).unwrap());
+    assert!(matches!(
+        runtime.subscribe_event(subscription("files.completed")),
         Err(NodeError::Dispatch(
             crosslab_core::ControlDispatchError::ResourceLimit
         ))
@@ -353,7 +393,7 @@ fn peer_revocation_clears_dispatcher_state_and_transport() {
 }
 
 #[test]
-fn authority_replacement_fails_closed() {
+fn device_signing_authority_replacement_fails_closed() {
     let mut fixture = Fixture::new();
     let transport = TestTransport::new([0x68; 32]);
     let session = fixture.active_session(&transport);
@@ -366,6 +406,7 @@ fn authority_replacement_fails_closed() {
         NonZeroUsize::new(4).unwrap(),
     )
     .unwrap();
+    runtime.send_request(request(0x6b)).unwrap();
     fixture.rotate_device_signing();
 
     assert!(matches!(
@@ -375,6 +416,33 @@ fn authority_replacement_fails_closed() {
         ))
     ));
     assert_eq!(runtime.session().state(), SessionState::Closed);
+    assert_eq!(runtime.pending_request_count(), 0);
+    assert!(transport.is_closed());
+}
+
+#[test]
+fn owner_root_replacement_fails_closed() {
+    let mut fixture = Fixture::new();
+    let transport = TestTransport::new([0x6c; 32]);
+    let session = fixture.active_session(&transport);
+    let mut runtime = RuntimeNode::new(
+        session,
+        &transport,
+        PolicyState::new(),
+        Vec::new(),
+        NetworkClass::Local,
+        NonZeroUsize::new(4).unwrap(),
+    )
+    .unwrap();
+    runtime.send_request(request(0x6d)).unwrap();
+    fixture.rotate_owner_root();
+
+    assert!(matches!(
+        runtime.revalidate_authority(&fixture.authority),
+        Err(NodeError::Session(SessionError::OwnerAuthorityChanged))
+    ));
+    assert_eq!(runtime.session().state(), SessionState::Closed);
+    assert_eq!(runtime.pending_request_count(), 0);
     assert!(transport.is_closed());
 }
 
@@ -413,4 +481,27 @@ fn status_snapshot_exposes_only_safe_summary_data() {
     ] {
         assert!(!rendered.contains(forbidden));
     }
+}
+
+#[test]
+fn inactive_status_drops_session_id() {
+    let fixture = Fixture::new();
+    let transport = TestTransport::new([0x6e; 32]);
+    let session = fixture.active_session(&transport);
+    let mut runtime = RuntimeNode::new(
+        session,
+        &transport,
+        PolicyState::new(),
+        Vec::new(),
+        NetworkClass::Local,
+        NonZeroUsize::new(4).unwrap(),
+    )
+    .unwrap();
+    assert!(runtime.status(&fixture.peer_trust).session_id().is_some());
+
+    runtime.shutdown();
+    let status = runtime.status(&fixture.peer_trust);
+    assert_eq!(status.session_id(), None);
+    assert_eq!(status.session_state(), SessionState::Closed);
+    assert_eq!(status.connectivity(), ConnectivityState::Disconnected);
 }
