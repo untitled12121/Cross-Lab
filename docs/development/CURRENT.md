@@ -8,86 +8,101 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 ## Current Milestone
 
-**M9 — Remote Networking ADR. Tasks 1–7 are merged and post-merge verified. Task 8 implementation and evidence collection are complete on `m9-task8-network-evidence`; the branch now needs temporary-workflow cleanup, final exact-head verification, PR integration, and post-merge verification.**
+**M9 — Remote Networking ADR. Task 8 is merged and post-merge verified. Task 9 is skipped because the evidence report records `Libp2p trigger: no`. Task 10 is active on `m9-task10-adr-decision`: prepare ADR-0009 for owner review without changing the normative architecture baseline before approval.**
 
-M1–M8 are complete. ADR-0009 remains undecided/reserved. Iroh stays isolated under `experiments/m9-networking` until ADR-0009 selects the remote-networking architecture.
+M1–M8 are complete. ADR-0009 is still Proposed/unaccepted. Quinn remains the selected local/LAN production baseline and Iroh remains an isolated M9 candidate until ADR-0009 is explicitly accepted.
 
 ## Canonical Baseline
 
-- Active branch: `m9-task8-network-evidence`.
-- Task 8 exact successful implementation/evidence head: `99b168101e9fc31bdfbcea110bdb95d26978dac4`.
+- Canonical `main` head after Task 8: `e14ff354f7eeb3c61eec10cef687c9af08876311`.
+- Task 8 PR: #28 (`test(networking): complete M9 Task 8 evidence`).
+- Final Task 8 PR head: `57568256d6df83e6b52be90742f94aa35821fd10`.
+- Exact-head PR CI: GitHub Actions `35124216220` — passed.
+- Task 8 merge commit: `e14ff354f7eeb3c61eec10cef687c9af08876311`.
+- Post-merge `main` CI: GitHub Actions `35124835955` — passed.
+- Task 8 successful implementation/evidence head: `99b168101e9fc31bdfbcea110bdb95d26978dac4`.
 - Exact successful evidence run: GitHub Actions `35107158922`, job `104831250278`.
-- That run passed the Task 8 dependency-tree step, full deterministic workspace gate, netprobe build, controlled Linux namespace/NAT/relay gate, environment capture, and same-host measurements.
-- Evidence report commit: `4986b8064bdf47ad6ed52eb1907be11d82a0129f` (`docs/research/M9-networking-evidence.md`).
-- Controlled NAT result on the successful evidence run:
-  - owner-relay fallback verified;
-  - immutable `NetworkClass::Remote` verified;
-  - authenticated control verified;
-  - authenticated data verified;
-  - direct path remained unavailable in the endpoint-dependent/symmetric NAT topology within the bounded observation window;
-  - forced reconnect verified a fresh channel binding, fresh Cross-Lab session, and authenticated control after reconnect.
-- The evidence report explicitly records **`Libp2p trigger: no`**. Task 9 is therefore skipped and `rust-libp2p` must not be added for M9.
-- Task 7 exact PR head: `dfad21610e1b1b93bb1bc81eb8cc989324fd2960` via PR #27; exact-head CI `35042144793` and post-merge main CI `35042588052` passed the complete repository gate. Task 7 merge: `d897e803c9b66236344101b400c002e86dcc5523`.
-- Foundation remediation merge: `450615a7c361384cfbe68bc8991b7ca03e4482fa` via PR #23; exact-head Rust CI `34974781151`, Fuzz Smoke `34974781112`, and post-merge Rust CI `34979066740` passed.
-- `paste 1.0.15` / `RUSTSEC-2024-0436` remains the sole allowed maintenance warning, isolated to the Iroh experiment and requiring re-evaluation before any production networking promotion.
+- Evidence report commit: `4986b8064bdf47ad6ed52eb1907be11d82a0129f`.
+- Evidence report: `docs/research/M9-networking-evidence.md`.
+- Active Task 10 branch: `m9-task10-adr-decision`.
+
+## M9 Evidence Decision State
+
+The evidence currently supports a Proposed ADR selecting **Quinn local/LAN + Iroh remote/NAT/relay**, with production promotion deferred to a consuming platform milestone.
+
+Preserved evidence/invariants:
+
+- owner-controlled relay fallback works without mandatory public relay infrastructure;
+- Iroh reproduces ADR-0008 `quic-tls-exporter-v1` after a full handshake;
+- Cross-Lab authentication, bounded control/data, reconnect, revocation, cancellation, and shutdown semantics remain owned by existing Cross-Lab layers;
+- every Iroh-backed Cross-Lab session remains `NetworkClass::Remote`;
+- deterministic live relay-to-direct tests preserve binding, `SessionId`, control sequence state, and active operation authority;
+- a new connection requires fresh binding/session/authority;
+- the controlled endpoint-dependent/symmetric-NAT topology remained relay-only within the bounded direct-path observation window;
+- forced reconnect after that direct-path miss refreshed binding/session state and restored authenticated control;
+- `Libp2p trigger: no`; Task 9 is skipped and `rust-libp2p` must not be added for M9.
+
+The M9 experiment remains isolated under `experiments/m9-networking`; no Iroh type has entered Cross-Lab domain/public production APIs.
+
+## Proposed ADR Review Checkpoint
+
+`docs/adr/ADR-0009-remote-networking.md` is being prepared as **Proposed** only.
+
+The proposal records:
+
+- Quinn remains local/LAN;
+- Iroh is the remote/NAT/relay architecture if the ADR is accepted;
+- Iroh `EndpointId`/transport keys remain transport-only;
+- ADR-0008 exporter semantics are reused exactly after a full handshake;
+- Iroh sessions remain `Remote` through path changes;
+- owner-selected/self-hosted relay operation is required and no public Cross-Lab service is mandatory;
+- direct hole punching is opportunistic, with relay fallback required for endpoint-dependent/symmetric NAT cases;
+- Task 9 remains skipped;
+- the M9 experiment is retained for evidence/regression, not auto-promoted into production;
+- real-device/mobile lifecycle, secure key storage, and dependency review remain M10+ obligations;
+- `paste 1.0.15` / `RUSTSEC-2024-0436` must be re-evaluated before production Iroh promotion.
+
+No Master Architecture status, ADR index status, or M9 design completion state should change until the owner reviews and approves ADR-0009.
 
 ## Accepted Foundation State
 
-Accepted artifacts remain:
+Accepted foundation artifacts remain:
 
 - `docs/adr/ADR-0010-authoritative-owner-authority-currentness.md`
 - `docs/adr/ADR-0011-bounded-request-replay-semantics.md`
 - `docs/superpowers/specs/2026-09-14-foundation-currentness-replay-design.md`
 - `docs/superpowers/plans/2026-09-14-foundation-authority-replay-remediation.md`
 
-The accepted foundation keeps identity-owned `OwnerAuthorityState` authoritative for owner/delegated-role currentness; root or Device Signing replacement invalidates ordinary sessions and session-scoped authority; Administrative/Recovery-only rotation does not; `(SessionId, message_seq)` remains exact-envelope replay/order protection; `RequestId` remains bounded retry/correlation history; high-level stream admission derives currentness from local trust/policy state; and canonical identity/protocol wire vectors remain unchanged.
-
-No Task 8 work changed the Master Architecture, protobuf schemas, canonical transcripts, signature formats, ADR-0008 exporter profile, production Quinn transport, or ADR-0009 status.
-
-## M9 Task 8 Evidence State
-
-- Quinn remains the verified local/LAN production baseline.
-- Iroh `1.2.0` and `iroh-relay 1.2.0` remain isolated under `experiments/m9-networking`; no Iroh type has entered Cross-Lab domain/public production APIs.
-- Reproducible local modes cover Quinn, Iroh direct, Iroh owner relay, and combined runs with protected-connect, Cross-Lab-auth, control-RTT, fixed uni-throughput, shutdown, Linux RSS, and Linux FD observations.
-- The `m9-networking` netprobe supports typed owner-relay/server/client process modes.
-- Persisted rendezvous metadata contains only `endpoint_id`, optional `relay_url`, and optional `ip`; extra fields are rejected. Private keys, tokens, credentials/proofs, exporter bytes, and payload contents are not persisted by the rendezvous/evidence path.
-- The Linux namespace harness owns fixed namespaces `cl-m9-ra`, `cl-m9-rb`, `cl-m9-a`, `cl-m9-b`, bridge `cl-m9-br`, transit `172.30.90.0/24`, peer networks `10.90.1.0/24` and `10.90.2.0/24`, owner relay `172.30.90.1`, namespace-local forwarding/NAT, direct-UDP gating, collision refusal, and cleanup.
-- The controlled topology successfully uses owner relay for authenticated Remote control/data but does not obtain a direct path after UDP is enabled. This is recorded as `direct_unavailable`, not hidden or converted into weaker auth/session semantics.
-- Separate deterministic relay-to-direct tests verify unchanged Remote classification, exporter binding, `SessionId`, control sequence state, and active operation authority through a live path change.
-- Forced reconnect requires fresh authentication/binding/session state and succeeds after the controlled direct-path miss.
-- Task 8 Linux evidence does not close Android, iOS, Windows, macOS, real-device lifecycle, background-networking, entitlement, firewall, or secure-keystore obligations.
-- Evidence report: `docs/research/M9-networking-evidence.md`.
-- **Libp2p trigger: no. Task 9 is skipped.**
+Identity-owned `OwnerAuthorityState` remains authoritative for owner/delegated-role currentness. Root or Device Signing replacement invalidates ordinary sessions and session-scoped authority; Administrative/Recovery-only rotation does not. `(SessionId, message_seq)` remains exact-envelope replay/order protection; `RequestId` remains bounded retry/correlation history.
 
 ## Deferred / External Risks
 
 - Durable rollback-resistant persistence for `OwnerAuthorityState` and accepted authority epochs.
-- Platform key-store / secure-enclave integration and real mobile lifecycle evidence.
+- Real Android/iOS lifecycle, background-networking, entitlement, firewall, and secure-keystore evidence.
+- Windows/macOS platform networking and firewall evidence.
+- Production persistence/rotation/privacy policy for any stable Iroh transport key.
+- `paste 1.0.15` / `RUSTSEC-2024-0436` in the isolated Iroh dependency graph.
 - Explicit authorization/subscription design for future authority-sensitive system-event families.
 - `main` branch protection and other repository-administration controls.
-- Windows/macOS/mobile CI matrices as their platform slices land.
-- `paste 1.0.15` / `RUSTSEC-2024-0436` in the isolated Iroh experiment.
-- ADR-0009 must explicitly account for the controlled symmetric-NAT direct-path limitation and the remaining mobile/platform evidence obligations before any production promotion.
 
 ## Exact Next Task
 
-Finish **M9 Task 8 integration** on `m9-task8-network-evidence`:
+Finish the **Task 10 Proposed-ADR review checkpoint**:
 
-1. verify the evidence-report/CURRENT documentation head;
-2. delete the temporary branch-only `.github/workflows/m9-task8-red.yml` evidence workflow;
-3. inspect the final branch diff and run/trigger the repository's normal exact-head CI path;
-4. open the Task 8 PR only after the final branch contains no temporary workflow;
-5. require exact-head PR CI to be green before merge;
-6. merge Task 8 and verify `main` post-merge;
-7. checkpoint `CURRENT.md` on `main` if the merge state/run IDs need to be recorded;
-8. proceed directly to **Task 10 / ADR-0009**. Do not start Task 9 because the evidence report records `Libp2p trigger: no`.
+1. verify the Proposed `docs/adr/ADR-0009-remote-networking.md` against the M9 evidence and Task 10 decision rule;
+2. keep ADR-0009 `Proposed` and make no normative Master Architecture status change before explicit owner approval;
+3. obtain owner review/approval of the ADR decision;
+4. after approval, mark ADR-0009 Accepted and reconcile `docs/adr/README.md`, `docs/architecture/MASTER-ARCHITECTURE.md`, `docs/plans/phase-1/M9-remote-networking-design.md`, and this file;
+5. run the exact final repository gate;
+6. commit/push the accepted-doc reconciliation, open the Task 10 PR, require exact-head CI, merge with an expected-head guard, and verify post-merge `main`;
+7. hand off directly to M10 — First Platform Vertical Slice — with the recorded Android/mobile networking validation obligations.
 
 ## Resume Procedure
 
-1. verify branch `m9-task8-network-evidence`, this file, `docs/research/M9-networking-evidence.md`, the active M9 plan, Master Architecture, recent commits, and repository state;
-2. preserve Task 8 evidence head `99b168101e9fc31bdfbcea110bdb95d26978dac4` and successful evidence run `35107158922` as the implementation/evidence checkpoint;
-3. preserve evidence report commit `4986b8064bdf47ad6ed52eb1907be11d82a0129f` and its explicit `Libp2p trigger: no` decision;
-4. remove only the temporary Task 8 workflow, not normal repository CI;
-5. verify the real final branch/PR head before claiming Task 8 complete;
-6. verify post-merge `main` before starting ADR-0009;
-7. do not add `rust-libp2p` or start Task 9 unless an approved future evidence change explicitly reverses the recorded trigger.
+1. start from branch `m9-task10-adr-decision`;
+2. verify canonical base `main` = `e14ff354f7eeb3c61eec10cef687c9af08876311`;
+3. read the Master Architecture, this file, `docs/plans/phase-1/M9-remote-networking-design.md`, `docs/plans/phase-1/M9-remote-networking.md`, `docs/research/M9-networking-evidence.md`, ADR-0008, and Proposed ADR-0009;
+4. preserve Task 8 evidence head/run and the explicit `Libp2p trigger: no` result;
+5. do not add `rust-libp2p`;
+6. do not mark ADR-0009 Accepted or edit normative networking status before explicit owner approval;
+7. after approval, reconcile architecture/docs, run the full gate, integrate Task 10, and verify `main`.
