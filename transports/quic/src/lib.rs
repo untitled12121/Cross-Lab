@@ -7,6 +7,7 @@ mod config;
 mod connection;
 #[cfg_attr(not(test), allow(dead_code))]
 mod record;
+mod session;
 mod stream;
 
 pub use config::QuicTransportConfig;
