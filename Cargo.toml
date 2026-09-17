@@ -6,6 +6,7 @@ members = [
     "crates/identity",
     "crates/policy",
     "crates/protocol",
+    "crates/runtime",
     "experiments/m9-networking",
     "transports/quic",
 ]

@@ -207,10 +207,12 @@ fn subscription_is_exact_to_capability_and_event_type() {
     let session = fixture.session();
     let mut dispatcher =
         ControlDispatcher::new(session.context().unwrap(), NonZeroUsize::new(4).unwrap());
-    dispatcher.subscribe_event(EventSubscription::new(
-        CapabilityId::parse(CAPABILITY).unwrap(),
-        EventType::parse("clipboard.other").unwrap(),
-    ));
+    dispatcher
+        .subscribe_event(EventSubscription::new(
+            CapabilityId::parse(CAPABILITY).unwrap(),
+            EventType::parse("clipboard.other").unwrap(),
+        ))
+        .unwrap();
 
     assert_eq!(
         accept_event(
@@ -229,10 +231,12 @@ fn exact_local_subscription_authorizes_capability_event() {
     let session = fixture.session();
     let mut dispatcher =
         ControlDispatcher::new(session.context().unwrap(), NonZeroUsize::new(4).unwrap());
-    dispatcher.subscribe_event(EventSubscription::new(
-        CapabilityId::parse(CAPABILITY).unwrap(),
-        EventType::parse(EVENT_TYPE).unwrap(),
-    ));
+    dispatcher
+        .subscribe_event(EventSubscription::new(
+            CapabilityId::parse(CAPABILITY).unwrap(),
+            EventType::parse(EVENT_TYPE).unwrap(),
+        ))
+        .unwrap();
 
     assert!(matches!(
         accept_event(

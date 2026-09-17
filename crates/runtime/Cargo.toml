@@ -1,0 +1,20 @@
+[package]
+name = "crosslab-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+crosslab-core = { path = "../core" }
+crosslab-identity = { path = "../identity" }
+crosslab-policy = { path = "../policy" }
+crosslab-protocol = { path = "../protocol" }
+
+[dev-dependencies]
+crosslab-crypto = { path = "../crypto" }
