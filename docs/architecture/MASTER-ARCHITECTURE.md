@@ -1,8 +1,8 @@
 # Cross-Lab Master Architecture & Development Plan
 
 **Document status:** Architecture Baseline — Source of Truth  
-**Revision:** 2.1  
-**Date:** 2026-09-11  
+**Revision:** 2.2  
+**Date:** 2026-09-17  
 **Project:** Cross-Lab  
 **Scope:** Architecture, security boundaries, repository structure, protocol foundations, platform strategy, development phases, and technology evaluation rules
 
@@ -26,7 +26,7 @@ The following rules apply:
 - License compatibility, security implications, platform support, maintenance status, and performance impact must be reviewed before code is reused or adapted.
 - The smallest architecture that cleanly satisfies the current milestone is preferred over speculative extensibility.
 
-Revision 2.1 incorporates accepted Phase 0 ADRs 0001-0006. Detailed protocol/security mechanics live in their focused specifications; this document records the governing architecture and dependency boundaries.
+Revision 2.2 incorporates accepted ADR-0009 remote-networking architecture while preserving the previously accepted Phase 0 and Phase 1 foundation decisions. Detailed protocol/security mechanics live in their focused specifications; this document records the governing architecture and dependency boundaries.
 
 ---
 
@@ -622,7 +622,7 @@ The domain model must not depend directly on any one implementation.
 
 ### 15.1 Initial Networking Decision
 
-**Selected for the first real IP transport prototype: Quinn / QUIC.**
+**Selected for the first real IP transport prototype and local/LAN baseline: Quinn / QUIC.**
 
 Reasons:
 
@@ -636,36 +636,31 @@ Reasons:
 
 ### 15.2 Iroh
 
-**Status: candidate for later Internet connectivity, NAT traversal, direct-path discovery, and owner-relay evaluation.**
+**Status: selected by ADR-0009 for remote/Internet/NAT/relay connectivity.**
 
-Iroh is not the Cross-Lab identity model and is not selected as the universal Cross-Lab connection fabric at this stage.
+Iroh sits beneath the existing Cross-Lab transport/session boundary. It is not the Cross-Lab identity, trust, or policy model and is not selected as a universal replacement for Quinn.
 
-Its adoption requires a focused prototype covering:
+The accepted remote-networking rules are:
 
-- direct connection success,
-- NAT traversal behavior,
-- self-hosted relay support,
-- ability to avoid mandatory public infrastructure,
-- mobile lifecycle behavior,
-- route observability,
-- owner control,
-- resource usage,
-- interoperability with Cross-Lab logical sessions.
+- Quinn remains the verified local/LAN baseline;
+- Iroh is the remote/NAT/relay substrate when a production adapter is promoted;
+- Iroh `EndpointId`, transport keys, relay credentials, paths, and addresses remain transport/routing state only;
+- `quic-tls-exporter-v1` is reused exactly after a full Iroh handshake;
+- every Iroh-backed Cross-Lab session remains `NetworkClass::Remote` through direct/relay path changes;
+- a new Iroh connection requires fresh Cross-Lab authentication and authority;
+- explicit owner-selected/self-hosted relay operation is required and no Cross-Lab-operated public service or mandatory vendor account is introduced;
+- direct-path availability is opportunistic; endpoint-dependent/symmetric NAT may remain relay-only;
+- accepting ADR-0009 does not auto-promote the M9 experiment into production.
+
+Before production promotion, the consuming platform milestone must re-evaluate the Iroh dependency tree and validate the applicable real-device lifecycle, network-transition, secure-key-storage, firewall/entitlement, and transport-key privacy/rotation obligations recorded by ADR-0009.
 
 ### 15.3 rust-libp2p
 
-**Status: candidate/reference for standardized P2P behaviors.**
+**Status: reference/conditional future alternative; not selected or added for M9.**
 
-Relevant areas include:
+M9 evidence recorded `Libp2p trigger: no`: the controlled endpoint-dependent/symmetric-NAT direct-path miss did not identify an Iroh-specific failure that Relay v2/DCUtR/AutoNAT would plausibly remove, while owner-relay fallback and reconnect semantics succeeded.
 
-- relay,
-- DCUtR-style hole punching,
-- mDNS,
-- rendezvous/discovery patterns,
-- Multiaddr concepts,
-- composable network behavior.
-
-The full libp2p Swarm, DHT, pubsub, and related facilities must not be introduced unless a concrete Cross-Lab requirement justifies them.
+Relevant future research areas still include relay, DCUtR-style hole punching, mDNS, rendezvous/discovery patterns, Multiaddr concepts, and composable network behavior. Any future adoption requires a concrete new Cross-Lab requirement and a reviewed channel-binding/security design; the full libp2p Swarm, DHT, pubsub, and related facilities must not be introduced by default.
 
 ### 15.4 Transport Contract
 
@@ -1694,9 +1689,9 @@ Enigo
 tough
 ```
 
-Quinn is introduced at the first real network milestone.
+Quinn is introduced at the first real network milestone. Iroh is present only in the isolated M9 experiment until a consuming milestone satisfies ADR-0009's production-promotion gates.
 
-Exact versions for Phase 1 dependencies are verified immediately before implementation rather than frozen in this architecture document.
+Exact versions for dependencies are verified immediately before implementation rather than frozen in this architecture document.
 
 ---
 
@@ -1741,9 +1736,9 @@ Cross-Lab's project license does not make incompatible third-party source reusab
 | Project | Cross-Lab area | Direction | Architectural use |
 |---|---|---|---|
 | GPUI Kit | Desktop UI | Reuse / wrap | GPUI integration and reusable UI primitives; Cross-Lab owns visual language |
-| Quinn | IP transport | Reuse | First QUIC transport prototype |
-| Iroh | Internet/NAT/relay | Study / prototype later | NAT traversal, relay, path discovery, remote connectivity |
-| rust-libp2p | P2P networking | Study / selective reuse | Relay, hole punching, discovery, transport concepts |
+| Quinn | IP transport | Reuse | Selected local/LAN QUIC transport baseline |
+| Iroh | Internet/NAT/relay | Reuse / wrap when promoted | Selected remote/NAT/relay substrate under ADR-0009; production adapter remains gated |
+| rust-libp2p | P2P networking | Study | Not selected for M9; future re-evaluation requires a concrete requirement and reviewed security fit |
 | Fungi | Networking/agent/extensions | Study / adapt patterns | Stream authorization, negotiation, testing, extension isolation |
 | KDE Connect | Cross-device ecosystem | Study / reimplement concepts | Capability/plugin decomposition, multiplexing, interoperability lessons |
 | COSMIC Connect Core | Shared Rust ecosystem | Study | Rust + UniFFI cross-device implementation lessons; avoid overly broad core boundary |
@@ -1933,25 +1928,15 @@ Quinn connection objects remain inside the transport implementation.
 
 ## 47. Networking Evaluation Checkpoint
 
-After the Quinn baseline is measured, perform an Internet-connectivity prototype rather than choosing a broad P2P framework by assumption.
+**Completed by M9 and ADR-0009.**
 
-Evaluate Iroh first for:
+The Quinn baseline was measured against an isolated Iroh `1.2.0` candidate. M9 verified exact ADR-0008 exporter compatibility, Cross-Lab authentication/control/authorized-stream semantics, owner-controlled relay operation, immutable `NetworkClass::Remote`, reconnect behavior, bounded lifecycle, and reproducible Linux NAT/relay evidence.
 
-- NAT traversal,
-- relay behavior,
-- self-hosted operation,
-- no mandatory Cross-Lab public service,
-- mobile lifecycle,
-- route observability,
-- connection recovery,
-- resource usage,
-- owner control.
+The controlled endpoint-dependent/symmetric-NAT topology remained relay-only within the bounded direct-path observation window, while owner-relay fallback and fresh reconnect semantics succeeded. This result is an explicit architecture constraint, not a reason to weaken authentication or authority.
 
-Evaluate rust-libp2p where standardized relay/discovery/hole-punching behavior could materially improve the architecture.
+The evidence report records `Libp2p trigger: no`; rust-libp2p was not added because no concrete Iroh-specific failure was identified that Relay v2/DCUtR/AutoNAT would plausibly remove.
 
-Record the selected remote-connectivity approach in an ADR.
-
-Cross-Lab logical sessions remain independent from whichever implementation wins.
+ADR-0009 therefore selects Quinn for local/LAN and Iroh for remote/NAT/relay connectivity. Production Iroh promotion remains gated by real-device/platform lifecycle, secure-key-storage, transport-key privacy/rotation, and dependency-review obligations. Cross-Lab logical sessions remain independent from both transport implementations.
 
 ---
 
@@ -2123,15 +2108,15 @@ Prove reconnect, replay rejection, active revocation, reconnect-after-revocation
 
 ### M8 — Quinn Transport
 
-Add real QUIC communication and network integration tests.
+**Complete.** Add real QUIC communication and network integration tests.
 
 ### M9 — Remote Networking ADR
 
-Prototype and measure Iroh and, where justified, rust-libp2p approaches against the Quinn baseline. Select the remote connectivity architecture through an ADR.
+**Complete after Task 10 integration.** M9 measured the Iroh candidate against the Quinn baseline, recorded controlled NAT/relay evidence, skipped the conditional libp2p probe because its evidence trigger was not satisfied, and accepted ADR-0009 selecting Quinn local/LAN + Iroh remote/NAT/relay.
 
 ### M10 — First Platform Vertical Slice
 
-Begin Linux desktop and Android integration only after the core/session/protocol foundation is stable.
+**Next.** Begin Linux desktop and Android integration only after the M9 integration checkpoint is verified. Keep platform code behind narrow adapters and a deliberately designed mobile FFI façade. Carry ADR-0009's Android lifecycle, secure-key-storage, network-transition, and production Iroh dependency-review obligations into the platform work.
 
 ---
 
@@ -2198,13 +2183,12 @@ Introduce `cargo xtask` or equivalent when the project has real cross-platform a
 
 ## 51. Open Architecture Decisions
 
-Phase 0 resolved the repository license, v1 identity cryptographic profile, v1 pairing bootstrap, v1 wire/canonical-signing model, v1 update trust model, and the focused Phase 1 `crosslab-crypto` boundary through ADR-0001 through ADR-0006.
+Phase 0 resolved the repository license, v1 identity cryptographic profile, v1 pairing bootstrap, v1 wire/canonical-signing model, v1 update trust model, and the focused Phase 1 `crosslab-crypto` boundary through ADR-0001 through ADR-0006. ADR-0009 resolves the remote NAT/relay architecture as Quinn local/LAN + Iroh remote/NAT/relay, with production promotion gated as specified by that ADR.
 
 The following items remain intentionally unresolved until evidence is available.
 
 | Decision | Current status | Resolution point |
 |---|---|---|
-| Remote NAT/relay implementation | Quinn baseline + Iroh candidate + libp2p alternative | M9 networking ADR |
 | Persistent metadata database | Deferred | First feature requiring durable structured state |
 | Dedicated transport-abstraction crate | Deferred | When multiple transports justify extraction |
 | Plugin runtime | Deferred | After capability ABI/security model stabilizes |

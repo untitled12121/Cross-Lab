@@ -1,9 +1,10 @@
 # M9 Remote Networking ADR — Design
 
-**Status:** Proposed; architecture direction approved, written spec pending review  
+**Status:** Implemented; ADR-0009 accepted 2026-09-17  
 **Milestone:** Phase 1 / M9 — Remote Networking ADR  
 **Baseline:** verified canonical `main` checkpoint `ab602d62181b3dcba056874d0013e40522a68e8f`  
-**Primary contracts:** `docs/architecture/MASTER-ARCHITECTURE.md`, `docs/architecture/SESSION-TRANSPORT.md`, `docs/architecture/CORE-SIMULATOR.md`, ADR-0008, and the verified M8 Quinn transport
+**Decision evidence:** `docs/research/M9-networking-evidence.md`  
+**Primary contracts:** `docs/architecture/MASTER-ARCHITECTURE.md`, `docs/architecture/SESSION-TRANSPORT.md`, `docs/architecture/CORE-SIMULATOR.md`, ADR-0008, ADR-0009, and the verified M8 Quinn transport
 
 ## 1. Goal
 
@@ -11,7 +12,7 @@ M9 decides how Cross-Lab reaches trusted devices across NATs and the public Inte
 
 The milestone is an evidence-driven networking decision, not a broad P2P-framework adoption. It must compare a remote-connectivity candidate against the verified Quinn baseline, prove that Cross-Lab security semantics survive direct/relayed connectivity, measure the operational trade-offs, and record the selected architecture through an ADR.
 
-The preferred architecture to validate is:
+The architecture evaluated was:
 
 ```text
 Cross-Lab identity / trust / policy
@@ -28,13 +29,15 @@ Cross-Lab identity / trust / policy
               direct path or relay
 ```
 
-Quinn remains the established local/LAN baseline. Iroh is evaluated as a separate remote-connectivity adapter providing NAT traversal, relay fallback, and path discovery. rust-libp2p remains the comparison alternative and is prototyped only if Iroh fails a concrete M9 requirement or a focused libp2p spike is needed to resolve a material uncertainty.
+Quinn remains the established local/LAN baseline. Iroh was evaluated as a separate remote-connectivity adapter providing NAT traversal, relay fallback, and path discovery. rust-libp2p remained the comparison alternative and was to be prototyped only if Iroh failed a concrete M9 requirement or a focused libp2p spike was needed to resolve a material uncertainty.
 
 M9 succeeds only if the chosen remote architecture preserves Maximum Owner Control + Least-Privilege Architecture, requires no mandatory Cross-Lab-operated public service, keeps transport identity independent from Cross-Lab device identity, and maintains the same fresh session-authentication and authorization rules already proven over Quinn.
 
+ADR-0009 accepted the resulting architecture: Quinn remains the local/LAN baseline and Iroh is selected for remote/NAT/relay connectivity, with production promotion gated on the platform and dependency obligations recorded in that ADR.
+
 ## 2. Governing Architectural Invariants
 
-M9 must preserve these existing rules:
+M9 preserves these existing rules:
 
 - Applications use a Cross-Lab `LogicalSession`, never an Iroh `Endpoint`, libp2p `Swarm`, `PeerId`, `Multiaddr`, relay account, or socket directly.
 - `DeviceId`, owner trust, credentials, revocation, capability negotiation, policy, `SessionId`, operation authorization, and stream admission remain Cross-Lab domain state.
@@ -64,7 +67,7 @@ M9 therefore does not redesign the session or control/data protocol. It evaluate
 
 ### 4.1 Iroh
 
-The uploaded Iroh source tree is package version `1.2.0`, Rust 2024, `rust-version = 1.91`, licensed `MIT OR Apache-2.0`. Current package metadata was also verified on 2026-09-12: `iroh 1.2.0` is the latest published release.
+The uploaded Iroh source tree is package version `1.2.0`, Rust 2024, `rust-version = 1.91`, licensed `MIT OR Apache-2.0`. Current package metadata was also verified on 2026-09-12: `iroh 1.2.0` was the latest published release at the M9 evaluation point.
 
 Relevant source evidence:
 
@@ -76,27 +79,29 @@ Relevant source evidence:
 - `iroh-relay` contains the relay client/server, supports running a relay server, and provides access-control modes including endpoint allow/deny lists, local shared tokens, and HTTP callout;
 - the Iroh endpoint identity is included in the transport handshake and is intentionally a transport endpoint identity, not a Cross-Lab identity.
 
-M9 required tests therefore use `presets::Minimal` plus explicit transport configuration. The `N0` preset is not used in mandatory CI or required product behavior. The experiment should start with Iroh default features disabled and enable only the reviewed crypto/NAT features it actually exercises (initially `tls-ring` and `portmapper`); relay-server test support is isolated to the experiment/test dependency surface rather than production crates.
+M9 required tests therefore use `presets::Minimal` plus explicit transport configuration. The `N0` preset is not used in mandatory CI or required product behavior. The experiment uses reviewed candidate features only; relay-server test support remains isolated to the experiment/test dependency surface rather than production crates.
 
 ### 4.2 rust-libp2p
 
-The uploaded rust-libp2p tree is `libp2p 0.57.0`, Rust 2024, workspace `rust-version = 1.88.0`, licensed MIT. Current package metadata was verified on 2026-09-12: `libp2p 0.57.0` is the latest published release.
+The uploaded rust-libp2p tree is `libp2p 0.57.0`, Rust 2024, workspace `rust-version = 1.88.0`, licensed MIT. Current package metadata was verified on 2026-09-12: `libp2p 0.57.0` was the latest published release at the M9 evaluation point.
 
 The tree provides mature components for Circuit Relay v2, DCUtR direct-connection upgrade, AutoNAT v1/v2, Swarm orchestration, connection limits, and multiple transport/multiplexer choices.
 
-However, the current `libp2p-quic` connection wrapper stores the underlying `quinn::Connection` privately and does not expose a TLS-exporter API. Its normal public architecture also brings `PeerId`, `Multiaddr`, `Swarm`, and `NetworkBehaviour` concepts that Cross-Lab deliberately keeps outside its domain model.
+However, the evaluated `libp2p-quic` connection wrapper stores the underlying `quinn::Connection` privately and does not expose a TLS-exporter API. Its normal public architecture also brings `PeerId`, `Multiaddr`, `Swarm`, and `NetworkBehaviour` concepts that Cross-Lab deliberately keeps outside its domain model.
 
 This does not make libp2p unsuitable in general. It makes it a higher-integration-cost M9 alternative because Cross-Lab would need an independently reviewed way to satisfy its existing channel-binding contract without treating `PeerId`, Noise identity, or addresses as a replacement for Cross-Lab authentication.
 
+Task 8 recorded `Libp2p trigger: no`, so Task 9 was intentionally skipped and no `rust-libp2p` dependency was added.
+
 ### 4.3 Dependency/runtime compatibility
 
-Both candidates support the repository's Rust `1.98.1` baseline. Iroh's Tokio requirement is semver-compatible with the workspace's Tokio `1.53.1`, and its rustls `0.23.x` requirement is compatible with the existing M8 rustls family. M9 must still inspect the resolved tree before accepting any candidate and must reject accidental duplicate async runtimes or unnecessary default features where feasible.
+Both evaluated candidates support the repository's Rust `1.98.1` baseline. Iroh's Tokio requirement is semver-compatible with the workspace's Tokio `1.53.1`, and its rustls `0.23.x` requirement is compatible with the existing M8 rustls family. The M9 evidence also records the remaining `paste 1.0.15` / `RUSTSEC-2024-0436` maintenance warning in the isolated Iroh dependency graph; it must be re-evaluated before production promotion.
 
 ## 5. Architectural Options
 
 ### Option A — Quinn local + Iroh remote
 
-Keep the proven Quinn adapter as the explicit local/LAN transport and add an isolated Iroh candidate for remote connectivity.
+Keep the proven Quinn adapter as the explicit local/LAN transport and use Iroh beneath the Cross-Lab session boundary for remote connectivity.
 
 Advantages:
 
@@ -108,12 +113,12 @@ Advantages:
 
 Costs:
 
-- two concrete networking adapters must be maintained;
+- two concrete networking adapters must be maintained after production promotion;
 - Iroh has its own endpoint key/routing identity that requires strict isolation from `DeviceId`;
 - endpoint/address discovery and relay operations still need explicit Cross-Lab product decisions later;
 - internal relay/direct path migration adds lifecycle cases that M8 did not need.
 
-**Recommendation:** prototype this first and select it if the success criteria in this design pass.
+**Accepted decision:** selected by ADR-0009 for remote/NAT/relay connectivity. Production promotion remains gated and is not implied by the M9 experiment alone.
 
 ### Option B — Quinn plus Cross-Lab-owned NAT traversal/relay
 
@@ -131,7 +136,7 @@ Costs:
 - duplicates mature work that is not a differentiating Cross-Lab capability;
 - delays M10 platform work.
 
-**Decision for M9:** reject unless both Iroh and focused libp2p evaluation fail material owner-control/security requirements.
+**M9 decision:** rejected by ADR-0009.
 
 ### Option C — rust-libp2p remote fabric
 
@@ -146,36 +151,30 @@ Advantages:
 Costs:
 
 - significantly broader orchestration/model surface than currently required;
-- public QUIC wrapper does not expose the existing TLS-exporter seam;
+- public QUIC wrapper did not expose the existing TLS-exporter seam in the evaluated version;
 - easy to accidentally let `PeerId`, `Multiaddr`, or Swarm lifecycle leak into Cross-Lab domain state;
 - likely more code/configuration for the narrow M9 goal.
 
-**Decision for M9:** comparison alternative. Do not add a production libp2p dependency unless Iroh evidence exposes a concrete gap that libp2p can solve cleanly.
+**M9 decision:** not selected. Task 9 was skipped because the evidence report records `Libp2p trigger: no`. Future requirements may re-evaluate it through a new evidence-backed decision.
 
-## 6. Proposed M9 Boundary
+## 6. M9 Boundary
 
 The evaluation code lives in an isolated research/experiment package rather than in production identity/session crates.
 
-Proposed shape:
+Implemented shape:
 
 ```text
 experiments/
 └── m9-networking/
     ├── Cargo.toml
-    └── src/
-        ├── main.rs or lib.rs
-        ├── baseline.rs       # Quinn measurement harness
-        ├── iroh_candidate.rs # Iroh candidate only
-        ├── relay.rs          # test/self-hosted relay fixture
-        ├── scenarios.rs      # common semantic scenarios
-        └── metrics.rs        # stable measurement output
+    ├── scripts/netns.sh
+    ├── src/
+    └── tests/
 ```
 
 The package is `publish = false` and may depend on candidate networking crates without making them dependencies of `crosslab-core`, protocol, identity, policy, or the production Quinn adapter.
 
-Do not extract a generic transport-framework crate before the prototype. If Iroh is selected and substantial implementation-neutral duplication is proven, the M9 ADR may recommend a later focused extraction. The prototype itself should prefer a little local duplication over prematurely refactoring the already verified M8 adapter.
-
-If the final ADR rejects Iroh, the experiment package may be removed after preserving benchmark results and decision evidence in docs. If it selects Iroh, only the minimum reusable adapter code justified by M10 should graduate into a production `transports/` crate; that graduation is not automatic merely because the prototype passes.
+M9 does not extract a generic transport-framework crate. ADR-0009 acceptance does not automatically graduate the experiment into `transports/`; only the minimum reusable adapter code justified by a consuming platform milestone may be promoted after its production gates are satisfied.
 
 ## 7. Iroh Endpoint and Infrastructure Configuration
 
@@ -203,7 +202,7 @@ The self-hosted relay fixture uses Iroh's relay server implementation rather tha
 
 Iroh transport identity is not Cross-Lab device identity.
 
-The adapter/harness must maintain the following separation:
+The adapter/harness maintains the following separation:
 
 ```text
 Cross-Lab DeviceId / device signing credential
@@ -223,9 +222,9 @@ Endpoint IDs and relay credentials must not be logged together with sensitive Cr
 
 ## 9. Channel Binding and Session Authentication
 
-The Iroh candidate must prove compatibility with the existing Cross-Lab session-auth design instead of introducing an Iroh-specific identity transcript.
+The Iroh candidate proves compatibility with the existing Cross-Lab session-auth design instead of introducing an Iroh-specific identity transcript.
 
-After the full Iroh QUIC/TLS handshake completes, derive exactly the ADR-0008 exporter profile:
+After the full Iroh QUIC/TLS handshake completes, it derives exactly the ADR-0008 exporter profile:
 
 ```text
 profile_id = "quic-tls-exporter-v1"
@@ -234,22 +233,22 @@ label      = "EXPORTER-Cross-Lab-QUIC-Channel-Binding-v1"
 context    = "crosslab.quic.transport.v1"
 ```
 
-Required evidence:
+Verified evidence includes:
 
 - both peers derive identical bytes for the same fully established Iroh connection;
 - a fresh Iroh connection derives different binding bytes;
 - the existing Cross-Lab hello/proof flow reaches `Active` using that binding;
 - a proof from another connection or previous reconnect is rejected;
-- exporter bytes remain stable while the same Iroh connection changes its selected network path from relay to direct;
+- exporter bytes remain stable while the same Iroh connection changes its selected network path from relay to direct in deterministic path-change tests;
 - no ordinary Cross-Lab control/data authority is accepted before session authentication completes.
 
 M9 does not use Iroh's 0-RTT APIs for authority. The candidate becomes eligible for Cross-Lab authentication only after normal handshake completion and exporter availability.
 
-If Iroh cannot reproduce ADR-0008 semantics exactly, the candidate fails this criterion. M9 must then stop and explicitly design a new reviewed channel-binding profile/ADR rather than silently weakening or substituting the binding. If Iroh is selected and does reproduce the profile exactly, the M9 ADR will explicitly record that `quic-tls-exporter-v1` is being reused by a second QUIC/TLS implementation; the stack name in ADR-0008's title does not grant Quinn-specific identity authority.
+ADR-0009 records that `quic-tls-exporter-v1` is reused by a second compatible QUIC/TLS implementation; the stack name in ADR-0008's title does not grant Quinn-specific identity authority.
 
 ## 10. Remote Network Classification
 
-This is a security invariant for the recommended architecture:
+This is an accepted security invariant:
 
 **Any Cross-Lab session established through the Iroh remote adapter is `NetworkClass::Remote` for its entire lifetime, regardless of whether Iroh currently sends through a relay or a direct path.**
 
@@ -267,7 +266,7 @@ A future route classifier may establish a separate Quinn/local session when loca
 
 Iroh may change the network path beneath one established protected connection. That is different from reconnecting the Cross-Lab transport connection.
 
-Rules:
+Accepted rules:
 
 - relay -> direct or direct -> relay inside the same live Iroh connection keeps the same `TransportConnection`, exporter binding, Cross-Lab `SessionId`, sequence space, and active operation authority;
 - path events may update metrics/diagnostics only;
@@ -279,9 +278,9 @@ M9 does not add seamless migration between Quinn and Iroh transports. Moving fro
 
 ## 12. Control and Data Mapping
 
-The Iroh candidate uses an experiment-only ALPN such as `crosslab-m9-networking-eval`; that value is not a production protocol commitment. A production remote ALPN is frozen only if the M9 ADR or a later consuming milestone requires it.
+The Iroh candidate uses an experiment-only ALPN; that value is not a production protocol commitment. A production remote ALPN is frozen only when a consuming milestone requires it.
 
-The Iroh candidate must prove the same semantic roles as M8:
+The Iroh candidate proves the same semantic roles as M8:
 
 - one reserved reliable bidirectional stream for Cross-Lab session bootstrap followed by ordinary control traffic;
 - one transport unidirectional stream per authorized Cross-Lab data stream;
@@ -294,7 +293,7 @@ The experiment may locally reuse framing constants and semantic test helpers, bu
 
 ## 13. Bounds and Resource Ownership
 
-The candidate must be lightweight and bounded. At minimum it must define/measure:
+The candidate remains lightweight and bounded. The experiment defines/measures:
 
 - control queue capacity;
 - incoming/outgoing stream slots;
@@ -307,73 +306,66 @@ The candidate must be lightweight and bounded. At minimum it must define/measure
 - retry/backoff limits for evaluation orchestration;
 - endpoint/connection shutdown and task joining.
 
-The prototype should begin from M8's semantic limits where the Iroh API permits equivalent settings rather than choosing larger defaults by convenience. Differences must be recorded in the benchmark report.
+The prototype starts from M8's semantic limits where the Iroh API permits equivalent settings rather than choosing larger defaults by convenience. Differences are recorded by the evidence harness.
 
 No unbounded `read_to_end`, unbounded Tokio channel, detached connection task, infinite reconnect loop, or unconstrained relay retry loop is acceptable.
 
 ## 14. Evaluation Matrix
 
-M9 uses two evidence classes: deterministic automated semantic tests and reproducible measurements/controlled-network experiments.
+M9 used two evidence classes: deterministic automated semantic tests and reproducible measurements/controlled-network experiments.
 
 ### 14.1 Required automated semantic tests
 
-These must run without public infrastructure:
+These run without public infrastructure and cover:
 
-1. Iroh peers derive the same ADR-0008 exporter binding.
-2. Fresh reconnect changes exporter binding and rejects old proofs/session authority.
-3. Existing Cross-Lab session authentication reaches `Active` over Iroh.
-4. Existing control request/response/event flow works without adapter-specific authorization.
-5. Existing operation-bound unidirectional stream flow works with bounded backpressure.
-6. Peer revocation terminates active authority and blocks reconnect activation.
-7. Relay-only connection through a self-hosted/local relay carries authenticated control/data.
-8. Relay/direct path changes are observable while the session remains `NetworkClass::Remote`.
-9. Connection loss cancels active streams/operations and joins candidate-owned tasks.
-10. Saturation, oversize frames, stream cancellation, and shutdown fail closed.
+1. matching ADR-0008 exporter binding;
+2. fresh reconnect binding and rejection of old proofs/session authority;
+3. Cross-Lab session authentication over Iroh;
+4. ordinary control request/response/event flow without adapter-specific authorization;
+5. operation-bound unidirectional streams with bounded backpressure;
+6. revocation termination and reconnect denial;
+7. authenticated control/data through a self-hosted relay;
+8. relay/direct path observation with immutable `NetworkClass::Remote`;
+9. connection-loss cancellation and joined candidate-owned tasks;
+10. saturation, oversize frames, stream cancellation, and fail-closed shutdown.
 
 ### 14.2 Reproducible networking experiments
 
-Record environment and results rather than making unstable WAN timings hard CI assertions.
-
-Compare Quinn baseline and Iroh candidate for:
+The evidence harness compares Quinn baseline and Iroh candidate for:
 
 - protected connection establishment time;
 - Cross-Lab session-auth completion time;
 - small control round-trip latency;
 - bulk unidirectional throughput for fixed payload sizes;
 - relay-only throughput/latency in a controlled local relay topology;
-- relay -> direct upgrade time when a direct path becomes possible;
-- connection recovery after endpoint/network reachability change;
-- idle process memory/CPU and active-transfer memory/CPU;
-- task/FD/socket counts where practical;
-- shutdown time and evidence that owned tasks terminate.
+- relay/direct path behavior;
+- connection recovery after reachability change;
+- Linux RSS/FD observations where practical;
+- shutdown time and owned-task termination.
+
+The recorded hosted-runner values are reproducibility evidence, not product performance guarantees.
 
 ### 14.3 NAT traversal evidence
 
-M9 must not claim Internet/NAT success from loopback relay tests alone.
+M9 does not claim Internet/NAT success from loopback relay tests alone.
 
-Use a reproducible Linux controlled-network topology where practical (network namespaces/containers or an equivalent isolated harness) to place peers behind separate translated networks and record:
+The reproducible Linux namespace topology placed peers behind separate translated networks and recorded owner-relay fallback, authenticated control/data, direct-path availability, and reconnect behavior.
 
-- direct hole-punch success/failure;
-- relay fallback success;
-- upgrade from relay to direct when reachable;
-- behavior when one side cannot accept a direct path;
-- recovery after an address/interface change.
+The controlled endpoint-dependent/symmetric-NAT run remained relay-only within the bounded direct-path observation window after UDP was enabled. This is recorded as an architectural limitation rather than hidden or converted into weaker authentication/session behavior. Forced reconnect then established fresh binding/session state and restored authenticated control.
 
-If hosted CI cannot provide the required network privileges reliably, keep deterministic semantic tests in normal CI and run the controlled NAT matrix as a documented manual/benchmark gate before accepting the ADR. Exact environment and commands must be recorded so results are repeatable.
+Separate deterministic tests prove same-connection relay-to-direct continuity when a direct path does become available.
 
 ### 14.4 Mobile-lifecycle viability
 
 M9 occurs before the M10 Linux/Android vertical slice, so it does not pretend to validate real Android/iOS background execution policy.
 
-It must nevertheless evaluate candidate suitability by:
+The accepted architecture therefore carries explicit production-promotion obligations for:
 
-- confirming supported target/build constraints against the Cross-Lab Rust baseline;
-- exercising endpoint/connection recovery across socket/address changes where the desktop test environment permits it;
-- confirming the adapter does not require a process-global immortal runtime or unjoinable daemon;
-- documenting known platform/background limitations found in source/docs;
-- identifying the exact Android/iOS lifecycle tests that M10 must run on real devices before remote networking is called production-ready.
-
-The M9 ADR may select the architecture with explicit mobile validation obligations for M10, but it may not claim real-device mobile lifecycle verification that M9 did not perform.
+- Android background/network lifecycle and Kotlin/Rust integration;
+- real-device network transitions and sleep/wake behavior;
+- secure platform key storage and transport-key privacy/rotation policy;
+- production Iroh dependency-tree review;
+- equivalent lifecycle/firewall/entitlement validation when other platforms consume the remote transport.
 
 ## 15. Benchmark Interpretation
 
@@ -390,11 +382,11 @@ No single microbenchmark chooses the architecture. The decision weighs:
 7. latency/throughput/resource cost;
 8. maintenance/dependency complexity.
 
-Measurements must include the Quinn baseline on the same host/environment. WAN/public-relay results are observational and cannot be compared as if network conditions were controlled unless the environment actually is controlled.
+Measurements include the Quinn baseline on the same host/environment. WAN/public-relay results are observational and cannot be compared as if network conditions were controlled unless the environment actually is controlled.
 
 ## 16. Security and Privacy Review
 
-The M9 ADR must explicitly review:
+ADR-0009 explicitly preserves these security/privacy rules:
 
 - malicious or compromised relay behavior: relay must never be able to authenticate as a Cross-Lab peer or modify encrypted session data successfully;
 - replay/splicing: Cross-Lab proofs remain bound to the exact TLS exporter and fresh nonces;
@@ -402,7 +394,7 @@ The M9 ADR must explicitly review:
 - relay credential scope: relay token/allowlist grants infrastructure access only;
 - metadata exposure: relays may observe routing endpoint identifiers, connection timing, and traffic volume even though Cross-Lab payloads remain encrypted;
 - endpoint-ID linkability: a persisted Iroh transport key creates a stable routing pseudonym and requires a future rotation/privacy policy;
-- address lookup privacy: mandatory M9 behavior avoids n0 address publication/resolution and uses explicit/local fixtures;
+- address lookup privacy: required behavior avoids default public address publication/resolution and uses explicit configuration;
 - downgrade: path or relay selection cannot lower authentication or policy requirements;
 - path reclassification: an Iroh session remains `Remote` through all internal path changes;
 - resource attacks: stream/queue/window/retry limits bound memory and task growth;
@@ -410,40 +402,39 @@ The M9 ADR must explicitly review:
 
 ## 17. Dependency and License Rules
 
-M9 may add candidate dependencies only to the isolated experiment package before the networking ADR is accepted.
+M9 candidate dependencies remain isolated to the experiment package.
 
-Initial candidate baselines:
+Evaluated baselines:
 
 ```text
 iroh    = 1.2.0   # MIT OR Apache-2.0
-libp2p  = 0.57.0  # MIT; comparison only unless justified
+libp2p  = 0.57.0  # MIT; comparison only, not added because Task 9 was not triggered
 ```
 
-Before committing dependency changes:
+Before production dependency changes:
 
 - verify current published versions and maintenance status;
 - inspect enabled feature trees and duplicate runtime/TLS stacks;
 - disable unnecessary default features where doing so does not fight the candidate's supported configuration;
-- run license/security checks available to the repository;
-- avoid candidate dependencies in production/domain crates until the ADR decision permits them.
+- run repository license/security checks;
+- re-evaluate `paste 1.0.15` / `RUSTSEC-2024-0436`;
+- keep networking dependencies out of domain crates.
 
 The uploaded source trees are research/reference material. Cross-Lab reuses public APIs and proven ideas but does not copy their architecture blindly.
 
-## 18. Decision Rule and ADR Outcome
+## 18. Decision Rule and Accepted ADR Outcome
 
-The M9 networking ADR selects **Quinn local + Iroh remote** if all of the following hold:
+The M9 decision rule selected **Quinn local + Iroh remote** because the required evidence established:
 
-- exact ADR-0008 exporter semantics work after full Iroh handshake;
-- existing Cross-Lab session/control/authorized-stream/reconnect/revocation semantics pass without an Iroh-specific identity or authorization path;
-- owner-selected/self-hosted relay operation works without mandatory n0/Cross-Lab public infrastructure;
-- direct/relay path behavior is observable and does not weaken network policy classification;
-- NAT/relay/recovery evidence is materially better than raw Quinn without requiring Cross-Lab to build a relay/NAT stack;
-- bounded resource and shutdown behavior is acceptable;
-- maintenance/platform costs are acceptable relative to the capability gained.
+- exact ADR-0008 exporter semantics after the full Iroh handshake;
+- existing Cross-Lab session/control/authorized-stream/reconnect/revocation semantics without an Iroh-specific identity or authorization path;
+- owner-selected/self-hosted relay operation without mandatory n0/Cross-Lab public infrastructure;
+- direct/relay path observability without weakening network policy classification;
+- useful NAT/relay/recovery capability beyond raw Quinn while preserving relay fallback where direct traversal fails;
+- bounded resource and shutdown behavior sufficient for architecture selection;
+- an acceptable integration boundary, with real-device/mobile and dependency review explicitly deferred as production-promotion gates rather than silently treated as complete.
 
-A focused rust-libp2p prototype becomes mandatory only if Iroh fails one of those criteria and libp2p plausibly addresses the exact failure. If neither candidate passes, the ADR records no selection and M10 proceeds without pretending remote networking is solved.
-
-The ADR must record evidence, rejected alternatives, security/privacy impact, operational implications, dependency decision, and explicit M10 follow-ups.
+The controlled endpoint-dependent/symmetric-NAT topology did not yield a direct path within the bounded window, but this did not identify an Iroh-specific criterion failure that rust-libp2p/DCUtR would plausibly remove. The evidence therefore records `Libp2p trigger: no`, Task 9 is skipped, and ADR-0009 accepts Quinn local/LAN + Iroh remote/NAT/relay.
 
 ## 19. Intentional Non-Goals
 
@@ -471,15 +462,15 @@ Those remain later decisions with explicit consumers.
 
 M9 produces:
 
-1. this approved design;
-2. a detailed implementation/evaluation plan;
-3. an isolated reproducible networking experiment harness;
+1. this implemented design;
+2. the detailed implementation/evaluation plan in `docs/plans/phase-1/M9-remote-networking.md`;
+3. the isolated reproducible networking experiment harness;
 4. Quinn baseline measurements;
 5. Iroh candidate semantic/NAT/relay/resource measurements;
-6. a focused libp2p comparison/prototype only if triggered by the decision rule;
-7. a benchmark/evidence report with environment details;
-8. a networking ADR selecting or rejecting the remote architecture;
-9. updated Master Architecture status if the ADR changes the candidate/selected state;
-10. updated `docs/development/CURRENT.md` with exact verified commits/CI and the M10 next task.
+6. no libp2p prototype because the recorded trigger is `no`;
+7. the benchmark/evidence report at `docs/research/M9-networking-evidence.md`;
+8. accepted ADR-0009 selecting Quinn local/LAN + Iroh remote/NAT/relay;
+9. reconciled Master Architecture networking status;
+10. durable M10 handoff in `docs/development/CURRENT.md` after Task 10 integration.
 
-No production dependency or architecture is considered selected merely because prototype code compiles. Selection happens only through the reviewed M9 ADR after the required evidence is recorded.
+The selected architecture does not auto-promote experiment code into production. Production Iroh use remains gated by the explicit obligations in ADR-0009 and the consuming platform milestone.
