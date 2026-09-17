@@ -31,13 +31,13 @@ Task 3 is integrated and verified:
 
 ## Task 4 Verification Checkpoint
 
-**M10 Task 4 — Productize Quinn endpoint/bootstrap mechanics without changing identity semantics — is implementation-complete and awaiting merge of the verified checkpoint.**
+**M10 Task 4 — Productize Quinn endpoint/bootstrap mechanics without changing identity semantics — is implementation-complete and awaiting merge of the final checkpoint.**
 
 - Task 4 branch: `m10-task4-quinn-bootstrap`.
 - Task 4 PR: #33 (`feat(quic): productize authenticated endpoint bootstrap`).
 - Verified implementation head: `d612490386456d276dacb872080d979ffd079262`.
 - Exact-head implementation CI: GitHub Actions `35234732959` — passed dependency audit, `cargo fmt --check`, workspace check, clippy with warnings denied, and full workspace tests.
-- Documentation checkpoint head: `8d96923e95c55059e70e4ca47d475cdd12398d15`; require its exact-head CI before merge.
+- The final documentation-only checkpoint must also pass exact-head CI before merge; use the actual PR head from GitHub rather than embedding a self-referential commit SHA here.
 - The earlier product implementation checkpoint `d52fafad51a7c8c969ee9285f742053e5962ce5c` independently passed the same full gate in CI `35233220854` before the final negative-test expansion.
 
 Task 4 now provides:
@@ -86,7 +86,7 @@ The first slice remains **authenticated local device connection + device status*
 
 Finish Task 4 integration, then execute **M10 Task 5 — application runtime actor for lifecycle-safe consumers**:
 
-1. require exact-head CI for Task 4 checkpoint `8d96923e95c55059e70e4ca47d475cdd12398d15`, merge PR #33 with that expected head, and verify post-merge `main` CI;
+1. require exact-head CI for the actual final Task 4 PR head, merge PR #33 with that expected head, and verify post-merge `main` CI;
 2. create a fresh Task 5 feature branch from that verified `main`;
 3. add tests first for single-start ownership, duplicate-start handling, deterministic stop/drop shutdown, transport/network loss, fresh authenticated reconnect, bounded command/event state, and slow-subscriber behavior;
 4. implement a small actor in `crates/runtime/src/actor.rs` plus typed commands in `crates/runtime/src/command.rs` using bounded Tokio `mpsc`/`watch` primitives already present in the workspace;
