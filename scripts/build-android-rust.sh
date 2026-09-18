@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "\${BASH_SOURCE[0]}")/.." && pwd)"
-out_root="\${1:-\${repo_root}/target/generated/android-jni}"
-abi="\${2:-arm64-v8a}"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+out_root="${1:-${repo_root}/target/generated/android-jni}"
+abi="${2:-arm64-v8a}"
 api_level=23
 ndk_version=28.2.13676358
 
-case "\${abi}" in
+case "${abi}" in
   arm64-v8a)
     rust_target="aarch64-linux-android"
     clang_prefix="aarch64-linux-android"
@@ -17,20 +17,20 @@ case "\${abi}" in
     clang_prefix="x86_64-linux-android"
     ;;
   *)
-    echo "unsupported M10 Android ABI: \${abi}" >&2
+    echo "unsupported M10 Android ABI: ${abi}" >&2
     exit 1
     ;;
 esac
 
-ndk_root="\${ANDROID_NDK_ROOT:-\${ANDROID_NDK_HOME:-}}"
-if [[ -z "\${ndk_root}" && -n "\${ANDROID_SDK_ROOT:-}" ]]; then
-  ndk_root="\${ANDROID_SDK_ROOT}/ndk/\${ndk_version}"
+ndk_root="${ANDROID_NDK_ROOT:-${ANDROID_NDK_HOME:-}}"
+if [[ -z "${ndk_root}" && -n "${ANDROID_SDK_ROOT:-}" ]]; then
+  ndk_root="${ANDROID_SDK_ROOT}/ndk/${ndk_version}"
 fi
-if [[ -z "\${ndk_root}" && -n "\${ANDROID_HOME:-}" ]]; then
-  ndk_root="\${ANDROID_HOME}/ndk/\${ndk_version}"
+if [[ -z "${ndk_root}" && -n "${ANDROID_HOME:-}" ]]; then
+  ndk_root="${ANDROID_HOME}/ndk/${ndk_version}"
 fi
-if [[ -z "\${ndk_root}" || ! -d "\${ndk_root}" ]]; then
-  echo "Android NDK \${ndk_version} is required; set ANDROID_NDK_ROOT or ANDROID_SDK_ROOT" >&2
+if [[ -z "${ndk_root}" || ! -d "${ndk_root}" ]]; then
+  echo "Android NDK ${ndk_version} is required; set ANDROID_NDK_ROOT or ANDROID_SDK_ROOT" >&2
   exit 1
 fi
 
@@ -47,20 +47,20 @@ case "$(uname -s)" in
     ;;
 esac
 
-linker="\${ndk_root}/toolchains/llvm/prebuilt/\${host_tag}/bin/\${clang_prefix}\${api_level}-clang"
-if [[ ! -x "\${linker}" ]]; then
-  echo "Android linker not found: \${linker}" >&2
+linker="${ndk_root}/toolchains/llvm/prebuilt/${host_tag}/bin/${clang_prefix}${api_level}-clang"
+if [[ ! -x "${linker}" ]]; then
+  echo "Android linker not found: ${linker}" >&2
   exit 1
 fi
 
-linker_env="CARGO_TARGET_$(printf '%s' "\${rust_target}" | tr '[:lower:]-' '[:upper:]_')_LINKER"
-export "\${linker_env}=\${linker}"
+linker_env="CARGO_TARGET_$(printf '%s' "${rust_target}" | tr '[:lower:]-' '[:upper:]_')_LINKER"
+export "${linker_env}=${linker}"
 
-cd "\${repo_root}"
-rustup target add "\${rust_target}"
-cargo build --locked -p crosslab-mobile-ffi --target "\${rust_target}"
+cd "${repo_root}"
+rustup target add "${rust_target}"
+cargo build --locked -p crosslab-mobile-ffi --target "${rust_target}"
 
-mkdir -p "\${out_root}/\${abi}"
+mkdir -p "${out_root}/${abi}"
 cp \
-  "\${repo_root}/target/\${rust_target}/debug/libcrosslab_mobile_ffi.so" \
-  "\${out_root}/\${abi}/libcrosslab_mobile_ffi.so"
+  "${repo_root}/target/${rust_target}/debug/libcrosslab_mobile_ffi.so" \
+  "${out_root}/${abi}/libcrosslab_mobile_ffi.so"
