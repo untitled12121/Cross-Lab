@@ -19,7 +19,9 @@ use crosslab_policy::{
     NetworkClass, PairingTrustTransition, PolicyState, TransitionId, TrustRecord, TrustTransition,
 };
 use crosslab_protocol::{FeatureSet, ProtocolRange};
-use crosslab_runtime::RuntimeNode;
+use crosslab_runtime::{
+    RuntimeActor, RuntimeActorConfig, RuntimeActorSession, RuntimeNode,
+};
 use crosslab_transport_quic::{
     AuthenticatedQuicSession, QuicClientEndpoint, QuicClientTlsConfig, QuicServerEndpoint,
     QuicServerTlsConfig, QuicSessionAuthConfig, QuicSessionError, QuicSessionTimeouts,
@@ -146,29 +148,37 @@ async fn product_quinn_sessions_drive_runtime_and_mobile_status_fail_closed() {
     )
     .await;
 
-    let mut client_runtime = runtime_node(first_client, &peers.server_trust);
-    let mut server_runtime = runtime_node(first_server, &peers.client_trust);
-    let first_client_status = client_runtime.status(&peers.server_trust);
-    let first_server_status = server_runtime.status(&peers.client_trust);
+    let mut client_actor = RuntimeActor::new(actor_config());
+    let mut server_actor = RuntimeActor::new(actor_config());
+    client_actor
+        .start(actor_session(first_client, peers.server_trust))
+        .unwrap();
+    server_actor
+        .start(actor_session(first_server, peers.client_trust))
+        .unwrap();
+    let mut client_status = client_actor.subscribe_status().unwrap();
+    let mut server_status = server_actor.subscribe_status().unwrap();
 
-    assert_eq!(first_client_status.session_state(), SessionState::Active);
-    assert_eq!(first_server_status.session_state(), SessionState::Active);
+    assert_eq!(client_status.borrow().session_state(), SessionState::Active);
+    assert_eq!(server_status.borrow().session_state(), SessionState::Active);
     assert_eq!(
-        first_client_status.session_id(),
-        first_server_status.session_id()
+        client_status.borrow().session_id(),
+        server_status.borrow().session_id()
     );
     assert_eq!(
-        first_client_status.peer_device_id(),
-        first_server_status.local_device_id()
+        client_status.borrow().peer_device_id(),
+        server_status.borrow().local_device_id()
     );
     assert_eq!(
-        first_server_status.peer_device_id(),
-        first_client_status.local_device_id()
+        server_status.borrow().peer_device_id(),
+        client_status.borrow().local_device_id()
     );
 
     let mobile = MobileRuntime::new();
     mobile.start().unwrap();
-    mobile.publish_runtime_status(&first_client_status).unwrap();
+    mobile
+        .publish_runtime_status(&client_status.borrow())
+        .unwrap();
     let connected = mobile.snapshot().unwrap();
     assert_eq!(connected.lifecycle, MobileLifecycleState::Running);
     assert_eq!(connected.trust, MobileTrustState::Trusted);
@@ -176,15 +186,18 @@ async fn product_quinn_sessions_drive_runtime_and_mobile_status_fail_closed() {
     assert_eq!(connected.session, MobileSessionState::Active);
     assert!(connected.session_id.is_some());
 
-    let first_session_id = first_client_status.session_id().unwrap();
-    client_runtime.network_lost();
-    server_runtime.network_lost();
+    let first_session_id = client_status.borrow().session_id().unwrap();
+    client_actor.try_network_lost().unwrap();
+    server_actor.try_network_lost().unwrap();
+    client_status.changed().await.unwrap();
+    server_status.changed().await.unwrap();
 
-    let disconnected = client_runtime.status(&peers.server_trust);
-    mobile.publish_runtime_status(&disconnected).unwrap();
+    mobile
+        .publish_runtime_status(&client_status.borrow())
+        .unwrap();
     let mobile_disconnected = mobile.snapshot().unwrap();
-    assert_eq!(disconnected.session_state(), SessionState::Closed);
-    assert!(disconnected.session_id().is_none());
+    assert_eq!(client_status.borrow().session_state(), SessionState::Closed);
+    assert!(client_status.borrow().session_id().is_none());
     assert_eq!(
         mobile_disconnected.connectivity,
         MobileConnectivityState::Disconnected
@@ -200,21 +213,35 @@ async fn product_quinn_sessions_drive_runtime_and_mobile_status_fail_closed() {
         &peers.server_trust,
     )
     .await;
-    let mut second_client_runtime = runtime_node(second_client, &peers.server_trust);
-    let mut second_server_runtime = runtime_node(second_server, &peers.client_trust);
-    let second_status = second_client_runtime.status(&peers.server_trust);
+    client_actor
+        .reconnect(actor_session(second_client, peers.server_trust))
+        .await
+        .unwrap();
+    server_actor
+        .reconnect(actor_session(second_server, peers.client_trust))
+        .await
+        .unwrap();
+    client_status.changed().await.unwrap();
+    server_status.changed().await.unwrap();
 
-    assert_ne!(second_status.session_id(), Some(first_session_id));
-    assert_eq!(second_status.session_state(), SessionState::Active);
+    assert_ne!(
+        client_status.borrow().session_id(),
+        Some(first_session_id)
+    );
+    assert_eq!(client_status.borrow().session_state(), SessionState::Active);
 
     let revoked_server_trust = peers.revoked_server_trust();
-    second_client_runtime
-        .apply_peer_revocation(&revoked_server_trust)
+    client_actor
+        .revoke_peer(revoked_server_trust)
+        .await
         .unwrap();
-    second_server_runtime.network_lost();
+    server_actor.try_network_lost().unwrap();
+    client_status.changed().await.unwrap();
+    server_status.changed().await.unwrap();
 
-    let revoked_status = second_client_runtime.status(&revoked_server_trust);
-    mobile.publish_runtime_status(&revoked_status).unwrap();
+    mobile
+        .publish_runtime_status(&client_status.borrow())
+        .unwrap();
     let mobile_revoked = mobile.snapshot().unwrap();
     assert_eq!(mobile_revoked.trust, MobileTrustState::Revoked);
     assert_eq!(
@@ -248,7 +275,7 @@ async fn product_quinn_sessions_drive_runtime_and_mobile_status_fail_closed() {
 
     let rendered = format!(
         "{:?} {:?} {:?}",
-        revoked_status,
+        client_status.borrow(),
         mobile_revoked,
         mobile.poll_event().unwrap()
     )
@@ -269,14 +296,16 @@ async fn product_quinn_sessions_drive_runtime_and_mobile_status_fail_closed() {
     }
 
     mobile.stop().unwrap();
+    client_actor.stop().await.unwrap();
+    server_actor.stop().await.unwrap();
 }
 
-fn runtime_node(
+fn actor_session(
     session: AuthenticatedQuicSession,
-    peer_trust: &TrustRecord,
-) -> RuntimeNode<'static> {
+    peer_trust: TrustRecord,
+) -> RuntimeActorSession {
     let (session, transport) = session.into_parts();
-    let runtime = RuntimeNode::new_owned(
+    let node = RuntimeNode::new_owned(
         session,
         Arc::new(transport),
         PolicyState::new(),
@@ -285,10 +314,11 @@ fn runtime_node(
         NonZeroUsize::new(STATE_CAPACITY).unwrap(),
     )
     .unwrap();
+    RuntimeActorSession::new(node, peer_trust)
+}
 
-    let status = runtime.status(peer_trust);
-    assert_eq!(status.trust_state(), crosslab_policy::TrustState::Trusted);
-    runtime
+fn actor_config() -> RuntimeActorConfig {
+    RuntimeActorConfig::new(NonZeroUsize::new(STATE_CAPACITY).unwrap())
 }
 
 async fn connect_pair(
