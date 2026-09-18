@@ -1,7 +1,10 @@
 use crate::{
     components::ui::{StatusTone, status_badge},
-    features::devices::{
-        ConnectivityDisplay, DevicePresentation, DevicesFeatureState, TrustDisplay,
+    features::{
+        appearance::{active_theme, font_weight},
+        devices::{
+            ConnectivityDisplay, DevicePresentation, DevicesFeatureState, TrustDisplay,
+        },
     },
 };
 use gpui_kit::{
@@ -10,22 +13,28 @@ use gpui_kit::{
 
 pub(super) fn device_content(state: &DevicesFeatureState, cx: &App) -> Div {
     let theme = cx.theme();
+    let appearance = active_theme(cx);
 
     div()
         .flex()
         .flex_col()
         .size_full()
-        .p(px(24.))
-        .gap(px(20.))
+        .p(px(appearance.spacing.xl))
+        .gap(px(appearance.spacing.xl))
         .child(
             div()
                 .flex()
                 .flex_col()
-                .gap(px(4.))
-                .child(div().text_size(px(18.)).font_semibold().child("Devices"))
+                .gap(px(appearance.spacing.xs))
                 .child(
                     div()
-                        .text_size(px(12.))
+                        .text_size(px(appearance.typography.scales.title.size))
+                        .font_weight(font_weight(appearance.typography.scales.title.weight))
+                        .child("Devices"),
+                )
+                .child(
+                    div()
+                        .text_size(px(appearance.typography.scales.caption.size))
                         .text_color(theme.muted_foreground)
                         .child("Authenticated local device connection status"),
                 ),
@@ -38,31 +47,33 @@ pub(super) fn device_content(state: &DevicesFeatureState, cx: &App) -> Div {
 
 fn empty_state(cx: &App) -> Div {
     let theme = cx.theme();
+    let appearance = active_theme(cx);
 
     div()
         .flex()
         .flex_col()
+        .rounded(px(appearance.radius.md))
         .border_1()
         .border_color(theme.border)
         .bg(theme.popover)
-        .p(px(16.))
-        .gap(px(10.))
+        .p(px(appearance.spacing.xl))
+        .gap(px(appearance.spacing.lg))
         .child(
             div()
                 .flex()
                 .items_center()
-                .gap(px(8.))
+                .gap(px(appearance.spacing.md))
                 .child(status_badge("Disconnected", StatusTone::Neutral, cx))
                 .child(
                     div()
-                        .text_size(px(12.))
+                        .text_size(px(appearance.typography.scales.body.size))
                         .text_color(theme.muted_foreground)
                         .child("No active authenticated device session"),
                 ),
         )
         .child(
             div()
-                .text_size(px(12.))
+                .text_size(px(appearance.typography.scales.caption.size))
                 .text_color(theme.muted_foreground)
                 .child("Runtime wiring arrives in M10 Task 9; this shell does not own networking."),
         )
@@ -70,6 +81,7 @@ fn empty_state(cx: &App) -> Div {
 
 fn device_panel(device: &DevicePresentation, cx: &App) -> Div {
     let theme = cx.theme();
+    let appearance = active_theme(cx);
     let trust_tone = match device.trust() {
         TrustDisplay::Trusted => StatusTone::Accent,
         TrustDisplay::Pending => StatusTone::Neutral,
@@ -83,6 +95,7 @@ fn device_panel(device: &DevicePresentation, cx: &App) -> Div {
     div()
         .flex()
         .flex_col()
+        .rounded(px(appearance.radius.md))
         .border_1()
         .border_color(theme.border)
         .bg(theme.popover)
@@ -91,24 +104,26 @@ fn device_panel(device: &DevicePresentation, cx: &App) -> Div {
                 .flex()
                 .items_center()
                 .justify_between()
-                .min_h(px(48.))
-                .px(px(16.))
+                .min_h(px(appearance.metrics.row_height))
+                .px(px(appearance.spacing.xl))
                 .border_b_1()
                 .border_color(theme.border)
                 .child(
                     div()
                         .flex()
                         .flex_col()
-                        .gap(px(2.))
+                        .gap(px(appearance.spacing.xxs))
                         .child(
                             div()
-                                .text_size(px(13.))
-                                .font_semibold()
+                                .text_size(px(appearance.typography.scales.label.size))
+                                .font_weight(font_weight(
+                                    appearance.typography.scales.label.weight,
+                                ))
                                 .child(device.peer_id().unwrap_or("Unknown peer")),
                         )
                         .child(
                             div()
-                                .text_size(px(11.))
+                                .text_size(px(appearance.typography.scales.caption.size))
                                 .text_color(theme.muted_foreground)
                                 .child("Cross-Lab device"),
                         ),
@@ -117,7 +132,7 @@ fn device_panel(device: &DevicePresentation, cx: &App) -> Div {
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(6.))
+                        .gap(px(appearance.spacing.sm))
                         .child(status_badge(
                             device.connectivity().label(),
                             connectivity_tone,
@@ -152,20 +167,26 @@ fn device_panel(device: &DevicePresentation, cx: &App) -> Div {
 
 fn detail_row(label: &str, value: &str, cx: &App) -> Div {
     let theme = cx.theme();
+    let appearance = active_theme(cx);
 
     div()
         .flex()
         .items_center()
         .justify_between()
-        .min_h(px(36.))
-        .px(px(16.))
+        .min_h(px(appearance.metrics.row_height))
+        .px(px(appearance.spacing.xl))
         .border_b_1()
         .border_color(theme.border)
         .child(
             div()
-                .text_size(px(11.))
+                .text_size(px(appearance.typography.scales.caption.size))
                 .text_color(theme.muted_foreground)
                 .child(label.to_owned()),
         )
-        .child(div().text_size(px(12.)).child(value.to_owned()))
+        .child(
+            div()
+                .text_size(px(appearance.typography.scales.body.size))
+                .font_weight(font_weight(appearance.typography.scales.body.weight))
+                .child(value.to_owned()),
+        )
 }

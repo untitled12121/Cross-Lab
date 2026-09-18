@@ -1,11 +1,16 @@
 use gpui_kit::{
-    App, Hsla, Rgba, SharedString,
+    App, FontWeight, Hsla, Rgba, SharedString,
     component::theme::{Theme, ThemeMode},
     px,
 };
 
 use super::theme::OklchColor;
 use super::{ThemeAppearance, ThemeDocument, ThemeError, ThemeId, load_builtin_theme};
+
+#[derive(Clone)]
+struct ActiveThemeDocument(ThemeDocument);
+
+impl gpui_kit::Global for ActiveThemeDocument {}
 
 pub fn install_builtin_theme(theme_id: ThemeId, cx: &mut App) -> Result<ThemeDocument, ThemeError> {
     let theme = load_builtin_theme(theme_id)?;
@@ -63,6 +68,26 @@ pub fn apply_theme(source: &ThemeDocument, cx: &mut App) {
     }
 
     Theme::sync_base(cx);
+    cx.set_global(ActiveThemeDocument(source.clone()));
+}
+
+pub fn active_theme(cx: &App) -> &ThemeDocument {
+    &cx.global::<ActiveThemeDocument>().0
+}
+
+pub fn font_weight(weight: u16) -> FontWeight {
+    match weight {
+        100 => FontWeight::THIN,
+        200 => FontWeight::EXTRA_LIGHT,
+        300 => FontWeight::LIGHT,
+        400 => FontWeight::NORMAL,
+        500 => FontWeight::MEDIUM,
+        600 => FontWeight::SEMIBOLD,
+        700 => FontWeight::BOLD,
+        800 => FontWeight::EXTRA_BOLD,
+        900 => FontWeight::BLACK,
+        _ => FontWeight::NORMAL,
+    }
 }
 
 fn native_font_family(
@@ -139,5 +164,13 @@ mod tests {
         assert!(white.to_rgb().r > 0.999);
         assert!(white.to_rgb().g > 0.999);
         assert!(white.to_rgb().b > 0.999);
+    }
+
+    #[test]
+    fn canonical_font_weights_map_to_gpui_weights() {
+        assert_eq!(font_weight(400), FontWeight::NORMAL);
+        assert_eq!(font_weight(500), FontWeight::MEDIUM);
+        assert_eq!(font_weight(600), FontWeight::SEMIBOLD);
+        assert_eq!(font_weight(900), FontWeight::BLACK);
     }
 }
