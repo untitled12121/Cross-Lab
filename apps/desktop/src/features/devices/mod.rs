@@ -1,3 +1,5 @@
+use core::fmt::Write as _;
+
 use crosslab_core::{SessionState, TransportSecurityClass};
 use crosslab_identity::DeviceId;
 use crosslab_policy::{NetworkClass, TrustState};
@@ -104,8 +106,43 @@ impl DevicePresentation {
         self.capability_count
     }
 
-    fn from_fields(_fields: StatusFields) -> Self {
-        unimplemented!("RED: implement safe runtime status projection")
+    fn from_fields(fields: StatusFields) -> Self {
+        Self {
+            peer_id: fields.peer_device_id.map(short_device_id),
+            trust: match fields.trust_state {
+                TrustState::Pending => TrustDisplay::Pending,
+                TrustState::Trusted => TrustDisplay::Trusted,
+                TrustState::Revoked => TrustDisplay::Revoked,
+            },
+            connectivity: match fields.connectivity {
+                ConnectivityState::Connected => ConnectivityDisplay::Connected,
+                ConnectivityState::Disconnected => ConnectivityDisplay::Disconnected,
+            },
+            session: match fields.session_state {
+                SessionState::Created => SessionDisplay::Created,
+                SessionState::Authenticating => SessionDisplay::Authenticating,
+                SessionState::Active => SessionDisplay::Active,
+                SessionState::Closing => SessionDisplay::Closing,
+                SessionState::Closed => SessionDisplay::Closed,
+                SessionState::Revoked => SessionDisplay::Revoked,
+            },
+            protocol: fields
+                .protocol_version
+                .map(|version| format!("{}.{}", version.major(), version.minor())),
+            network: match fields.network_class {
+                NetworkClass::Local => NetworkDisplay::Local,
+                NetworkClass::Trusted => NetworkDisplay::Trusted,
+                NetworkClass::Remote => NetworkDisplay::Remote,
+            },
+            security: match fields.security_class {
+                TransportSecurityClass::InProcessTest => SecurityDisplay::TestOnly,
+                TransportSecurityClass::AuthenticatedConfidentialChannel => {
+                    SecurityDisplay::Authenticated
+                }
+            },
+            metered: fields.metered,
+            capability_count: fields.capability_count,
+        }
     }
 }
 
@@ -120,6 +157,14 @@ struct StatusFields {
     security_class: TransportSecurityClass,
     metered: Option<bool>,
     capability_count: usize,
+}
+
+fn short_device_id(device_id: DeviceId) -> String {
+    let mut output = String::with_capacity(16);
+    for byte in &device_id.as_bytes()[..8] {
+        write!(&mut output, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    output
 }
 
 #[cfg(test)]

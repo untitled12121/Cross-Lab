@@ -188,14 +188,199 @@ impl fmt::Display for ThemeError {
 
 impl std::error::Error for ThemeError {}
 
-pub fn parse_theme(_content: &str) -> Result<ThemeDocument, ThemeError> {
-    unimplemented!("RED: implement canonical theme parsing")
+pub fn parse_theme(content: &str) -> Result<ThemeDocument, ThemeError> {
+    let theme: ThemeDocument =
+        serde_json::from_str(content).map_err(|error| ThemeError::InvalidDocument(error.to_string()))?;
+
+    if theme.schema_version != 1 {
+        return Err(ThemeError::UnsupportedSchemaVersion(theme.schema_version));
+    }
+
+    validate_theme(&theme)?;
+    Ok(theme)
 }
 
-pub fn resolve_theme(_selection: ThemeSelection, _system: SystemAppearance) -> ThemeId {
-    unimplemented!("RED: implement pure appearance resolution")
+pub fn resolve_theme(selection: ThemeSelection, system: SystemAppearance) -> ThemeId {
+    match selection {
+        ThemeSelection::AyuLight => ThemeId::AyuLight,
+        ThemeSelection::Darkmatter => ThemeId::Darkmatter,
+        ThemeSelection::System => match system {
+            SystemAppearance::Light => ThemeId::AyuLight,
+            SystemAppearance::Dark => ThemeId::Darkmatter,
+        },
+    }
 }
 
-pub fn load_builtin_theme(_theme: ThemeId) -> Result<ThemeDocument, ThemeError> {
-    unimplemented!("RED: implement built-in theme loading")
+pub fn load_builtin_theme(theme: ThemeId) -> Result<ThemeDocument, ThemeError> {
+    match theme {
+        ThemeId::AyuLight => parse_theme(include_str!("../../../../../design/themes/ayu-light.json")),
+        ThemeId::Darkmatter => Err(ThemeError::ThemeUnavailable(ThemeId::Darkmatter)),
+    }
+}
+
+fn validate_theme(theme: &ThemeDocument) -> Result<(), ThemeError> {
+    if !valid_theme_id(&theme.id) {
+        return invalid("theme id does not satisfy the canonical id format");
+    }
+    if !(1..=80).contains(&theme.display_name.chars().count()) {
+        return invalid("display name length is outside the canonical range");
+    }
+
+    for color in [
+        &theme.colors.background,
+        &theme.colors.foreground,
+        &theme.colors.surface,
+        &theme.colors.surface_foreground,
+        &theme.colors.primary,
+        &theme.colors.primary_foreground,
+        &theme.colors.secondary,
+        &theme.colors.secondary_foreground,
+        &theme.colors.muted,
+        &theme.colors.muted_foreground,
+        &theme.colors.accent,
+        &theme.colors.accent_foreground,
+        &theme.colors.destructive,
+        &theme.colors.destructive_foreground,
+        &theme.colors.border,
+        &theme.colors.input,
+        &theme.colors.ring,
+        &theme.colors.selection,
+        &theme.elevation.none.color,
+        &theme.elevation.raised.color,
+    ] {
+        validate_color(color)?;
+    }
+
+    validate_font_families(&theme.typography.families)?;
+    for scale in [
+        theme.typography.scales.caption,
+        theme.typography.scales.body,
+        theme.typography.scales.label,
+        theme.typography.scales.title,
+    ] {
+        if !positive(scale.size)
+            || !positive(scale.line_height)
+            || !(100..=900).contains(&scale.weight)
+            || scale.weight % 100 != 0
+        {
+            return invalid("typography scale is outside the canonical range");
+        }
+    }
+
+    for value in [
+        theme.radius.none,
+        theme.radius.sm,
+        theme.radius.md,
+        theme.radius.lg,
+        theme.radius.xl,
+        theme.radius.full,
+        theme.spacing.xxs,
+        theme.spacing.xs,
+        theme.spacing.sm,
+        theme.spacing.md,
+        theme.spacing.lg,
+        theme.spacing.xl,
+        theme.spacing.xxl,
+        theme.metrics.border_width,
+        theme.elevation.none.blur,
+        theme.elevation.raised.blur,
+    ] {
+        if !non_negative(value) {
+            return invalid("non-negative theme metric is outside the canonical range");
+        }
+    }
+
+    if !theme.metrics.density.is_finite()
+        || theme.metrics.density <= 0.0
+        || theme.metrics.density > 2.0
+        || !positive(theme.metrics.control_height_compact)
+        || !positive(theme.metrics.control_height_default)
+        || !positive(theme.metrics.row_height)
+        || !positive(theme.metrics.icon_size)
+        || !positive(theme.metrics.icon_stroke)
+    {
+        return invalid("theme metrics are outside the canonical range");
+    }
+
+    for value in [
+        theme.elevation.none.offset_x,
+        theme.elevation.none.offset_y,
+        theme.elevation.none.spread,
+        theme.elevation.raised.offset_x,
+        theme.elevation.raised.offset_y,
+        theme.elevation.raised.spread,
+    ] {
+        if !value.is_finite() {
+            return invalid("shadow metric must be finite");
+        }
+    }
+
+    if theme.motion.fast_ms > 1000
+        || theme.motion.normal_ms > 2000
+        || theme
+            .motion
+            .easing_standard
+            .iter()
+            .any(|value| !in_range(*value, 0.0, 1.0))
+    {
+        return invalid("motion values are outside the canonical range");
+    }
+
+    Ok(())
+}
+
+fn validate_color(color: &OklchColor) -> Result<(), ThemeError> {
+    if !in_range(color.l, 0.0, 1.0)
+        || !in_range(color.c, 0.0, 0.5)
+        || !in_range(color.h, 0.0, 360.0)
+        || color
+            .alpha
+            .is_some_and(|alpha| !in_range(alpha, 0.0, 1.0))
+    {
+        return invalid("OKLCH value is outside the canonical range");
+    }
+    Ok(())
+}
+
+fn validate_font_families(families: &FontFamilies) -> Result<(), ThemeError> {
+    if families.sans.is_empty()
+        || families.mono.is_empty()
+        || families
+            .sans
+            .iter()
+            .chain(families.mono.iter())
+            .any(String::is_empty)
+    {
+        return invalid("font family lists must contain non-empty names");
+    }
+    Ok(())
+}
+
+fn valid_theme_id(id: &str) -> bool {
+    if !(1..=64).contains(&id.len())
+        || id.starts_with('-')
+        || id.ends_with('-')
+        || id.contains("--")
+    {
+        return false;
+    }
+
+    id.bytes()
+        .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+}
+
+fn positive(value: f32) -> bool {
+    value.is_finite() && value > 0.0
+}
+
+fn non_negative(value: f32) -> bool {
+    value.is_finite() && value >= 0.0
+}
+
+fn in_range(value: f32, minimum: f32, maximum: f32) -> bool {
+    value.is_finite() && (minimum..=maximum).contains(&value)
+}
+
+fn invalid<T>(message: &str) -> Result<T, ThemeError> {
+    Err(ThemeError::InvalidDocument(message.to_owned()))
 }
