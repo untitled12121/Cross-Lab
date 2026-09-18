@@ -1,0 +1,27 @@
+[package]
+name = "crosslab-mobile-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+crate-type = ["lib", "cdylib"]
+
+[features]
+bindgen = ["uniffi/cli", "uniffi/cargo-metadata"]
+
+[dependencies]
+crosslab-core = { path = "../core" }
+crosslab-identity = { path = "../identity" }
+crosslab-policy = { path = "../policy" }
+crosslab-protocol = { path = "../protocol" }
+crosslab-runtime = { path = "../runtime" }
+uniffi = { workspace = true, features = ["macro-scaffolding"] }
+
+[[bin]]
+name = "crosslab-uniffi-bindgen"
+path = "src/bin/uniffi_bindgen.rs"
+required-features = ["bindgen"]
