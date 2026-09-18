@@ -1,7 +1,7 @@
 use crate::features::appearance::{active_theme, font_weight};
 use gpui_kit::{
-    App, Div, InteractiveElement as _, ParentElement as _, StatefulInteractiveElement as _,
-    Styled as _, base::Button, component::theme::ActiveTheme as _, div, px,
+    App, Div, InteractiveElement as _, ParentElement as _, Styled as _, base::Button,
+    component::theme::ActiveTheme as _, div, px,
 };
 
 pub(super) fn devices_layout(content: impl gpui_kit::IntoElement, cx: &App) -> Div {
