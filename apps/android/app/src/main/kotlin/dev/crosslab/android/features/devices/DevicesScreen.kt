@@ -46,10 +46,10 @@ fun DevicesScreen(
                 Modifier
                     .fillMaxWidth()
                     .border(
-                        BorderStroke(theme.metrics.borderWidth.dp, colors.border.toComposeColor()),
+                        BorderStroke(theme.metrics.borderWidth.toFloat().dp, colors.border.toComposeColor()),
                         RectangleShape,
                     )
-                    .padding(horizontal = theme.spacing.xl.dp, vertical = theme.spacing.lg.dp),
+                    .padding(horizontal = theme.spacing.xl.toFloat().dp, vertical = theme.spacing.lg.toFloat().dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -88,7 +88,7 @@ fun DevicesScreen(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(theme.spacing.xl.dp),
+                    .padding(theme.spacing.xl.toFloat().dp),
         ) {
             BasicText(
                 text = "Devices",
@@ -97,7 +97,7 @@ fun DevicesScreen(
                         .toTextStyle()
                         .copy(color = colors.foreground.toComposeColor()),
             )
-            Spacer(Modifier.height(theme.spacing.md.dp))
+            Spacer(Modifier.height(theme.spacing.md.toFloat().dp))
 
             val device = devices.current
             if (device == null) {
@@ -120,10 +120,10 @@ private fun DisconnectedState(
             Modifier
                 .fillMaxWidth()
                 .border(
-                    BorderStroke(theme.metrics.borderWidth.dp, colors.border.toComposeColor()),
+                    BorderStroke(theme.metrics.borderWidth.toFloat().dp, colors.border.toComposeColor()),
                     RectangleShape,
                 )
-                .padding(theme.spacing.xl.dp),
+                .padding(theme.spacing.xl.toFloat().dp),
     ) {
         BasicText(
             text = "No connected device",
@@ -132,7 +132,7 @@ private fun DisconnectedState(
                     .toTextStyle()
                     .copy(color = colors.foreground.toComposeColor()),
         )
-        Spacer(Modifier.height(theme.spacing.xs.dp))
+        Spacer(Modifier.height(theme.spacing.xs.toFloat().dp))
         BasicText(
             text =
                 if (networkAvailable) {
@@ -172,7 +172,7 @@ private fun DevicePanel(
             Modifier
                 .fillMaxWidth()
                 .border(
-                    BorderStroke(theme.metrics.borderWidth.dp, colors.border.toComposeColor()),
+                    BorderStroke(theme.metrics.borderWidth.toFloat().dp, colors.border.toComposeColor()),
                     RectangleShape,
                 ),
     ) {
@@ -180,7 +180,7 @@ private fun DevicePanel(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(theme.spacing.xl.dp),
+                    .padding(theme.spacing.xl.toFloat().dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -191,7 +191,7 @@ private fun DevicePanel(
                         .toTextStyle()
                         .copy(color = colors.foreground.toComposeColor()),
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(theme.spacing.sm.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(theme.spacing.sm.toFloat().dp)) {
                 DeviceBadge(theme, device.connectivity.label, connectivityTone)
                 DeviceBadge(theme, device.trust.label, trustTone)
             }
@@ -246,12 +246,12 @@ private fun DetailRow(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .height(theme.metrics.rowHeight.dp)
+                .height(theme.metrics.rowHeight.toFloat().dp)
                 .border(
-                    BorderStroke(theme.metrics.borderWidth.dp, colors.border.toComposeColor()),
+                    BorderStroke(theme.metrics.borderWidth.toFloat().dp, colors.border.toComposeColor()),
                     RectangleShape,
                 )
-                .padding(horizontal = theme.spacing.xl.dp),
+                .padding(horizontal = theme.spacing.xl.toFloat().dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
