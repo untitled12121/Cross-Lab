@@ -10,52 +10,54 @@ M1–M9 are complete. M9 selected Quinn for local/LAN and Iroh for remote/NAT/re
 
 ## Canonical Baseline
 
-- Verified canonical `main` before Task 4: `0c3dbe49a9e9ddec73d5397b8975dc50eab909a8` (`feat(runtime): extract shared application runtime`).
-- M10 Task 3 PR: #32 (`feat(runtime): extract shared application runtime`).
-- Task 3 exact-head CI: GitHub Actions `35203673921` — passed audit, fmt, check, clippy, and tests on `27deb4f01329708b64e3776d0fd4b1f1e629a011`.
-- Task 3 merge commit: `0c3dbe49a9e9ddec73d5397b8975dc50eab909a8`.
-- Post-merge Task 3 `main` CI: GitHub Actions `35205687239` — passed audit, fmt, check, clippy, and tests.
+- Canonical `main` before Task 5: `7ba8bef4d9f22b904b493a6b085c36aa3cd7db00` (`feat(quic): productize authenticated endpoint bootstrap`).
+- M10 Task 4 PR: #33 (`feat(quic): productize authenticated endpoint bootstrap`).
+- Post-merge Task 4 `main` CI: GitHub Actions `35257937886` — passed dependency audit, `cargo fmt --check`, workspace check, clippy with warnings denied, and full workspace tests.
 - Active implementation plan: `docs/superpowers/plans/2026-09-17-m10-first-platform-slice.md`.
 - Approved design: `docs/superpowers/specs/2026-09-17-m10-platform-shell-design.md`.
 - Master Architecture revision 2.3 and accepted ADR-0012 remain the M10 design baseline.
 
-## Completed M10 Runtime Checkpoint
+## Completed M10 Runtime / Quinn Checkpoints
 
-Task 3 is integrated and verified:
+Tasks 3 and 4 are integrated and verified:
 
-- `crates/runtime` owns the reusable platform-neutral session/dispatcher/transport coordination previously duplicated in `apps/sim`.
-- runtime snapshots expose typed, presentation-safe summaries and hide inactive `SessionId` plus credential/key/channel-binding/payload material;
+- `crates/runtime` owns reusable platform-neutral session/dispatcher/transport coordination instead of duplicating it in `apps/sim`;
+- runtime snapshots expose typed presentation-safe summaries while hiding inactive `SessionId`, credentials, keys, channel-binding bytes, and payload material;
 - transport loss, peer revocation, owner-root replacement, and Device Signing authority replacement fail closed;
-- capability-event subscriptions are bounded by the existing dispatcher state capacity;
-- `apps/sim` consumes the shared runtime rather than retaining a second coordination implementation.
+- capability-event subscriptions remain bounded;
+- `apps/sim` consumes the shared runtime;
+- Quinn client/server endpoint wrappers require explicit TLS certificate/trust material;
+- authenticated bootstrap derives ADR-0008 `quic-tls-exporter-v1` only after the full QUIC/TLS handshake;
+- no accept-all verifier, implicit development certificate fallback, TLS-certificate-to-`DeviceId` authority mapping, or 0-RTT authority exists;
+- `AuthenticatedQuicSession` is only produced after Cross-Lab authentication is active;
+- negative coverage includes wrong exporter binding, replay, untrusted/revoked peers, malformed/oversized bootstrap input, timeout/cancellation, and fresh reconnect binding/`SessionId` rotation.
 
-## Task 4 Verification Checkpoint
+## Task 5 Verification Checkpoint
 
-**M10 Task 4 — Productize Quinn endpoint/bootstrap mechanics without changing identity semantics — is implementation-complete and awaiting merge of the final checkpoint.**
+**M10 Task 5 — application runtime actor for lifecycle-safe consumers — is implementation-complete and awaiting final documentation-head CI plus merge.**
 
-- Task 4 branch: `m10-task4-quinn-bootstrap`.
-- Task 4 PR: #33 (`feat(quic): productize authenticated endpoint bootstrap`).
-- Verified implementation head: `d612490386456d276dacb872080d979ffd079262`.
-- Exact-head implementation CI: GitHub Actions `35234732959` — passed dependency audit, `cargo fmt --check`, workspace check, clippy with warnings denied, and full workspace tests.
+- Task 5 branch: `m10-task5-runtime-actor`.
+- Task 5 PR: #34 (`feat(runtime): add lifecycle-safe runtime actor`).
+- Verified implementation head: `00974547e4a43e44c3bdbe534f62c163a79da7c1`.
+- Exact-head implementation CI: GitHub Actions `35295857847` — passed dependency audit, `cargo fmt --check`, workspace check, clippy with warnings denied, and full workspace tests.
 - The final documentation-only checkpoint must also pass exact-head CI before merge; use the actual PR head from GitHub rather than embedding a self-referential commit SHA here.
-- The earlier product implementation checkpoint `d52fafad51a7c8c969ee9285f742053e5962ce5c` independently passed the same full gate in CI `35233220854` before the final negative-test expansion.
 
-Task 4 now provides:
+Task 5 provides:
 
-- transport-local Quinn client/server endpoint wrappers with explicit externally supplied TLS certificate/trust material;
-- no accept-all verifier, implicit development certificate fallback, or TLS-certificate-to-`DeviceId` authority mapping;
-- bounded authenticated bootstrap that derives ADR-0008 `quic-tls-exporter-v1` only after the full QUIC/TLS handshake;
-- fresh random nonces, role-separated proofs, current owner-authority/trust validation, and no 0-RTT authority;
-- `AuthenticatedQuicSession` as the only public success result, with `QuicTransportConnection` constructed only after `LogicalSession` is active;
-- endpoint lifetime retained by the productized transport path;
-- rejection coverage for wrong exporter binding, proof replay, unknown/untrusted peers, revoked peers, malformed and oversized bootstrap data, timeout/cancellation, plus fresh reconnect binding and `SessionId` rotation;
-- existing M8/M9 session-auth and transport behavior retained under the full workspace test gate.
+- one actor-owned mutable runtime/session lifecycle with no process-wide singleton or global mutable state;
+- bounded Tokio `mpsc` commands and latest-value `watch` status snapshots so slow consumers cannot grow unbounded queues;
+- explicit duplicate-start rejection;
+- deterministic explicit stop plus fail-closed drop/cancellation semantics;
+- network-loss handling that clears active session authority and closes transport state;
+- reconnect that requires a distinct freshly authenticated session;
+- owned transport support for actor/task lifetime while preserving `RuntimeNode` fail-closed cleanup;
+- tests for single-start ownership, duplicate start, stop, network loss, fresh reconnect, bounded command delivery, slow subscribers, and dropped-handle shutdown.
 
 ## First M10 Slice
 
 The first slice remains **authenticated local device connection + device status** between Linux desktop and Android:
 
-- Linux desktop: Rust + GPUI + GPUI Kit with feature-first page/layout/_components/components-ui/features organization.
+- Linux desktop: Rust + GPUI + GPUI Kit with feature-first `page.rs` / `layout.rs` / `_components` / `components/ui` / `features` organization.
 - Android: Kotlin + Jetpack Compose over one narrow shared-Rust mobile façade.
 - Shared coordination: `crosslab-runtime`.
 - Mobile FFI: one narrow UniFFI façade; internal crates are not exported independently.
@@ -84,14 +86,16 @@ The first slice remains **authenticated local device connection + device status*
 
 ## Exact Next Task
 
-Finish Task 4 integration, then execute **M10 Task 5 — application runtime actor for lifecycle-safe consumers**:
+Finish Task 5 integration, then execute **M10 Task 6 — Linux desktop shell and local design adapter**:
 
-1. require exact-head CI for the actual final Task 4 PR head, merge PR #33 with that expected head, and verify post-merge `main` CI;
-2. create a fresh Task 5 feature branch from that verified `main`;
-3. add tests first for single-start ownership, duplicate-start handling, deterministic stop/drop shutdown, transport/network loss, fresh authenticated reconnect, bounded command/event state, and slow-subscriber behavior;
-4. implement a small actor in `crates/runtime/src/actor.rs` plus typed commands in `crates/runtime/src/command.rs` using bounded Tokio `mpsc`/`watch` primitives already present in the workspace;
-5. keep mutable runtime/session state actor-owned, avoid polling/global mutable state, and preserve fail-closed session authority across lifecycle transitions;
-6. run the full Rust gate, update this file, merge only the verified head, and verify post-merge `main` before Task 6.
+1. require exact-head CI for the actual final Task 5 PR head, mark PR #34 ready, merge with the verified expected head, and verify post-merge `main` CI;
+2. create a fresh Task 6 branch from that verified `main`;
+3. re-verify GPUI Kit release/license/source before editing Cargo; reviewed baseline is `gpui-kit 0.6.1` (Apache-2.0) with its pinned GPUI pre-release family;
+4. add parser/mapper tests first for the canonical theme contract, invalid/missing-field fixtures, injected `System` appearance resolution, and explicit `ThemeUnavailable` for missing Darkmatter;
+5. add device presentation tests that map `crosslab-runtime` snapshots into safe UI state without secret/session-binding bytes;
+6. implement the smallest Linux GPUI + GPUI Kit shell using the approved feature-first desktop structure, with networking/session ownership remaining outside UI components;
+7. keep radius 0, canonical semantic theme values, keyboard/focus accessibility, compact spacing, and restrained status colors; do not invent Darkmatter values or a speculative component library;
+8. run desktop unit/build gates plus full workspace fmt/check/clippy/tests, checkpoint this file, and merge only the verified head.
 
 ## Resume Procedure
 
