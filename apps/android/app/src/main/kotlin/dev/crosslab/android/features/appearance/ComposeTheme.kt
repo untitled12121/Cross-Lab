@@ -37,8 +37,8 @@ fun OklchColor.toComposeColor(): Color {
 fun TextScale.toTextStyle(): TextStyle =
     TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontSize = size.sp,
-        lineHeight = lineHeight.sp,
+        fontSize = size.toFloat().sp,
+        lineHeight = lineHeight.toFloat().sp,
         fontWeight = FontWeight(weight),
     )
 
