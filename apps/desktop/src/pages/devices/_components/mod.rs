@@ -2,9 +2,7 @@ use crate::{
     components::ui::{StatusTone, status_badge},
     features::{
         appearance::{active_theme, font_weight},
-        devices::{
-            ConnectivityDisplay, DevicePresentation, DevicesFeatureState, TrustDisplay,
-        },
+        devices::{ConnectivityDisplay, DevicePresentation, DevicesFeatureState, TrustDisplay},
     },
 };
 use gpui_kit::{
@@ -116,9 +114,7 @@ fn device_panel(device: &DevicePresentation, cx: &App) -> Div {
                         .child(
                             div()
                                 .text_size(px(appearance.typography.scales.label.size))
-                                .font_weight(font_weight(
-                                    appearance.typography.scales.label.weight,
-                                ))
+                                .font_weight(font_weight(appearance.typography.scales.label.weight))
                                 .child(device.peer_id().unwrap_or("Unknown peer")),
                         )
                         .child(
