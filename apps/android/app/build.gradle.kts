@@ -38,7 +38,7 @@ android {
 
     sourceSets {
         getByName("main") {
-            java.directories.add(generatedUniFfiKotlin.get().asFile.absolutePath)
+            kotlin.directories.add(generatedUniFfiKotlin.get().asFile.absolutePath)
             jniLibs.directories.add(generatedJniLibs.get().asFile.absolutePath)
             assets.directories.add(repoRoot.resolve("design/themes").absolutePath)
         }
