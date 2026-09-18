@@ -103,7 +103,8 @@ impl MobileRuntime {
         &self,
         snapshot: MobileRuntimeSnapshot,
     ) -> Result<(), MobileRuntimeError> {
-        replace_snapshot(&mut self.lock_state()?, snapshot);
+        let mut state = self.lock_state()?;
+        replace_snapshot(&mut state, snapshot);
         Ok(())
     }
 }
