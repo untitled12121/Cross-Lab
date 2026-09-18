@@ -68,3 +68,39 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: Test
         run: cargo test --workspace --all-features
+
+  android:
+    name: Android
+    runs-on: ubuntu-24.04
+    env:
+      JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install Java 17
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends openjdk-17-jdk-headless
+      - name: Install Android SDK components
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager \
+            "platforms;android-37" \
+            "build-tools;36.0.0" \
+            "ndk;28.2.13676358"
+          echo "ANDROID_NDK_ROOT=${ANDROID_SDK_ROOT}/ndk/28.2.13676358" >> "$GITHUB_ENV"
+      - name: Install Rust Android target
+        run: |
+          rustup toolchain install 1.98.1 --profile minimal
+          rustup target add aarch64-linux-android --toolchain 1.98.1
+      - name: Verify Gradle wrapper
+        working-directory: apps/android
+        run: |
+          chmod +x gradlew
+          ./gradlew --version --no-daemon
+      - name: Android unit tests
+        working-directory: apps/android
+        run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
+      - name: Android debug assembly
+        working-directory: apps/android
+        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+
