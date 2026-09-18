@@ -437,9 +437,10 @@ fn parse_hex(value: &str) -> Result<Vec<u8>, DevelopmentProvisioningError> {
     }
 
     let mut output = Vec::with_capacity(value.len() / 2);
-    for pair in value.as_bytes().chunks_exact(2) {
-        let high = decode_nibble(pair[0])?;
-        let low = decode_nibble(pair[1])?;
+    let bytes = value.as_bytes();
+    for index in (0..bytes.len()).step_by(2) {
+        let high = decode_nibble(bytes[index])?;
+        let low = decode_nibble(bytes[index + 1])?;
         output.push((high << 4) | low);
     }
     Ok(output)
