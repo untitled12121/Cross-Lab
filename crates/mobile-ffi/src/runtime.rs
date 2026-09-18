@@ -143,6 +143,7 @@ impl MobileRuntime {
     ) -> Result<(), MobileRuntimeError> {
         let mut state = self.lock_state()?;
         replace_snapshot(&mut state, snapshot);
+        self.event_ready.notify_all();
         Ok(())
     }
 }
