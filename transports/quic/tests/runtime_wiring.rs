@@ -19,9 +19,7 @@ use crosslab_policy::{
     NetworkClass, PairingTrustTransition, PolicyState, TransitionId, TrustRecord, TrustTransition,
 };
 use crosslab_protocol::{FeatureSet, ProtocolRange};
-use crosslab_runtime::{
-    RuntimeActor, RuntimeActorConfig, RuntimeActorSession, RuntimeNode,
-};
+use crosslab_runtime::{RuntimeActor, RuntimeActorConfig, RuntimeActorSession, RuntimeNode};
 use crosslab_transport_quic::{
     AuthenticatedQuicSession, QuicClientEndpoint, QuicClientTlsConfig, QuicServerEndpoint,
     QuicServerTlsConfig, QuicSessionAuthConfig, QuicSessionError, QuicSessionTimeouts,
@@ -224,10 +222,7 @@ async fn product_quinn_sessions_drive_runtime_and_mobile_status_fail_closed() {
     client_status.changed().await.unwrap();
     server_status.changed().await.unwrap();
 
-    assert_ne!(
-        client_status.borrow().session_id(),
-        Some(first_session_id)
-    );
+    assert_ne!(client_status.borrow().session_id(), Some(first_session_id));
     assert_eq!(client_status.borrow().session_state(), SessionState::Active);
 
     let revoked_server_trust = peers.revoked_server_trust();
