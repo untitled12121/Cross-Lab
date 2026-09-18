@@ -3,10 +3,8 @@ use super::{
     parse_theme, resolve_theme,
 };
 
-const VALID_THEME: &str =
-    include_str!("../../../../../design/fixtures/theme-v1-valid.json");
-const INVALID_THEME: &str =
-    include_str!("../../../../../design/fixtures/theme-v1-invalid.json");
+const VALID_THEME: &str = include_str!("../../../../../design/fixtures/theme-v1-valid.json");
+const INVALID_THEME: &str = include_str!("../../../../../design/fixtures/theme-v1-invalid.json");
 
 #[test]
 fn parses_the_canonical_theme_contract() {
@@ -30,11 +28,7 @@ fn missing_required_theme_field_fails_closed() {
 
 #[test]
 fn rejects_unknown_schema_version() {
-    let unsupported = VALID_THEME.replacen(
-        "\"schema_version\": 1",
-        "\"schema_version\": 2",
-        1,
-    );
+    let unsupported = VALID_THEME.replacen(""schema_version": 1", ""schema_version": 2", 1);
 
     assert_eq!(
         parse_theme(&unsupported),

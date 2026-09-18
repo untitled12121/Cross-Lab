@@ -1,7 +1,7 @@
 mod theme;
 
 pub use theme::{
-    ThemeAppearance, ThemeDocument, ThemeError, ThemeId, ThemeSelection, SystemAppearance,
+    SystemAppearance, ThemeAppearance, ThemeDocument, ThemeError, ThemeId, ThemeSelection,
     load_builtin_theme, parse_theme, resolve_theme,
 };
 

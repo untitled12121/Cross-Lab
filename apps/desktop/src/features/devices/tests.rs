@@ -55,7 +55,16 @@ fn maps_fail_closed_runtime_states_without_secret_material() {
     assert_eq!(state.security(), SecurityDisplay::TestOnly);
 
     let debug = format!("{state:?}").to_ascii_lowercase();
-    for forbidden in ["session_id", "channel_binding", "credential", "private_key", "secret"] {
-        assert!(!debug.contains(forbidden), "presentation leaked {forbidden}");
+    for forbidden in [
+        "session_id",
+        "channel_binding",
+        "credential",
+        "private_key",
+        "secret",
+    ] {
+        assert!(
+            !debug.contains(forbidden),
+            "presentation leaked {forbidden}"
+        );
     }
 }

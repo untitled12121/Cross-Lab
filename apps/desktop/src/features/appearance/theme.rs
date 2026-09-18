@@ -192,10 +192,7 @@ pub fn parse_theme(_content: &str) -> Result<ThemeDocument, ThemeError> {
     unimplemented!("RED: implement canonical theme parsing")
 }
 
-pub fn resolve_theme(
-    _selection: ThemeSelection,
-    _system: SystemAppearance,
-) -> ThemeId {
+pub fn resolve_theme(_selection: ThemeSelection, _system: SystemAppearance) -> ThemeId {
     unimplemented!("RED: implement pure appearance resolution")
 }
 
