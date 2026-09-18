@@ -3,6 +3,8 @@ use std::{
     sync::{Mutex, MutexGuard},
 };
 
+use crosslab_runtime::RuntimeStatus;
+
 use crate::{MobileLifecycleState, MobileRuntimeError, MobileRuntimeSnapshot};
 
 const DEFAULT_EVENT_CAPACITY: usize = 8;
@@ -66,6 +68,25 @@ impl MobileRuntime {
 
     pub fn poll_event(&self) -> Result<Option<MobileRuntimeEvent>, MobileRuntimeError> {
         Ok(self.lock_state()?.events.pop_front())
+    }
+}
+
+impl MobileRuntime {
+    /// Rust-side runtime bridge; this method is not exported through UniFFI.
+    pub fn publish_runtime_status(
+        &self,
+        status: &RuntimeStatus,
+    ) -> Result<(), MobileRuntimeError> {
+        let mut state = self.lock_state()?;
+        if state.snapshot.lifecycle != MobileLifecycleState::Running {
+            return Err(MobileRuntimeError::NotStarted);
+        }
+
+        let revision = next_revision(state.snapshot.revision)?;
+        let snapshot =
+            MobileRuntimeSnapshot::from_runtime(status, MobileLifecycleState::Running, revision);
+        replace_snapshot(&mut state, snapshot);
+        Ok(())
     }
 }
 
