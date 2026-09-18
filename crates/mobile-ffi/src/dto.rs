@@ -123,9 +123,11 @@ impl MobileRuntimeSnapshot {
         revision: u64,
         fields: RuntimeStatusFields,
     ) -> Self {
-        let session_id = (fields.session_state == SessionState::Active)
-            .then(|| fields.session_id.map(|id| hex_id(&id.to_bytes())))
-            .flatten();
+        let session_id = if fields.session_state == SessionState::Active {
+            fields.session_id.map(|id| hex_id(&id.to_bytes()))
+        } else {
+            None
+        };
 
         Self {
             revision,
