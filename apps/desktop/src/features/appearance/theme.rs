@@ -189,8 +189,8 @@ impl fmt::Display for ThemeError {
 impl std::error::Error for ThemeError {}
 
 pub fn parse_theme(content: &str) -> Result<ThemeDocument, ThemeError> {
-    let theme: ThemeDocument =
-        serde_json::from_str(content).map_err(|error| ThemeError::InvalidDocument(error.to_string()))?;
+    let theme: ThemeDocument = serde_json::from_str(content)
+        .map_err(|error| ThemeError::InvalidDocument(error.to_string()))?;
 
     if theme.schema_version != 1 {
         return Err(ThemeError::UnsupportedSchemaVersion(theme.schema_version));
@@ -213,7 +213,9 @@ pub fn resolve_theme(selection: ThemeSelection, system: SystemAppearance) -> The
 
 pub fn load_builtin_theme(theme: ThemeId) -> Result<ThemeDocument, ThemeError> {
     match theme {
-        ThemeId::AyuLight => parse_theme(include_str!("../../../../../design/themes/ayu-light.json")),
+        ThemeId::AyuLight => {
+            parse_theme(include_str!("../../../../../design/themes/ayu-light.json"))
+        }
         ThemeId::Darkmatter => Err(ThemeError::ThemeUnavailable(ThemeId::Darkmatter)),
     }
 }
@@ -333,9 +335,7 @@ fn validate_color(color: &OklchColor) -> Result<(), ThemeError> {
     if !in_range(color.l, 0.0, 1.0)
         || !in_range(color.c, 0.0, 0.5)
         || !in_range(color.h, 0.0, 360.0)
-        || color
-            .alpha
-            .is_some_and(|alpha| !in_range(alpha, 0.0, 1.0))
+        || color.alpha.is_some_and(|alpha| !in_range(alpha, 0.0, 1.0))
     {
         return invalid("OKLCH value is outside the canonical range");
     }

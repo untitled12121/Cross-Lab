@@ -28,11 +28,7 @@ fn missing_required_theme_field_fails_closed() {
 
 #[test]
 fn rejects_unknown_schema_version() {
-    let unsupported = VALID_THEME.replacen(
-        r#""schema_version": 1"#,
-        r#""schema_version": 2"#,
-        1,
-    );
+    let unsupported = VALID_THEME.replacen(r#""schema_version": 1"#, r#""schema_version": 2"#, 1);
 
     assert_eq!(
         parse_theme(&unsupported),
