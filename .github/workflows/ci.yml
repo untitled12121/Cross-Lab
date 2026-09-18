@@ -82,12 +82,18 @@ jobs:
           sudo apt-get install -y --no-install-recommends openjdk-17-jdk-headless
       - name: Install Android SDK components
         run: |
-          yes | sdkmanager --licenses >/dev/null
-          sdkmanager \
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME}}"
+          sdkmanager="${sdk_root}/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "${sdkmanager}" ]]; then
+            sdkmanager="$(find "${sdk_root}/cmdline-tools" -type f -name sdkmanager -print -quit)"
+          fi
+          test -n "${sdkmanager}"
+          yes | "${sdkmanager}" --licenses >/dev/null || true
+          "${sdkmanager}" \
             "platforms;android-37" \
             "build-tools;36.0.0" \
             "ndk;28.2.13676358"
-          echo "ANDROID_NDK_ROOT=${ANDROID_SDK_ROOT}/ndk/28.2.13676358" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=${sdk_root}/ndk/28.2.13676358" >> "$GITHUB_ENV"
       - name: Install Rust Android target
         run: |
           rustup toolchain install 1.98.1 --profile minimal
