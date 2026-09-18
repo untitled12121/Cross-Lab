@@ -10,7 +10,6 @@ import dev.crosslab.android.features.appearance.ThemeResolver
 import dev.crosslab.android.features.devices.DevicesScreen
 import dev.crosslab.android.features.devices.DevicesState
 import dev.crosslab.android.features.devices.RuntimeControllerState
-import dev.crosslab.android.features.devices.RuntimeSnapshot
 
 class MainActivity : ComponentActivity() {
     private val runtimeState = mutableStateOf(RuntimeControllerState.initial())
@@ -34,7 +33,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             DevicesScreen(
                 theme = theme,
-                devices = DevicesState.from(RuntimeSnapshot.disconnected()),
+                devices = DevicesState.from(runtimeState.value.snapshot),
                 runtime = runtimeState.value,
             )
         }
