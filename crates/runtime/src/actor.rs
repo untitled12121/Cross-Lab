@@ -151,7 +151,7 @@ impl RuntimeActor {
         let (reply_tx, reply_rx) = oneshot::channel();
         command_tx
             .send(RuntimeCommand::Reconnect {
-                session,
+                session: Box::new(session),
                 reply: reply_tx,
             })
             .await
@@ -201,9 +201,10 @@ async fn run_actor(
                 status_tx.send_replace(session.status());
             }
             RuntimeCommand::Reconnect {
-                session: mut replacement,
+                session: replacement,
                 reply,
             } => {
+                let mut replacement = *replacement;
                 if replacement.session_id() == session.session_id() {
                     replacement.shutdown();
                     let _ = reply.send(Err(RuntimeActorError::StaleSession));
