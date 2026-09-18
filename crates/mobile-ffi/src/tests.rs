@@ -1,3 +1,5 @@
+use std::{sync::Arc, thread, time::Duration};
+
 use crosslab_core::{SessionState, TransportSecurityClass};
 use crosslab_identity::DeviceId;
 use crosslab_policy::{NetworkClass, SessionId, TrustState};
@@ -192,4 +194,38 @@ fn ffi_errors_do_not_embed_sensitive_context() {
             assert!(!rendered.contains(forbidden), "error leaked {forbidden}");
         }
     }
+}
+
+#[test]
+fn blocking_event_wait_wakes_without_polling() {
+    let runtime = Arc::new(MobileRuntime::with_test_event_capacity(2));
+    runtime.start().expect("start succeeds");
+    runtime.poll_event().expect("drain start event");
+
+    let waiter = Arc::clone(&runtime);
+    let thread = thread::spawn(move || {
+        waiter
+            .wait_event(1_000)
+            .expect("wait succeeds")
+            .expect("published event")
+            .snapshot
+            .revision
+    });
+
+    thread::sleep(Duration::from_millis(10));
+    runtime
+        .publish_test_snapshot(MobileRuntimeSnapshot::disconnected(
+            MobileLifecycleState::Running,
+            2,
+        ))
+        .expect("publish succeeds");
+
+    assert_eq!(thread.join().expect("waiter joins"), 2);
+}
+
+#[test]
+fn blocking_event_wait_times_out_cleanly() {
+    let runtime = MobileRuntime::with_test_event_capacity(2);
+
+    assert!(runtime.wait_event(1).expect("wait succeeds").is_none());
 }
