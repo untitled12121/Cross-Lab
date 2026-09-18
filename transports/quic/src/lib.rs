@@ -3,6 +3,8 @@ use core::fmt;
 #[cfg_attr(not(test), allow(dead_code))]
 mod binding;
 mod config;
+#[cfg(feature = "development-provisioning")]
+pub mod development;
 #[cfg_attr(not(test), allow(dead_code))]
 mod connection;
 mod endpoint;
