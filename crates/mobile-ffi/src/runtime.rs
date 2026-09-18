@@ -1,6 +1,7 @@
 use std::{
     collections::VecDeque,
-    sync::{Mutex, MutexGuard},
+    sync::{Condvar, Mutex, MutexGuard},
+    time::Duration,
 };
 
 use crosslab_runtime::RuntimeStatus;
@@ -17,6 +18,7 @@ pub struct MobileRuntimeEvent {
 #[derive(uniffi::Object)]
 pub struct MobileRuntime {
     state: Mutex<MobileRuntimeState>,
+    event_ready: Condvar,
 }
 
 struct MobileRuntimeState {
@@ -44,6 +46,7 @@ impl MobileRuntime {
             &mut state,
             MobileRuntimeSnapshot::disconnected(MobileLifecycleState::Running, revision),
         );
+        self.event_ready.notify_all();
         Ok(())
     }
 
@@ -59,6 +62,7 @@ impl MobileRuntime {
             &mut state,
             MobileRuntimeSnapshot::disconnected(MobileLifecycleState::Stopped, revision),
         );
+        self.event_ready.notify_all();
         Ok(())
     }
 
@@ -68,6 +72,20 @@ impl MobileRuntime {
 
     pub fn poll_event(&self) -> Result<Option<MobileRuntimeEvent>, MobileRuntimeError> {
         Ok(self.lock_state()?.events.pop_front())
+    }
+
+    pub fn wait_event(
+        &self,
+        timeout_ms: u64,
+    ) -> Result<Option<MobileRuntimeEvent>, MobileRuntimeError> {
+        let state = self.lock_state()?;
+        let (mut state, _) = self
+            .event_ready
+            .wait_timeout_while(state, Duration::from_millis(timeout_ms), |state| {
+                state.events.is_empty()
+            })
+            .map_err(|_| MobileRuntimeError::StateUnavailable)?;
+        Ok(state.events.pop_front())
     }
 }
 
@@ -83,6 +101,7 @@ impl MobileRuntime {
         let snapshot =
             MobileRuntimeSnapshot::from_runtime(status, MobileLifecycleState::Running, revision);
         replace_snapshot(&mut state, snapshot);
+        self.event_ready.notify_all();
         Ok(())
     }
 }
@@ -102,6 +121,7 @@ impl MobileRuntime {
                 events: VecDeque::with_capacity(event_capacity),
                 event_capacity,
             }),
+            event_ready: Condvar::new(),
         }
     }
 
