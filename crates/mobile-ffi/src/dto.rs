@@ -132,9 +132,7 @@ impl MobileRuntimeSnapshot {
         Self {
             revision,
             lifecycle,
-            local_device_id: fields
-                .local_device_id
-                .map(|id| hex_id(id.as_bytes())),
+            local_device_id: fields.local_device_id.map(|id| hex_id(id.as_bytes())),
             peer_device_id: fields.peer_device_id.map(|id| hex_id(id.as_bytes())),
             session_id,
             trust: if fields.peer_device_id.is_none() {
@@ -158,10 +156,12 @@ impl MobileRuntimeSnapshot {
                 SessionState::Closed => MobileSessionState::Closed,
                 SessionState::Revoked => MobileSessionState::Revoked,
             },
-            protocol: fields.protocol_version.map(|version| MobileProtocolVersion {
-                major: version.major(),
-                minor: version.minor(),
-            }),
+            protocol: fields
+                .protocol_version
+                .map(|version| MobileProtocolVersion {
+                    major: version.major(),
+                    minor: version.minor(),
+                }),
             network: match fields.network_class {
                 NetworkClass::Local => MobileNetworkClass::Local,
                 NetworkClass::Trusted => MobileNetworkClass::Trusted,
