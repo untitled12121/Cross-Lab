@@ -7,8 +7,7 @@ use crosslab_runtime::ConnectivityState;
 use crate::{
     MobileConnectivityState, MobileLifecycleState, MobileNetworkClass, MobileRuntime,
     MobileRuntimeError, MobileRuntimeSnapshot, MobileSessionState, MobileTransportSecurity,
-    MobileTrustState,
-    dto::RuntimeStatusFields,
+    MobileTrustState, dto::RuntimeStatusFields,
 };
 
 #[test]
@@ -69,9 +68,18 @@ fn runtime_status_maps_to_owned_redacted_mobile_state() {
     let expected_local = "ab".repeat(32);
     let expected_peer = "cd".repeat(32);
     let expected_session = "ef".repeat(32);
-    assert_eq!(snapshot.local_device_id.as_deref(), Some(expected_local.as_str()));
-    assert_eq!(snapshot.peer_device_id.as_deref(), Some(expected_peer.as_str()));
-    assert_eq!(snapshot.session_id.as_deref(), Some(expected_session.as_str()));
+    assert_eq!(
+        snapshot.local_device_id.as_deref(),
+        Some(expected_local.as_str())
+    );
+    assert_eq!(
+        snapshot.peer_device_id.as_deref(),
+        Some(expected_peer.as_str())
+    );
+    assert_eq!(
+        snapshot.session_id.as_deref(),
+        Some(expected_session.as_str())
+    );
     assert_eq!(snapshot.trust, MobileTrustState::Trusted);
     assert_eq!(snapshot.connectivity, MobileConnectivityState::Connected);
     assert_eq!(snapshot.session, MobileSessionState::Active);
