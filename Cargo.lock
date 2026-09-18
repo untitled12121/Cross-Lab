@@ -1832,6 +1832,8 @@ dependencies = [
  "quinn",
  "rcgen",
  "rustls",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 
