@@ -1,4 +1,4 @@
-use std::num::NonZeroUsize;
+use std::{num::NonZeroUsize, sync::Arc};
 
 use crosslab_core::{
     ControlDispatchError, ControlDispatcher, ControlReceiveError, ControlSendError,
@@ -37,10 +37,24 @@ pub enum NodeEvent {
     SessionClosed(SessionCloseReason),
 }
 
+enum RuntimeTransport<'a> {
+    Borrowed(&'a (dyn TransportConnection + Send + Sync)),
+    Owned(Arc<dyn TransportConnection + Send + Sync>),
+}
+
+impl RuntimeTransport<'_> {
+    fn as_ref(&self) -> &(dyn TransportConnection + Send + Sync) {
+        match self {
+            Self::Borrowed(transport) => *transport,
+            Self::Owned(transport) => transport.as_ref(),
+        }
+    }
+}
+
 pub struct RuntimeNode<'a> {
     session: LogicalSession,
     dispatcher: ControlDispatcher,
-    transport: &'a dyn TransportConnection,
+    transport: RuntimeTransport<'a>,
     policy: PolicyState,
     local_capabilities: Vec<LocalCapability>,
     network_class: NetworkClass,
@@ -49,27 +63,20 @@ pub struct RuntimeNode<'a> {
 impl<'a> RuntimeNode<'a> {
     pub fn new(
         session: LogicalSession,
-        transport: &'a dyn TransportConnection,
+        transport: &'a (dyn TransportConnection + Send + Sync),
         policy: PolicyState,
         local_capabilities: Vec<LocalCapability>,
         network_class: NetworkClass,
         state_capacity: NonZeroUsize,
     ) -> Result<Self, NodeError> {
-        if session.state() != SessionState::Active {
-            return Err(NodeError::Session(SessionError::InvalidState));
-        }
-        let context = session
-            .context()
-            .ok_or(NodeError::Session(SessionError::InvalidState))?;
-        let dispatcher = ControlDispatcher::new(context, state_capacity);
-        Ok(Self {
+        build_runtime(
             session,
-            dispatcher,
-            transport,
+            RuntimeTransport::Borrowed(transport),
             policy,
             local_capabilities,
             network_class,
-        })
+            state_capacity,
+        )
     }
 
     pub const fn session(&self) -> &LogicalSession {
@@ -91,7 +98,7 @@ impl<'a> RuntimeNode<'a> {
     pub fn status(&self, peer_trust: &TrustRecord) -> RuntimeStatus {
         RuntimeStatus::from_runtime(
             &self.session,
-            self.transport,
+            self.transport.as_ref(),
             peer_trust,
             self.network_class,
         )
@@ -155,7 +162,7 @@ impl<'a> RuntimeNode<'a> {
             .apply_peer_revocation(peer_trust)
             .map_err(NodeError::Session)?;
         self.dispatcher.cancel_session_state();
-        self.transport.close();
+        self.transport.as_ref().close();
         self.session.finish_close().map_err(NodeError::Session)
     }
 
@@ -165,10 +172,16 @@ impl<'a> RuntimeNode<'a> {
     ) -> Result<(), NodeError> {
         if let Err(error) = self.session.revalidate_authority(authority) {
             self.dispatcher.cancel_session_state();
-            self.transport.close();
+            self.transport.as_ref().close();
             return Err(NodeError::Session(error));
         }
         Ok(())
+    }
+
+    pub fn network_lost(&mut self) {
+        self.dispatcher.cancel_session_state();
+        let _ = self.session.transport_lost();
+        self.transport.as_ref().close();
     }
 
     pub fn shutdown(&mut self) {
@@ -183,7 +196,7 @@ impl<'a> RuntimeNode<'a> {
             }
             SessionState::Created | SessionState::Authenticating | SessionState::Closed => {}
         }
-        self.transport.close();
+        self.transport.as_ref().close();
     }
 
     pub fn receive_one(&mut self, peer_trust: &TrustRecord) -> Result<NodeEvent, NodeError> {
@@ -195,7 +208,7 @@ impl<'a> RuntimeNode<'a> {
         peer_trust: &TrustRecord,
         local_time: ApprovalInstant,
     ) -> Result<NodeEvent, NodeError> {
-        let frame = match self.transport.try_receive_control() {
+        let frame = match self.transport.as_ref().try_receive_control() {
             Ok(frame) => frame,
             Err(error) => {
                 if error == ControlReceiveError::Closed {
@@ -271,7 +284,7 @@ impl<'a> RuntimeNode<'a> {
                 .map_err(NodeError::Dispatch)?
         };
         let frame = encode_control_envelope(&envelope).map_err(NodeError::Wire)?;
-        if let Err(error) = self.transport.try_send_control(frame) {
+        if let Err(error) = self.transport.as_ref().try_send_control(frame) {
             if matches!(&error, ControlSendError::Closed(_)) {
                 self.terminate_transport_loss();
             }
@@ -301,7 +314,7 @@ impl<'a> RuntimeNode<'a> {
                 return Err(NodeError::Session(SessionError::InvalidState));
             }
         }
-        self.transport.close();
+        self.transport.as_ref().close();
         Ok(())
     }
 
@@ -317,8 +330,63 @@ impl<'a> RuntimeNode<'a> {
             }
             SessionState::Created | SessionState::Authenticating | SessionState::Closed => {}
         }
-        self.transport.close();
+        self.transport.as_ref().close();
     }
+}
+
+impl RuntimeNode<'static> {
+    pub fn new_owned<T>(
+        session: LogicalSession,
+        transport: Arc<T>,
+        policy: PolicyState,
+        local_capabilities: Vec<LocalCapability>,
+        network_class: NetworkClass,
+        state_capacity: NonZeroUsize,
+    ) -> Result<Self, NodeError>
+    where
+        T: TransportConnection + Send + Sync + 'static,
+    {
+        let transport: Arc<dyn TransportConnection + Send + Sync> = transport;
+        build_runtime(
+            session,
+            RuntimeTransport::Owned(transport),
+            policy,
+            local_capabilities,
+            network_class,
+            state_capacity,
+        )
+    }
+}
+
+impl Drop for RuntimeNode<'_> {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}
+
+fn build_runtime<'a>(
+    session: LogicalSession,
+    transport: RuntimeTransport<'a>,
+    policy: PolicyState,
+    local_capabilities: Vec<LocalCapability>,
+    network_class: NetworkClass,
+    state_capacity: NonZeroUsize,
+) -> Result<RuntimeNode<'a>, NodeError> {
+    if session.state() != SessionState::Active {
+        return Err(NodeError::Session(SessionError::InvalidState));
+    }
+    let context = session
+        .context()
+        .ok_or(NodeError::Session(SessionError::InvalidState))?;
+    let dispatcher = ControlDispatcher::new(context, state_capacity);
+    Ok(RuntimeNode {
+        session,
+        dispatcher,
+        transport,
+        policy,
+        local_capabilities,
+        network_class,
+    })
 }
 
 const fn is_fatal_dispatch(error: ControlDispatchError) -> bool {
