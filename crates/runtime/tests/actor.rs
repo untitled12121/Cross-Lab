@@ -15,7 +15,8 @@ use crosslab_identity::{
     OwnerRootRecord,
 };
 use crosslab_policy::{
-    NetworkClass, PairingTrustTransition, PolicyState, TransitionId, TrustRecord,
+    NetworkClass, PairingTrustTransition, PolicyState, TransitionId, TrustRecord, TrustState,
+    TrustTransition,
 };
 use crosslab_protocol::{FeatureSet, ProtocolRange, ProtocolVersion};
 use crosslab_runtime::{
@@ -92,6 +93,7 @@ impl TransportConnection for TestTransport {
 struct Fixture {
     owner_id: OwnerId,
     authority: OwnerAuthorityState,
+    issuer_key: SigningKey,
     local_key: SigningKey,
     peer_key: SigningKey,
     local_credential: DeviceCredential,
@@ -149,12 +151,29 @@ impl Fixture {
         Self {
             owner_id,
             authority,
+            issuer_key,
             local_key,
             peer_key,
             local_credential,
             peer_credential,
             peer_trust,
         }
+    }
+
+    fn revoked_peer(&self) -> TrustRecord {
+        let mut trust = self.peer_trust;
+        let transition = TrustTransition::issue_delegated_revocation(
+            &trust,
+            TransitionId::from_bytes([0x7a; 32]),
+            &self.authority,
+            AuthorityRole::DeviceSigning,
+            &self.issuer_key,
+        )
+        .unwrap();
+        transition
+            .apply_delegated(&mut trust, &self.authority)
+            .unwrap();
+        trust
     }
 
     fn actor_session(
@@ -320,6 +339,30 @@ fn reconnect_requires_a_fresh_authenticated_session() {
         assert!(!fresh_transport.is_closed());
         assert_eq!(status.borrow().session_id(), Some(fresh_id));
         assert_eq!(status.borrow().connectivity(), ConnectivityState::Connected);
+        actor.stop().await.unwrap();
+    });
+}
+
+#[test]
+fn peer_revocation_closes_authority_and_publishes_revoked_status() {
+    runtime().block_on(async {
+        let fixture = Fixture::new();
+        let (session, transport) = fixture.actor_session([0x95; 32], 0x96);
+        let mut actor = RuntimeActor::new(config(4));
+        actor.start(session).unwrap();
+        let mut status = actor.subscribe_status().unwrap();
+
+        actor.revoke_peer(fixture.revoked_peer()).await.unwrap();
+        status.changed().await.unwrap();
+
+        assert!(transport.is_closed());
+        assert_eq!(status.borrow().trust_state(), TrustState::Revoked);
+        assert_eq!(
+            status.borrow().connectivity(),
+            ConnectivityState::Disconnected
+        );
+        assert_eq!(status.borrow().session_state(), SessionState::Closed);
+        assert_eq!(status.borrow().session_id(), None);
         actor.stop().await.unwrap();
     });
 }
