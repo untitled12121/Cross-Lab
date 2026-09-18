@@ -30,7 +30,7 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
         }
 
     override fun onCreate() {
-        super.onCreate()
+        super<Application>.onCreate()
         runtimeController = RuntimeController(DisconnectedRuntimePort())
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
 
