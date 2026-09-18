@@ -76,7 +76,8 @@ pub struct MobileRuntimeSnapshot {
 }
 
 impl MobileRuntimeSnapshot {
-    pub(crate) fn from_runtime(
+    /// Rust-side adapter; this function is not exported through UniFFI.
+    pub fn from_runtime(
         status: &RuntimeStatus,
         lifecycle: MobileLifecycleState,
         revision: u64,
