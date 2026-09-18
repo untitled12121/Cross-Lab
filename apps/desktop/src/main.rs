@@ -3,7 +3,7 @@ use crosslab_desktop::{
     pages::devices::DevicesPage,
 };
 use gpui_kit::{
-    WindowBounds, WindowOptions,
+    AppContext, Styled, WindowBounds, WindowOptions,
     component::{Root, theme::ActiveTheme as _},
     px, size,
 };
