@@ -37,12 +37,12 @@ android {
 
     sourceSets {
         getByName("main") {
-            java.directories.add(generatedUniFfiKotlin.get().asFile)
-            jniLibs.directories.add(generatedJniLibs.get().asFile)
-            assets.directories.add(repoRoot.resolve("design/themes"))
+            java.directories.add(generatedUniFfiKotlin.get().asFile.absolutePath)
+            jniLibs.directories.add(generatedJniLibs.get().asFile.absolutePath)
+            assets.directories.add(repoRoot.resolve("design/themes").absolutePath)
         }
         getByName("test") {
-            resources.directories.add(repoRoot.resolve("design"))
+            resources.directories.add(repoRoot.resolve("design").absolutePath)
         }
     }
 
