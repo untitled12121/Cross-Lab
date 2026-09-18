@@ -27,7 +27,7 @@ struct MobileRuntimeState {
 impl MobileRuntime {
     #[uniffi::constructor]
     pub fn new() -> Self {
-        Self::with_event_capacity(DEFAULT_EVENT_CAPACITY)
+        Self::default()
     }
 
     pub fn start(&self) -> Result<(), MobileRuntimeError> {
@@ -66,6 +66,12 @@ impl MobileRuntime {
 
     pub fn poll_event(&self) -> Result<Option<MobileRuntimeEvent>, MobileRuntimeError> {
         Ok(self.lock_state()?.events.pop_front())
+    }
+}
+
+impl Default for MobileRuntime {
+    fn default() -> Self {
+        Self::with_event_capacity(DEFAULT_EVENT_CAPACITY)
     }
 }
 
