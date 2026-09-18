@@ -11,7 +11,9 @@ import uniffi.crosslab_mobile_ffi.MobileSessionState
 import uniffi.crosslab_mobile_ffi.MobileTransportSecurity
 import uniffi.crosslab_mobile_ffi.MobileTrustState
 
-class MobileRuntimePort : RuntimePort {
+class MobileRuntimePort(
+    developmentProvisioningPath: String? = null,
+) : RuntimePort {
     private val runtime = MobileRuntime()
     private val listeners = CopyOnWriteArraySet<(RuntimeSnapshot) -> Unit>()
     private val closed = AtomicBoolean(false)
@@ -23,6 +25,9 @@ class MobileRuntimePort : RuntimePort {
         }
 
     init {
+        if (developmentProvisioningPath != null) {
+            runtime.configureDevelopmentClient(developmentProvisioningPath)
+        }
         events.execute(::eventLoop)
     }
 
