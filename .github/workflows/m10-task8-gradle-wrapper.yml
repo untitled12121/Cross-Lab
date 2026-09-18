@@ -1,0 +1,52 @@
+name: M10 Task 8 Gradle Wrapper
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  wrapper:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: m10-task8-android-shell
+      - name: Generate verified Gradle wrapper
+        run: |
+          set -euo pipefail
+          version=9.5.0
+          work="$(mktemp -d)"
+          curl --fail --location --silent --show-error             "https://services.gradle.org/distributions/gradle-${version}-bin.zip"             -o "${work}/gradle.zip"
+          curl --fail --location --silent --show-error             "https://services.gradle.org/distributions/gradle-${version}-bin.zip.sha256"             -o "${work}/gradle.zip.sha256"
+          expected="$(tr -d '[:space:]' < "${work}/gradle.zip.sha256")"
+          echo "${expected}  ${work}/gradle.zip" | sha256sum --check -
+          unzip -q "${work}/gradle.zip" -d "${work}"
+
+          mkdir -p "${work}/wrapper-project"
+          cat > "${work}/wrapper-project/settings.gradle.kts" <<'EOF'
+          rootProject.name = "wrapper-generator"
+          EOF
+          cat > "${work}/wrapper-project/build.gradle.kts" <<'EOF'
+          tasks.wrapper {
+              gradleVersion = "9.5.0"
+              distributionType = Wrapper.DistributionType.BIN
+          }
+          EOF
+
+          "${work}/gradle-${version}/bin/gradle"             -p "${work}/wrapper-project"             wrapper             --no-daemon
+
+          mkdir -p apps/android/gradle/wrapper
+          cp "${work}/wrapper-project/gradlew" apps/android/gradlew
+          cp "${work}/wrapper-project/gradlew.bat" apps/android/gradlew.bat
+          cp "${work}/wrapper-project/gradle/wrapper/gradle-wrapper.jar"             apps/android/gradle/wrapper/gradle-wrapper.jar
+          cp "${work}/wrapper-project/gradle/wrapper/gradle-wrapper.properties"             apps/android/gradle/wrapper/gradle-wrapper.properties
+          printf '\ndistributionSha256Sum=%s\n' "${expected}" >>             apps/android/gradle/wrapper/gradle-wrapper.properties
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add apps/android/gradlew apps/android/gradlew.bat apps/android/gradle/wrapper
+          git commit -m "build(android): add verified Gradle 9.5 wrapper"
+          git push origin HEAD:m10-task8-android-shell
