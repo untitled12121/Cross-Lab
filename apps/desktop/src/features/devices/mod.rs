@@ -13,10 +13,29 @@ pub enum TrustDisplay {
     Revoked,
 }
 
+impl TrustDisplay {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Pending => "Pending",
+            Self::Trusted => "Trusted",
+            Self::Revoked => "Revoked",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectivityDisplay {
     Connected,
     Disconnected,
+}
+
+impl ConnectivityDisplay {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Connected => "Connected",
+            Self::Disconnected => "Disconnected",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +48,19 @@ pub enum SessionDisplay {
     Revoked,
 }
 
+impl SessionDisplay {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Created => "Created",
+            Self::Authenticating => "Authenticating",
+            Self::Active => "Active",
+            Self::Closing => "Closing",
+            Self::Closed => "Closed",
+            Self::Revoked => "Revoked",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NetworkDisplay {
     Local,
@@ -36,10 +68,29 @@ pub enum NetworkDisplay {
     Remote,
 }
 
+impl NetworkDisplay {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Local => "Local",
+            Self::Trusted => "Trusted",
+            Self::Remote => "Remote",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SecurityDisplay {
     TestOnly,
     Authenticated,
+}
+
+impl SecurityDisplay {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::TestOnly => "Test only",
+            Self::Authenticated => "Authenticated",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,6 +194,31 @@ impl DevicePresentation {
             metered: fields.metered,
             capability_count: fields.capability_count,
         }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DevicesFeatureState {
+    current: Option<DevicePresentation>,
+}
+
+impl DevicesFeatureState {
+    pub const fn empty() -> Self {
+        Self { current: None }
+    }
+
+    pub fn from_runtime(status: &RuntimeStatus) -> Self {
+        Self {
+            current: Some(DevicePresentation::from_runtime(status)),
+        }
+    }
+
+    pub fn update_runtime(&mut self, status: &RuntimeStatus) {
+        self.current = Some(DevicePresentation::from_runtime(status));
+    }
+
+    pub const fn current(&self) -> Option<&DevicePresentation> {
+        self.current.as_ref()
     }
 }
 
