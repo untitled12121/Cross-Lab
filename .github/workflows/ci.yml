@@ -91,12 +91,12 @@ jobs:
 
           sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME}}"
           yes | android --no-metrics --sdk="${sdk_root}" sdk install \
-            platforms/android-37 --beta
+            platforms/android-37.0
           yes | android --no-metrics --sdk="${sdk_root}" sdk install \
             build-tools/36.0.0 \
             ndk/28.2.13676358
 
-          test -f "${sdk_root}/platforms/android-37/android.jar"
+          test -f "${sdk_root}/platforms/android-37.0/android.jar"
           test -d "${sdk_root}/ndk/28.2.13676358"
           echo "ANDROID_NDK_ROOT=${sdk_root}/ndk/28.2.13676358" >> "$GITHUB_ENV"
       - name: Install Rust Android target
