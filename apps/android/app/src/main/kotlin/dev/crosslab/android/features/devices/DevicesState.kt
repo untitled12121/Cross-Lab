@@ -77,7 +77,7 @@ data class DevicesState(
 
                         RuntimeSession.REVOKED -> SessionDisplay.REVOKED
                     },
-                    protocol = snapshot.protocol?.let { "\${it.major}.\${it.minor}" },
+                    protocol = snapshot.protocol?.let { "${it.major}.${it.minor}" },
                     network = when (snapshot.network) {
                         RuntimeNetwork.LOCAL -> NetworkDisplay.LOCAL
                         RuntimeNetwork.TRUSTED -> NetworkDisplay.TRUSTED
