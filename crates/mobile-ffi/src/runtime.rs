@@ -73,10 +73,7 @@ impl MobileRuntime {
 
 impl MobileRuntime {
     /// Rust-side runtime bridge; this method is not exported through UniFFI.
-    pub fn publish_runtime_status(
-        &self,
-        status: &RuntimeStatus,
-    ) -> Result<(), MobileRuntimeError> {
+    pub fn publish_runtime_status(&self, status: &RuntimeStatus) -> Result<(), MobileRuntimeError> {
         let mut state = self.lock_state()?;
         if state.snapshot.lifecycle != MobileLifecycleState::Running {
             return Err(MobileRuntimeError::NotStarted);
