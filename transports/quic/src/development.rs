@@ -96,10 +96,9 @@ impl DevelopmentProvisioning {
         )
         .map_err(|_| DevelopmentProvisioningError::Identity)?;
 
-        let peer_public_key = VerifyingKey::from_bytes(parse_fixed(
-            &file.identity.peer_device_public_key_hex,
-        )?)
-        .map_err(|_| DevelopmentProvisioningError::Identity)?;
+        let peer_public_key =
+            VerifyingKey::from_bytes(parse_fixed(&file.identity.peer_device_public_key_hex)?)
+                .map_err(|_| DevelopmentProvisioningError::Identity)?;
         let peer_credential = DeviceCredential::issue_for_public_key(
             owner_id,
             DeviceId::from_bytes(parse_fixed(&file.identity.peer_device_id_hex)?),
@@ -274,12 +273,7 @@ impl DevelopmentQuicClient {
     ) -> Result<AuthenticatedQuicSession, QuicSessionError> {
         let auth = self.identity.auth_config();
         self.endpoint
-            .connect_authenticated(
-                self.remote_addr,
-                &self.server_name,
-                &auth,
-                timeouts,
-            )
+            .connect_authenticated(self.remote_addr, &self.server_name, &auth, timeouts)
             .await
     }
 
