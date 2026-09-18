@@ -309,15 +309,15 @@ object ThemeParser {
         }
     }
 
-    private fun JSONObject.requireExactKeys(vararg keys: String) {
-        val expected = keys.toSet()
-        val actual = keys().asSequence().toSet()
+    private fun JSONObject.requireExactKeys(vararg expectedKeys: String) {
+        val expected = expectedKeys.toSet()
+        val actual = this.keys().asSequence().toSet()
         if (actual != expected) invalid("theme document fields do not match the canonical contract")
     }
 
-    private fun JSONObject.requireOnly(vararg keys: String) {
-        val allowed = keys.toSet()
-        if (keys().asSequence().any { it !in allowed }) {
+    private fun JSONObject.requireOnly(vararg allowedKeys: String) {
+        val allowed = allowedKeys.toSet()
+        if (this.keys().asSequence().any { it !in allowed }) {
             invalid("theme document contains an unknown field")
         }
     }
