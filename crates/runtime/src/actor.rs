@@ -33,6 +33,7 @@ pub enum RuntimeActorError {
     ActorClosed,
     NoAsyncRuntime,
     TaskCancelled,
+    PeerRevocationRejected,
 }
 
 impl fmt::Display for RuntimeActorError {
@@ -45,6 +46,7 @@ impl fmt::Display for RuntimeActorError {
             Self::ActorClosed => "runtime actor is closed",
             Self::NoAsyncRuntime => "runtime actor requires an active Tokio runtime",
             Self::TaskCancelled => "runtime actor task was cancelled",
+            Self::PeerRevocationRejected => "runtime actor rejected peer revocation",
         })
     }
 }
@@ -81,6 +83,14 @@ impl RuntimeActorSession {
 
     fn network_lost(&mut self) {
         self.node.network_lost();
+    }
+
+    fn revoke_peer(&mut self, peer_trust: TrustRecord) -> Result<(), RuntimeActorError> {
+        self.node
+            .apply_peer_revocation(&peer_trust)
+            .map_err(|_| RuntimeActorError::PeerRevocationRejected)?;
+        self.peer_trust = peer_trust;
+        Ok(())
     }
 
     fn shutdown(&mut self) {
@@ -143,6 +153,22 @@ impl RuntimeActor {
             .map_err(map_try_send_error)
     }
 
+    pub async fn revoke_peer(&self, peer_trust: TrustRecord) -> Result<(), RuntimeActorError> {
+        let command_tx = self
+            .command_tx
+            .as_ref()
+            .ok_or(RuntimeActorError::NotRunning)?;
+        let (reply_tx, reply_rx) = oneshot::channel();
+        command_tx
+            .send(RuntimeCommand::PeerRevoked {
+                peer_trust,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| RuntimeActorError::ActorClosed)?;
+        reply_rx.await.map_err(|_| RuntimeActorError::ActorClosed)?
+    }
+
     pub async fn reconnect(&self, session: RuntimeActorSession) -> Result<(), RuntimeActorError> {
         let command_tx = self
             .command_tx
@@ -199,6 +225,11 @@ async fn run_actor(
             RuntimeCommand::NetworkLost => {
                 session.network_lost();
                 status_tx.send_replace(session.status());
+            }
+            RuntimeCommand::PeerRevoked { peer_trust, reply } => {
+                let result = session.revoke_peer(peer_trust);
+                status_tx.send_replace(session.status());
+                let _ = reply.send(result);
             }
             RuntimeCommand::Reconnect {
                 session: replacement,
