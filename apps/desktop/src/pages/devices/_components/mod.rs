@@ -5,8 +5,7 @@ use crate::{
     },
 };
 use gpui_kit::{
-    App, Div, ParentElement as _, Styled as _, div, px,
-    component::theme::ActiveTheme as _,
+    App, Div, ParentElement as _, Styled as _, component::theme::ActiveTheme as _, div, px,
 };
 
 pub(super) fn device_content(state: &DevicesFeatureState, cx: &App) -> Div {

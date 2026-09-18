@@ -1,6 +1,6 @@
 use gpui_kit::{
-    App, Div, ParentElement as _, SharedString, Styled as _, div, px,
-    component::theme::ActiveTheme as _,
+    App, Div, ParentElement as _, SharedString, Styled as _, component::theme::ActiveTheme as _,
+    div, px,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

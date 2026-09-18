@@ -1,15 +1,13 @@
 use gpui_kit::{
-    App, Hsla, Rgba, SharedString, px,
+    App, Hsla, Rgba, SharedString,
     component::theme::{Theme, ThemeMode},
+    px,
 };
 
-use super::{ThemeAppearance, ThemeDocument, ThemeError, ThemeId, load_builtin_theme};
 use super::theme::OklchColor;
+use super::{ThemeAppearance, ThemeDocument, ThemeError, ThemeId, load_builtin_theme};
 
-pub fn install_builtin_theme(
-    theme_id: ThemeId,
-    cx: &mut App,
-) -> Result<ThemeDocument, ThemeError> {
+pub fn install_builtin_theme(theme_id: ThemeId, cx: &mut App) -> Result<ThemeDocument, ThemeError> {
     let theme = load_builtin_theme(theme_id)?;
     apply_theme(&theme, cx);
     Ok(theme)
@@ -17,7 +15,11 @@ pub fn install_builtin_theme(
 
 pub fn apply_theme(source: &ThemeDocument, cx: &mut App) {
     let existing_mono = Theme::global(cx).mono_font_family.clone();
-    let sans = native_font_family(&source.typography.families.sans, ".SystemUIFont", "system-ui");
+    let sans = native_font_family(
+        &source.typography.families.sans,
+        ".SystemUIFont",
+        "system-ui",
+    );
     let mono = native_font_family(
         &source.typography.families.mono,
         existing_mono.as_ref(),
@@ -63,7 +65,11 @@ pub fn apply_theme(source: &ThemeDocument, cx: &mut App) {
     Theme::sync_base(cx);
 }
 
-fn native_font_family(families: &[String], generic_native: &str, generic_name: &str) -> SharedString {
+fn native_font_family(
+    families: &[String],
+    generic_native: &str,
+    generic_name: &str,
+) -> SharedString {
     if families.iter().any(|family| family == generic_name) {
         return generic_native.to_owned().into();
     }

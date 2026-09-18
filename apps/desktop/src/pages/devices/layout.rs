@@ -1,8 +1,6 @@
 use gpui_kit::{
     App, Div, InteractiveElement as _, ParentElement as _, StatefulInteractiveElement as _,
-    Styled as _, div, px,
-    base::Button,
-    component::theme::ActiveTheme as _,
+    Styled as _, base::Button, component::theme::ActiveTheme as _, div, px,
 };
 
 pub(super) fn devices_layout(content: impl gpui_kit::IntoElement, cx: &App) -> Div {
@@ -25,12 +23,7 @@ pub(super) fn devices_layout(content: impl gpui_kit::IntoElement, cx: &App) -> D
                 .bg(theme.popover)
                 .p(px(12.))
                 .gap(px(12.))
-                .child(
-                    div()
-                        .text_size(px(15.))
-                        .font_semibold()
-                        .child("Cross-Lab"),
-                )
+                .child(div().text_size(px(15.)).font_semibold().child("Cross-Lab"))
                 .child(
                     Button::new("nav-devices")
                         .accessibility_label("Devices")
