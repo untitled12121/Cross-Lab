@@ -66,6 +66,29 @@ impl MobileRuntime {
         Ok(())
     }
 
+    pub fn network_lost(&self) -> Result<(), MobileRuntimeError> {
+        let mut state = self.lock_state()?;
+        if state.snapshot.lifecycle != MobileLifecycleState::Running {
+            return Err(MobileRuntimeError::NotStarted);
+        }
+
+        let revision = next_revision(state.snapshot.revision)?;
+        replace_snapshot(
+            &mut state,
+            MobileRuntimeSnapshot::disconnected(MobileLifecycleState::Running, revision),
+        );
+        self.event_ready.notify_all();
+        Ok(())
+    }
+
+    pub fn network_available(&self) -> Result<(), MobileRuntimeError> {
+        let state = self.lock_state()?;
+        if state.snapshot.lifecycle != MobileLifecycleState::Running {
+            return Err(MobileRuntimeError::NotStarted);
+        }
+        Ok(())
+    }
+
     pub fn snapshot(&self) -> Result<MobileRuntimeSnapshot, MobileRuntimeError> {
         Ok(self.lock_state()?.snapshot.clone())
     }
