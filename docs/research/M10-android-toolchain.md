@@ -23,7 +23,7 @@ Verified on 2026-09-18 for M10 Task 8.
 
 AGP 9.4.0 is current, but Kotlin 2.4.20 documents full AGP compatibility only through 9.3.1. AGP 9 supports built-in Kotlin and permits upgrading its KGP runtime. Using AGP 9.3.1 with KGP 2.4.20 therefore keeps the Android build inside the documented compatibility window while retaining current Kotlin.
 
-Compose 1.12+ requires compileSdk 37 and AGP 9. The current Compose setup documentation lists BOM 2026.09.00. Google Play requires new apps and updates to target API 36 or higher from 2026-08-31, so targetSdk 36 is retained for this development slice.
+Compose 1.12+ requires API 37 and AGP 9. Android 37 is published as the minor-versioned SDK package `platforms/android-37.0`, so Gradle uses `compileSdk = 37` with `compileSdkMinor = 0`. The current Compose setup documentation lists BOM 2026.09.00. Google Play requires new apps and updates to target API 36 or higher from 2026-08-31, so targetSdk 36 is retained for this development slice.
 
 The minimum is API 23 because current AndroidX releases have moved their default minimum from API 21 to API 23. The Rust Android targets and the NetworkCallback API can operate lower, while StrongBox begins at API 28 and remains an optional future secure-storage capability rather than a reason to raise the whole application's minimum today.
 
