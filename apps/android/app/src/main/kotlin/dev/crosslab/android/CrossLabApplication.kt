@@ -1,6 +1,7 @@
 package dev.crosslab.android
 
 import android.app.Application
+import android.content.pm.ApplicationInfo
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -31,7 +32,7 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
 
     override fun onCreate() {
         super<Application>.onCreate()
-        runtimeController = RuntimeController(MobileRuntimePort())
+        runtimeController = RuntimeController(MobileRuntimePort(developmentProvisioningPath()))
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
 
         connectivityManager = getSystemService(ConnectivityManager::class.java)
@@ -44,6 +45,13 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
                     .build()
             connectivityManager.registerNetworkCallback(request, networkCallback)
         }
+    }
+
+    private fun developmentProvisioningPath(): String? {
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return null
+
+        val provisioning = filesDir.resolve("crosslab-development-provisioning.json")
+        return provisioning.takeIf { it.isFile }?.absolutePath
     }
 
     override fun onStart(owner: LifecycleOwner) {
