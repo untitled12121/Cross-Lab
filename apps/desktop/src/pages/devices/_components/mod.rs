@@ -115,7 +115,7 @@ fn device_panel(device: &DevicePresentation, cx: &App) -> Div {
                             div()
                                 .text_size(px(appearance.typography.scales.label.size))
                                 .font_weight(font_weight(appearance.typography.scales.label.weight))
-                                .child(device.peer_id().unwrap_or("Unknown peer")),
+                                .child(device.peer_id().unwrap_or("Unknown peer").to_owned()),
                         )
                         .child(
                             div()
