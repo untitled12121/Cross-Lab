@@ -77,18 +77,8 @@ impl ProvisionedPeers {
         )
         .unwrap();
 
-        let client_trust = establish_trust(
-            &client_credential,
-            &authority,
-            &issuer_key,
-            [0x48; 32],
-        );
-        let server_trust = establish_trust(
-            &server_credential,
-            &authority,
-            &issuer_key,
-            [0x49; 32],
-        );
+        let client_trust = establish_trust(&client_credential, &authority, &issuer_key, [0x48; 32]);
+        let server_trust = establish_trust(&server_credential, &authority, &issuer_key, [0x49; 32]);
 
         Self {
             authority,
@@ -102,10 +92,7 @@ impl ProvisionedPeers {
         }
     }
 
-    fn client_auth<'a>(
-        &'a self,
-        server_trust: &'a TrustRecord,
-    ) -> QuicSessionAuthConfig<'a> {
+    fn client_auth<'a>(&'a self, server_trust: &'a TrustRecord) -> QuicSessionAuthConfig<'a> {
         QuicSessionAuthConfig::new(
             &self.authority,
             self.client_credential,
@@ -150,9 +137,14 @@ async fn product_quinn_sessions_drive_runtime_and_mobile_status_fail_closed() {
     let (client_endpoint, server_endpoint) = explicit_tls_endpoints();
     let server_addr = server_endpoint.local_addr().unwrap();
 
-    let (first_client, first_server) =
-        connect_pair(&peers, &client_endpoint, &server_endpoint, server_addr, &peers.server_trust)
-            .await;
+    let (first_client, first_server) = connect_pair(
+        &peers,
+        &client_endpoint,
+        &server_endpoint,
+        server_addr,
+        &peers.server_trust,
+    )
+    .await;
 
     let mut client_runtime = runtime_node(first_client, &peers.server_trust);
     let mut server_runtime = runtime_node(first_server, &peers.client_trust);
@@ -161,7 +153,10 @@ async fn product_quinn_sessions_drive_runtime_and_mobile_status_fail_closed() {
 
     assert_eq!(first_client_status.session_state(), SessionState::Active);
     assert_eq!(first_server_status.session_state(), SessionState::Active);
-    assert_eq!(first_client_status.session_id(), first_server_status.session_id());
+    assert_eq!(
+        first_client_status.session_id(),
+        first_server_status.session_id()
+    );
     assert_eq!(
         first_client_status.peer_device_id(),
         first_server_status.local_device_id()
@@ -197,9 +192,14 @@ async fn product_quinn_sessions_drive_runtime_and_mobile_status_fail_closed() {
     assert_eq!(mobile_disconnected.session, MobileSessionState::Closed);
     assert!(mobile_disconnected.session_id.is_none());
 
-    let (second_client, second_server) =
-        connect_pair(&peers, &client_endpoint, &server_endpoint, server_addr, &peers.server_trust)
-            .await;
+    let (second_client, second_server) = connect_pair(
+        &peers,
+        &client_endpoint,
+        &server_endpoint,
+        server_addr,
+        &peers.server_trust,
+    )
+    .await;
     let mut second_client_runtime = runtime_node(second_client, &peers.server_trust);
     let mut second_server_runtime = runtime_node(second_server, &peers.client_trust);
     let second_status = second_client_runtime.status(&peers.server_trust);
@@ -262,13 +262,19 @@ async fn product_quinn_sessions_drive_runtime_and_mobile_status_fail_closed() {
         "payload",
         "quinn connection",
     ] {
-        assert!(!rendered.contains(forbidden), "presentation leaked {forbidden}");
+        assert!(
+            !rendered.contains(forbidden),
+            "presentation leaked {forbidden}"
+        );
     }
 
     mobile.stop().unwrap();
 }
 
-fn runtime_node(session: AuthenticatedQuicSession, peer_trust: &TrustRecord) -> RuntimeNode<'static> {
+fn runtime_node(
+    session: AuthenticatedQuicSession,
+    peer_trust: &TrustRecord,
+) -> RuntimeNode<'static> {
     let (session, transport) = session.into_parts();
     let runtime = RuntimeNode::new_owned(
         session,
@@ -295,12 +301,7 @@ async fn connect_pair(
     let client_auth = peers.client_auth(server_trust);
     let server_auth = peers.server_auth();
     let (client_result, server_result) = tokio::join!(
-        client.connect_authenticated(
-            server_addr,
-            "localhost",
-            &client_auth,
-            session_timeouts(),
-        ),
+        client.connect_authenticated(server_addr, "localhost", &client_auth, session_timeouts(),),
         server.accept_authenticated(&server_auth, session_timeouts()),
     );
     (
