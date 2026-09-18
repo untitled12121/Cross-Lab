@@ -155,12 +155,21 @@ impl DevelopmentProvisioning {
     }
 
     pub fn into_client(self) -> Result<DevelopmentQuicClient, DevelopmentProvisioningError> {
+        let DevelopmentProvisioning {
+            authority,
+            local_signing_key,
+            local_credential,
+            peer_trust,
+            protocol_ranges,
+            features,
+            endpoint,
+        } = self;
         let DevelopmentEndpoint::Client {
             bind_addr,
             remote_addr,
             server_name,
             trusted_server_certificates,
-        } = self.endpoint
+        } = endpoint
         else {
             return Err(DevelopmentProvisioningError::WrongRole);
         };
@@ -175,16 +184,32 @@ impl DevelopmentProvisioning {
             endpoint,
             remote_addr,
             server_name,
-            identity: DevelopmentIdentity::from(self),
+            identity: DevelopmentIdentity {
+                authority,
+                local_signing_key,
+                local_credential,
+                peer_trust,
+                protocol_ranges,
+                features,
+            },
         })
     }
 
     pub fn into_server(self) -> Result<DevelopmentQuicServer, DevelopmentProvisioningError> {
+        let DevelopmentProvisioning {
+            authority,
+            local_signing_key,
+            local_credential,
+            peer_trust,
+            protocol_ranges,
+            features,
+            endpoint,
+        } = self;
         let DevelopmentEndpoint::Server {
             bind_addr,
             certificate_chain,
             private_key_pkcs8,
-        } = self.endpoint
+        } = endpoint
         else {
             return Err(DevelopmentProvisioningError::WrongRole);
         };
@@ -197,7 +222,14 @@ impl DevelopmentProvisioning {
 
         Ok(DevelopmentQuicServer {
             endpoint,
-            identity: DevelopmentIdentity::from(self),
+            identity: DevelopmentIdentity {
+                authority,
+                local_signing_key,
+                local_credential,
+                peer_trust,
+                protocol_ranges,
+                features,
+            },
         })
     }
 }
@@ -225,19 +257,6 @@ impl DevelopmentIdentity {
 
     fn peer_trust(&self) -> TrustRecord {
         self.peer_trust
-    }
-}
-
-impl From<DevelopmentProvisioning> for DevelopmentIdentity {
-    fn from(provisioning: DevelopmentProvisioning) -> Self {
-        Self {
-            authority: provisioning.authority,
-            local_signing_key: provisioning.local_signing_key,
-            local_credential: provisioning.local_credential,
-            peer_trust: provisioning.peer_trust,
-            protocol_ranges: provisioning.protocol_ranges,
-            features: provisioning.features,
-        }
     }
 }
 
