@@ -68,3 +68,50 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: Test
         run: cargo test --workspace --all-features
+
+  android:
+    name: Android
+    runs-on: ubuntu-24.04
+    env:
+      JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install Java 17
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends openjdk-17-jdk-headless
+      - name: Install Android CLI and SDK components
+        run: |
+          curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | \
+            sudo tee /etc/apt/keyrings/google.asc >/dev/null
+          echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/google.asc] http://dl.google.com/android/cli/latest/debian/ stable main" | \
+            sudo tee /etc/apt/sources.list.d/android-cli.list >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends android-cli
+
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME}}"
+          yes | android --no-metrics --sdk="${sdk_root}" sdk install \
+            platforms/android-37.0
+          yes | android --no-metrics --sdk="${sdk_root}" sdk install \
+            build-tools/36.0.0 \
+            ndk/28.2.13676358
+
+          test -f "${sdk_root}/platforms/android-37.0/android.jar"
+          test -d "${sdk_root}/ndk/28.2.13676358"
+          echo "ANDROID_NDK_ROOT=${sdk_root}/ndk/28.2.13676358" >> "$GITHUB_ENV"
+      - name: Install Rust Android target
+        run: |
+          rustup toolchain install 1.98.1 --profile minimal --component clippy,rustfmt
+          rustup target add aarch64-linux-android --toolchain 1.98.1
+      - name: Verify Gradle wrapper
+        working-directory: apps/android
+        run: |
+          chmod +x gradlew
+          ./gradlew --version --no-daemon
+      - name: Android unit tests
+        working-directory: apps/android
+        run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
+      - name: Android debug assembly
+        working-directory: apps/android
+        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+
