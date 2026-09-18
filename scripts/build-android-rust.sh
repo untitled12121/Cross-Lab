@@ -47,14 +47,21 @@ case "$(uname -s)" in
     ;;
 esac
 
-linker="${ndk_root}/toolchains/llvm/prebuilt/${host_tag}/bin/${clang_prefix}${api_level}-clang"
-if [[ ! -x "${linker}" ]]; then
-  echo "Android linker not found: ${linker}" >&2
+toolchain_bin="${ndk_root}/toolchains/llvm/prebuilt/${host_tag}/bin"
+linker="${toolchain_bin}/${clang_prefix}${api_level}-clang"
+cxx="${toolchain_bin}/${clang_prefix}${api_level}-clang++"
+archiver="${toolchain_bin}/llvm-ar"
+if [[ ! -x "${linker}" || ! -x "${cxx}" || ! -x "${archiver}" ]]; then
+  echo "Android NDK toolchain is incomplete for ${abi}" >&2
   exit 1
 fi
 
-linker_env="CARGO_TARGET_$(printf '%s' "${rust_target}" | tr '[:lower:]-' '[:upper:]_')_LINKER"
+target_env="$(printf '%s' "${rust_target}" | tr '[:lower:]-' '[:upper:]_')"
+linker_env="CARGO_TARGET_${target_env}_LINKER"
 export "${linker_env}=${linker}"
+export CC="${linker}"
+export CXX="${cxx}"
+export AR="${archiver}"
 
 cd "${repo_root}"
 rustup target add "${rust_target}"
