@@ -27,7 +27,6 @@ serde_json = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["rt", "sync", "time"] }
 
 [dev-dependencies]
-crosslab-mobile-ffi = { path = "../../crates/mobile-ffi" }
 crosslab-runtime = { path = "../../crates/runtime" }
 crosslab-sim = { path = "../../apps/sim" }
 rcgen.workspace = true
