@@ -9,7 +9,7 @@ import android.os.Build
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
-import dev.crosslab.android.features.devices.DisconnectedRuntimePort
+import dev.crosslab.android.features.devices.MobileRuntimePort
 import dev.crosslab.android.features.devices.RuntimeController
 
 class CrossLabApplication : Application(), DefaultLifecycleObserver {
@@ -31,7 +31,7 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
 
     override fun onCreate() {
         super<Application>.onCreate()
-        runtimeController = RuntimeController(DisconnectedRuntimePort())
+        runtimeController = RuntimeController(MobileRuntimePort())
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
 
         connectivityManager = getSystemService(ConnectivityManager::class.java)
