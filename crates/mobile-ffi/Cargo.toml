@@ -12,6 +12,11 @@ crate-type = ["lib", "cdylib"]
 
 [features]
 bindgen = ["uniffi/cli", "uniffi/cargo-metadata"]
+development-provisioning = [
+    "dep:crosslab-transport-quic",
+    "dep:tokio",
+    "crosslab-transport-quic/development-provisioning",
+]
 
 [dependencies]
 crosslab-core = { path = "../core" }
@@ -19,6 +24,8 @@ crosslab-identity = { path = "../identity" }
 crosslab-policy = { path = "../policy" }
 crosslab-protocol = { path = "../protocol" }
 crosslab-runtime = { path = "../runtime" }
+crosslab-transport-quic = { path = "../../transports/quic", optional = true }
+tokio = { workspace = true, optional = true, features = ["rt", "sync", "time"] }
 uniffi.workspace = true
 
 [[bin]]
