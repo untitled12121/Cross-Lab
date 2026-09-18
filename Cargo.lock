@@ -1825,7 +1825,6 @@ dependencies = [
  "crosslab-core",
  "crosslab-crypto",
  "crosslab-identity",
- "crosslab-mobile-ffi",
  "crosslab-policy",
  "crosslab-protocol",
  "crosslab-runtime",
