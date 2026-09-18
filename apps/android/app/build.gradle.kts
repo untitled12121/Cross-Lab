@@ -12,6 +12,7 @@ val generatedJniLibs = layout.buildDirectory.dir("generated/jniLibs")
 android {
     namespace = "dev.crosslab.android"
     compileSdk = 37
+    compileSdkMinor = 0
     ndkVersion = "28.2.13676358"
 
     defaultConfig {
