@@ -96,6 +96,10 @@ val buildRustAndroidArm64 by tasks.registering(Exec::class) {
     )
 }
 
+generateUniFfiKotlin {
+    mustRunAfter(buildRustAndroidArm64)
+}
+
 tasks.named("preBuild") {
     dependsOn(generateUniFfiKotlin, buildRustAndroidArm64)
 }
