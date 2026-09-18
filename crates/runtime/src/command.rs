@@ -5,7 +5,7 @@ use crate::actor::{RuntimeActorError, RuntimeActorSession};
 pub(crate) enum RuntimeCommand {
     NetworkLost,
     Reconnect {
-        session: RuntimeActorSession,
+        session: Box<RuntimeActorSession>,
         reply: oneshot::Sender<Result<(), RuntimeActorError>>,
     },
     Stop {
