@@ -5,6 +5,7 @@ members = [
     "crates/core",
     "crates/crypto",
     "crates/identity",
+    "crates/mobile-ffi",
     "crates/policy",
     "crates/protocol",
     "crates/runtime",
@@ -34,6 +35,7 @@ serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
 sha2 = "=0.11.0"
 tokio = { version = "=1.53.1", default-features = false }
+uniffi = { version = "=0.32.1", default-features = false }
 zeroize = { version = "=1.9.0", default-features = false }
 
 [workspace.lints.rust]
