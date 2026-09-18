@@ -52,6 +52,16 @@ jobs:
         run: cargo fmt --check
       - name: Check
         run: cargo check --workspace --all-targets --all-features
+      - name: Enforce mobile FFI unsafe boundary
+        run: |
+          if grep -REn --include='*.rs' '(^|[^[:alnum:]_])unsafe[[:space:]]*(\{|fn|impl|trait)' crates/mobile-ffi/src; then
+            echo "handwritten unsafe is not allowed in crates/mobile-ffi" >&2
+            exit 1
+          fi
+      - name: Generate UniFFI Kotlin bindings
+        run: |
+          bash scripts/generate-mobile-bindings.sh "$RUNNER_TEMP/crosslab-uniffi-kotlin"
+          find "$RUNNER_TEMP/crosslab-uniffi-kotlin" -type f -name '*.kt' -print -quit | grep -q .
       - name: Build Linux desktop
         run: cargo build -p crosslab-desktop --locked
       - name: Clippy
