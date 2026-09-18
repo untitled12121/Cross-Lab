@@ -3,10 +3,10 @@ use core::fmt;
 #[cfg_attr(not(test), allow(dead_code))]
 mod binding;
 mod config;
-#[cfg(feature = "development-provisioning")]
-pub mod development;
 #[cfg_attr(not(test), allow(dead_code))]
 mod connection;
+#[cfg(feature = "development-provisioning")]
+pub mod development;
 mod endpoint;
 #[cfg_attr(not(test), allow(dead_code))]
 mod record;
