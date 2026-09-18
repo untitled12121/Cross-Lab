@@ -229,3 +229,54 @@ fn blocking_event_wait_times_out_cleanly() {
 
     assert!(runtime.wait_event(1).expect("wait succeeds").is_none());
 }
+
+#[test]
+fn network_loss_clears_session_facing_state_while_running() {
+    let runtime = MobileRuntime::with_test_event_capacity(4);
+    runtime.start().expect("start succeeds");
+    runtime.poll_event().expect("drain start event");
+
+    runtime
+        .publish_test_snapshot(MobileRuntimeSnapshot {
+            revision: 2,
+            lifecycle: MobileLifecycleState::Running,
+            local_device_id: Some("local".into()),
+            peer_device_id: Some("peer".into()),
+            session_id: Some("session".into()),
+            trust: MobileTrustState::Trusted,
+            connectivity: MobileConnectivityState::Connected,
+            session: MobileSessionState::Active,
+            protocol: None,
+            network: MobileNetworkClass::Local,
+            transport_security: MobileTransportSecurity::Authenticated,
+            metered: Some(false),
+            capability_count: 3,
+        })
+        .expect("publish connected state");
+    runtime.poll_event().expect("drain connected event");
+
+    runtime.network_lost().expect("network loss succeeds");
+    let snapshot = runtime.snapshot().expect("snapshot");
+    assert_eq!(snapshot.lifecycle, MobileLifecycleState::Running);
+    assert_eq!(snapshot.connectivity, MobileConnectivityState::Disconnected);
+    assert_eq!(snapshot.trust, MobileTrustState::Unavailable);
+    assert_eq!(snapshot.session, MobileSessionState::Unavailable);
+    assert!(snapshot.peer_device_id.is_none());
+    assert!(snapshot.session_id.is_none());
+}
+
+#[test]
+fn network_commands_require_running_lifecycle() {
+    let runtime = MobileRuntime::with_test_event_capacity(2);
+
+    assert_eq!(runtime.network_lost(), Err(MobileRuntimeError::NotStarted));
+    assert_eq!(
+        runtime.network_available(),
+        Err(MobileRuntimeError::NotStarted)
+    );
+
+    runtime.start().expect("start succeeds");
+    runtime
+        .network_available()
+        .expect("network available succeeds while running");
+}
