@@ -15,6 +15,13 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install Linux GPUI dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang gcc g++ \
+            libfontconfig-dev libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev \
+            libssl-dev libzstd-dev libvulkan1
       - name: Install Rust
         run: rustup toolchain install 1.98.1 --profile minimal --component clippy,rustfmt
       - name: Verify lockfile
@@ -45,6 +52,8 @@ jobs:
         run: cargo fmt --check
       - name: Check
         run: cargo check --workspace --all-targets --all-features
+      - name: Build Linux desktop
+        run: cargo build -p crosslab-desktop --locked
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: Test
