@@ -76,7 +76,7 @@ pub struct MobileRuntimeSnapshot {
 }
 
 impl MobileRuntimeSnapshot {
-    pub fn from_runtime(
+    pub(crate) fn from_runtime(
         status: &RuntimeStatus,
         lifecycle: MobileLifecycleState,
         revision: u64,
