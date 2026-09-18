@@ -1,6 +1,6 @@
 use std::{
     collections::VecDeque,
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{Mutex, MutexGuard},
 };
 
 use crate::{MobileLifecycleState, MobileRuntimeError, MobileRuntimeSnapshot};
@@ -26,8 +26,8 @@ struct MobileRuntimeState {
 #[uniffi::export]
 impl MobileRuntime {
     #[uniffi::constructor]
-    pub fn new() -> Arc<Self> {
-        Arc::new(Self::with_event_capacity(DEFAULT_EVENT_CAPACITY))
+    pub fn new() -> Self {
+        Self::with_event_capacity(DEFAULT_EVENT_CAPACITY)
     }
 
     pub fn start(&self) -> Result<(), MobileRuntimeError> {
