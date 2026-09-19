@@ -1,20 +1,13 @@
 #![cfg(feature = "development-provisioning")]
 
-use std::{
-    fs,
-    path::PathBuf,
-    time::Duration,
-};
+use std::{fs, path::PathBuf, time::Duration};
 
 use crosslab_crypto::SigningKey;
 use crosslab_mobile_ffi::{
     MobileConnectivityState, MobileRuntime, MobileRuntimeSnapshot, MobileSessionState,
     MobileTransportSecurity, MobileTrustState,
 };
-use crosslab_transport_quic::{
-    QuicSessionTimeouts,
-    development::DevelopmentProvisioning,
-};
+use crosslab_transport_quic::{QuicSessionTimeouts, development::DevelopmentProvisioning};
 use serde_json::json;
 
 const WAIT: Duration = Duration::from_secs(3);
@@ -93,7 +86,10 @@ async fn mobile_facade_tracks_authenticated_quinn_disconnect_and_fresh_reconnect
     let first_server_device = hex(first_server_context.local_device_id().as_bytes());
     let first_client_device = hex(first_server_context.peer_device_id().as_bytes());
     let first_session_id = hex(&first_server_context.session_id().to_bytes());
-    assert_eq!(first.peer_device_id.as_deref(), Some(first_server_device.as_str()));
+    assert_eq!(
+        first.peer_device_id.as_deref(),
+        Some(first_server_device.as_str())
+    );
     assert_eq!(
         first.local_device_id.as_deref(),
         Some(first_client_device.as_str())
@@ -122,7 +118,10 @@ async fn mobile_facade_tracks_authenticated_quinn_disconnect_and_fresh_reconnect
 
     let second_server_context = second_server.session().context().unwrap();
     let second_session_id = hex(&second_server_context.session_id().to_bytes());
-    assert_eq!(second.session_id.as_deref(), Some(second_session_id.as_str()));
+    assert_eq!(
+        second.session_id.as_deref(),
+        Some(second_session_id.as_str())
+    );
     assert_ne!(second.session_id, first.session_id);
 
     first_server.transport().shutdown().await;
