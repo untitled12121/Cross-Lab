@@ -234,6 +234,10 @@ impl QuicTransportConnection {
         }
     }
 
+    pub fn subscribe_closed(&self) -> watch::Receiver<bool> {
+        self.shared.subscribe()
+    }
+
     fn begin_shutdown(&self) -> Vec<JoinHandle<()>> {
         self.terminate(LOCAL_CLOSE_CODE, b"crosslab transport closed");
         self.tasks.close_and_take()

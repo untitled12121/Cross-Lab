@@ -7,6 +7,15 @@ interface RuntimePort {
     fun stop()
     fun networkLost()
     fun networkAvailable()
+
+    fun snapshot(): RuntimeSnapshot = RuntimeSnapshot.disconnected()
+
+    fun observeSnapshots(listener: (RuntimeSnapshot) -> Unit): AutoCloseable {
+        listener(snapshot())
+        return AutoCloseable {}
+    }
+
+    fun shutdown() = Unit
 }
 
 enum class RuntimeLifecycle {
@@ -18,12 +27,14 @@ enum class RuntimeLifecycle {
 data class RuntimeControllerState(
     val lifecycle: RuntimeLifecycle,
     val networkAvailable: Boolean,
+    val snapshot: RuntimeSnapshot,
 ) {
     companion object {
         fun initial(): RuntimeControllerState =
             RuntimeControllerState(
                 lifecycle = RuntimeLifecycle.STOPPED,
                 networkAvailable = true,
+                snapshot = RuntimeSnapshot.disconnected(),
             )
     }
 }
@@ -37,6 +48,14 @@ class RuntimeController(
     @Volatile
     private var current = RuntimeControllerState.initial()
 
+    private val portSubscription =
+        port.observeSnapshots { snapshot ->
+            update {
+                if (it.lifecycle == RuntimeLifecycle.SHUTDOWN) return@update null
+                it.copy(snapshot = snapshot)
+            }
+        }
+
     fun state(): RuntimeControllerState = current
 
     fun observe(listener: (RuntimeControllerState) -> Unit): AutoCloseable {
@@ -49,7 +68,10 @@ class RuntimeController(
         update {
             if (it.lifecycle != RuntimeLifecycle.STOPPED) return@update null
             port.start()
-            it.copy(lifecycle = RuntimeLifecycle.RUNNING)
+            it.copy(
+                lifecycle = RuntimeLifecycle.RUNNING,
+                snapshot = port.snapshot(),
+            )
         }
     }
 
@@ -57,7 +79,10 @@ class RuntimeController(
         update {
             if (it.lifecycle != RuntimeLifecycle.RUNNING) return@update null
             port.stop()
-            it.copy(lifecycle = RuntimeLifecycle.STOPPED)
+            it.copy(
+                lifecycle = RuntimeLifecycle.STOPPED,
+                snapshot = port.snapshot(),
+            )
         }
     }
 
@@ -65,7 +90,10 @@ class RuntimeController(
         update {
             if (it.lifecycle != RuntimeLifecycle.RUNNING) return@update null
             port.networkLost()
-            it.copy(networkAvailable = false)
+            it.copy(
+                networkAvailable = false,
+                snapshot = port.snapshot(),
+            )
         }
     }
 
@@ -73,26 +101,39 @@ class RuntimeController(
         update {
             if (it.lifecycle != RuntimeLifecycle.RUNNING) return@update null
             port.networkAvailable()
-            it.copy(networkAvailable = true)
+            it.copy(
+                networkAvailable = true,
+                snapshot = port.snapshot(),
+            )
         }
     }
 
     fun shutdown() {
+        var didShutdown = false
         update {
             if (it.lifecycle == RuntimeLifecycle.SHUTDOWN) return@update null
             if (it.lifecycle == RuntimeLifecycle.RUNNING) {
                 port.stop()
             }
-            it.copy(lifecycle = RuntimeLifecycle.SHUTDOWN)
+            didShutdown = true
+            it.copy(
+                lifecycle = RuntimeLifecycle.SHUTDOWN,
+                snapshot = port.snapshot(),
+            )
+        }
+        if (didShutdown) {
+            portSubscription.close()
+            port.shutdown()
         }
     }
 
     private fun update(transform: (RuntimeControllerState) -> RuntimeControllerState?) {
-        val next = synchronized(lock) {
-            val updated = transform(current) ?: return
-            current = updated
-            updated
-        }
+        val next =
+            synchronized(lock) {
+                val updated = transform(current) ?: return
+                current = updated
+                updated
+            }
         listeners.forEach { it(next) }
     }
 }

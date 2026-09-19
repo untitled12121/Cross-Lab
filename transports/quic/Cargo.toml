@@ -10,6 +10,10 @@ publish = false
 [lints]
 workspace = true
 
+[features]
+default = []
+development-provisioning = ["dep:serde", "dep:serde_json"]
+
 [dependencies]
 crosslab-core = { path = "../../crates/core" }
 crosslab-crypto = { path = "../../crates/crypto" }
@@ -18,9 +22,12 @@ crosslab-policy = { path = "../../crates/policy" }
 crosslab-protocol = { path = "../../crates/protocol" }
 quinn.workspace = true
 rustls.workspace = true
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["rt", "sync", "time"] }
 
 [dev-dependencies]
+crosslab-runtime = { path = "../../crates/runtime" }
 crosslab-sim = { path = "../../apps/sim" }
 rcgen.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }

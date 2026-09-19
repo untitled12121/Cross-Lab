@@ -65,7 +65,12 @@ export AR="${archiver}"
 
 cd "${repo_root}"
 rustup target add "${rust_target}"
-cargo build --locked -p crosslab-mobile-ffi --target "${rust_target}"
+
+cargo_args=(build --locked -p crosslab-mobile-ffi --target "${rust_target}")
+if [[ -n "${CROSSLAB_MOBILE_FFI_FEATURES:-}" ]]; then
+  cargo_args+=(--features "${CROSSLAB_MOBILE_FFI_FEATURES}")
+fi
+cargo "${cargo_args[@]}"
 
 mkdir -p "${out_root}/${abi}"
 cp \

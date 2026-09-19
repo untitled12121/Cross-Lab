@@ -10,12 +10,21 @@ publish = false
 [lints]
 workspace = true
 
+[features]
+default = []
+development-provisioning = [
+    "dep:crosslab-transport-quic",
+    "crosslab-transport-quic/development-provisioning",
+]
+
 [dependencies]
 crosslab-core = { path = "../../crates/core" }
 crosslab-identity = { path = "../../crates/identity" }
 crosslab-policy = { path = "../../crates/policy" }
 crosslab-protocol = { path = "../../crates/protocol" }
 crosslab-runtime = { path = "../../crates/runtime" }
+crosslab-transport-quic = { path = "../../transports/quic", optional = true }
 gpui-kit.workspace = true
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
 serde.workspace = true
 serde_json.workspace = true

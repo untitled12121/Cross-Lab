@@ -8,6 +8,10 @@ plugins {
 val repoRoot = rootProject.layout.projectDirectory.asFile.parentFile.parentFile
 val generatedUniFfiKotlin = layout.buildDirectory.dir("generated/uniffi/kotlin")
 val generatedJniLibs = layout.buildDirectory.dir("generated/jniLibs")
+val developmentProvisioning =
+    providers.gradleProperty("crosslabDevelopmentProvisioning")
+        .map(String::toBoolean)
+        .orElse(false)
 
 android {
     namespace = "dev.crosslab.android"
@@ -21,6 +25,11 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0-dev"
+        buildConfigField(
+            "boolean",
+            "CROSSLAB_DEVELOPMENT_PROVISIONING",
+            developmentProvisioning.get().toString(),
+        )
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -28,6 +37,7 @@ android {
     }
 
     buildFeatures {
+        buildConfig = true
         compose = true
     }
 
@@ -38,7 +48,7 @@ android {
 
     sourceSets {
         getByName("main") {
-            java.directories.add(generatedUniFfiKotlin.get().asFile.absolutePath)
+            kotlin.directories.add(generatedUniFfiKotlin.get().asFile.absolutePath)
             jniLibs.directories.add(generatedJniLibs.get().asFile.absolutePath)
             assets.directories.add(repoRoot.resolve("design/themes").absolutePath)
         }
@@ -88,6 +98,11 @@ val buildRustAndroidArm64 by tasks.registering(Exec::class) {
     inputs.dir(repoRoot.resolve("crates/mobile-ffi/src"))
     inputs.file(repoRoot.resolve("scripts/build-android-rust.sh"))
     outputs.dir(generatedJniLibs.map { it.dir("arm64-v8a") })
+    inputs.property("crosslabDevelopmentProvisioning", developmentProvisioning)
+
+    if (developmentProvisioning.get()) {
+        environment("CROSSLAB_MOBILE_FFI_FEATURES", "development-provisioning")
+    }
 
     commandLine(
         "bash",

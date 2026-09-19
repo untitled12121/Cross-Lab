@@ -21,7 +21,7 @@ fn main() {
 
         cx.spawn(async move |cx| {
             cx.open_window(window_options, |window, cx| {
-                let page = cx.new(|_| DevicesPage::new());
+                let page = cx.new(DevicesPage::new);
                 cx.new(|cx| Root::new(page, window, cx).bg(cx.theme().background))
             })
             .expect("failed to open Cross-Lab desktop window");
