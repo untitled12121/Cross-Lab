@@ -1,6 +1,5 @@
-use tokio::sync::watch;
-
 use crosslab_runtime::RuntimeStatus;
+use tokio::sync::watch;
 
 #[cfg(feature = "development-provisioning")]
 use crosslab_policy::{NetworkClass, PolicyState, TrustRecord};
@@ -9,7 +8,7 @@ use crosslab_runtime::{RuntimeActor, RuntimeActorConfig, RuntimeActorSession, Ru
 #[cfg(feature = "development-provisioning")]
 use crosslab_transport_quic::{
     AuthenticatedQuicSession, QuicSessionTimeouts,
-    development::{DevelopmentProvisioning, DevelopmentQuicClient},
+    development::{DevelopmentProvisioning, DevelopmentQuicServer},
 };
 #[cfg(feature = "development-provisioning")]
 use std::{num::NonZeroUsize, path::PathBuf, sync::Arc, thread, time::Duration};
@@ -21,7 +20,7 @@ const COMMAND_CAPACITY: usize = 8;
 #[cfg(feature = "development-provisioning")]
 const RUNTIME_CAPACITY: usize = 8;
 #[cfg(feature = "development-provisioning")]
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
+const SESSION_TIMEOUT: Duration = Duration::from_secs(3);
 
 pub struct DesktopRuntimeController {
     status: watch::Receiver<Option<RuntimeStatus>>,
@@ -51,13 +50,6 @@ impl DesktopRuntimeController {
     pub fn subscribe_status(&self) -> watch::Receiver<Option<RuntimeStatus>> {
         self.status.clone()
     }
-
-    #[cfg(feature = "development-provisioning")]
-    pub fn try_reconnect(&self) -> bool {
-        self.command_tx
-            .as_ref()
-            .is_some_and(|command_tx| command_tx.try_send(DesktopCommand::Reconnect).is_ok())
-    }
 }
 
 impl Default for DesktopRuntimeController {
@@ -77,7 +69,6 @@ impl Drop for DesktopRuntimeController {
 
 #[cfg(feature = "development-provisioning")]
 enum DesktopCommand {
-    Reconnect,
     Stop,
 }
 
@@ -94,6 +85,7 @@ struct ConnectedRuntime {
     actor: RuntimeActor,
     status: watch::Receiver<RuntimeStatus>,
     closed: watch::Receiver<bool>,
+    reconnecting: bool,
 }
 
 #[cfg(feature = "development-provisioning")]
@@ -126,43 +118,62 @@ async fn run_development(
     let Ok(provisioning) = DevelopmentProvisioning::from_path(path) else {
         return;
     };
-    let Ok(client) = provisioning.into_client() else {
+    let Ok(server) = provisioning.into_server() else {
         return;
     };
-    let mut connected = connect(&client, &status_tx).await;
+    let mut connected: Option<ConnectedRuntime> = None;
 
     loop {
-        let event = match connected.as_mut() {
-            Some(connection) => {
-                tokio::select! {
-                    command = command_rx.recv() => DesktopEvent::Command(command),
-                    changed = connection.status.changed() => {
-                        if changed.is_ok() {
-                            DesktopEvent::StatusChanged
-                        } else {
-                            DesktopEvent::ActorClosed
-                        }
+        if connected
+            .as_ref()
+            .is_none_or(|connection| connection.reconnecting)
+        {
+            tokio::select! {
+                command = command_rx.recv() => {
+                    if matches!(command, Some(DesktopCommand::Stop) | None) {
+                        stop_connected(connected.take(), &status_tx).await;
+                        return;
                     }
-                    changed = connection.closed.changed() => {
-                        if changed.is_ok() {
-                            DesktopEvent::TransportClosed
-                        } else {
-                            DesktopEvent::ActorClosed
+                }
+                session = server.accept_authenticated(timeouts()) => {
+                    let Ok(session) = session else {
+                        continue;
+                    };
+                    match connected.as_mut() {
+                        Some(connection) => {
+                            let _ = reconnect(session, &server, connection, &status_tx).await;
+                        }
+                        None => {
+                            connected = start_session(session, &server, &status_tx);
                         }
                     }
                 }
             }
-            None => DesktopEvent::Command(command_rx.recv().await),
+            continue;
+        }
+
+        let event = {
+            let connection = connected.as_mut().expect("connected state checked above");
+            tokio::select! {
+                command = command_rx.recv() => DesktopEvent::Command(command),
+                changed = connection.status.changed() => {
+                    if changed.is_ok() {
+                        DesktopEvent::StatusChanged
+                    } else {
+                        DesktopEvent::ActorClosed
+                    }
+                }
+                changed = connection.closed.changed() => {
+                    if changed.is_ok() {
+                        DesktopEvent::TransportClosed
+                    } else {
+                        DesktopEvent::ActorClosed
+                    }
+                }
+            }
         };
 
         match event {
-            DesktopEvent::Command(Some(DesktopCommand::Reconnect)) => {
-                if let Some(connection) = connected.as_mut() {
-                    let _ = reconnect(&client, connection, &status_tx).await;
-                } else {
-                    connected = connect(&client, &status_tx).await;
-                }
-            }
             DesktopEvent::Command(Some(DesktopCommand::Stop))
             | DesktopEvent::Command(None)
             | DesktopEvent::ActorClosed => {
@@ -179,6 +190,7 @@ async fn run_development(
                     && *connection.closed.borrow()
                 {
                     let _ = network_lost(connection, &status_tx).await;
+                    connection.reconnecting = true;
                 }
             }
         }
@@ -186,12 +198,12 @@ async fn run_development(
 }
 
 #[cfg(feature = "development-provisioning")]
-async fn connect(
-    client: &DevelopmentQuicClient,
+fn start_session(
+    session: AuthenticatedQuicSession,
+    server: &DevelopmentQuicServer,
     status_tx: &watch::Sender<Option<RuntimeStatus>>,
 ) -> Option<ConnectedRuntime> {
-    let session = client.connect_authenticated(timeouts()).await.ok()?;
-    let (actor_session, closed) = runtime_session(session, client.peer_trust())?;
+    let (actor_session, closed) = runtime_session(session, server.peer_trust())?;
 
     let mut actor = RuntimeActor::new(actor_config());
     actor.start(actor_session).ok()?;
@@ -202,20 +214,18 @@ async fn connect(
         actor,
         status,
         closed,
+        reconnecting: false,
     })
 }
 
 #[cfg(feature = "development-provisioning")]
 async fn reconnect(
-    client: &DevelopmentQuicClient,
+    session: AuthenticatedQuicSession,
+    server: &DevelopmentQuicServer,
     connected: &mut ConnectedRuntime,
     status_tx: &watch::Sender<Option<RuntimeStatus>>,
 ) -> Result<(), ()> {
-    let session = client
-        .connect_authenticated(timeouts())
-        .await
-        .map_err(|_| ())?;
-    let (actor_session, closed) = runtime_session(session, client.peer_trust()).ok_or(())?;
+    let (actor_session, closed) = runtime_session(session, server.peer_trust()).ok_or(())?;
 
     connected
         .actor
@@ -224,6 +234,7 @@ async fn reconnect(
         .map_err(|_| ())?;
     connected.closed = closed;
     connected.status.changed().await.map_err(|_| ())?;
+    connected.reconnecting = false;
     status_tx.send_replace(Some(connected.status.borrow().clone()));
     Ok(())
 }
@@ -277,5 +288,5 @@ fn actor_config() -> RuntimeActorConfig {
 
 #[cfg(feature = "development-provisioning")]
 fn timeouts() -> QuicSessionTimeouts {
-    QuicSessionTimeouts::new(CONNECT_TIMEOUT, CONNECT_TIMEOUT)
+    QuicSessionTimeouts::new(SESSION_TIMEOUT, SESSION_TIMEOUT)
 }
