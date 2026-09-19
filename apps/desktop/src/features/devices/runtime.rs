@@ -11,7 +11,14 @@ use crosslab_transport_quic::{
     development::{DevelopmentProvisioning, DevelopmentQuicServer},
 };
 #[cfg(feature = "development-provisioning")]
-use std::{num::NonZeroUsize, path::PathBuf, sync::Arc, thread, time::Duration};
+use std::{
+    future::pending,
+    num::NonZeroUsize,
+    path::PathBuf,
+    sync::Arc,
+    thread,
+    time::Duration,
+};
 #[cfg(feature = "development-provisioning")]
 use tokio::sync::mpsc;
 
@@ -77,6 +84,7 @@ enum DesktopEvent {
     Command(Option<DesktopCommand>),
     StatusChanged,
     TransportClosed,
+    RevokePeer,
     ActorClosed,
 }
 
@@ -118,9 +126,10 @@ async fn run_development(
     let Ok(provisioning) = DevelopmentProvisioning::from_path(path) else {
         return;
     };
-    let Ok(server) = provisioning.into_server() else {
+    let Ok(mut server) = provisioning.into_server() else {
         return;
     };
+    let mut revocation_signal = development_revocation_signal();
     let mut connected: Option<ConnectedRuntime> = None;
 
     loop {
@@ -170,6 +179,7 @@ async fn run_development(
                         DesktopEvent::ActorClosed
                     }
                 }
+                _ = wait_for_revocation(&mut revocation_signal) => DesktopEvent::RevokePeer,
             }
         };
 
@@ -190,6 +200,16 @@ async fn run_development(
                     && *connection.closed.borrow()
                 {
                     let _ = network_lost(connection, &status_tx).await;
+                    connection.reconnecting = true;
+                }
+            }
+            DesktopEvent::RevokePeer => {
+                if let Some(connection) = connected.as_mut()
+                    && let Ok(revoked) = server.revoke_peer_trust()
+                    && connection.actor.revoke_peer(revoked).await.is_ok()
+                    && connection.status.changed().await.is_ok()
+                {
+                    status_tx.send_replace(Some(connection.status.borrow().clone()));
                     connection.reconnecting = true;
                 }
             }
@@ -289,4 +309,35 @@ fn actor_config() -> RuntimeActorConfig {
 #[cfg(feature = "development-provisioning")]
 fn timeouts() -> QuicSessionTimeouts {
     QuicSessionTimeouts::new(SESSION_TIMEOUT, SESSION_TIMEOUT)
+}
+
+#[cfg(all(feature = "development-provisioning", unix))]
+type DevelopmentRevocationSignal = tokio::signal::unix::Signal;
+
+#[cfg(all(feature = "development-provisioning", not(unix)))]
+struct DevelopmentRevocationSignal;
+
+#[cfg(all(feature = "development-provisioning", unix))]
+fn development_revocation_signal() -> Option<DevelopmentRevocationSignal> {
+    tokio::signal::unix::signal(tokio::signal::unix::SignalKind::user_defined1()).ok()
+}
+
+#[cfg(all(feature = "development-provisioning", not(unix)))]
+fn development_revocation_signal() -> Option<DevelopmentRevocationSignal> {
+    None
+}
+
+#[cfg(all(feature = "development-provisioning", unix))]
+async fn wait_for_revocation(signal: &mut Option<DevelopmentRevocationSignal>) {
+    match signal {
+        Some(signal) => {
+            let _ = signal.recv().await;
+        }
+        None => pending::<()>().await,
+    }
+}
+
+#[cfg(all(feature = "development-provisioning", not(unix)))]
+async fn wait_for_revocation(_: &mut Option<DevelopmentRevocationSignal>) {
+    pending::<()>().await
 }
