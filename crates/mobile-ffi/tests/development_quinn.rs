@@ -47,7 +47,7 @@ async fn mobile_facade_tracks_authenticated_quinn_disconnect_and_fresh_reconnect
     let server_addr = server.local_addr().unwrap();
 
     let client_path = temp_provisioning_path();
-    fs::write(
+    write_private(
         &client_path,
         provisioning_document(
             [0x12; 32],
@@ -67,8 +67,7 @@ async fn mobile_facade_tracks_authenticated_quinn_disconnect_and_fresh_reconnect
             }),
         )
         .to_string(),
-    )
-    .unwrap();
+    );
 
     let mobile = MobileRuntime::new();
     mobile.start().unwrap();
@@ -203,4 +202,27 @@ fn timeouts() -> QuicSessionTimeouts {
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+#[cfg(unix)]
+fn write_private(path: &PathBuf, contents: String) {
+    use std::{
+        fs::OpenOptions,
+        io::Write as _,
+        os::unix::fs::OpenOptionsExt as _,
+    };
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .mode(0o600)
+        .open(path)
+        .unwrap();
+    file.write_all(contents.as_bytes()).unwrap();
+}
+
+#[cfg(not(unix))]
+fn write_private(path: &PathBuf, contents: String) {
+    fs::write(path, contents).unwrap();
 }
