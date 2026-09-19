@@ -58,11 +58,13 @@ impl DevelopmentClientHandle {
     }
 
     fn send(&self, command: DevelopmentCommand) -> Result<(), MobileRuntimeError> {
-        self.command_tx.try_send(command).map_err(|error| match error {
-            TrySendError::Full(_) | TrySendError::Disconnected(_) => {
-                MobileRuntimeError::StateUnavailable
-            }
-        })
+        self.command_tx
+            .try_send(command)
+            .map_err(|error| match error {
+                TrySendError::Full(_) | TrySendError::Disconnected(_) => {
+                    MobileRuntimeError::StateUnavailable
+                }
+            })
     }
 }
 
@@ -151,8 +153,8 @@ async fn reconnect(
         .connect_authenticated(timeouts())
         .await
         .map_err(|_| MobileRuntimeError::StateUnavailable)?;
-    let actor_session =
-        runtime_session(session, client.peer_trust()).ok_or(MobileRuntimeError::StateUnavailable)?;
+    let actor_session = runtime_session(session, client.peer_trust())
+        .ok_or(MobileRuntimeError::StateUnavailable)?;
 
     connected
         .actor
