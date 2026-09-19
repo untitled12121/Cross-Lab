@@ -6,6 +6,10 @@ use crosslab_policy::{NetworkClass, TrustState};
 use crosslab_protocol::ProtocolVersion;
 use crosslab_runtime::{ConnectivityState, RuntimeStatus};
 
+mod runtime;
+
+pub use runtime::DesktopRuntimeController;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrustDisplay {
     Pending,
@@ -215,6 +219,10 @@ impl DevicesFeatureState {
 
     pub fn update_runtime(&mut self, status: &RuntimeStatus) {
         self.current = Some(DevicePresentation::from_runtime(status));
+    }
+
+    pub fn clear(&mut self) {
+        self.current = None;
     }
 
     pub const fn current(&self) -> Option<&DevicePresentation> {
