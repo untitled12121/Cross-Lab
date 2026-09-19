@@ -119,6 +119,29 @@ fn development_provisioning_rejects_wrong_endpoint_role() {
     ));
 }
 
+#[cfg(unix)]
+#[test]
+fn development_provisioning_rejects_group_readable_files() {
+    use std::{fs, os::unix::fs::PermissionsExt as _};
+
+    let path = std::env::temp_dir().join(format!(
+        "crosslab-quic-development-permissions-{}.json",
+        std::process::id()
+    ));
+    fs::write(&path, b"{}").unwrap();
+    let mut permissions = fs::metadata(&path).unwrap().permissions();
+    permissions.set_mode(0o644);
+    fs::set_permissions(&path, permissions).unwrap();
+
+    let result = DevelopmentProvisioning::from_path(&path);
+    let _ = fs::remove_file(path);
+
+    assert!(matches!(
+        result,
+        Err(DevelopmentProvisioningError::InsecurePermissions)
+    ));
+}
+
 #[allow(clippy::too_many_arguments)]
 fn provisioning_document(
     owner_id: [u8; 32],
