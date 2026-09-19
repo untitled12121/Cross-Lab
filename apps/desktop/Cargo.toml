@@ -15,6 +15,7 @@ default = []
 development-provisioning = [
     "dep:crosslab-transport-quic",
     "crosslab-transport-quic/development-provisioning",
+    "tokio/signal",
 ]
 
 [dependencies]
