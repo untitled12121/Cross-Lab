@@ -10,13 +10,13 @@ M1-M9 are complete. M10 Tasks 3-9 are integrated on `main`. Task 10 host-side CI
 
 ## Canonical Baseline
 
-- Canonical `main`: `f19aa4bb89d744f2ebf0f0fa2b204929fd8495a4` (Task 9 / PR #38 merged).
+- Canonical Task 10 host-gate integration baseline: `main` merge `b31ecd3a8d6b9aaeb0ebae8944ab0c2b0d3b8db5` (PR #39).
 - Task 9 PR: #38, merged as `f19aa4bb89d744f2ebf0f0fa2b204929fd8495a4`.
 - Task 9 final exact-head CI: GitHub Actions `35435754375` on `f078f7b5e0c3a4b20c1aa3d38a3b29f592cc7152`, Android and Rust both fully green.
-- Active Task 10 branch: `m10-task10-platform-evidence`.
-- Task 10 PR: #39 (`ci(m10): add platform evidence gates`), kept draft until this documentation checkpoint receives exact-head CI.
-- Verified Task 10 host-gate implementation head: `fad35fd2f3535d148a64287fdde391d1613b720e`.
-- Task 10 host-gate CI: GitHub Actions `35438748708` - full preserved Rust gate plus Linux development-provisioning desktop build, Android unit tests/default debug assembly, and Android development-provisioning debug assembly all passed.
+- Task 10 host-gate PR: #39, merged as `b31ecd3a8d6b9aaeb0ebae8944ab0c2b0d3b8db5`.
+- Verified Task 10 host-gate implementation head: `fad35fd2f3535d148a64287fdde391d1613b720e`, CI `35438748708` fully green.
+- Task 10 final documentation head: `969ca58a3fec716ab408a88508039b19fbe0fd7f`, exact-head CI `35459098042` fully green before merge.
+- Physical-evidence continuation branch: `m10-task10-real-device-evidence` (created from the post-merge documentation checkpoint).
 - Evidence protocol: `docs/research/M10-platform-evidence.md`.
 - Active implementation plan: `docs/superpowers/plans/2026-09-17-m10-first-platform-slice.md`.
 - Approved design: `docs/superpowers/specs/2026-09-17-m10-platform-shell-design.md`.
@@ -113,8 +113,8 @@ The slice remains **authenticated local device connection + device status** betw
 
 Finish this verified Task 10 host-gate checkpoint, then collect the mandatory physical-device evidence before Task 11:
 
-1. require exact-head CI for this documentation checkpoint, then merge PR #39 as a verified intermediate Task 10 milestone without declaring M10 complete;
-2. create a fresh evidence branch from the resulting `main` when physical Linux + Android execution is available;
+1. use the merged Task 10 host-gate baseline and `docs/research/M10-platform-evidence.md` for physical Linux + Android evidence;
+2. continue on `m10-task10-real-device-evidence` when physical Linux + Android execution is available;
 3. use `docs/research/M10-platform-evidence.md` as the evidence contract and do not record provisioning contents, keys, device serials, MAC/IP addresses, SSIDs, or session identifiers;
 4. record the exact tested Cross-Lab commit, coarse Linux/Android environment identifiers, and a pass/fail evidence ID for every required scenario;
 5. confirm reconnect uses a different session without copying either session ID into documentation;
