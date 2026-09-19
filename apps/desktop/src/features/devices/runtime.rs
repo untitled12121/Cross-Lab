@@ -3,8 +3,6 @@ use tokio::sync::watch;
 use crosslab_runtime::RuntimeStatus;
 
 #[cfg(feature = "development-provisioning")]
-use std::{num::NonZeroUsize, path::PathBuf, sync::Arc, thread, time::Duration};
-#[cfg(feature = "development-provisioning")]
 use crosslab_policy::{NetworkClass, PolicyState, TrustRecord};
 #[cfg(feature = "development-provisioning")]
 use crosslab_runtime::{RuntimeActor, RuntimeActorConfig, RuntimeActorSession, RuntimeNode};
@@ -13,6 +11,8 @@ use crosslab_transport_quic::{
     AuthenticatedQuicSession, QuicSessionTimeouts,
     development::{DevelopmentProvisioning, DevelopmentQuicClient},
 };
+#[cfg(feature = "development-provisioning")]
+use std::{num::NonZeroUsize, path::PathBuf, sync::Arc, thread, time::Duration};
 #[cfg(feature = "development-provisioning")]
 use tokio::sync::mpsc;
 
@@ -211,10 +211,17 @@ async fn reconnect(
     connected: &mut ConnectedRuntime,
     status_tx: &watch::Sender<Option<RuntimeStatus>>,
 ) -> Result<(), ()> {
-    let session = client.connect_authenticated(timeouts()).await.map_err(|_| ())?;
+    let session = client
+        .connect_authenticated(timeouts())
+        .await
+        .map_err(|_| ())?;
     let (actor_session, closed) = runtime_session(session, client.peer_trust()).ok_or(())?;
 
-    connected.actor.reconnect(actor_session).await.map_err(|_| ())?;
+    connected
+        .actor
+        .reconnect(actor_session)
+        .await
+        .map_err(|_| ())?;
     connected.closed = closed;
     connected.status.changed().await.map_err(|_| ())?;
     status_tx.send_replace(Some(connected.status.borrow().clone()));
