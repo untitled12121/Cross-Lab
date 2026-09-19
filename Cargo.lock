@@ -1730,9 +1730,11 @@ dependencies = [
  "crosslab-policy",
  "crosslab-protocol",
  "crosslab-runtime",
+ "crosslab-transport-quic",
  "gpui-kit",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
