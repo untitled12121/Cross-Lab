@@ -20,6 +20,7 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DevelopmentProvisioningError {
     Read,
+    InsecurePermissions,
     Document,
     SecretEncoding,
     Identity,
@@ -33,6 +34,9 @@ impl fmt::Display for DevelopmentProvisioningError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::Read => "development provisioning file could not be read",
+            Self::InsecurePermissions => {
+                "development provisioning file permissions are too broad"
+            }
             Self::Document => "development provisioning document is invalid",
             Self::SecretEncoding => "development provisioning contains invalid encoded material",
             Self::Identity => "development identity provisioning is invalid",
@@ -58,6 +62,8 @@ pub struct DevelopmentProvisioning {
 
 impl DevelopmentProvisioning {
     pub fn from_path(path: impl AsRef<Path>) -> Result<Self, DevelopmentProvisioningError> {
+        let path = path.as_ref();
+        ensure_private_permissions(path)?;
         let bytes = fs::read(path).map_err(|_| DevelopmentProvisioningError::Read)?;
         Self::from_json(&bytes)
     }
@@ -453,4 +459,22 @@ fn decode_nibble(value: u8) -> Result<u8, DevelopmentProvisioningError> {
         b'A'..=b'F' => Ok(value - b'A' + 10),
         _ => Err(DevelopmentProvisioningError::SecretEncoding),
     }
+}
+
+#[cfg(unix)]
+fn ensure_private_permissions(path: &Path) -> Result<(), DevelopmentProvisioningError> {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let metadata = fs::metadata(path).map_err(|_| DevelopmentProvisioningError::Read)?;
+    if metadata.permissions().mode() & 0o077 != 0 {
+        return Err(DevelopmentProvisioningError::InsecurePermissions);
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn ensure_private_permissions(path: &Path) -> Result<(), DevelopmentProvisioningError> {
+    fs::metadata(path)
+        .map(|_| ())
+        .map_err(|_| DevelopmentProvisioningError::Read)
 }
