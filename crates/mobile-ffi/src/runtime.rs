@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use crosslab_runtime::{RuntimeStatus};
+use crosslab_runtime::RuntimeStatus;
 
 #[cfg(feature = "development-provisioning")]
 use crosslab_transport_quic::development::DevelopmentProvisioning;
