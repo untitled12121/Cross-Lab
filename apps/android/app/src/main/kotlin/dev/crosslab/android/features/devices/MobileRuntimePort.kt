@@ -44,6 +44,7 @@ class MobileRuntimePort(
 
     override fun stop() {
         runtime.stop()
+        developmentConfigured = false
     }
 
     override fun networkLost() {
