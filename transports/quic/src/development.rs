@@ -34,9 +34,7 @@ impl fmt::Display for DevelopmentProvisioningError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::Read => "development provisioning file could not be read",
-            Self::InsecurePermissions => {
-                "development provisioning file permissions are too broad"
-            }
+            Self::InsecurePermissions => "development provisioning file permissions are too broad",
             Self::Document => "development provisioning document is invalid",
             Self::SecretEncoding => "development provisioning contains invalid encoded material",
             Self::Identity => "development identity provisioning is invalid",
