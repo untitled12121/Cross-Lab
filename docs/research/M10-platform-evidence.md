@@ -5,11 +5,11 @@ This document records evidence for the M10 first real Linux + Android platform s
 ## Evidence status
 
 - Task 9 integrated baseline: `main` at `f19aa4bb89d744f2ebf0f0fa2b204929fd8495a4`.
-- Host CI evidence: pending Task 10 exact-head run.
+- Host CI evidence: **verified** on Task 10 implementation head `fad35fd2f3535d148a64287fdde391d1613b720e`, GitHub Actions `35438748708`.
 - Linux real-device evidence: **pending**.
 - Android real-device evidence: **pending**.
 - Darkmatter/System-dark evidence: **blocked** until an authoritative Darkmatter palette is supplied.
-- M10 completion: **open**.
+- M10 completion: **open** - mandatory physical Linux + Android lifecycle/security evidence is still pending.
 
 ## Safety rules for evidence
 
@@ -44,6 +44,8 @@ Additional host-appropriate checks:
 - Android debug assembly with `-PcrosslabDevelopmentProvisioning=true`.
 
 These checks prove reproducible host builds only. They do not prove Android process lifecycle, radio/network transitions, or physical-device reconnect behavior.
+
+Task 10 host verification: GitHub Actions `35438748708` on `fad35fd2f3535d148a64287fdde391d1613b720e` passed the preserved Rust gate, default Linux desktop build, Linux development-provisioning desktop build, deterministic UniFFI Kotlin generation, Android unit tests, default Android debug assembly, and Android development-provisioning debug assembly.
 
 ## Real-device environment record
 
