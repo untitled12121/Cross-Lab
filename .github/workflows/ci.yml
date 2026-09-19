@@ -64,6 +64,8 @@ jobs:
           find "$RUNNER_TEMP/crosslab-uniffi-kotlin" -type f -name '*.kt' -print -quit | grep -q .
       - name: Build Linux desktop
         run: cargo build -p crosslab-desktop --locked
+      - name: Build Linux desktop development slice
+        run: cargo build -p crosslab-desktop --locked --features development-provisioning
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: Test
@@ -114,4 +116,11 @@ jobs:
       - name: Android debug assembly
         working-directory: apps/android
         run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+      - name: Android development wiring assembly
+        working-directory: apps/android
+        run: |
+          ./gradlew :app:assembleDebug \
+            -PcrosslabDevelopmentProvisioning=true \
+            --no-daemon \
+            --stacktrace
 
