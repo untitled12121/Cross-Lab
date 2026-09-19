@@ -12,9 +12,10 @@ import uniffi.crosslab_mobile_ffi.MobileTransportSecurity
 import uniffi.crosslab_mobile_ffi.MobileTrustState
 
 class MobileRuntimePort(
-    developmentProvisioningPath: String? = null,
+    private val developmentProvisioningPath: String? = null,
 ) : RuntimePort {
     private val runtime = MobileRuntime()
+    private var developmentConfigured = false
     private val listeners = CopyOnWriteArraySet<(RuntimeSnapshot) -> Unit>()
     private val closed = AtomicBoolean(false)
     private val events =
@@ -25,14 +26,20 @@ class MobileRuntimePort(
         }
 
     init {
-        if (developmentProvisioningPath != null) {
-            runtime.configureDevelopmentClient(developmentProvisioningPath)
-        }
         events.execute(::eventLoop)
     }
 
     override fun start() {
         runtime.start()
+        if (developmentProvisioningPath != null && !developmentConfigured) {
+            try {
+                runtime.configureDevelopmentClient(developmentProvisioningPath)
+                developmentConfigured = true
+            } catch (error: RuntimeException) {
+                runCatching { runtime.stop() }
+                throw error
+            }
+        }
     }
 
     override fun stop() {
