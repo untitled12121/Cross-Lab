@@ -25,6 +25,11 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0-dev"
+        buildConfigField(
+            "boolean",
+            "CROSSLAB_DEVELOPMENT_PROVISIONING",
+            developmentProvisioning.get().toString(),
+        )
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -32,6 +37,7 @@ android {
     }
 
     buildFeatures {
+        buildConfig = true
         compose = true
     }
 
