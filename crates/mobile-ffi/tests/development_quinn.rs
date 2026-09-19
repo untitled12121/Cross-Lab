@@ -2,7 +2,6 @@
 
 use std::{
     fs,
-    net::SocketAddr,
     path::PathBuf,
     time::Duration,
 };
@@ -22,7 +21,7 @@ const WAIT: Duration = Duration::from_secs(3);
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn mobile_facade_tracks_authenticated_quinn_disconnect_and_fresh_reconnect() {
-    let certified = rcgen::generate_simple_self_signed(vec!["localhost".to_owned()].unwrap();
+    let certified = rcgen::generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
     let certificate_der = certified.cert.der().as_ref().to_vec();
     let private_key_der = certified.signing_key.serialize_der();
 
@@ -91,18 +90,15 @@ async fn mobile_facade_tracks_authenticated_quinn_disconnect_and_fresh_reconnect
     });
 
     let first_server_context = first_server.session().context().unwrap();
-    assert_eq!(
-        first.peer_device_id.as_deref(),
-        Some(&hex(first_server_context.local_device_id().as_bytes()))
-    );
+    let first_server_device = hex(first_server_context.local_device_id().as_bytes());
+    let first_client_device = hex(first_server_context.peer_device_id().as_bytes());
+    let first_session_id = hex(&first_server_context.session_id().to_bytes());
+    assert_eq!(first.peer_device_id.as_deref(), Some(first_server_device.as_str()));
     assert_eq!(
         first.local_device_id.as_deref(),
-        Some(&hex(first_server_context.peer_device_id().as_bytes()))
+        Some(first_client_device.as_str())
     );
-    assert_eq!(
-        first.session_id.as_deref(),
-        Some(&hex(&first_server_context.session_id().to_bytes()))
-    );
+    assert_eq!(first.session_id.as_deref(), Some(first_session_id.as_str()));
     assert_eq!(first.trust, MobileTrustState::Trusted);
     assert_eq!(
         first.transport_security,
@@ -125,10 +121,8 @@ async fn mobile_facade_tracks_authenticated_quinn_disconnect_and_fresh_reconnect
     });
 
     let second_server_context = second_server.session().context().unwrap();
-    assert_eq!(
-        second.session_id.as_deref(),
-        Some(&hex(&second_server_context.session_id().to_bytes()))
-    );
+    let second_session_id = hex(&second_server_context.session_id().to_bytes());
+    assert_eq!(second.session_id.as_deref(), Some(second_session_id.as_str()));
     assert_ne!(second.session_id, first.session_id);
 
     first_server.transport().shutdown().await;
