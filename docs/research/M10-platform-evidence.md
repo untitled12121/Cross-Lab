@@ -47,6 +47,75 @@ These checks prove reproducible host builds only. They do not prove Android proc
 
 Task 10 host verification: GitHub Actions `35438748708` on `fad35fd2f3535d148a64287fdde391d1613b720e` passed the preserved Rust gate, default Linux desktop build, Linux development-provisioning desktop build, deterministic UniFFI Kotlin generation, Android unit tests, default Android debug assembly, and Android development-provisioning debug assembly.
 
+## Real-device setup
+
+Use only the throwaway generator below. **Never place a real owner-root key, real Device Signing key, or production device key in the M10 development provisioning files.**
+
+On the Linux host, choose an unused UDP port and the Linux machine's LAN address that the Android device can reach. Do not copy that address into this evidence document.
+
+```bash
+PROVISION_DIR="/tmp/crosslab-m10-evidence"
+cargo run -p crosslab-transport-quic \
+  --example m10_provision \
+  --features development-provisioning \
+  -- \
+  --server-remote "<LINUX_LAN_IP>:45777" \
+  --out-dir "$PROVISION_DIR"
+```
+
+The generator creates `desktop.json` and `android.json` with synthetic credentials, restricts them to private files on Unix, refuses to overwrite existing files, and does not print secret contents. Delete both files after evidence collection.
+
+Build and install the Android development slice on an arm64 physical device:
+
+```bash
+cd apps/android
+./gradlew :app:installDebug \
+  -PcrosslabDevelopmentProvisioning=true \
+  --no-daemon
+cd ../..
+```
+
+Copy the Android provisioning document directly into the debuggable app's private storage through `run-as`, without staging it in shared device storage:
+
+```bash
+adb shell 'run-as dev.crosslab.android sh -c "umask 077; cat > files/crosslab-development-provisioning.json"' \
+  < "$PROVISION_DIR/android.json"
+adb shell 'run-as dev.crosslab.android chmod 600 files/crosslab-development-provisioning.json'
+```
+
+Do not paste the output of provisioning files or `adb` device identifiers into evidence.
+
+Build and start the Linux peer directly so its PID is the Cross-Lab desktop process rather than a `cargo run` parent:
+
+```bash
+cargo build -p crosslab-desktop --features development-provisioning
+CROSSLAB_DEVELOPMENT_PROVISIONING="$PROVISION_DIR/desktop.json" \
+  target/debug/crosslab-desktop &
+DESKTOP_PID=$!
+```
+
+If a host firewall is active, allow only the selected development UDP port on the local/LAN interface for the duration of the test, then remove that temporary rule afterward.
+
+Start the Android app after the Linux peer is listening. For foreground/background evidence, use normal device navigation rather than process-kill commands so `ProcessLifecycleOwner` receives real lifecycle transitions.
+
+For the physical revocation scenario, while both peers are connected send the development-only Linux trigger:
+
+```bash
+kill -USR1 "$DESKTOP_PID"
+```
+
+The Linux runtime must transition to revoked/disconnected. Then background and foreground the Android app (or otherwise perform an explicit reconnect attempt) and verify that the desktop rejects the fresh connection. The `SIGUSR1` path exists only behind `development-provisioning`; it does not exist in the default desktop build.
+
+After evidence collection:
+
+```bash
+kill "$DESKTOP_PID" 2>/dev/null || true
+adb shell am force-stop dev.crosslab.android
+rm -rf "$PROVISION_DIR"
+```
+
+Also remove the app-private development provisioning file or uninstall the debug app before using the device for unrelated testing.
+
 ## Real-device environment record
 
 Fill this section only when physical-device evidence is collected.
