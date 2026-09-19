@@ -24,7 +24,7 @@ quinn.workspace = true
 rustls.workspace = true
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
-tokio = { workspace = true, features = ["rt", "sync", "time"] }
+tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
 
 [dev-dependencies]
 crosslab-runtime = { path = "../../crates/runtime" }
