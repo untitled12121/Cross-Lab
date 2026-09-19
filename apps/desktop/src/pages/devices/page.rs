@@ -12,10 +12,10 @@ impl DevicesPage {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let runtime = DesktopRuntimeController::from_environment();
         let mut status = runtime.subscribe_status();
-        let state = status
-            .borrow()
-            .as_ref()
-            .map_or_else(DevicesFeatureState::empty, DevicesFeatureState::from_runtime);
+        let state = status.borrow().as_ref().map_or_else(
+            DevicesFeatureState::empty,
+            DevicesFeatureState::from_runtime,
+        );
 
         cx.spawn(async move |this, cx| {
             while status.changed().await.is_ok() {
