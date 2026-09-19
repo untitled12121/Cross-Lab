@@ -48,7 +48,11 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
     }
 
     private fun developmentProvisioningPath(): String? {
-        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return null
+        if (!BuildConfig.CROSSLAB_DEVELOPMENT_PROVISIONING ||
+            applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0
+        ) {
+            return null
+        }
 
         val provisioning = filesDir.resolve("crosslab-development-provisioning.json")
         return provisioning.takeIf { it.isFile }?.absolutePath
