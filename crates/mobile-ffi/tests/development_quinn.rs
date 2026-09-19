@@ -206,11 +206,7 @@ fn hex(bytes: &[u8]) -> String {
 
 #[cfg(unix)]
 fn write_private(path: &PathBuf, contents: String) {
-    use std::{
-        fs::OpenOptions,
-        io::Write as _,
-        os::unix::fs::OpenOptionsExt as _,
-    };
+    use std::{fs::OpenOptions, io::Write as _, os::unix::fs::OpenOptionsExt as _};
 
     let mut file = OpenOptions::new()
         .create(true)
