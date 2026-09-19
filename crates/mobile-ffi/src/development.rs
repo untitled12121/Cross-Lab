@@ -1,19 +1,14 @@
-use std::{
-    num::NonZeroUsize,
-    sync::{
-        Arc,
-        mpsc::{Receiver, SyncSender, TrySendError, sync_channel},
-    },
-    thread,
-    time::Duration,
-};
+use std::{num::NonZeroUsize, sync::Arc, thread, time::Duration};
 
-use crosslab_policy::{NetworkClass, PolicyState};
-use crosslab_runtime::{RuntimeActor, RuntimeActorConfig, RuntimeActorSession, RuntimeNode};
+use crosslab_policy::{NetworkClass, PolicyState, TrustRecord};
+use crosslab_runtime::{
+    RuntimeActor, RuntimeActorConfig, RuntimeActorSession, RuntimeNode, RuntimeStatus,
+};
 use crosslab_transport_quic::{
     AuthenticatedQuicSession, QuicSessionTimeouts,
     development::{DevelopmentProvisioning, DevelopmentQuicClient},
 };
+use tokio::sync::{mpsc, watch};
 
 use crate::{MobileRuntimeError, runtime::MobileRuntimePublisher};
 
@@ -27,8 +22,15 @@ enum DevelopmentCommand {
     Stop,
 }
 
+enum DevelopmentEvent {
+    Command(Option<DevelopmentCommand>),
+    StatusChanged,
+    TransportClosed,
+    ActorClosed,
+}
+
 pub(crate) struct DevelopmentClientHandle {
-    command_tx: SyncSender<DevelopmentCommand>,
+    command_tx: mpsc::Sender<DevelopmentCommand>,
 }
 
 impl DevelopmentClientHandle {
@@ -36,10 +38,18 @@ impl DevelopmentClientHandle {
         provisioning: DevelopmentProvisioning,
         publisher: MobileRuntimePublisher,
     ) -> Result<Self, MobileRuntimeError> {
-        let (command_tx, command_rx) = sync_channel(COMMAND_CAPACITY);
+        let (command_tx, command_rx) = mpsc::channel(COMMAND_CAPACITY);
         thread::Builder::new()
             .name("crosslab-mobile-development".into())
-            .spawn(move || run(provisioning, publisher, command_rx))
+            .spawn(move || {
+                let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                else {
+                    return;
+                };
+                runtime.block_on(run(provisioning, publisher, command_rx));
+            })
             .map_err(|_| MobileRuntimeError::StateUnavailable)?;
 
         Ok(Self { command_tx })
@@ -60,11 +70,7 @@ impl DevelopmentClientHandle {
     fn send(&self, command: DevelopmentCommand) -> Result<(), MobileRuntimeError> {
         self.command_tx
             .try_send(command)
-            .map_err(|error| match error {
-                TrySendError::Full(_) | TrySendError::Disconnected(_) => {
-                    MobileRuntimeError::StateUnavailable
-                }
-            })
+            .map_err(|_| MobileRuntimeError::StateUnavailable)
     }
 }
 
@@ -76,56 +82,76 @@ impl Drop for DevelopmentClientHandle {
 
 struct ConnectedRuntime {
     actor: RuntimeActor,
-    status: tokio::sync::watch::Receiver<crosslab_runtime::RuntimeStatus>,
+    status: watch::Receiver<RuntimeStatus>,
+    closed: watch::Receiver<bool>,
 }
 
-fn run(
+async fn run(
     provisioning: DevelopmentProvisioning,
     publisher: MobileRuntimePublisher,
-    command_rx: Receiver<DevelopmentCommand>,
+    mut command_rx: mpsc::Receiver<DevelopmentCommand>,
 ) {
-    let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    else {
+    let Ok(client) = provisioning.into_client() else {
         return;
     };
+    let mut connected = connect(&client, &publisher).await;
 
-    let client = {
-        let _guard = runtime.enter();
-        provisioning.into_client()
-    };
-    let Ok(client) = client else {
-        return;
-    };
-
-    let mut connected = runtime.block_on(connect(&client, &publisher));
-
-    while let Ok(command) = command_rx.recv() {
-        match command {
-            DevelopmentCommand::NetworkLost => {
-                if let Some(connection) = connected.as_mut() {
-                    let _ = network_lost(&runtime, connection, &publisher);
+    loop {
+        let event = match connected.as_mut() {
+            Some(connection) => {
+                tokio::select! {
+                    command = command_rx.recv() => DevelopmentEvent::Command(command),
+                    changed = connection.status.changed() => {
+                        if changed.is_ok() {
+                            DevelopmentEvent::StatusChanged
+                        } else {
+                            DevelopmentEvent::ActorClosed
+                        }
+                    }
+                    changed = connection.closed.changed() => {
+                        if changed.is_ok() {
+                            DevelopmentEvent::TransportClosed
+                        } else {
+                            DevelopmentEvent::ActorClosed
+                        }
+                    }
                 }
             }
-            DevelopmentCommand::NetworkAvailable => {
+            None => DevelopmentEvent::Command(command_rx.recv().await),
+        };
+
+        match event {
+            DevelopmentEvent::Command(Some(DevelopmentCommand::NetworkLost)) => {
                 if let Some(connection) = connected.as_mut() {
-                    let _ = runtime.block_on(reconnect(&client, connection, &publisher));
+                    let _ = network_lost(connection, &publisher).await;
+                }
+            }
+            DevelopmentEvent::Command(Some(DevelopmentCommand::NetworkAvailable)) => {
+                if let Some(connection) = connected.as_mut() {
+                    let _ = reconnect(&client, connection, &publisher).await;
                 } else {
-                    connected = runtime.block_on(connect(&client, &publisher));
+                    connected = connect(&client, &publisher).await;
                 }
             }
-            DevelopmentCommand::Stop => {
-                if let Some(mut connection) = connected.take() {
-                    let _ = runtime.block_on(connection.actor.stop());
-                }
+            DevelopmentEvent::Command(Some(DevelopmentCommand::Stop))
+            | DevelopmentEvent::Command(None)
+            | DevelopmentEvent::ActorClosed => {
+                stop_connected(connected.take()).await;
                 return;
             }
+            DevelopmentEvent::StatusChanged => {
+                if let Some(connection) = connected.as_ref() {
+                    let _ = publisher.publish_runtime_status(&connection.status.borrow());
+                }
+            }
+            DevelopmentEvent::TransportClosed => {
+                if let Some(connection) = connected.as_mut()
+                    && *connection.closed.borrow()
+                {
+                    let _ = network_lost(connection, &publisher).await;
+                }
+            }
         }
-    }
-
-    if let Some(mut connection) = connected {
-        let _ = runtime.block_on(connection.actor.stop());
     }
 }
 
@@ -134,14 +160,18 @@ async fn connect(
     publisher: &MobileRuntimePublisher,
 ) -> Option<ConnectedRuntime> {
     let session = client.connect_authenticated(timeouts()).await.ok()?;
-    let actor_session = runtime_session(session, client.peer_trust())?;
+    let (actor_session, closed) = runtime_session(session, client.peer_trust())?;
 
     let mut actor = RuntimeActor::new(actor_config());
     actor.start(actor_session).ok()?;
     let status = actor.subscribe_status().ok()?;
     publisher.publish_runtime_status(&status.borrow()).ok()?;
 
-    Some(ConnectedRuntime { actor, status })
+    Some(ConnectedRuntime {
+        actor,
+        status,
+        closed,
+    })
 }
 
 async fn reconnect(
@@ -153,13 +183,30 @@ async fn reconnect(
         .connect_authenticated(timeouts())
         .await
         .map_err(|_| MobileRuntimeError::StateUnavailable)?;
-    let actor_session = runtime_session(session, client.peer_trust())
+    let (actor_session, closed) = runtime_session(session, client.peer_trust())
         .ok_or(MobileRuntimeError::StateUnavailable)?;
 
     connected
         .actor
         .reconnect(actor_session)
         .await
+        .map_err(|_| MobileRuntimeError::StateUnavailable)?;
+    connected.closed = closed;
+    connected
+        .status
+        .changed()
+        .await
+        .map_err(|_| MobileRuntimeError::StateUnavailable)?;
+    publisher.publish_runtime_status(&connected.status.borrow())
+}
+
+async fn network_lost(
+    connected: &mut ConnectedRuntime,
+    publisher: &MobileRuntimePublisher,
+) -> Result<(), MobileRuntimeError> {
+    connected
+        .actor
+        .try_network_lost()
         .map_err(|_| MobileRuntimeError::StateUnavailable)?;
     connected
         .status
@@ -169,26 +216,18 @@ async fn reconnect(
     publisher.publish_runtime_status(&connected.status.borrow())
 }
 
-fn network_lost(
-    runtime: &tokio::runtime::Runtime,
-    connected: &mut ConnectedRuntime,
-    publisher: &MobileRuntimePublisher,
-) -> Result<(), MobileRuntimeError> {
-    connected
-        .actor
-        .try_network_lost()
-        .map_err(|_| MobileRuntimeError::StateUnavailable)?;
-    runtime
-        .block_on(connected.status.changed())
-        .map_err(|_| MobileRuntimeError::StateUnavailable)?;
-    publisher.publish_runtime_status(&connected.status.borrow())
+async fn stop_connected(connected: Option<ConnectedRuntime>) {
+    if let Some(mut connection) = connected {
+        let _ = connection.actor.stop().await;
+    }
 }
 
 fn runtime_session(
     session: AuthenticatedQuicSession,
-    peer_trust: crosslab_policy::TrustRecord,
-) -> Option<RuntimeActorSession> {
+    peer_trust: TrustRecord,
+) -> Option<(RuntimeActorSession, watch::Receiver<bool>)> {
     let (session, transport) = session.into_parts();
+    let closed = transport.subscribe_closed();
     let node = RuntimeNode::new_owned(
         session,
         Arc::new(transport),
@@ -198,7 +237,8 @@ fn runtime_session(
         NonZeroUsize::new(RUNTIME_CAPACITY)?,
     )
     .ok()?;
-    Some(RuntimeActorSession::new(node, peer_trust))
+
+    Some((RuntimeActorSession::new(node, peer_trust), closed))
 }
 
 fn actor_config() -> RuntimeActorConfig {
