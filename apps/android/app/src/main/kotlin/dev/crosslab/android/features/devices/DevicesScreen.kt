@@ -63,13 +63,17 @@ fun DevicesScreen(
                 )
             }
 
-            if (device != null) {
+            if (device != null && runtime.peerControlAvailable) {
                 ControlButton(
                     theme = theme,
                     label = "Disconnect",
                     onClick = onDisconnect,
                 )
-            } else if (runtime.lifecycle == RuntimeLifecycle.RUNNING && runtime.networkAvailable) {
+            } else if (
+                runtime.peerControlAvailable &&
+                    runtime.lifecycle == RuntimeLifecycle.RUNNING &&
+                    runtime.networkAvailable
+            ) {
                 ControlButton(
                     theme = theme,
                     label = "Reconnect",
