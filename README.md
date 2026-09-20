@@ -57,6 +57,19 @@ The initial implementation proves the architecture with a deterministic Core Sim
 
 For the complete dependency model, security boundaries, platform strategy, protocol rules, and phased roadmap, see the [Master Architecture](./docs/architecture/MASTER-ARCHITECTURE.md).
 
+## Build
+
+Cross-Lab uses one Rust-native build command for the applications currently configured on a development host:
+
+```bash
+cargo crosslab setup
+cargo crosslab
+```
+
+The default command builds the native desktop application for the current operating system plus the Android arm64 debug APK. Use `cargo crosslab help` for desktop-only, Android-only, device-install, development-provisioning, and prerequisite-check commands.
+
+See [Building Cross-Lab](./docs/development/BUILD.md) for the complete guide.
+
 ## Documentation
 
 Start with the [documentation index](./docs/README.md).
