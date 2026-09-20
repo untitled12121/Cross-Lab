@@ -1,6 +1,6 @@
 use crosslab_desktop::{
     features::appearance::{ThemeId, install_builtin_theme},
-    pages::devices::DevicesPage,
+    pages::control_center::ControlCenterPage,
 };
 use gpui_kit::{
     AppContext, Styled, WindowBounds, WindowOptions,
@@ -32,7 +32,7 @@ fn main() {
 
         cx.spawn(async move |cx| {
             cx.open_window(window_options, |window, cx| {
-                let page = cx.new(DevicesPage::new);
+                let page = cx.new(ControlCenterPage::new);
                 cx.new(|cx| Root::new(page, window, cx).bg(cx.theme().background))
             })
             .expect("failed to open Cross-Lab desktop window");

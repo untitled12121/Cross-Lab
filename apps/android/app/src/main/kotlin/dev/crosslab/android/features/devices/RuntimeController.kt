@@ -3,10 +3,15 @@ package dev.crosslab.android.features.devices
 import java.util.concurrent.CopyOnWriteArraySet
 
 interface RuntimePort {
+    val peerControlAvailable: Boolean
+        get() = false
+
     fun start()
     fun stop()
     fun networkLost()
     fun networkAvailable()
+    fun disconnectPeer()
+    fun reconnectPeer()
 
     fun snapshot(): RuntimeSnapshot = RuntimeSnapshot.disconnected()
 
@@ -27,13 +32,15 @@ enum class RuntimeLifecycle {
 data class RuntimeControllerState(
     val lifecycle: RuntimeLifecycle,
     val networkAvailable: Boolean,
+    val peerControlAvailable: Boolean,
     val snapshot: RuntimeSnapshot,
 ) {
     companion object {
-        fun initial(): RuntimeControllerState =
+        fun initial(peerControlAvailable: Boolean = false): RuntimeControllerState =
             RuntimeControllerState(
                 lifecycle = RuntimeLifecycle.STOPPED,
                 networkAvailable = true,
+                peerControlAvailable = peerControlAvailable,
                 snapshot = RuntimeSnapshot.disconnected(),
             )
     }
@@ -46,7 +53,7 @@ class RuntimeController(
     private val listeners = CopyOnWriteArraySet<(RuntimeControllerState) -> Unit>()
 
     @Volatile
-    private var current = RuntimeControllerState.initial()
+    private var current = RuntimeControllerState.initial(port.peerControlAvailable)
 
     private val portSubscription =
         port.observeSnapshots { snapshot ->
@@ -105,6 +112,22 @@ class RuntimeController(
                 networkAvailable = true,
                 snapshot = port.snapshot(),
             )
+        }
+    }
+
+    fun disconnectPeer() {
+        update {
+            if (it.lifecycle != RuntimeLifecycle.RUNNING) return@update null
+            port.disconnectPeer()
+            it.copy(snapshot = port.snapshot())
+        }
+    }
+
+    fun reconnectPeer() {
+        update {
+            if (it.lifecycle != RuntimeLifecycle.RUNNING) return@update null
+            port.reconnectPeer()
+            it.copy(snapshot = port.snapshot())
         }
     }
 

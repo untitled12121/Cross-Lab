@@ -41,6 +41,8 @@ data class RuntimeProtocolVersion(
 )
 
 data class RuntimeSnapshot(
+    val ownerId: String?,
+    val localDeviceId: String?,
     val peerDeviceId: String?,
     val trust: RuntimeTrust,
     val connectivity: RuntimeConnectivity,
@@ -54,6 +56,8 @@ data class RuntimeSnapshot(
     companion object {
         fun disconnected(): RuntimeSnapshot =
             RuntimeSnapshot(
+                ownerId = null,
+                localDeviceId = null,
                 peerDeviceId = null,
                 trust = RuntimeTrust.UNAVAILABLE,
                 connectivity = RuntimeConnectivity.DISCONNECTED,

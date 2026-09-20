@@ -1,7 +1,7 @@
 use core::fmt::Write as _;
 
 use crosslab_core::{SessionState, TransportSecurityClass};
-use crosslab_identity::DeviceId;
+use crosslab_identity::{DeviceId, OwnerId};
 use crosslab_policy::{NetworkClass, SessionId, TrustState};
 use crosslab_protocol::ProtocolVersion;
 use crosslab_runtime::{ConnectivityState, RuntimeStatus};
@@ -62,6 +62,7 @@ pub struct MobileProtocolVersion {
 pub struct MobileRuntimeSnapshot {
     pub revision: u64,
     pub lifecycle: MobileLifecycleState,
+    pub owner_id: Option<String>,
     pub local_device_id: Option<String>,
     pub peer_device_id: Option<String>,
     pub session_id: Option<String>,
@@ -85,6 +86,7 @@ impl MobileRuntimeSnapshot {
             lifecycle,
             revision,
             RuntimeStatusFields {
+                owner_id: status.owner_id(),
                 local_device_id: status.local_device_id(),
                 peer_device_id: status.peer_device_id(),
                 session_id: status.session_id(),
@@ -104,6 +106,7 @@ impl MobileRuntimeSnapshot {
         Self {
             revision,
             lifecycle,
+            owner_id: None,
             local_device_id: None,
             peer_device_id: None,
             session_id: None,
@@ -132,6 +135,7 @@ impl MobileRuntimeSnapshot {
         Self {
             revision,
             lifecycle,
+            owner_id: fields.owner_id.map(|id| hex_id(id.as_bytes())),
             local_device_id: fields.local_device_id.map(|id| hex_id(id.as_bytes())),
             peer_device_id: fields.peer_device_id.map(|id| hex_id(id.as_bytes())),
             session_id,
@@ -190,6 +194,7 @@ impl MobileRuntimeSnapshot {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct RuntimeStatusFields {
+    pub owner_id: Option<OwnerId>,
     pub local_device_id: Option<DeviceId>,
     pub peer_device_id: Option<DeviceId>,
     pub session_id: Option<SessionId>,

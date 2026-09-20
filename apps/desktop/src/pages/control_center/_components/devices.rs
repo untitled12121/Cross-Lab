@@ -9,16 +9,20 @@ use gpui_kit::{
     App, Div, ParentElement as _, Styled as _, component::theme::ActiveTheme as _, div, px,
 };
 
-pub(super) fn device_content(state: &DevicesFeatureState, cx: &App) -> Div {
+pub(crate) fn devices_content(
+    state: &DevicesFeatureState,
+    actions: Option<Div>,
+    notice: Option<&str>,
+    cx: &App,
+) -> Div {
     let theme = cx.theme();
     let appearance = active_theme(cx);
 
-    div()
+    let mut header = div()
         .flex()
-        .flex_col()
-        .size_full()
-        .p(px(appearance.spacing.xl))
-        .gap(px(appearance.spacing.xl))
+        .items_start()
+        .justify_between()
+        .gap(px(appearance.spacing.lg))
         .child(
             div()
                 .flex()
@@ -34,13 +38,39 @@ pub(super) fn device_content(state: &DevicesFeatureState, cx: &App) -> Div {
                     div()
                         .text_size(px(appearance.typography.scales.caption.size))
                         .text_color(theme.muted_foreground)
-                        .child("Authenticated local device connection status"),
+                        .child("Authenticated devices in the current Cross-Lab runtime"),
                 ),
-        )
-        .child(match state.current() {
-            Some(device) => device_panel(device, cx),
-            None => empty_state(cx),
-        })
+        );
+    if let Some(actions) = actions {
+        header = header.child(actions);
+    }
+
+    let mut content = div()
+        .flex()
+        .flex_col()
+        .size_full()
+        .p(px(appearance.spacing.xl))
+        .gap(px(appearance.spacing.xl))
+        .child(header);
+
+    if let Some(notice) = notice {
+        content = content.child(
+            div()
+                .border_1()
+                .border_color(theme.border)
+                .bg(theme.muted)
+                .px(px(appearance.spacing.lg))
+                .py(px(appearance.spacing.md))
+                .text_size(px(appearance.typography.scales.caption.size))
+                .text_color(theme.muted_foreground)
+                .child(notice.to_owned()),
+        );
+    }
+
+    content.child(match state.current() {
+        Some(device) => device_panel(device, cx),
+        None => empty_state(cx),
+    })
 }
 
 fn empty_state(cx: &App) -> Div {
@@ -73,7 +103,9 @@ fn empty_state(cx: &App) -> Div {
             div()
                 .text_size(px(appearance.typography.scales.caption.size))
                 .text_color(theme.muted_foreground)
-                .child("Waiting for an authenticated Cross-Lab device session."),
+                .child(
+                    "Cross-Lab has no mandatory cloud account. Start an authenticated local                      device session to manage the peer here.",
+                ),
         )
 }
 
@@ -121,7 +153,7 @@ fn device_panel(device: &DevicePresentation, cx: &App) -> Div {
                             div()
                                 .text_size(px(appearance.typography.scales.caption.size))
                                 .text_color(theme.muted_foreground)
-                                .child("Cross-Lab device"),
+                                .child("Authenticated Cross-Lab peer"),
                         ),
                 )
                 .child(
@@ -137,6 +169,21 @@ fn device_panel(device: &DevicePresentation, cx: &App) -> Div {
                         .child(status_badge(device.trust().label(), trust_tone, cx)),
                 ),
         )
+        .child(detail_row(
+            "Owner",
+            device.owner_id().unwrap_or("Unavailable"),
+            cx,
+        ))
+        .child(detail_row(
+            "This device",
+            device.local_device_id().unwrap_or("Unavailable"),
+            cx,
+        ))
+        .child(detail_row(
+            "Peer device",
+            device.peer_id().unwrap_or("Unavailable"),
+            cx,
+        ))
         .child(detail_row("Session", device.session().label(), cx))
         .child(detail_row(
             "Protocol",

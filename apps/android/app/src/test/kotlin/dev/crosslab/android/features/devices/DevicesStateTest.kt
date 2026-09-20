@@ -16,6 +16,8 @@ class DevicesStateTest {
     fun connectedTrustedSnapshotMapsToPresentationState() {
         val state = DevicesState.from(
             RuntimeSnapshot(
+                ownerId = "aaaaaaaaaaaaaaaa".repeat(4),
+                localDeviceId = "bbbbbbbbbbbbbbbb".repeat(4),
                 peerDeviceId = "0123456789abcdef".repeat(4),
                 trust = RuntimeTrust.TRUSTED,
                 connectivity = RuntimeConnectivity.CONNECTED,
@@ -29,6 +31,8 @@ class DevicesStateTest {
         )
 
         val device = checkNotNull(state.current)
+        assertEquals("aaaaaaaaaaaaaaaa", device.ownerId)
+        assertEquals("bbbbbbbbbbbbbbbb", device.localDeviceId)
         assertEquals("0123456789abcdef", device.peerId)
         assertEquals(TrustDisplay.TRUSTED, device.trust)
         assertEquals(ConnectivityDisplay.CONNECTED, device.connectivity)
@@ -43,6 +47,8 @@ class DevicesStateTest {
     fun revokedSnapshotRemainsRevokedAndDisconnected() {
         val state = DevicesState.from(
             RuntimeSnapshot(
+                ownerId = "aaaaaaaaaaaaaaaa".repeat(4),
+                localDeviceId = "bbbbbbbbbbbbbbbb".repeat(4),
                 peerDeviceId = "fedcba9876543210".repeat(4),
                 trust = RuntimeTrust.REVOKED,
                 connectivity = RuntimeConnectivity.DISCONNECTED,

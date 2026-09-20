@@ -34,6 +34,8 @@ enum class SecurityDisplay(val label: String) {
 }
 
 data class DevicePresentation(
+    val ownerId: String?,
+    val localDeviceId: String?,
     val peerId: String,
     val trust: TrustDisplay,
     val connectivity: ConnectivityDisplay,
@@ -53,6 +55,8 @@ data class DevicesState(
             val peerId = snapshot.peerDeviceId ?: return DevicesState(current = null)
             return DevicesState(
                 current = DevicePresentation(
+                    ownerId = snapshot.ownerId?.take(16),
+                    localDeviceId = snapshot.localDeviceId?.take(16),
                     peerId = peerId.take(16),
                     trust = when (snapshot.trust) {
                         RuntimeTrust.PENDING,

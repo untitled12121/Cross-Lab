@@ -451,6 +451,7 @@ fn status_snapshot_exposes_only_safe_summary_data() {
     let fixture = Fixture::new();
     let transport = TestTransport::new([0x69; 32]);
     let session = fixture.active_session(&transport);
+    let owner_id = session.context().unwrap().owner_id();
     let session_id = session.context().unwrap().session_id();
     let local_device_id = session.context().unwrap().local_device_id();
     let peer_device_id = session.context().unwrap().peer_device_id();
@@ -465,6 +466,7 @@ fn status_snapshot_exposes_only_safe_summary_data() {
     .unwrap();
 
     let status = runtime.status(&fixture.peer_trust);
+    assert_eq!(status.owner_id(), Some(owner_id));
     assert_eq!(status.local_device_id(), Some(local_device_id));
     assert_eq!(status.peer_device_id(), Some(peer_device_id));
     assert_eq!(status.session_id(), Some(session_id));

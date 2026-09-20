@@ -1,10 +1,8 @@
 package dev.crosslab.android.features.devices
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,13 +10,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.unit.dp
+import dev.crosslab.android.components.ui.ControlButton
 import dev.crosslab.android.components.ui.StatusBadge
 import dev.crosslab.android.components.ui.StatusTone
 import dev.crosslab.android.features.appearance.ThemeDocument
@@ -30,80 +28,66 @@ fun DevicesScreen(
     theme: ThemeDocument,
     devices: DevicesState,
     runtime: RuntimeControllerState,
+    onDisconnect: () -> Unit,
+    onReconnect: () -> Unit,
 ) {
     val colors = theme.colors
+    val device = devices.current
 
     Column(
         modifier =
             Modifier
                 .fillMaxSize()
-                .background(colors.background.toComposeColor())
-                .safeDrawingPadding(),
+                .padding(theme.spacing.xl.toFloat().dp),
     ) {
         Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .border(
-                        BorderStroke(theme.metrics.borderWidth.toFloat().dp, colors.border.toComposeColor()),
-                        RectangleShape,
-                    )
-                    .padding(horizontal = theme.spacing.xl.toFloat().dp, vertical = theme.spacing.lg.toFloat().dp),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            BasicText(
-                text = "Cross-Lab",
-                style =
-                    theme.typography.scales.label
-                        .toTextStyle()
-                        .copy(color = colors.foreground.toComposeColor()),
-            )
-            StatusBadge(
-                label =
-                    when (runtime.lifecycle) {
-                        RuntimeLifecycle.RUNNING -> "Runtime active"
-                        RuntimeLifecycle.STOPPED -> "Runtime stopped"
-                        RuntimeLifecycle.SHUTDOWN -> "Runtime shutdown"
-                    },
-                tone =
-                    if (runtime.lifecycle == RuntimeLifecycle.RUNNING) {
-                        StatusTone.ACCENT
-                    } else {
-                        StatusTone.NEUTRAL
-                    },
-                textScale = theme.typography.scales.caption,
-                border = colors.border.toComposeColor(),
-                neutralBackground = colors.muted.toComposeColor(),
-                neutralForeground = colors.mutedForeground.toComposeColor(),
-                accentBackground = colors.accent.toComposeColor(),
-                accentForeground = colors.accentForeground.toComposeColor(),
-                criticalBackground = colors.destructive.toComposeColor(),
-                criticalForeground = colors.destructiveForeground.toComposeColor(),
-            )
+            Column {
+                BasicText(
+                    text = "Devices",
+                    style =
+                        theme.typography.scales.title
+                            .toTextStyle()
+                            .copy(color = colors.foreground.toComposeColor()),
+                )
+                Spacer(Modifier.height(theme.spacing.xs.toFloat().dp))
+                BasicText(
+                    text = "Authenticated devices in the current Cross-Lab runtime",
+                    style =
+                        theme.typography.scales.caption
+                            .toTextStyle()
+                            .copy(color = colors.mutedForeground.toComposeColor()),
+                )
+            }
+
+            if (device != null && runtime.peerControlAvailable) {
+                ControlButton(
+                    theme = theme,
+                    label = "Disconnect",
+                    onClick = onDisconnect,
+                )
+            } else if (
+                runtime.peerControlAvailable &&
+                    runtime.lifecycle == RuntimeLifecycle.RUNNING &&
+                    runtime.networkAvailable
+            ) {
+                ControlButton(
+                    theme = theme,
+                    label = "Reconnect",
+                    onClick = onReconnect,
+                )
+            }
         }
 
-        Column(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(theme.spacing.xl.toFloat().dp),
-        ) {
-            BasicText(
-                text = "Devices",
-                style =
-                    theme.typography.scales.title
-                        .toTextStyle()
-                        .copy(color = colors.foreground.toComposeColor()),
-            )
-            Spacer(Modifier.height(theme.spacing.md.toFloat().dp))
+        Spacer(Modifier.height(theme.spacing.xl.toFloat().dp))
 
-            val device = devices.current
-            if (device == null) {
-                DisconnectedState(theme, runtime.networkAvailable)
-            } else {
-                DevicePanel(theme, device)
-            }
+        if (device == null) {
+            DisconnectedState(theme, runtime.networkAvailable)
+        } else {
+            DevicePanel(theme, device)
         }
     }
 }
@@ -135,7 +119,7 @@ private fun DisconnectedState(
         BasicText(
             text =
                 if (networkAvailable) {
-                    "The Android shell is ready for authenticated runtime wiring."
+                    "Cross-Lab is ready for an authenticated local device session."
                 } else {
                     "Network unavailable."
                 },
@@ -196,6 +180,9 @@ private fun DevicePanel(
             }
         }
 
+        DetailRow(theme, "Owner", device.ownerId ?: "Unavailable")
+        DetailRow(theme, "This device", device.localDeviceId ?: "Unavailable")
+        DetailRow(theme, "Peer device", device.peerId)
         DetailRow(theme, "Session", device.session.label)
         DetailRow(theme, "Protocol", device.protocol ?: "Unavailable")
         DetailRow(theme, "Network", device.network.label)

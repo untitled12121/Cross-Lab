@@ -1,5 +1,5 @@
 use crosslab_core::{LogicalSession, SessionState, TransportConnection, TransportSecurityClass};
-use crosslab_identity::DeviceId;
+use crosslab_identity::{DeviceId, OwnerId};
 use crosslab_policy::{CapabilityId, NetworkClass, SessionId, TrustRecord, TrustState};
 use crosslab_protocol::ProtocolVersion;
 
@@ -32,6 +32,7 @@ impl TransportStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeStatus {
+    owner_id: Option<OwnerId>,
     local_device_id: Option<DeviceId>,
     peer_device_id: Option<DeviceId>,
     session_id: Option<SessionId>,
@@ -72,6 +73,7 @@ impl RuntimeStatus {
             .unwrap_or_default();
 
         Self {
+            owner_id: context.map(|context| context.owner_id()),
             local_device_id: context.map(|context| context.local_device_id()),
             peer_device_id: context.map(|context| context.peer_device_id()),
             session_id,
@@ -93,6 +95,10 @@ impl RuntimeStatus {
                 metered: transport.connection_metadata().metered(),
             },
         }
+    }
+
+    pub const fn owner_id(&self) -> Option<OwnerId> {
+        self.owner_id
     }
 
     pub const fn local_device_id(&self) -> Option<DeviceId> {

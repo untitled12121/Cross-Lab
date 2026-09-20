@@ -19,6 +19,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 enum DevelopmentCommand {
     NetworkLost,
     NetworkAvailable,
+    Disconnect,
     Stop,
 }
 
@@ -61,6 +62,10 @@ impl DevelopmentClientHandle {
 
     pub(crate) fn network_available(&self) -> Result<(), MobileRuntimeError> {
         self.send(DevelopmentCommand::NetworkAvailable)
+    }
+
+    pub(crate) fn disconnect(&self) -> Result<(), MobileRuntimeError> {
+        self.send(DevelopmentCommand::Disconnect)
     }
 
     pub(crate) fn stop(&self) -> Result<(), MobileRuntimeError> {
@@ -132,6 +137,9 @@ async fn run(
                 } else {
                     connected = connect(&client, &publisher).await;
                 }
+            }
+            DevelopmentEvent::Command(Some(DevelopmentCommand::Disconnect)) => {
+                stop_connected(connected.take()).await;
             }
             DevelopmentEvent::Command(Some(DevelopmentCommand::Stop))
             | DevelopmentEvent::Command(None)
