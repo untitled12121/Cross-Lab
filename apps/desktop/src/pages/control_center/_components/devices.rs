@@ -9,7 +9,7 @@ use gpui_kit::{
     App, Div, ParentElement as _, Styled as _, component::theme::ActiveTheme as _, div, px,
 };
 
-pub(super) fn devices_content(
+pub(crate) fn devices_content(
     state: &DevicesFeatureState,
     actions: Option<Div>,
     notice: Option<&str>,
@@ -18,55 +18,59 @@ pub(super) fn devices_content(
     let theme = cx.theme();
     let appearance = active_theme(cx);
 
-    div()
+    let mut header = div()
+        .flex()
+        .items_start()
+        .justify_between()
+        .gap(px(appearance.spacing.lg))
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(appearance.spacing.xs))
+                .child(
+                    div()
+                        .text_size(px(appearance.typography.scales.title.size))
+                        .font_weight(font_weight(appearance.typography.scales.title.weight))
+                        .child("Devices"),
+                )
+                .child(
+                    div()
+                        .text_size(px(appearance.typography.scales.caption.size))
+                        .text_color(theme.muted_foreground)
+                        .child("Authenticated devices in the current Cross-Lab runtime"),
+                ),
+        );
+    if let Some(actions) = actions {
+        header = header.child(actions);
+    }
+
+    let mut content = div()
         .flex()
         .flex_col()
         .size_full()
         .p(px(appearance.spacing.xl))
         .gap(px(appearance.spacing.xl))
-        .child(
+        .child(header);
+
+    if let Some(notice) = notice {
+        content = content.child(
             div()
-                .flex()
-                .items_start()
-                .justify_between()
-                .gap(px(appearance.spacing.lg))
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(px(appearance.spacing.xs))
-                        .child(
-                            div()
-                                .text_size(px(appearance.typography.scales.title.size))
-                                .font_weight(font_weight(appearance.typography.scales.title.weight))
-                                .child("Devices"),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(appearance.typography.scales.caption.size))
-                                .text_color(theme.muted_foreground)
-                                .child("Authenticated devices in the current Cross-Lab runtime"),
-                        ),
-                )
-                .when_some(actions, |this, actions| this.child(actions)),
-        )
-        .when_some(notice.map(str::to_owned), |this, notice| {
-            this.child(
-                div()
-                    .border_1()
-                    .border_color(theme.border)
-                    .bg(theme.muted)
-                    .px(px(appearance.spacing.lg))
-                    .py(px(appearance.spacing.md))
-                    .text_size(px(appearance.typography.scales.caption.size))
-                    .text_color(theme.muted_foreground)
-                    .child(notice),
-            )
-        })
-        .child(match state.current() {
-            Some(device) => device_panel(device, cx),
-            None => empty_state(cx),
-        })
+                .border_1()
+                .border_color(theme.border)
+                .bg(theme.muted)
+                .px(px(appearance.spacing.lg))
+                .py(px(appearance.spacing.md))
+                .text_size(px(appearance.typography.scales.caption.size))
+                .text_color(theme.muted_foreground)
+                .child(notice.to_owned()),
+        );
+    }
+
+    content.child(match state.current() {
+        Some(device) => device_panel(device, cx),
+        None => empty_state(cx),
+    })
 }
 
 fn empty_state(cx: &App) -> Div {
