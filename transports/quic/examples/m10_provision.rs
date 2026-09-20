@@ -228,7 +228,21 @@ fn random<const N: usize>() -> Result<[u8; N], String> {
 
 fn prepare_output_dir(path: &Path) -> Result<(), String> {
     fs::create_dir_all(path).map_err(|_| "failed to create output directory")?;
-    set_private_dir_permissions(path)
+
+    let output = fs::canonicalize(path).map_err(|_| "failed to resolve output directory")?;
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace = manifest_dir
+        .parent()
+        .and_then(Path::parent)
+        .ok_or_else(|| "failed to resolve workspace root".to_owned())?;
+    let workspace =
+        fs::canonicalize(workspace).map_err(|_| "failed to resolve workspace root")?;
+
+    if output.starts_with(workspace) {
+        return Err("refusing to create provisioning secrets inside the repository".into());
+    }
+
+    set_private_dir_permissions(&output)
 }
 
 #[cfg(unix)]
