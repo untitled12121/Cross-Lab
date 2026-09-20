@@ -119,6 +119,53 @@ impl MobileRuntime {
         Ok(())
     }
 
+    pub fn disconnect_peer(&self) -> Result<(), MobileRuntimeError> {
+        {
+            let state = self.lock_state()?;
+            if state.snapshot.lifecycle != MobileLifecycleState::Running {
+                return Err(MobileRuntimeError::NotStarted);
+            }
+        }
+
+        #[cfg(feature = "development-provisioning")]
+        self.with_development(|development| development.disconnect())?;
+
+        #[cfg(not(feature = "development-provisioning"))]
+        return Err(MobileRuntimeError::DevelopmentUnavailable);
+
+        #[cfg(feature = "development-provisioning")]
+        {
+            let mut state = self.lock_state()?;
+            let revision = next_revision(state.snapshot.revision)?;
+            replace_snapshot(
+                &mut state,
+                MobileRuntimeSnapshot::disconnected(MobileLifecycleState::Running, revision),
+            );
+            self.shared.event_ready.notify_all();
+            Ok(())
+        }
+    }
+
+    pub fn reconnect_peer(&self) -> Result<(), MobileRuntimeError> {
+        {
+            let state = self.lock_state()?;
+            if state.snapshot.lifecycle != MobileLifecycleState::Running {
+                return Err(MobileRuntimeError::NotStarted);
+            }
+        }
+
+        #[cfg(feature = "development-provisioning")]
+        {
+            self.with_development(|development| development.network_available())?;
+            Ok(())
+        }
+
+        #[cfg(not(feature = "development-provisioning"))]
+        {
+            Err(MobileRuntimeError::DevelopmentUnavailable)
+        }
+    }
+
     pub fn configure_development_client(
         &self,
         provisioning_path: String,
