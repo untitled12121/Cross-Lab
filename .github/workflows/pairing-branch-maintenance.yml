@@ -1,0 +1,31 @@
+name: Pairing Branch Maintenance
+
+on:
+  push:
+    branches:
+      - product-pairing-ui
+    paths:
+      - ".github/workflows/pairing-branch-maintenance.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "apps/desktop/**"
+      - "crates/core/**"
+      - "crates/identity/**"
+      - "crates/identity-store/**"
+      - "crates/mobile-ffi/**"
+
+permissions:
+  contents: read
+
+jobs:
+  diff:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust
+        run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt
+      - name: Show generated maintenance diff
+        run: |
+          cargo fmt --all
+          cargo generate-lockfile
+          git diff -- Cargo.lock Cargo.toml apps/desktop crates/core crates/identity crates/identity-store crates/mobile-ffi
