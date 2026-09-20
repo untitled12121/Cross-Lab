@@ -28,6 +28,8 @@ jobs:
         run: cargo metadata --locked --no-deps --format-version 1 > /dev/null
       - name: Verify unified build help
         run: cargo crosslab --help
+      - name: Validate Android SDK bootstrap script
+        run: python -m py_compile scripts/setup-android-sdk.py
       - name: Validate theme JSON syntax
         run: |
           python - <<'PY'
