@@ -31,6 +31,8 @@ class DevicesStateTest {
         )
 
         val device = checkNotNull(state.current)
+        assertEquals("aaaaaaaaaaaaaaaa", device.ownerId)
+        assertEquals("bbbbbbbbbbbbbbbb", device.localDeviceId)
         assertEquals("0123456789abcdef", device.peerId)
         assertEquals(TrustDisplay.TRUSTED, device.trust)
         assertEquals(ConnectivityDisplay.CONNECTED, device.connectivity)
