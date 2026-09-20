@@ -175,7 +175,11 @@ fn device_panel(device: &DevicePresentation, cx: &App) -> Div {
             device.local_device_id().unwrap_or("Unavailable"),
             cx,
         ))
-        .child(detail_row("Peer device", device.peer_id().unwrap_or("Unavailable"), cx))
+        .child(detail_row(
+            "Peer device",
+            device.peer_id().unwrap_or("Unavailable"),
+            cx,
+        ))
         .child(detail_row("Session", device.session().label(), cx))
         .child(detail_row(
             "Protocol",
