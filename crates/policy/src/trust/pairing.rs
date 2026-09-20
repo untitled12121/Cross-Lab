@@ -1,7 +1,8 @@
 use core::fmt;
 
 use crosslab_crypto::{
-    CanonicalTranscript, Signature, SignatureAlgorithm, SigningKey, signed_object_digest,
+    CanonicalTranscript, Signature, SignatureAlgorithm, SigningKey, SigningProvider,
+    signed_object_digest,
 };
 use crosslab_identity::{
     AuthorityRole, DeviceCredential, DeviceId, IdentityError, KeyId, OwnerAuthorityState, OwnerId,
@@ -19,6 +20,7 @@ pub enum PairingTrustTransitionError {
     NonInitialCredentialEpoch,
     UnknownIssuer,
     InvalidSignature,
+    SigningFailed,
 }
 
 impl fmt::Display for PairingTrustTransitionError {
@@ -35,6 +37,9 @@ impl fmt::Display for PairingTrustTransitionError {
             }
             Self::InvalidSignature => {
                 formatter.write_str("pairing trust transition signature is invalid")
+            }
+            Self::SigningFailed => {
+                formatter.write_str("pairing trust transition signing provider failed")
             }
         }
     }
@@ -69,6 +74,22 @@ impl PairingTrustTransition {
         authority: &OwnerAuthorityState,
         issuer_key: &SigningKey,
     ) -> Result<Self, PairingTrustTransitionError> {
+        Self::issue_with_provider(
+            credential,
+            transition_id,
+            pairing_evidence_digest,
+            authority,
+            issuer_key,
+        )
+    }
+
+    pub fn issue_with_provider(
+        credential: &DeviceCredential,
+        transition_id: TransitionId,
+        pairing_evidence_digest: [u8; 32],
+        authority: &OwnerAuthorityState,
+        issuer_key: &dyn SigningProvider,
+    ) -> Result<Self, PairingTrustTransitionError> {
         if credential.credential_epoch() != INITIAL_CREDENTIAL_EPOCH {
             return Err(PairingTrustTransitionError::NonInitialCredentialEpoch);
         }
@@ -89,7 +110,9 @@ impl PairingTrustTransition {
             issuer_key_id: issuer.delegated_key_id(),
             signature: Signature::from_bytes([0; 64]),
         };
-        transition.signature = issuer_key.sign_digest(&transition.transcript_digest());
+        transition.signature = issuer_key
+            .sign_digest(&transition.transcript_digest())
+            .map_err(|_| PairingTrustTransitionError::SigningFailed)?;
         Ok(transition)
     }
 
