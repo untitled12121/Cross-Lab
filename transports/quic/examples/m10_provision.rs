@@ -235,8 +235,7 @@ fn prepare_output_dir(path: &Path) -> Result<(), String> {
         .parent()
         .and_then(Path::parent)
         .ok_or_else(|| "failed to resolve workspace root".to_owned())?;
-    let workspace =
-        fs::canonicalize(workspace).map_err(|_| "failed to resolve workspace root")?;
+    let workspace = fs::canonicalize(workspace).map_err(|_| "failed to resolve workspace root")?;
 
     if output.starts_with(workspace) {
         return Err("refusing to create provisioning secrets inside the repository".into());
