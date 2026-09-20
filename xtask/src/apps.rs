@@ -91,7 +91,6 @@ pub(crate) fn run_desktop(development: bool) -> Result<(), String> {
     run_command(&mut command)
 }
 
-
 fn require_android_host() -> Result<(), String> {
     if android_host_supported() {
         Ok(())
