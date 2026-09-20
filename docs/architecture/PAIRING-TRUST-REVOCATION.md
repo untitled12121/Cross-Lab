@@ -2,7 +2,7 @@
 
 **Status:** Phase 0 specification  
 **Milestone:** P0.4 — Pairing + Trust / Revocation  
-**Architecture baseline:** `docs/architecture/MASTER-ARCHITECTURE.md`, Revision 2.0  
+**Architecture baseline:** `docs/architecture/MASTER-ARCHITECTURE.md`, Revision 2.5  
 **Identity specification:** `docs/architecture/IDENTITY-AND-KEYS.md`
 
 ## 1. Purpose
@@ -35,6 +35,29 @@ PairingInvitation
 ```
 
 `pairing_secret` is never sent over the provisional network transport.
+
+### 3.1 Product bootstrap envelope v1
+
+ADR-0014 defines the cross-platform product representation for the profile-v1 invitation:
+
+```text
+crosslab:pair:v1:<lowercase-hex-payload>
+```
+
+The fixed payload contains, in order:
+
+```text
+pairing_profile: u16 big-endian = 1
+pairing_id: 16 bytes
+pairing_secret: 32 bytes
+owner_id: 32 bytes
+inviter_device_id: 32 bytes
+```
+
+The code is secret-bearing presentation data and must not be logged. Debug formatting is redacted. A cancelled, consumed, expired, or otherwise non-pending invitation does not mint a new code.
+
+Local deadline metadata, device names, IP addresses, hostnames, BLE identifiers, transport certificates, and other discovery/route hints are not part of the envelope. Discovery happens separately and never establishes Cross-Lab trust.
+
 
 The invitation is single-use. The inviter consumes it on:
 

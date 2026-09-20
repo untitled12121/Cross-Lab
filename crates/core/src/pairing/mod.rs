@@ -3,10 +3,14 @@ use core::fmt;
 use crosslab_crypto::{RandomError, random_bytes};
 use zeroize::Zeroize;
 
+mod bootstrap;
 mod flow;
 mod invitation;
 mod transcript;
 
+pub use bootstrap::{
+    PAIRING_BOOTSTRAP_PROFILE_V1, PairingBootstrap, PairingBootstrapCode, PairingBootstrapError,
+};
 pub use flow::{
     PairingFlowError, PairingInviterFlow, PairingInviterState, PairingJoinerFlow,
     PairingJoinerState,
