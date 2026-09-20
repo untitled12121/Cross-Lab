@@ -30,16 +30,8 @@ impl PairingBootstrapCode {
             &mut offset,
             invitation.pairing_id().as_bytes(),
         );
-        write_field(
-            &mut payload,
-            &mut offset,
-            invitation.secret().as_bytes(),
-        );
-        write_field(
-            &mut payload,
-            &mut offset,
-            &invitation.owner_id().to_bytes(),
-        );
+        write_field(&mut payload, &mut offset, invitation.secret().as_bytes());
+        write_field(&mut payload, &mut offset, &invitation.owner_id().to_bytes());
         write_field(
             &mut payload,
             &mut offset,
