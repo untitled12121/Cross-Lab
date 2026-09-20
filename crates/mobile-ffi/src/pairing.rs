@@ -56,6 +56,12 @@ impl MobilePairingBootstrap {
     }
 }
 
+impl core::fmt::Debug for MobilePairingBootstrap {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str("MobilePairingBootstrap([REDACTED])")
+    }
+}
+
 #[uniffi::export]
 pub fn scan_pairing_bootstrap(
     code: String,
@@ -129,11 +135,5 @@ mod tests {
             scan_pairing_bootstrap("https://example.com".to_owned()),
             Err(MobilePairingBootstrapError::InvalidPrefix)
         ));
-    }
-}
-
-impl core::fmt::Debug for MobilePairingBootstrap {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter.write_str("MobilePairingBootstrap([REDACTED])")
     }
 }
