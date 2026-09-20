@@ -8,14 +8,14 @@
 
 Make normal local-first device enrollment usable from the Linux desktop and Android app without development provisioning.
 
-## Task 1 — Product invitation presentation
+## Task 1 — Product invitation presentation — implemented, verification pending
 
 - Add secure random invitation creation in shared Rust.
 - Render the ADR-0014 `crosslab:pair:v1:` payload as a QR code in the Linux Devices surface.
 - Keep the bootstrap string secret-bearing, short-lived, and out of logs/debug output.
 - Support explicit cancel/regenerate.
 
-## Task 2 — Android QR scanner
+## Task 2 — Android QR scanner — implemented, verification pending
 
 - Add explicit CAMERA permission.
 - Use CameraX for lifecycle-bound preview/analysis.
