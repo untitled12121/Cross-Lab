@@ -40,8 +40,8 @@ USAGE:
   cargo crosslab run desktop [--development]
 
 DEFAULT:
-  `cargo crosslab` builds every currently configured application for this host:
-  the native desktop app plus the Android arm64 debug APK.
+  `cargo crosslab` builds every application configured for this host:
+  the native desktop app, plus Android arm64 on Linux/macOS.
 
 NOTES:
   Cargo and Gradle fetch project dependencies automatically.
