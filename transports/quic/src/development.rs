@@ -7,7 +7,7 @@ use crosslab_identity::{
     AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,
     OwnerRootRecord,
 };
-use crosslab_policy::{PairingTrustTransition, TransitionId, TrustRecord};
+use crosslab_policy::{PairingTrustTransition, TransitionId, TrustRecord, TrustTransition};
 use crosslab_protocol::{FeatureSet, ProtocolRange};
 use serde::Deserialize;
 
@@ -50,6 +50,7 @@ impl std::error::Error for DevelopmentProvisioningError {}
 
 pub struct DevelopmentProvisioning {
     authority: OwnerAuthorityState,
+    device_signing_key: SigningKey,
     local_signing_key: SigningKey,
     local_credential: DeviceCredential,
     peer_trust: TrustRecord,
@@ -148,6 +149,7 @@ impl DevelopmentProvisioning {
 
         Ok(Self {
             authority,
+            device_signing_key: issuer_key,
             local_signing_key,
             local_credential,
             peer_trust,
@@ -160,6 +162,7 @@ impl DevelopmentProvisioning {
     pub fn into_client(self) -> Result<DevelopmentQuicClient, DevelopmentProvisioningError> {
         let DevelopmentProvisioning {
             authority,
+            device_signing_key,
             local_signing_key,
             local_credential,
             peer_trust,
@@ -189,6 +192,7 @@ impl DevelopmentProvisioning {
             server_name,
             identity: DevelopmentIdentity {
                 authority,
+                device_signing_key,
                 local_signing_key,
                 local_credential,
                 peer_trust,
@@ -201,6 +205,7 @@ impl DevelopmentProvisioning {
     pub fn into_server(self) -> Result<DevelopmentQuicServer, DevelopmentProvisioningError> {
         let DevelopmentProvisioning {
             authority,
+            device_signing_key,
             local_signing_key,
             local_credential,
             peer_trust,
@@ -227,6 +232,7 @@ impl DevelopmentProvisioning {
             endpoint,
             identity: DevelopmentIdentity {
                 authority,
+                device_signing_key,
                 local_signing_key,
                 local_credential,
                 peer_trust,
@@ -239,6 +245,7 @@ impl DevelopmentProvisioning {
 
 struct DevelopmentIdentity {
     authority: OwnerAuthorityState,
+    device_signing_key: SigningKey,
     local_signing_key: SigningKey,
     local_credential: DeviceCredential,
     peer_trust: TrustRecord,
@@ -260,6 +267,25 @@ impl DevelopmentIdentity {
 
     fn peer_trust(&self) -> TrustRecord {
         self.peer_trust
+    }
+
+    fn revoke_peer_trust(&mut self) -> Result<TrustRecord, DevelopmentProvisioningError> {
+        let mut revoked = self.peer_trust;
+        let transition_id =
+            TransitionId::generate().map_err(|_| DevelopmentProvisioningError::Trust)?;
+        let transition = TrustTransition::issue_delegated_revocation(
+            &revoked,
+            transition_id,
+            &self.authority,
+            AuthorityRole::DeviceSigning,
+            &self.device_signing_key,
+        )
+        .map_err(|_| DevelopmentProvisioningError::Trust)?;
+        transition
+            .apply_delegated(&mut revoked, &self.authority)
+            .map_err(|_| DevelopmentProvisioningError::Trust)?;
+        self.peer_trust = revoked;
+        Ok(revoked)
     }
 }
 
@@ -308,6 +334,10 @@ impl DevelopmentQuicServer {
 
     pub fn peer_trust(&self) -> TrustRecord {
         self.identity.peer_trust()
+    }
+
+    pub fn revoke_peer_trust(&mut self) -> Result<TrustRecord, DevelopmentProvisioningError> {
+        self.identity.revoke_peer_trust()
     }
 }
 
