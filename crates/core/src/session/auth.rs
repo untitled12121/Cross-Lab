@@ -2,8 +2,7 @@ use core::fmt;
 
 use crosslab_crypto::{
     CanonicalTranscript, Signature, SignatureAlgorithm, SigningKey, SigningProvider, VerifyingKey,
-    blake3_256,
-    signed_object_digest,
+    blake3_256, signed_object_digest,
 };
 use crosslab_identity::{DeviceCredential, DeviceId, KeyId, OwnerId};
 use crosslab_policy::SessionId;
