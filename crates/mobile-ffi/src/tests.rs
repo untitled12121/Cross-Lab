@@ -1,7 +1,7 @@
 use std::{sync::Arc, thread, time::Duration};
 
 use crosslab_core::{SessionState, TransportSecurityClass};
-use crosslab_identity::DeviceId;
+use crosslab_identity::{DeviceId, OwnerId};
 use crosslab_policy::{NetworkClass, SessionId, TrustState};
 use crosslab_protocol::ProtocolVersion;
 use crosslab_runtime::ConnectivityState;
@@ -53,6 +53,7 @@ fn runtime_status_maps_to_owned_redacted_mobile_state() {
         MobileLifecycleState::Running,
         7,
         RuntimeStatusFields {
+            owner_id: Some(OwnerId::from_bytes([0xaa; 32])),
             local_device_id: Some(DeviceId::from_bytes([0xab; 32])),
             peer_device_id: Some(DeviceId::from_bytes([0xcd; 32])),
             session_id: Some(SessionId::from_bytes([0xef; 32])),
@@ -67,9 +68,14 @@ fn runtime_status_maps_to_owned_redacted_mobile_state() {
         },
     );
 
+    let expected_owner = "aa".repeat(32);
     let expected_local = "ab".repeat(32);
     let expected_peer = "cd".repeat(32);
     let expected_session = "ef".repeat(32);
+    assert_eq!(
+        snapshot.owner_id.as_deref(),
+        Some(expected_owner.as_str())
+    );
     assert_eq!(
         snapshot.local_device_id.as_deref(),
         Some(expected_local.as_str())
@@ -115,6 +121,7 @@ fn inactive_session_never_exports_a_stale_session_id() {
         MobileLifecycleState::Running,
         3,
         RuntimeStatusFields {
+            owner_id: Some(OwnerId::from_bytes([0; 32])),
             local_device_id: Some(DeviceId::from_bytes([1; 32])),
             peer_device_id: Some(DeviceId::from_bytes([2; 32])),
             session_id: Some(SessionId::from_bytes([3; 32])),
@@ -240,6 +247,7 @@ fn network_loss_clears_session_facing_state_while_running() {
         .publish_test_snapshot(MobileRuntimeSnapshot {
             revision: 2,
             lifecycle: MobileLifecycleState::Running,
+            owner_id: Some("owner".into()),
             local_device_id: Some("local".into()),
             peer_device_id: Some("peer".into()),
             session_id: Some("session".into()),
