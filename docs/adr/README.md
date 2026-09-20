@@ -20,6 +20,7 @@ Cross-Lab has accepted the following ADRs:
 | ADR-0010 | Authoritative active-root/delegated-role currentness and fail-closed session invalidation | Accepted |
 | ADR-0011 | Bounded `RequestId` duplicate/retry state with `SessionId` + `message_seq` as exact-envelope replay/order boundary | Accepted |
 | ADR-0012 | Cross-platform renderer-neutral design system and theme contract | Accepted |
+| ADR-0013 | Platform signing-provider boundary for production identity/key integration | Accepted |
 
 The governing architecture is `docs/architecture/MASTER-ARCHITECTURE.md`.
 

@@ -16,6 +16,7 @@ pub enum IdentityError {
     RevokedDevice,
     InvalidAuthorityEpoch,
     InvalidRootSuccessor,
+    SigningFailed,
 }
 
 impl fmt::Display for IdentityError {
@@ -35,6 +36,7 @@ impl fmt::Display for IdentityError {
             Self::RevokedDevice => "device is revoked",
             Self::InvalidAuthorityEpoch => "authority epoch is stale or invalid",
             Self::InvalidRootSuccessor => "owner root successor continuity is invalid",
+            Self::SigningFailed => "identity signing provider operation failed",
         })
     }
 }

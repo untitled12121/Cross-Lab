@@ -1,7 +1,8 @@
 use core::fmt;
 
 use crosslab_crypto::{
-    CanonicalTranscript, SignatureAlgorithm, SigningKey, VerifyingKey, signed_object_digest,
+    CanonicalTranscript, SignatureAlgorithm, SigningKey, SigningProvider, VerifyingKey,
+    signed_object_digest,
 };
 use crosslab_identity::{
     DeviceCredential, DeviceId, IdentityError, KeyId, OwnerAuthorityState, OwnerId,
@@ -52,6 +53,7 @@ pub enum PairingFlowError {
     InvalidCredentialAcceptance,
     Identity(IdentityError),
     TrustTransition(PairingTrustTransitionError),
+    SigningFailed,
 }
 
 impl fmt::Display for PairingFlowError {
@@ -68,6 +70,7 @@ impl fmt::Display for PairingFlowError {
             Self::InvalidCredentialAcceptance => "credential acceptance proof verification failed",
             Self::Identity(error) => return fmt::Display::fmt(error, formatter),
             Self::TrustTransition(error) => return fmt::Display::fmt(error, formatter),
+            Self::SigningFailed => "pairing signing provider operation failed",
         })
     }
 }
@@ -221,12 +224,21 @@ impl PairingInviterFlow {
         issuer_key: &SigningKey,
         now: PairingInstant,
     ) -> Result<DeviceCredential, PairingFlowError> {
+        self.issue_initial_joiner_credential_with_provider(authority, issuer_key, now)
+    }
+
+    pub fn issue_initial_joiner_credential_with_provider(
+        &mut self,
+        authority: &OwnerAuthorityState,
+        issuer_key: &dyn SigningProvider,
+        now: PairingInstant,
+    ) -> Result<DeviceCredential, PairingFlowError> {
         if self.state != PairingInviterState::ReadyToIssueCredential {
             return self.fail(PairingFlowError::UnexpectedState);
         }
         self.ensure_current(now)?;
 
-        let credential = match DeviceCredential::issue_for_public_key(
+        let credential = match DeviceCredential::issue_for_public_key_with_provider(
             self.context.owner_id,
             self.context.joiner_device_id,
             self.context.joiner_device_key,
@@ -249,6 +261,17 @@ impl PairingInviterFlow {
         transition_id: TransitionId,
         authority: &OwnerAuthorityState,
         issuer_key: &SigningKey,
+        now: PairingInstant,
+    ) -> Result<TrustRecord, PairingFlowError> {
+        self.commit_trust_with_provider(accepted, transition_id, authority, issuer_key, now)
+    }
+
+    pub fn commit_trust_with_provider(
+        &mut self,
+        accepted: &PairingCredentialAccepted,
+        transition_id: TransitionId,
+        authority: &OwnerAuthorityState,
+        issuer_key: &dyn SigningProvider,
         now: PairingInstant,
     ) -> Result<TrustRecord, PairingFlowError> {
         if self.state != PairingInviterState::AwaitingCredentialAcceptance {
@@ -293,7 +316,7 @@ impl PairingInviterFlow {
             SignatureAlgorithm::Ed25519,
             &accepted.signature(),
         );
-        let transition = match PairingTrustTransition::issue(
+        let transition = match PairingTrustTransition::issue_with_provider(
             &credential,
             transition_id,
             pairing_evidence_digest,
@@ -408,6 +431,15 @@ impl PairingJoinerFlow {
         credential: &DeviceCredential,
         joiner_key: &SigningKey,
     ) -> Result<PairingCredentialAccepted, PairingFlowError> {
+        self.accept_credential_with_provider(authority, credential, joiner_key)
+    }
+
+    pub fn accept_credential_with_provider(
+        &mut self,
+        authority: &OwnerAuthorityState,
+        credential: &DeviceCredential,
+        joiner_key: &dyn SigningProvider,
+    ) -> Result<PairingCredentialAccepted, PairingFlowError> {
         if self.state != PairingJoinerState::AwaitingCredential {
             return self.fail(PairingFlowError::UnexpectedState);
         }
@@ -438,7 +470,10 @@ impl PairingJoinerFlow {
             self.context.joiner_device_id,
             credential.device_key_id(),
         );
-        let signature = joiner_key.sign_digest(&proof_digest);
+        let signature = match joiner_key.sign_digest(&proof_digest) {
+            Ok(signature) => signature,
+            Err(_) => return self.fail(PairingFlowError::SigningFailed),
+        };
 
         self.state = PairingJoinerState::Accepted;
         Ok(PairingCredentialAccepted::new(

@@ -1,8 +1,8 @@
 # Cross-Lab Master Architecture & Development Plan
 
 **Document status:** Architecture Baseline — Source of Truth  
-**Revision:** 2.3  
-**Date:** 2026-09-17  
+**Revision:** 2.4  
+**Date:** 2026-09-20  
 **Project:** Cross-Lab  
 **Scope:** Architecture, security boundaries, repository structure, protocol foundations, platform strategy, development phases, and technology evaluation rules
 
@@ -26,7 +26,7 @@ The following rules apply:
 - License compatibility, security implications, platform support, maintenance status, and performance impact must be reviewed before code is reused or adapted.
 - The smallest architecture that cleanly satisfies the current milestone is preferred over speculative extensibility.
 
-Revision 2.3 incorporates accepted ADR-0012 cross-platform design-system and theme-contract architecture in addition to ADR-0009 remote-networking architecture, while preserving the previously accepted Phase 0 and Phase 1 foundation decisions. Detailed protocol/security mechanics live in their focused specifications; this document records the governing architecture and dependency boundaries.
+Revision 2.4 incorporates accepted ADR-0013 platform signing-provider architecture in addition to the previously accepted remote-networking and cross-platform design-system decisions. Private signing material is no longer an assumed shared-domain software-key interface: production platform adapters may provide protected/non-exportable signing behind the common provider boundary while preserving the accepted Ed25519 identity profile. Detailed protocol/security mechanics live in focused specifications; this document records the governing architecture and dependency boundaries.
 
 ---
 
@@ -221,6 +221,8 @@ Private keys remain local to the device and should use platform hardware-backed 
 - Android Keystore / StrongBox where available,
 - Windows hardware-backed key providers where available,
 - hardware security keys for selected administrative or recovery workflows.
+
+ADR-0013 standardizes the shared signing boundary: identity, pairing, trust, approval, and session-authentication logic consume an implementation-neutral signing provider that exposes public verification identity and fallible signing, not private key bytes. The existing software `SigningKey` remains valid for simulator/tests and explicit development provisioning. Production platform adapters choose the concrete key-storage/backing mechanism and must fail closed when the provider is unavailable or signing fails; the exact persistence, backup/restore, and rollback-resistance design remains platform-specific reviewed work.
 
 ### 6.3 Trust Graph
 

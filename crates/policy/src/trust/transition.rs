@@ -1,6 +1,6 @@
 use core::fmt;
 
-use crosslab_crypto::{CanonicalTranscript, Signature, SigningKey};
+use crosslab_crypto::{CanonicalTranscript, Signature, SigningKey, SigningProvider};
 use crosslab_identity::{
     AuthorityDelegation, AuthorityRole, DeviceId, KeyId, OwnerAuthorityState, OwnerId,
     OwnerRootRecord,
@@ -34,6 +34,7 @@ pub enum TrustTransitionError {
     InvalidRevision,
     CredentialEpochMismatch,
     AlreadyRevoked,
+    SigningFailed,
 }
 
 impl fmt::Display for TrustTransitionError {
@@ -49,6 +50,7 @@ impl fmt::Display for TrustTransitionError {
             Self::InvalidRevision => "trust transition revision is invalid",
             Self::CredentialEpochMismatch => "trust transition credential epoch does not match",
             Self::AlreadyRevoked => "device trust is already revoked",
+            Self::SigningFailed => "trust transition signing provider operation failed",
         })
     }
 }
@@ -77,6 +79,15 @@ impl TrustTransition {
         authority: &OwnerAuthorityState,
         root_key: &SigningKey,
     ) -> Result<Self, TrustTransitionError> {
+        Self::issue_root_revocation_with_provider(record, transition_id, authority, root_key)
+    }
+
+    pub fn issue_root_revocation_with_provider(
+        record: &TrustRecord,
+        transition_id: TransitionId,
+        authority: &OwnerAuthorityState,
+        root_key: &dyn SigningProvider,
+    ) -> Result<Self, TrustTransitionError> {
         ensure_record_active(record)?;
         let root = authority.root();
         if record.owner_id() != root.owner_id() {
@@ -92,7 +103,9 @@ impl TrustTransition {
             AuthorityRole::OwnerRoot,
             root.root_key_id(),
         )?;
-        transition.signature = root_key.sign_digest(&transition.transcript_digest());
+        transition.signature = root_key
+            .sign_digest(&transition.transcript_digest())
+            .map_err(|_| TrustTransitionError::SigningFailed)?;
         Ok(transition)
     }
 
@@ -101,7 +114,7 @@ impl TrustTransition {
         transition_id: TransitionId,
         root: &OwnerRootRecord,
         delegation: &AuthorityDelegation,
-        issuer_key: &SigningKey,
+        issuer_key: &dyn SigningProvider,
         minimum_delegation_epoch: u64,
     ) -> Result<Self, TrustTransitionError> {
         ensure_record_active(record)?;
@@ -122,7 +135,9 @@ impl TrustTransition {
             delegation.role(),
             delegation.delegated_key_id(),
         )?;
-        transition.signature = issuer_key.sign_digest(&transition.transcript_digest());
+        transition.signature = issuer_key
+            .sign_digest(&transition.transcript_digest())
+            .map_err(|_| TrustTransitionError::SigningFailed)?;
         Ok(transition)
     }
 
@@ -132,6 +147,27 @@ impl TrustTransition {
         authority: &OwnerAuthorityState,
         issuer_role: AuthorityRole,
         issuer_key: &SigningKey,
+    ) -> Result<Self, TrustTransitionError> {
+        ensure_ordinary_delegated_role(issuer_role)?;
+        let delegation = authority
+            .current_delegation(issuer_role)
+            .map_err(|_| TrustTransitionError::UnknownIssuer)?;
+        Self::issue_delegated_revocation_with_authority_parts(
+            record,
+            transition_id,
+            authority.root(),
+            delegation,
+            issuer_key,
+            delegation.delegation_epoch(),
+        )
+    }
+
+    pub fn issue_delegated_revocation_with_provider(
+        record: &TrustRecord,
+        transition_id: TransitionId,
+        authority: &OwnerAuthorityState,
+        issuer_role: AuthorityRole,
+        issuer_key: &dyn SigningProvider,
     ) -> Result<Self, TrustTransitionError> {
         ensure_ordinary_delegated_role(issuer_role)?;
         let delegation = authority
