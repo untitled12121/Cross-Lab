@@ -328,10 +328,18 @@ fn default_android_sdk_root() -> Option<PathBuf> {
 }
 
 fn gradle_command() -> Command {
-    if cfg!(windows) {
-        Command::new("gradlew.bat")
+    let wrapper = repo_root().join("apps/android").join(if cfg!(windows) {
+        "gradlew.bat"
     } else {
-        Command::new("./gradlew")
+        "gradlew"
+    });
+
+    if cfg!(windows) {
+        Command::new(wrapper)
+    } else {
+        let mut command = Command::new("bash");
+        command.arg(wrapper);
+        command
     }
 }
 
