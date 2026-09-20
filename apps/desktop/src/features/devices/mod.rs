@@ -1,14 +1,14 @@
 use core::fmt::Write as _;
 
 use crosslab_core::{SessionState, TransportSecurityClass};
-use crosslab_identity::DeviceId;
+use crosslab_identity::{DeviceId, OwnerId};
 use crosslab_policy::{NetworkClass, TrustState};
 use crosslab_protocol::ProtocolVersion;
 use crosslab_runtime::{ConnectivityState, RuntimeStatus};
 
 mod runtime;
 
-pub use runtime::DesktopRuntimeController;
+pub use runtime::{DesktopRuntimeControlError, DesktopRuntimeController};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrustDisplay {
@@ -99,6 +99,8 @@ impl SecurityDisplay {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DevicePresentation {
+    owner_id: Option<String>,
+    local_device_id: Option<String>,
     peer_id: Option<String>,
     trust: TrustDisplay,
     connectivity: ConnectivityDisplay,
@@ -113,6 +115,8 @@ pub struct DevicePresentation {
 impl DevicePresentation {
     pub fn from_runtime(status: &RuntimeStatus) -> Self {
         Self::from_fields(StatusFields {
+            owner_id: status.owner_id(),
+            local_device_id: status.local_device_id(),
             peer_device_id: status.peer_device_id(),
             trust_state: status.trust_state(),
             connectivity: status.connectivity(),
@@ -123,6 +127,14 @@ impl DevicePresentation {
             metered: status.transport().metered(),
             capability_count: status.negotiated_capability_ids().len(),
         })
+    }
+
+    pub fn owner_id(&self) -> Option<&str> {
+        self.owner_id.as_deref()
+    }
+
+    pub fn local_device_id(&self) -> Option<&str> {
+        self.local_device_id.as_deref()
     }
 
     pub fn peer_id(&self) -> Option<&str> {
@@ -163,6 +175,8 @@ impl DevicePresentation {
 
     fn from_fields(fields: StatusFields) -> Self {
         Self {
+            owner_id: fields.owner_id.map(short_owner_id),
+            local_device_id: fields.local_device_id.map(short_device_id),
             peer_id: fields.peer_device_id.map(short_device_id),
             trust: match fields.trust_state {
                 TrustState::Pending => TrustDisplay::Pending,
@@ -232,6 +246,8 @@ impl DevicesFeatureState {
 
 #[derive(Debug, Clone, Copy)]
 struct StatusFields {
+    owner_id: Option<OwnerId>,
+    local_device_id: Option<DeviceId>,
     peer_device_id: Option<DeviceId>,
     trust_state: TrustState,
     connectivity: ConnectivityState,
@@ -244,8 +260,16 @@ struct StatusFields {
 }
 
 fn short_device_id(device_id: DeviceId) -> String {
+    short_id(device_id.as_bytes())
+}
+
+fn short_owner_id(owner_id: OwnerId) -> String {
+    short_id(owner_id.as_bytes())
+}
+
+fn short_id(bytes: &[u8; 32]) -> String {
     let mut output = String::with_capacity(16);
-    for byte in &device_id.as_bytes()[..8] {
+    for byte in &bytes[..8] {
         write!(&mut output, "{byte:02x}").expect("writing to String cannot fail");
     }
     output
