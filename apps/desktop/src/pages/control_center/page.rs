@@ -3,7 +3,7 @@ use crate::{
         appearance::{active_theme, font_weight},
         devices::{DesktopRuntimeController, DevicesFeatureState},
         owner::OwnerFeatureState,
-        pairing::DesktopPairingInvitation,
+        pairing::{DesktopPairingInvitation, load_existing_product_identity},
     },
     pages::control_center::{
         _components::{devices_content, owner_content, pairing_invitation_panel},
@@ -70,6 +70,24 @@ impl ControlCenterPage {
                     return;
                 }
             }
+        })
+        .detach();
+
+        cx.spawn(async move |this, cx| {
+            let result = load_existing_product_identity().await;
+            let _ = this.update(cx, |page, cx| {
+                match result {
+                    Ok(Some(identity)) => page.owner.set_product_identity(
+                        identity.owner_id().to_owned(),
+                        identity.local_device_id().to_owned(),
+                    ),
+                    Ok(None) => {}
+                    Err(error) => {
+                        page.notice = Some(error.to_string());
+                    }
+                }
+                cx.notify();
+            });
         })
         .detach();
 
