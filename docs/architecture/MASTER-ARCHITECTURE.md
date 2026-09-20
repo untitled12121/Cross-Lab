@@ -1,7 +1,7 @@
 # Cross-Lab Master Architecture & Development Plan
 
 **Document status:** Architecture Baseline — Source of Truth  
-**Revision:** 2.4  
+**Revision:** 2.5  
 **Date:** 2026-09-20  
 **Project:** Cross-Lab  
 **Scope:** Architecture, security boundaries, repository structure, protocol foundations, platform strategy, development phases, and technology evaluation rules
@@ -26,7 +26,7 @@ The following rules apply:
 - License compatibility, security implications, platform support, maintenance status, and performance impact must be reviewed before code is reused or adapted.
 - The smallest architecture that cleanly satisfies the current milestone is preferred over speculative extensibility.
 
-Revision 2.4 incorporates accepted ADR-0013 platform signing-provider architecture in addition to the previously accepted remote-networking and cross-platform design-system decisions. Private signing material is no longer an assumed shared-domain software-key interface: production platform adapters may provide protected/non-exportable signing behind the common provider boundary while preserving the accepted Ed25519 identity profile. Detailed protocol/security mechanics live in focused specifications; this document records the governing architecture and dependency boundaries.
+Revision 2.5 incorporates accepted ADR-0014 product pairing bootstrap envelope v1 in addition to ADR-0013 platform signing-provider architecture and the previously accepted remote-networking/design-system decisions. Product pairing now has one deterministic secret-bearing cross-platform bootstrap representation while discovery/transport hints remain non-authoritative. Detailed protocol/security mechanics live in focused specifications; this document records the governing architecture and dependency boundaries.
 
 ---
 
@@ -334,6 +334,7 @@ Possible bootstrap mechanisms include:
 - recovery credential for recovery-specific flows.
 
 Phase 1 pairing profile v1 uses the high-entropy single-use bootstrap model defined by `docs/architecture/PAIRING-TRUST-REVOCATION.md` and ADR-0003. A short numeric pairing code must not be treated as a high-entropy secret; any future numeric-code profile requires an appropriate PAKE or equivalent design with replay and online-guessing protections.
+ADR-0014 defines the product bootstrap envelope used by native UIs/QR scanners. It carries only the pairing profile/id/secret plus owner and inviter device identifiers; route/discovery metadata is excluded and cannot become identity or trust authority.
 
 The pairing specification defines:
 
