@@ -103,9 +103,7 @@ fn hex(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crosslab_core::{
-        PairingInstant, PairingInvitation, PairingInvitationCreateError,
-    };
+    use crosslab_core::{PairingInstant, PairingInvitation, PairingInvitationCreateError};
     use crosslab_identity::{DeviceId, OwnerId};
 
     use super::*;

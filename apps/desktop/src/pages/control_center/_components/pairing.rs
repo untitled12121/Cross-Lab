@@ -9,10 +9,7 @@ use gpui_kit::{
 const MODULE_SIZE: f32 = 4.;
 const QUIET_ZONE_MODULES: f32 = 4.;
 
-pub(crate) fn pairing_invitation_panel(
-    invitation: &DesktopPairingInvitation,
-    cx: &App,
-) -> Div {
+pub(crate) fn pairing_invitation_panel(invitation: &DesktopPairingInvitation, cx: &App) -> Div {
     let theme = cx.theme();
     let appearance = active_theme(cx);
     let modules = invitation.modules();

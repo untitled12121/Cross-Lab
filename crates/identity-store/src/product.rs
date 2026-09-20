@@ -1,8 +1,6 @@
 use core::fmt;
 
-use crosslab_crypto::{
-    Signature, SignatureAlgorithm, SigningProvider, VerifyingKey,
-};
+use crosslab_crypto::{Signature, SignatureAlgorithm, SigningProvider, VerifyingKey};
 use crosslab_identity::{
     AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, IdentityError,
     OwnerAuthorityState, OwnerId, OwnerRootRecord,
@@ -10,8 +8,7 @@ use crosslab_identity::{
 
 const MAGIC: &[u8; 8] = b"CLPIDV1\0";
 const SCHEMA_VERSION: u16 = 1;
-const ENCODED_LEN: usize =
-    MAGIC.len() + 2 + 32 + 32 + 8 + 32 + 8 + 32 + 64 + 8 + 32 + 64;
+const ENCODED_LEN: usize = MAGIC.len() + 2 + 32 + 32 + 8 + 32 + 8 + 32 + 64 + 8 + 32 + 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProductIdentityState {
@@ -99,7 +96,8 @@ impl ProductIdentityState {
         }
 
         let authority = self.authority_state()?;
-        self.local_credential.verify(&authority, self.local_credential.credential_epoch())?;
+        self.local_credential
+            .verify(&authority, self.local_credential.credential_epoch())?;
         Ok(())
     }
 
@@ -175,7 +173,9 @@ impl ProductIdentityState {
             local_credential,
         };
         let authority = state.authority_state()?;
-        state.local_credential.verify(&authority, credential_epoch)?;
+        state
+            .local_credential
+            .verify(&authority, credential_epoch)?;
         Ok(state)
     }
 }
@@ -194,8 +194,12 @@ impl fmt::Display for ProductIdentityError {
         match self {
             Self::Random => formatter.write_str("secure identity generation failed"),
             Self::Malformed => formatter.write_str("product identity snapshot is malformed"),
-            Self::UnsupportedSchema => formatter.write_str("product identity snapshot schema is unsupported"),
-            Self::ProviderMismatch => formatter.write_str("protected signing provider does not match persisted identity"),
+            Self::UnsupportedSchema => {
+                formatter.write_str("product identity snapshot schema is unsupported")
+            }
+            Self::ProviderMismatch => {
+                formatter.write_str("protected signing provider does not match persisted identity")
+            }
             Self::Identity(error) => fmt::Display::fmt(error, formatter),
         }
     }

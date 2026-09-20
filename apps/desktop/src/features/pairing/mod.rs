@@ -36,8 +36,8 @@ impl ProductIdentityPresentation {
     }
 }
 
-pub async fn load_existing_product_identity(
-) -> Result<Option<ProductIdentityPresentation>, DesktopPairingError> {
+pub async fn load_existing_product_identity()
+-> Result<Option<ProductIdentityPresentation>, DesktopPairingError> {
     let store = LinuxIdentityStore::from_environment()?;
     let Some(payload) = store.load_payload().await? else {
         return Ok(None);

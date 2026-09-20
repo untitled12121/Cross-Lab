@@ -230,9 +230,7 @@ pub struct LinuxEd25519Signer {
 }
 
 impl LinuxEd25519Signer {
-    pub async fn load(
-        slot: LinuxSigningSlot,
-    ) -> Result<Option<Self>, LinuxIdentityStoreError> {
+    pub async fn load(slot: LinuxSigningSlot) -> Result<Option<Self>, LinuxIdentityStoreError> {
         let keyring = Keyring::new().await?;
         let attributes = [
             APP_ATTRIBUTE,
@@ -256,9 +254,7 @@ impl LinuxEd25519Signer {
         }))
     }
 
-    pub async fn load_required(
-        slot: LinuxSigningSlot,
-    ) -> Result<Self, LinuxIdentityStoreError> {
+    pub async fn load_required(slot: LinuxSigningSlot) -> Result<Self, LinuxIdentityStoreError> {
         Self::load(slot)
             .await?
             .ok_or(LinuxIdentityStoreError::SignerMissing)

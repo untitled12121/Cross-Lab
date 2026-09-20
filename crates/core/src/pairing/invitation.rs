@@ -169,7 +169,6 @@ impl fmt::Display for PairingInvitationError {
 
 impl std::error::Error for PairingInvitationError {}
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PairingInvitationCreateError {
     Random(RandomError),

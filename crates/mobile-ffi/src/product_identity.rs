@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use crosslab_crypto::{
-    Signature, SigningProvider, SigningProviderError, VerifyingKey,
-};
+use crosslab_crypto::{Signature, SigningProvider, SigningProviderError, VerifyingKey};
 use crosslab_identity_store::{ProductIdentityError, ProductIdentityState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Error)]
@@ -60,7 +58,9 @@ impl core::fmt::Display for MobileProductIdentityError {
             Self::Random => "secure identity generation failed",
             Self::Malformed => "product identity snapshot is malformed",
             Self::UnsupportedSchema => "product identity snapshot schema is unsupported",
-            Self::ProviderMismatch => "protected signing provider does not match persisted identity",
+            Self::ProviderMismatch => {
+                "protected signing provider does not match persisted identity"
+            }
             Self::Identity => "product identity verification failed",
         })
     }
@@ -105,9 +105,7 @@ struct ForeignSigningProvider {
 }
 
 impl ForeignSigningProvider {
-    fn new(
-        inner: Arc<dyn MobileSigningProvider>,
-    ) -> Result<Self, MobileProductIdentityError> {
+    fn new(inner: Arc<dyn MobileSigningProvider>) -> Result<Self, MobileProductIdentityError> {
         let bytes = inner
             .public_key()
             .map_err(|_| MobileProductIdentityError::SigningProvider)?;

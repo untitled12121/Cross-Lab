@@ -1,3 +1,5 @@
+#[cfg(feature = "development-provisioning")]
+use crate::features::devices::TrustDisplay;
 use crate::{
     features::{
         appearance::{active_theme, font_weight},
@@ -10,8 +12,6 @@ use crate::{
         layout::control_center_layout,
     },
 };
-#[cfg(feature = "development-provisioning")]
-use crate::features::devices::TrustDisplay;
 
 use gpui_kit::{
     Context, InteractiveElement as _, IntoElement, ParentElement as _, Render, Styled as _, Window,
