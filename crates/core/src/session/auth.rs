@@ -1,7 +1,8 @@
 use core::fmt;
 
 use crosslab_crypto::{
-    CanonicalTranscript, Signature, SignatureAlgorithm, SigningKey, VerifyingKey, blake3_256,
+    CanonicalTranscript, Signature, SignatureAlgorithm, SigningKey, SigningProvider, VerifyingKey,
+    blake3_256,
     signed_object_digest,
 };
 use crosslab_identity::{DeviceCredential, DeviceId, KeyId, OwnerId};
@@ -30,6 +31,7 @@ pub enum SessionAuthError {
     WrongProofTranscript,
     WrongDeviceKey,
     InvalidProof,
+    SigningFailed,
 }
 
 impl fmt::Display for SessionAuthError {
@@ -41,6 +43,7 @@ impl fmt::Display for SessionAuthError {
             Self::WrongProofTranscript => "session authentication proof targets another transcript",
             Self::WrongDeviceKey => "session authentication proof uses the wrong device key",
             Self::InvalidProof => "session authentication proof signature is invalid",
+            Self::SigningFailed => "session authentication signing provider operation failed",
         })
     }
 }
@@ -201,6 +204,14 @@ impl SessionAuthTranscriptV1 {
         role: SessionAuthRole,
         signing_key: &SigningKey,
     ) -> Result<SessionAuthProof, SessionAuthError> {
+        self.create_proof_with_provider(role, signing_key)
+    }
+
+    pub fn create_proof_with_provider(
+        &self,
+        role: SessionAuthRole,
+        signing_key: &dyn SigningProvider,
+    ) -> Result<SessionAuthProof, SessionAuthError> {
         let public_key = signing_key.verifying_key();
         if KeyId::derive(SignatureAlgorithm::Ed25519, &public_key) != self.key_id(role) {
             return Err(SessionAuthError::WrongDeviceKey);
@@ -211,7 +222,9 @@ impl SessionAuthTranscriptV1 {
         Ok(SessionAuthProof {
             role,
             transcript_digest,
-            signature: signing_key.sign_message(&input),
+            signature: signing_key
+                .sign_message(&input)
+                .map_err(|_| SessionAuthError::SigningFailed)?,
         })
     }
 
