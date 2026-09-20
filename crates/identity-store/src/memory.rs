@@ -17,7 +17,10 @@ struct MemoryState {
 
 impl MemoryIdentityStore {
     pub fn load(&self) -> Result<Option<IdentityStoreEnvelope>, IdentityStoreError> {
-        let state = self.state.lock().expect("memory identity-store lock poisoned");
+        let state = self
+            .state
+            .lock()
+            .expect("memory identity-store lock poisoned");
         match (&state.envelope, state.anchor) {
             (None, None) => Ok(None),
             (Some(envelope), Some(anchor)) => {
@@ -33,7 +36,10 @@ impl MemoryIdentityStore {
         expected_revision: Option<u64>,
         payload: Vec<u8>,
     ) -> Result<IdentityStoreEnvelope, IdentityStoreError> {
-        let mut state = self.state.lock().expect("memory identity-store lock poisoned");
+        let mut state = self
+            .state
+            .lock()
+            .expect("memory identity-store lock poisoned");
         let current_revision = state.envelope.as_ref().map(IdentityStoreEnvelope::revision);
         if current_revision != expected_revision {
             return Err(IdentityStoreError::RevisionConflict);
