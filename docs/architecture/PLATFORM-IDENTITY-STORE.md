@@ -196,3 +196,17 @@ Forbidden:
 4. implement Linux desktop provider adapter;
 5. implement Linux atomic/currentness persistence and negative rollback tests;
 6. only then wire normal Add Device / pairing UI to durable production identity.
+
+
+## 11. External platform evidence checked
+
+The design was checked against current platform documentation before choosing adapter directions:
+
+- Android Keystore security model and non-exportable/hardware-backed key behavior: https://developer.android.com/privacy-and-security/keystore
+- Android `KeyProperties` algorithm/security-level surface: https://developer.android.com/reference/android/security/keystore/KeyProperties
+- Android AES-GCM Keystore examples: https://developer.android.com/reference/android/security/keystore/KeyGenParameterSpec
+- Android Auto Backup include/exclude behavior: https://developer.android.com/identity/data/autobackup
+- freedesktop Secret Service API: https://specifications.freedesktop.org/secret-service/latest/
+- Linux kernel key retention service: https://docs.kernel.org/security/keys/core.html
+
+These sources support the adapter constraints above but do not prove Cross-Lab's eventual rollback/currentness guarantees. Those guarantees require backend implementation and negative testing.
