@@ -4,149 +4,115 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 ## Current Phase
 
-**M10 first real Linux + Android platform slice remains in implementation.**
+**M10 first real Linux + Android platform slice remains open only for physical-device evidence. Product pairing implementation continues in parallel.**
 
-M1-M9 are complete. M10 Tasks 3-9 are integrated on `main`. Task 10 host-side CI/evidence infrastructure and the physical-evidence execution tooling are now integrated on `main` through PR #40. The PR #40 exact-head CI is fully green, but the mandatory physical Linux + Android lifecycle/security evidence is still pending. M10 must remain open until that evidence is collected and reviewed.
+M1-M9 are complete. The M10 host/runtime/UI slice is integrated on `main`; its mandatory physical Linux + Android lifecycle/security/resource evidence is still pending and must not be inferred from CI.
+
+The production pairing foundation has now advanced through the Add Device / QR surface:
+
+- PR #45: platform signing-provider boundary;
+- PR #46: product pairing bootstrap envelope;
+- PR #47: platform identity-store architecture;
+- PR #48: Android/Linux production identity-store adapters;
+- PR #49: Linux Add Device QR invitation UI plus Android CameraX/ML Kit QR scanner.
 
 ## Canonical Baseline
 
-- Canonical Task 10 host-gate integration baseline: `main` merge `b31ecd3a8d6b9aaeb0ebae8944ab0c2b0d3b8db5` (PR #39).
-- Task 9 PR: #38, merged as `f19aa4bb89d744f2ebf0f0fa2b204929fd8495a4`.
-- Task 9 final exact-head CI: GitHub Actions `35435754375` on `f078f7b5e0c3a4b20c1aa3d38a3b29f592cc7152`, Android and Rust both fully green.
-- Task 10 host-gate PR: #39, merged as `b31ecd3a8d6b9aaeb0ebae8944ab0c2b0d3b8db5`.
-- Verified Task 10 host-gate implementation head: `fad35fd2f3535d148a64287fdde391d1613b720e`, CI `35438748708` fully green.
-- Task 10 final documentation head: `969ca58a3fec716ab408a88508039b19fbe0fd7f`, exact-head CI `35459098042` fully green before merge.
-- Physical-evidence enablement PR: #40, merged as `c183b3c2dba3eb14f5063024d6d9deab996fae10`.
-- Build orchestration PR: #41, merged as `062773aaa8eda64e4aa5a8f3cae70a5893cf7dfd`; exact-head CI `35485671117` fully green on `ca3b502b42d7eb7620d8d06a691eb663c5369b42`.
-- Build help PR: #42, merged as `a8659c24f459f760e3a8365e68397e077f909251`; exact-head CI `35489274255` fully green on `57eaedc297dc6b7d72d4e627707078d933b059ba`, including direct verification of `cargo crosslab --help`.
-- Real-hardware DX fixes PR: #43, merged as `f8ec5e1e9ebfe32fa88af17abbecb9001e471059`; exact-head CI `35490894046` fully green on `dab3742143a781bfc9fcb7f033bbdcae0f8cc96b`. It adds user-local Android SDK bootstrap through `cargo crosslab setup`, broader SDK discovery, and display-aware desktop window sizing.
-- Owner/device management PR: #44, merged as `97bd9c534870e43db4ac4535704012f5214184d7`; exact-head CI `35507648082` fully green on `7f5953c82faedede9a08111136890a627122ec88`. It adds desktop and Android Devices/Owner control-center surfaces, presentation-safe owner/local/peer identity summaries, and development-slice peer disconnect/reconnect/revocation controls through existing runtime/trust boundaries.
-- Platform signing-provider PR: #45, merged as `dfca18aae64ff45e1861a54743691ebc90d6210a`; exact-head CI `35510597391` and Fuzz Smoke `35510597425` fully green on `d6c33d0cd48a8a0d6a23de47e5db7f1c6ebed96b`. ADR-0013 and Master Architecture revision 2.4 establish a fallible signing-provider boundary so production platform adapters need not export private key bytes.
-- Product pairing bootstrap PR: #46, merged as `90812c4abd9e41faf844d9ccbca6ca1bacd8f5b2`; exact-head CI `35516012516` fully green on `f6ee5497adc5c208270f7a78925aca7bf7aee5af`. ADR-0014 and Master Architecture revision 2.5 define the secret-bearing `crosslab:pair:v1:` envelope while keeping discovery/transport hints non-authoritative.
-- Platform identity-store design PR: #47, merged as `e55995cf94156831c124aac036a646590d904750`; exact-head CI `35516865982` fully green on `e3e3629f968075ba85aa3d22387d35221522c809`. ADR-0015 and Master Architecture revision 2.6 define fail-closed production identity/trust persistence, protected signing-provider/currentness state, and atomic security-transition requirements.
-- Production identity-store implementation PR: #48, merged as `6aae001a2911f4752c29dfc16696fabb20695aa5`; exact-head CI `35520246921` fully green on `6f958c98618ae7af44dce6def92efdf8fec487c5`. Shared store/currentness contract plus Android Keystore-backed and Linux Secret Service-backed platform adapters are implemented; physical lifecycle/rollback evidence remains pending.
-- PR #40 exact-head implementation: `13bb1103f42e35a3beb0d3ad2b2c8cc7befe93d8`, CI `35479944418` fully green.
-- Physical-evidence continuation branch: `m10-task10-real-device-evidence`; continue it from the current `main` checkpoint when a physical Linux + Android pair is available.
-- Evidence protocol: `docs/research/M10-platform-evidence.md`.
-- Active implementation plan: `docs/superpowers/plans/2026-09-17-m10-first-platform-slice.md`.
-- Owner/device management usability plan: `docs/superpowers/plans/2026-09-20-m10-owner-device-management.md` (implemented through PR #44).
-- Product pairing/signing foundation plan: `docs/superpowers/plans/2026-09-20-product-pairing-signing-foundation.md`; Tasks 1-3 plus concrete Android/Linux identity-store adapters are implemented through PRs #45-#48. Product Add Device / QR pairing UI and orchestration are next.
-- Approved design: `docs/superpowers/specs/2026-09-17-m10-platform-shell-design.md`.
-- Master Architecture revision 2.6 plus ADR-0008, ADR-0009, ADR-0012, ADR-0013, ADR-0014, and ADR-0015 are the current architecture baseline.
+- Current `main` after PR #49: `445bbf32178dff94f339fc1ae80447967f5da215`.
+- PR #48 — production identity-store implementation: merged as `6aae001a2911f4752c29dfc16696fabb20695aa5`; exact-head CI `35520246921` fully green on `6f958c98618ae7af44dce6def92efdf8fec487c5`.
+- PR #49 — product Add Device / QR flow: merged as `445bbf32178dff94f339fc1ae80447967f5da215`; exact-head CI `35533414673` fully green on `7d3176ffd4387d3e29982ae5fe641249d6d33445`.
+- The final PR #49 CI blocker was fixed rather than suppressed: the redacted `MobilePairingBootstrap` debug implementation was moved before the test module to satisfy `clippy::items-after-test-module`.
+- Physical-evidence continuation branch: `m10-task10-real-device-evidence`.
+- M10 evidence protocol: `docs/research/M10-platform-evidence.md`.
+- Active product pairing plan: `docs/superpowers/plans/2026-09-20-product-add-device-pairing.md`.
+- M10 platform plan: `docs/superpowers/plans/2026-09-17-m10-first-platform-slice.md`.
+- Master Architecture revision 2.6 plus ADR-0003, ADR-0008, ADR-0009, ADR-0010, ADR-0013, ADR-0014, and ADR-0015 are the governing baseline for the next pairing work.
 
-## Integrated M10 Platform Slice
+## Product Pairing Status
 
-Tasks 3-9 are integrated and verified:
+### Implemented and merged
 
-- `crates/runtime` owns reusable platform-neutral session/dispatcher/transport coordination and presentation-safe runtime snapshots;
-- transport loss, peer revocation, owner-root replacement, and Device Signing authority replacement fail closed;
-- Quinn endpoint wrappers require explicit TLS certificate/trust material and derive ADR-0008 channel binding only after the full QUIC/TLS handshake;
-- Cross-Lab identity/trust remain independent from TLS/Quinn identity;
-- authenticated reconnects require fresh Cross-Lab session authority;
-- Linux desktop uses Rust + GPUI + GPUI Kit and observes presentation-safe runtime state without putting networking/crypto in UI code;
-- Android uses Kotlin + Compose over the single narrow `crosslab-mobile-ffi` UniFFI boundary;
-- mobile runtime event delivery is bounded and event-driven rather than polling;
-- explicit development provisioning is non-default, Rust-owned, unavailable by default in release configuration, and rejects group/world-readable files on Unix;
-- Android development provisioning is opt-in for debuggable builds and passes only an app-private provisioning-file path into Rust;
-- product-API integration tests cover authenticated connection, disconnect, fresh-session reconnect, revocation/reconnect denial, and presentation-state redaction;
-- the first Linux/Android development slice can build with the real runtime + Quinn development wiring enabled.
-- the unified Rust-native `cargo crosslab` build orchestrator is integrated, including host-aware desktop/Android builds, Android device install, development-provisioning builds, setup/doctor commands, and CI coverage of the same builder path.
-- the self-documenting `cargo crosslab --help` entry point lists all current commands, flags, defaults, host behavior, and examples and is verified directly in CI.
-- `cargo crosslab setup` can bootstrap the pinned Android command-line SDK into a user-owned data directory when no compatible SDK is installed; SDK license acceptance remains explicit and interactive.
-- desktop startup clamps the initial window to the available primary display and enforces a minimum usable size, avoiding oversized windowed launches on scaled/smaller displays.
-- Linux desktop and Android now expose a Devices + Owner control-center surface instead of only a passive status shell; Cross-Lab continues to use the owner trust domain rather than a mandatory cloud/email account.
-- presentation-safe owner/local/peer identifiers flow through runtime/FFI without exposing keys, credentials, channel binding, or raw transport objects.
-- the development hardware slice has explicit user-triggered disconnect/reconnect controls, while desktop development revocation uses the existing signed trust-transition path.
+- Android production identity store with Android Keystore protected signing material/currentness handling.
+- Linux production identity store with Secret Service protected signing material/currentness handling.
+- Shared versioned identity-store envelope/currentness contract.
+- Product owner/local-device identity snapshot with provider binding validation.
+- Five-minute single-use `crosslab:pair:v1:` invitation generation.
+- Native GPUI QR presentation with cancel/regenerate behavior.
+- Android CameraX lifecycle-bound scanner.
+- Bundled/offline ML Kit QR recognition.
+- Explicit Android camera permission handling.
+- Shared Rust bootstrap validation.
+- Scanned pairing secret remains inside an opaque Rust UniFFI object rather than Compose presentation state.
+- QR/bootstrap debug output is redacted.
 
-## Task 10 Host CI / Evidence Checkpoint
+### Not yet implemented
 
-**Host CI infrastructure is complete and green; physical-device evidence is not yet complete.**
+- Shared product pairing coordinator.
+- Atomic durable peer credential + verified trust persistence for both sides of a successful pairing.
+- Product-level failure/replay/persistence/rollback coordinator tests.
+- Bounded LAN discovery profile and its ADR.
+- Provisional Quinn product-pairing channel.
+- Real Linux ↔ Android product pairing over LAN.
 
-Task 10 currently provides:
+## Security Finding for the Next Milestone
 
-- the original Rust gate unchanged:
-  - `cargo metadata --locked --no-deps --format-version 1`;
-  - `cargo audit`;
-  - `cargo fmt --check`;
-  - `cargo check --workspace --all-targets --all-features`;
-  - `cargo clippy --workspace --all-targets --all-features -- -D warnings`;
-  - `cargo test --workspace --all-features`;
-- deterministic UniFFI Kotlin binding generation;
-- default Linux desktop build plus Linux desktop build with `development-provisioning`;
-- Android JVM unit tests;
-- default Android debug assembly;
-- Android development-wiring debug assembly using `-PcrosslabDevelopmentProvisioning=true`;
-- a secret-safe real-device evidence protocol with explicit environment, lifecycle, reconnect, revocation, shutdown, duplicate-runtime, resource-behavior, and theme evidence rows;
-- Android `INTERNET` permission required by the real Quinn connection;
-- a development-only generator for synthetic throwaway Linux/Android identity + TLS provisioning that refuses relative/in-repository output and private-file overwrite;
-- a development-only Linux `SIGUSR1` revocation trigger routed through the runtime actor and signed trust-transition path;
-- development Quinn coverage proving peer revocation rejects a fresh reconnect.
+Normal authenticated sessions require each side to possess current validated trust for its peer. The existing core pairing state machine establishes inviter-side trust after the joiner's final proof, but the product persistence snapshot does not yet durably reconstruct the reciprocal peer credential/trust state required after restart.
 
-Host verification on `fad35fd2f3535d148a64287fdde391d1613b720e`, run `35438748708`, is fully green. The merged physical-evidence enablement head `13bb1103f42e35a3beb0d3ad2b2c8cc7befe93d8`, run `35479944418`, is also fully green.
+The next implementation must therefore preserve these rules:
 
-The following Task 10 criteria remain physically unverified and **must not be inferred from CI**:
-
-- Android foreground -> background -> foreground;
-- local network loss -> restoration;
-- Linux/Android disconnect -> fresh authenticated reconnect;
-- revocation -> reconnect denial on the physical pair;
-- clean explicit shutdown;
-- no duplicate runtime/session after lifecycle churn;
-- bounded idle/reconnect behavior on real devices;
-- Ayu Light rendering/selection on the physical pair.
-
-Darkmatter/System-dark remains blocked until an authoritative Darkmatter palette is supplied.
-
-## First M10 Slice
-
-The slice remains **authenticated local device connection + device status** between Linux desktop and Android:
-
-- Linux desktop: Rust + GPUI + GPUI Kit.
-- Android: Kotlin + Jetpack Compose over one narrow shared-Rust mobile facade.
-- Shared coordination: `crosslab-runtime`.
-- Mobile FFI: `crosslab-mobile-ffi`; internal domain crates are not independently exported.
-- Transport: Quinn local/LAN using existing Cross-Lab channel-bound authentication/session semantics.
-- Development endpoint/provisioning is explicit; mDNS/BLE discovery remains outside this slice.
-- Pairing/bootstrap UI, clipboard, file transfer, BLE/Wi-Fi Direct, iOS, Windows, and production Iroh promotion remain outside the first slice.
-
-## Security / Lifecycle Constraints
-
-- UI code does not own networking, cryptography, persistence internals, or privileged operations.
-- FFI DTOs never expose private keys, credentials, authentication secrets, channel-binding bytes, sensitive payloads, or raw transport objects.
-- Development provisioning remains an explicit non-default feature and must never be enabled silently in release builds.
-- Development provisioning files contain sensitive material and must never be committed or logged.
-- Production Quinn certificate provisioning/pinning remains a separate reviewed decision.
-- Persistent Android production identity material still requires a reviewed Keystore/StrongBox adapter.
-- Signing-sensitive shared domain APIs now accept the ADR-0013 `SigningProvider` boundary; software `SigningKey` remains for simulator/tests/development provisioning, while production platform adapters must provide protected provider implementations and fail closed on provider error.
-- Do not promote Iroh in M10; preserve ADR-0009 and `Libp2p trigger: no`.
-- Do not invent the missing canonical Darkmatter palette.
-- Reconnect always requires fresh Cross-Lab authentication/session authority.
-
-## Deferred / External Risks
-
-- Durable rollback-resistant persistence for `OwnerAuthorityState` and accepted authority epochs.
-- Physical Linux + Android lifecycle/background/networking evidence required by Task 10.
-- Android production secure-keystore evidence.
-- Windows/macOS platform networking and firewall evidence.
-- Production Quinn certificate issuance/pinning lifecycle.
-- Production persistence/rotation/privacy policy for stable Iroh transport keys.
-- `paste 1.0.15` / `RUSTSEC-2024-0436` in the isolated Iroh dependency graph.
-- `main` branch protection and other repository-administration controls.
+- scanning a QR proves possession of a temporary bootstrap secret; it is **not** durable trust;
+- ADR-0003 transcript confirmation, owner-authorized credential validation, and device proof-of-possession remain mandatory;
+- successful pairing becomes product-visible only after the required credential/trust state is committed atomically through the ADR-0015 identity-store boundary;
+- persistence/currentness failure fails closed and does not leave durable `Trusted` state;
+- discovery addresses and Quinn/TLS identity remain routing/channel metadata, never Cross-Lab identity authority;
+- pairing secrets, private keys, protected signer material, and sensitive payloads are never logged.
 
 ## Exact Next Task
 
-Two tracks remain distinct:
+Continue `docs/superpowers/plans/2026-09-20-product-add-device-pairing.md` in this order:
 
-1. **M10 completion track:** collect the mandatory physical Linux + Android lifecycle/security/resource evidence on `m10-task10-real-device-evidence`; Task 11/M10 completion remains blocked until that evidence exists.
-2. **Product pairing track:** PR #48 merged the Android/Linux production identity-store adapters. Continue `docs/superpowers/plans/2026-09-20-product-add-device-pairing.md`: finish Linux Add Device QR presentation, Android camera QR scanner, shared pairing coordinator, bounded LAN discovery/provisional transport, and atomic durable trust commit.
-3. CI completion does not substitute for physical camera/LAN/rollback evidence. Product UI work may proceed, but hardware acceptance remains pending.
-4. Darkmatter/System-dark remains blocked until an authoritative palette is supplied.
+1. implement the shared product pairing coordinator using the existing ADR-0003 pairing flow rather than a second protocol;
+2. persist peer credential + verified trust as one logical security commit and make restart reconstruction fail closed;
+3. add success, cancellation, replay, malformed bootstrap, proof failure, persistence failure, and rollback/currentness tests;
+4. record the bounded LAN discovery + provisional Quinn pairing profile in an ADR before promotion;
+5. implement Linux ↔ Android real product pairing;
+6. collect physical camera/LAN evidence on actual devices.
+
+M10 physical hardware evidence remains a separate track and does not block product implementation. Do not claim physical behavior verified until it is tested on the real Linux + Android pair.
+
+## M10 Physical Evidence Still Pending
+
+The following remain physically unverified:
+
+- Android foreground → background → foreground;
+- local network loss → restoration;
+- Linux/Android disconnect → fresh authenticated reconnect;
+- revocation → reconnect denial on the physical pair;
+- clean explicit shutdown;
+- no duplicate runtime/session after lifecycle churn;
+- bounded idle/reconnect behavior on real devices;
+- Ayu Light rendering/selection on the physical pair;
+- the new Android QR scanner on a physical camera;
+- real LAN product pairing once implemented.
+
+Darkmatter/System-dark remains blocked until an authoritative Darkmatter palette is supplied.
+
+## Development Constraints
+
+- UI code does not own networking, cryptography, persistence internals, or privileged operations.
+- Shared pairing state stays in Rust; UI/FFI receives presentation-safe state/events only.
+- Product pairing reuses the existing pairing transcript/HMAC and credential proof-of-possession semantics.
+- Cross-Lab identity/trust remain independent from IP, hostname, BLE identifiers, TLS certificates, Quinn connection identity, or discovery metadata.
+- Production identity load/commit is fail-closed when provider/currentness state is missing, stale, rolled back, or inconsistent.
+- Development provisioning remains explicit, non-default, private, and separate from production pairing.
+- Do not promote Iroh in M10; preserve ADR-0009.
+- No architectural trust/protocol/transport/persistent-format change is made silently; use an ADR when the Master Architecture requires one.
 
 ## Resume Procedure
 
-1. verify canonical `main`, active evidence branch, PR state, exact-head CI, and recent commits before editing;
-2. read Master Architecture revision 2.3, ADR-0008, ADR-0009, ADR-0012, `SESSION-TRANSPORT.md`, the active M10 plan, and `M10-platform-evidence.md`;
-3. preserve Cross-Lab identity independence from transport identity and keep authority fail-closed;
-4. keep Darkmatter unavailable until the authoritative palette is supplied;
-5. keep development/test credential and TLS provisioning explicit, non-release, private, and out of logs/source control;
-6. checkpoint `CURRENT.md` after every real-device evidence milestone.
+1. verify `main`, active feature/evidence branches, PR state, exact-head CI, and recent commits before editing;
+2. read Master Architecture revision 2.6, this file, the active product pairing plan, and relevant ADRs/specifications;
+3. inspect the existing core pairing/session/policy code and platform identity-store adapters before introducing new APIs;
+4. reuse the existing pairing state machine and currentness boundaries rather than duplicating security semantics;
+5. keep changes in small verifiable milestones, run the relevant full Rust/Android gates, commit/push completed work, and update this file with the exact next task;
+6. keep physical-device evidence separate from CI claims.
