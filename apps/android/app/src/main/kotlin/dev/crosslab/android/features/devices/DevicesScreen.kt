@@ -12,6 +12,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
@@ -22,6 +26,8 @@ import dev.crosslab.android.components.ui.StatusTone
 import dev.crosslab.android.features.appearance.ThemeDocument
 import dev.crosslab.android.features.appearance.toComposeColor
 import dev.crosslab.android.features.appearance.toTextStyle
+import dev.crosslab.android.features.pairing.PairingScannerPanel
+import uniffi.crosslab_mobile_ffi.MobilePairingBootstrap
 
 @Composable
 fun DevicesScreen(
@@ -30,9 +36,13 @@ fun DevicesScreen(
     runtime: RuntimeControllerState,
     onDisconnect: () -> Unit,
     onReconnect: () -> Unit,
+    pairingBootstrap: MobilePairingBootstrap?,
+    onPairingBootstrapScanned: (MobilePairingBootstrap) -> Unit,
+    onCancelPairing: () -> Unit,
 ) {
     val colors = theme.colors
     val device = devices.current
+    var scanning by remember { mutableStateOf(false) }
 
     Column(
         modifier =
@@ -63,26 +73,54 @@ fun DevicesScreen(
                 )
             }
 
-            if (device != null && runtime.peerControlAvailable) {
+            Row(horizontalArrangement = Arrangement.spacedBy(theme.spacing.sm.toFloat().dp)) {
                 ControlButton(
                     theme = theme,
-                    label = "Disconnect",
-                    onClick = onDisconnect,
+                    label = if (scanning) "Scanning…" else "Add Device",
+                    active = scanning,
+                    onClick = { scanning = !scanning },
                 )
-            } else if (
-                runtime.peerControlAvailable &&
-                    runtime.lifecycle == RuntimeLifecycle.RUNNING &&
-                    runtime.networkAvailable
-            ) {
-                ControlButton(
-                    theme = theme,
-                    label = "Reconnect",
-                    onClick = onReconnect,
-                )
+
+                if (device != null && runtime.peerControlAvailable) {
+                    ControlButton(
+                        theme = theme,
+                        label = "Disconnect",
+                        onClick = onDisconnect,
+                    )
+                } else if (
+                    runtime.peerControlAvailable &&
+                        runtime.lifecycle == RuntimeLifecycle.RUNNING &&
+                        runtime.networkAvailable
+                ) {
+                    ControlButton(
+                        theme = theme,
+                        label = "Reconnect",
+                        onClick = onReconnect,
+                    )
+                }
             }
         }
 
         Spacer(Modifier.height(theme.spacing.xl.toFloat().dp))
+
+        if (scanning) {
+            PairingScannerPanel(
+                theme = theme,
+                onScanned = { bootstrap ->
+                    scanning = false
+                    onPairingBootstrapScanned(bootstrap)
+                },
+                onCancel = { scanning = false },
+            )
+            Spacer(Modifier.height(theme.spacing.xl.toFloat().dp))
+        } else if (pairingBootstrap != null) {
+            PairingBootstrapPanel(
+                theme = theme,
+                bootstrap = pairingBootstrap,
+                onCancel = onCancelPairing,
+            )
+            Spacer(Modifier.height(theme.spacing.xl.toFloat().dp))
+        }
 
         if (device == null) {
             DisconnectedState(theme, runtime.networkAvailable)
@@ -254,6 +292,73 @@ private fun DetailRow(
                 theme.typography.scales.body
                     .toTextStyle()
                     .copy(color = colors.foreground.toComposeColor()),
+        )
+    }
+}
+
+
+@Composable
+private fun PairingBootstrapPanel(
+    theme: ThemeDocument,
+    bootstrap: MobilePairingBootstrap,
+    onCancel: () -> Unit,
+) {
+    val colors = theme.colors
+    val summary = remember(bootstrap) { runCatching { bootstrap.summary() }.getOrNull() }
+
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .border(
+                    BorderStroke(
+                        theme.metrics.borderWidth.toFloat().dp,
+                        colors.border.toComposeColor(),
+                    ),
+                    RectangleShape,
+                )
+                .padding(theme.spacing.lg.toFloat().dp),
+    ) {
+        StatusBadge(
+            label = "Invitation recognized",
+            tone = StatusTone.ACCENT,
+            textScale = theme.typography.scales.caption,
+            border = colors.border.toComposeColor(),
+            neutralBackground = colors.muted.toComposeColor(),
+            neutralForeground = colors.mutedForeground.toComposeColor(),
+            accentBackground = colors.accent.toComposeColor(),
+            accentForeground = colors.accentForeground.toComposeColor(),
+            criticalBackground = colors.destructive.toComposeColor(),
+            criticalForeground = colors.destructiveForeground.toComposeColor(),
+        )
+        Spacer(Modifier.height(theme.spacing.md.toFloat().dp))
+        BasicText(
+            text =
+                if (summary != null) {
+                    "Owner ${summary.ownerId} · inviter ${summary.inviterDeviceId}"
+                } else {
+                    "The scanned invitation is no longer available."
+                },
+            style =
+                theme.typography.scales.body
+                    .toTextStyle()
+                    .copy(color = colors.foreground.toComposeColor()),
+        )
+        Spacer(Modifier.height(theme.spacing.xs.toFloat().dp))
+        BasicText(
+            text =
+                "The one-time secret remains inside the shared Rust pairing handle. " +
+                    "Cross-Lab is waiting for the local pairing transport.",
+            style =
+                theme.typography.scales.caption
+                    .toTextStyle()
+                    .copy(color = colors.mutedForeground.toComposeColor()),
+        )
+        Spacer(Modifier.height(theme.spacing.md.toFloat().dp))
+        ControlButton(
+            theme = theme,
+            label = "Cancel pairing",
+            onClick = onCancel,
         )
     }
 }

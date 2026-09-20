@@ -111,6 +111,41 @@ impl AuthorityDelegation {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_unverified_signed_parts(
+        schema_version: u16,
+        owner_id: OwnerId,
+        role: AuthorityRole,
+        delegated_algorithm: SignatureAlgorithm,
+        delegated_public_key: VerifyingKey,
+        delegation_epoch: u64,
+        issuer_root_key_id: KeyId,
+        signature: Signature,
+    ) -> Result<Self, IdentityError> {
+        if schema_version != 1 {
+            return Err(IdentityError::UnsupportedSchema);
+        }
+        if role == AuthorityRole::OwnerRoot {
+            return Err(IdentityError::WrongIssuerRole);
+        }
+        if delegated_algorithm != SignatureAlgorithm::Ed25519 {
+            return Err(IdentityError::UnsupportedAlgorithm);
+        }
+
+        let delegated_key_id = KeyId::derive(delegated_algorithm, &delegated_public_key);
+        Ok(Self {
+            schema_version,
+            owner_id,
+            role,
+            delegated_key_id,
+            delegated_algorithm,
+            delegated_public_key,
+            delegation_epoch,
+            issuer_root_key_id,
+            signature,
+        })
+    }
+
     pub fn verify(&self, root: &OwnerRootRecord, minimum_epoch: u64) -> Result<(), IdentityError> {
         if self.schema_version != 1 {
             return Err(IdentityError::UnsupportedSchema);

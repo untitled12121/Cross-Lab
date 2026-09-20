@@ -15,14 +15,34 @@ import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
+import uniffi.crosslab_mobile_ffi.MobileSigningProvider
+
+enum class AndroidSigningSlot(
+    val fileName: String,
+    val wrappingAlias: String,
+) {
+    OWNER_ROOT(
+        fileName = "owner-root-signer-v1.bin",
+        wrappingAlias = "crosslab.identity.owner-root-wrap.v1",
+    ),
+    DEVICE_SIGNING(
+        fileName = "device-authority-signer-v1.bin",
+        wrappingAlias = "crosslab.identity.device-authority-wrap.v1",
+    ),
+    LOCAL_DEVICE(
+        fileName = "local-device-signer-v1.bin",
+        wrappingAlias = "crosslab.identity.local-device-wrap.v1",
+    ),
+}
 
 class AndroidEd25519Signer(
     context: Context,
-) {
+    private val slot: AndroidSigningSlot,
+) : MobileSigningProvider {
     private val keyFile =
         AtomicFile(
             context.noBackupFilesDir
-                .resolve("crosslab/identity/device-signer-v1.bin")
+                .resolve("crosslab/identity/${slot.fileName}")
                 .apply { parentFile?.mkdirs() },
         )
     private val keyStore =
@@ -38,6 +58,7 @@ class AndroidEd25519Signer(
         requireSupported()
 
         if (keyFile.baseFile.isFile) {
+            requireExistingWrappingKey()
             return SignerBundle.decode(keyFile.readFully()).publicKeyRaw
         }
 
@@ -63,10 +84,10 @@ class AndroidEd25519Signer(
     }
 
     @Synchronized
-    fun publicKey(): ByteArray = ensureCreated()
+    override fun publicKey(): ByteArray = ensureCreated()
 
     @Synchronized
-    fun sign(message: ByteArray): ByteArray {
+    override fun sign(message: ByteArray): ByteArray {
         requireSupported()
         val bundle = SignerBundle.decode(keyFile.readFully())
         val privateBytes = decrypt(bundle.iv, bundle.ciphertext)
@@ -87,14 +108,14 @@ class AndroidEd25519Signer(
     @Synchronized
     fun wipe() {
         keyFile.delete()
-        if (keyStore.containsAlias(WRAP_ALIAS)) {
-            keyStore.deleteEntry(WRAP_ALIAS)
+        if (keyStore.containsAlias(slot.wrappingAlias)) {
+            keyStore.deleteEntry(slot.wrappingAlias)
         }
     }
 
     private fun encrypt(plaintext: ByteArray): EncryptedValue {
         val cipher = Cipher.getInstance(AES_GCM)
-        cipher.init(Cipher.ENCRYPT_MODE, wrappingKey())
+        cipher.init(Cipher.ENCRYPT_MODE, loadOrCreateWrappingKey())
         return EncryptedValue(
             iv = cipher.iv,
             ciphertext = cipher.doFinal(plaintext),
@@ -106,12 +127,16 @@ class AndroidEd25519Signer(
         ciphertext: ByteArray,
     ): ByteArray =
         Cipher.getInstance(AES_GCM).run {
-            init(Cipher.DECRYPT_MODE, wrappingKey(), GCMParameterSpec(GCM_TAG_BITS, iv))
+            init(Cipher.DECRYPT_MODE, requireExistingWrappingKey(), GCMParameterSpec(GCM_TAG_BITS, iv))
             doFinal(ciphertext)
         }
 
-    private fun wrappingKey(): SecretKey {
-        (keyStore.getKey(WRAP_ALIAS, null) as? SecretKey)?.let { return it }
+    private fun requireExistingWrappingKey(): SecretKey =
+        keyStore.getKey(slot.wrappingAlias, null) as? SecretKey
+            ?: throw IdentityStoreUnavailable("protected signing key is unavailable")
+
+    private fun loadOrCreateWrappingKey(): SecretKey {
+        (keyStore.getKey(slot.wrappingAlias, null) as? SecretKey)?.let { return it }
 
         val generator =
             KeyGenerator.getInstance(
@@ -120,7 +145,7 @@ class AndroidEd25519Signer(
             )
         generator.init(
             KeyGenParameterSpec.Builder(
-                WRAP_ALIAS,
+                slot.wrappingAlias,
                 KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
             )
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
@@ -158,7 +183,6 @@ class AndroidEd25519Signer(
 
     companion object {
         private const val ANDROID_KEY_STORE = "AndroidKeyStore"
-        private const val WRAP_ALIAS = "crosslab.identity.ed25519-wrap.v1"
         private const val ED25519 = "Ed25519"
         private const val AES_GCM = "AES/GCM/NoPadding"
         private const val GCM_TAG_BITS = 128

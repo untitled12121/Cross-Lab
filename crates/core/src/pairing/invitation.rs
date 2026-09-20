@@ -1,5 +1,6 @@
 use core::fmt;
 
+use crosslab_crypto::RandomError;
 use crosslab_identity::{DeviceId, OwnerId};
 
 use super::{PairingBootstrapCode, PairingId, PairingSecret};
@@ -37,6 +38,25 @@ pub struct PairingInvitation {
 }
 
 impl PairingInvitation {
+    pub fn generate(
+        owner_id: OwnerId,
+        inviter_device_id: DeviceId,
+        created_at: PairingInstant,
+        deadline: PairingInstant,
+    ) -> Result<Self, PairingInvitationCreateError> {
+        let pairing_id = PairingId::generate().map_err(PairingInvitationCreateError::Random)?;
+        let secret = PairingSecret::generate().map_err(PairingInvitationCreateError::Random)?;
+        Self::from_parts(
+            pairing_id,
+            secret,
+            owner_id,
+            inviter_device_id,
+            created_at,
+            deadline,
+        )
+        .map_err(PairingInvitationCreateError::Invitation)
+    }
+
     pub fn from_parts(
         pairing_id: PairingId,
         secret: PairingSecret,
@@ -148,3 +168,20 @@ impl fmt::Display for PairingInvitationError {
 }
 
 impl std::error::Error for PairingInvitationError {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PairingInvitationCreateError {
+    Random(RandomError),
+    Invitation(PairingInvitationError),
+}
+
+impl fmt::Display for PairingInvitationCreateError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Random(error) => fmt::Display::fmt(error, formatter),
+            Self::Invitation(error) => fmt::Display::fmt(error, formatter),
+        }
+    }
+}
+
+impl std::error::Error for PairingInvitationCreateError {}

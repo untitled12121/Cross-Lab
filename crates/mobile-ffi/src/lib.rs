@@ -7,6 +7,8 @@ mod development;
 mod dto;
 mod error;
 mod identity_store;
+mod pairing;
+mod product_identity;
 mod runtime;
 
 pub use dto::{
@@ -15,6 +17,13 @@ pub use dto::{
 };
 pub use error::MobileRuntimeError;
 pub use identity_store::{MobileIdentityCommit, MobileIdentityStoreError};
+pub use pairing::{
+    MobilePairingBootstrap, MobilePairingBootstrapError, MobilePairingBootstrapSummary,
+};
+pub use product_identity::{
+    MobileProductIdentity, MobileProductIdentityError, MobileSigningCallbackError,
+    MobileSigningProvider,
+};
 pub use runtime::{MobileRuntime, MobileRuntimeEvent};
 
 uniffi::setup_scaffolding!();
