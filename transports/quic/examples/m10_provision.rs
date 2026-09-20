@@ -40,14 +40,12 @@ fn run() -> Result<(), String> {
     let android_device_id = random()?;
     let android_device_secret = random()?;
 
-    let desktop_public_key =
-        SigningKey::from_secret_bytes(desktop_device_secret)
-            .verifying_key()
-            .to_bytes();
-    let android_public_key =
-        SigningKey::from_secret_bytes(android_device_secret)
-            .verifying_key()
-            .to_bytes();
+    let desktop_public_key = SigningKey::from_secret_bytes(desktop_device_secret)
+        .verifying_key()
+        .to_bytes();
+    let android_public_key = SigningKey::from_secret_bytes(android_device_secret)
+        .verifying_key()
+        .to_bytes();
 
     let certified = rcgen::generate_simple_self_signed(vec![args.server_name.clone()])
         .map_err(|_| "failed to generate development TLS certificate")?;
@@ -107,8 +105,14 @@ fn run() -> Result<(), String> {
 
     let desktop_path = args.out_dir.join("desktop.json");
     let android_path = args.out_dir.join("android.json");
-    write_private(&desktop_path, &serde_json::to_vec_pretty(&desktop).map_err(json_error)?)?;
-    write_private(&android_path, &serde_json::to_vec_pretty(&android).map_err(json_error)?)?;
+    write_private(
+        &desktop_path,
+        &serde_json::to_vec_pretty(&desktop).map_err(json_error)?,
+    )?;
+    write_private(
+        &android_path,
+        &serde_json::to_vec_pretty(&android).map_err(json_error)?,
+    )?;
 
     println!("created {}", desktop_path.display());
     println!("created {}", android_path.display());
@@ -131,11 +135,7 @@ struct DeviceIdentity {
     peer_public_key: [u8; 32],
 }
 
-fn provisioning_document(
-    shared: SharedIdentity,
-    device: DeviceIdentity,
-    endpoint: Value,
-) -> Value {
+fn provisioning_document(shared: SharedIdentity, device: DeviceIdentity, endpoint: Value) -> Value {
     json!({
         "identity": {
             "owner_id_hex": hex(&shared.owner_id),
@@ -201,7 +201,9 @@ impl Args {
             server_remote.ok_or_else(|| "missing required --server-remote".to_owned())?;
         let out_dir = out_dir.ok_or_else(|| "missing required --out-dir".to_owned())?;
         if !out_dir.is_absolute() {
-            return Err("--out-dir must be absolute so secrets are not created in the repository".into());
+            return Err(
+                "--out-dir must be absolute so secrets are not created in the repository".into(),
+            );
         }
         if server_name.is_empty() {
             return Err("--server-name must not be empty".into());
@@ -216,7 +218,8 @@ impl Args {
 }
 
 fn next_value(args: &mut impl Iterator<Item = String>, name: &str) -> Result<String, String> {
-    args.next().ok_or_else(|| format!("missing value for {name}"))
+    args.next()
+        .ok_or_else(|| format!("missing value for {name}"))
 }
 
 fn random<const N: usize>() -> Result<[u8; N], String> {

@@ -7,9 +7,7 @@ use crosslab_identity::{
     AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,
     OwnerRootRecord,
 };
-use crosslab_policy::{
-    PairingTrustTransition, TransitionId, TrustRecord, TrustTransition,
-};
+use crosslab_policy::{PairingTrustTransition, TransitionId, TrustRecord, TrustTransition};
 use crosslab_protocol::{FeatureSet, ProtocolRange};
 use serde::Deserialize;
 

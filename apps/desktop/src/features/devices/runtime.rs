@@ -11,14 +11,7 @@ use crosslab_transport_quic::{
     development::{DevelopmentProvisioning, DevelopmentQuicServer},
 };
 #[cfg(feature = "development-provisioning")]
-use std::{
-    future::pending,
-    num::NonZeroUsize,
-    path::PathBuf,
-    sync::Arc,
-    thread,
-    time::Duration,
-};
+use std::{future::pending, num::NonZeroUsize, path::PathBuf, sync::Arc, thread, time::Duration};
 #[cfg(feature = "development-provisioning")]
 use tokio::sync::mpsc;
 
