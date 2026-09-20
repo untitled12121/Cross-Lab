@@ -34,7 +34,6 @@ pub(crate) fn command_available(program: &str, version_arg: &str) -> bool {
 }
 
 pub(crate) fn run_command(command: &mut Command) -> Result<(), String> {
-    println!("crosslab: > {command:?}");
     let status = command
         .status()
         .map_err(|error| format!("failed to start command: {error}"))?;
