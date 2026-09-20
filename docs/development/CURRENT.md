@@ -23,14 +23,15 @@ M1-M9 are complete. M10 Tasks 3-9 are integrated on `main`. Task 10 host-side CI
 - Owner/device management PR: #44, merged as `97bd9c534870e43db4ac4535704012f5214184d7`; exact-head CI `35507648082` fully green on `7f5953c82faedede9a08111136890a627122ec88`. It adds desktop and Android Devices/Owner control-center surfaces, presentation-safe owner/local/peer identity summaries, and development-slice peer disconnect/reconnect/revocation controls through existing runtime/trust boundaries.
 - Platform signing-provider PR: #45, merged as `dfca18aae64ff45e1861a54743691ebc90d6210a`; exact-head CI `35510597391` and Fuzz Smoke `35510597425` fully green on `d6c33d0cd48a8a0d6a23de47e5db7f1c6ebed96b`. ADR-0013 and Master Architecture revision 2.4 establish a fallible signing-provider boundary so production platform adapters need not export private key bytes.
 - Product pairing bootstrap PR: #46, merged as `90812c4abd9e41faf844d9ccbca6ca1bacd8f5b2`; exact-head CI `35516012516` fully green on `f6ee5497adc5c208270f7a78925aca7bf7aee5af`. ADR-0014 and Master Architecture revision 2.5 define the secret-bearing `crosslab:pair:v1:` envelope while keeping discovery/transport hints non-authoritative.
+- Platform identity-store design PR: #47, merged as `e55995cf94156831c124aac036a646590d904750`; exact-head CI `35516865982` fully green on `e3e3629f968075ba85aa3d22387d35221522c809`. ADR-0015 and Master Architecture revision 2.6 define fail-closed production identity/trust persistence, protected signing-provider/currentness state, and atomic security-transition requirements.
 - PR #40 exact-head implementation: `13bb1103f42e35a3beb0d3ad2b2c8cc7befe93d8`, CI `35479944418` fully green.
 - Physical-evidence continuation branch: `m10-task10-real-device-evidence`; continue it from the current `main` checkpoint when a physical Linux + Android pair is available.
 - Evidence protocol: `docs/research/M10-platform-evidence.md`.
 - Active implementation plan: `docs/superpowers/plans/2026-09-17-m10-first-platform-slice.md`.
 - Owner/device management usability plan: `docs/superpowers/plans/2026-09-20-m10-owner-device-management.md` (implemented through PR #44).
-- Product pairing/signing foundation plan: `docs/superpowers/plans/2026-09-20-product-pairing-signing-foundation.md`; Tasks 1-2 are implemented through PRs #45-#46. Task 3 (platform identity-store design) is next.
+- Product pairing/signing foundation plan: `docs/superpowers/plans/2026-09-20-product-pairing-signing-foundation.md`; Tasks 1-3 are implemented through PRs #45-#47. Concrete Android/Linux identity-store adapters and product pairing UI are next.
 - Approved design: `docs/superpowers/specs/2026-09-17-m10-platform-shell-design.md`.
-- Master Architecture revision 2.5 plus ADR-0008, ADR-0009, ADR-0012, ADR-0013, and ADR-0014 are the current architecture baseline.
+- Master Architecture revision 2.6 plus ADR-0008, ADR-0009, ADR-0012, ADR-0013, ADR-0014, and ADR-0015 are the current architecture baseline.
 
 ## Integrated M10 Platform Slice
 
@@ -136,8 +137,8 @@ The slice remains **authenticated local device connection + device status** betw
 Two tracks remain distinct:
 
 1. **M10 completion track:** collect the mandatory physical Linux + Android lifecycle/security/resource evidence on `m10-task10-real-device-evidence`; Task 11/M10 completion remains blocked until that evidence exists.
-2. **Product pairing track:** Tasks 1-2 of `docs/superpowers/plans/2026-09-20-product-pairing-signing-foundation.md` are merged. Next implement Task 3: define the production platform identity-store boundary for authority metadata, trust state, and `SigningProvider` handles, then design Linux and Android adapters with explicit confidentiality, lifecycle, backup/restore, and rollback behavior.
-3. Do not use development provisioning as production identity persistence and do not expose private key bytes through UI/FFI/protocol layers.
+2. **Product pairing track:** PRs #45-#47 completed the signing-provider, bootstrap-envelope, and platform identity-store design foundations. Next implement the identity-store contract/conformance tests, Android protected identity adapter, Linux desktop protected identity adapter, then wire Add Device QR display/scanning and durable pairing on top.
+3. Production pairing must fail closed if protected provider/currentness state is missing or inconsistent. Development provisioning remains separate and must not be silently promoted.
 4. Darkmatter/System-dark remains blocked until an authoritative palette is supplied.
 
 ## Resume Procedure
