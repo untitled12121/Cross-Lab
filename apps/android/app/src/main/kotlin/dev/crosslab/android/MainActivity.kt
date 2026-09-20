@@ -7,8 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import dev.crosslab.android.features.appearance.ThemeId
 import dev.crosslab.android.features.appearance.ThemeParser
 import dev.crosslab.android.features.appearance.ThemeResolver
-import dev.crosslab.android.features.devices.DevicesScreen
-import dev.crosslab.android.features.devices.DevicesState
+import dev.crosslab.android.features.controlcenter.ControlCenterScreen
 import dev.crosslab.android.features.devices.RuntimeControllerState
 
 class MainActivity : ComponentActivity() {
@@ -31,10 +30,11 @@ class MainActivity : ComponentActivity() {
                 .use { ThemeParser.parse(it.readText()) }
 
         setContent {
-            DevicesScreen(
+            ControlCenterScreen(
                 theme = theme,
-                devices = DevicesState.from(runtimeState.value.snapshot),
                 runtime = runtimeState.value,
+                onDisconnect = { app.runtimeController.disconnectPeer() },
+                onReconnect = { app.runtimeController.reconnectPeer() },
             )
         }
     }
