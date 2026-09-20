@@ -1,4 +1,4 @@
-use core::fmt::Write as _;
+use core::fmt::{self, Write as _};
 use std::time::{Duration, Instant};
 
 use crosslab_core::{
