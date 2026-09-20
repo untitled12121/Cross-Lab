@@ -101,9 +101,8 @@ pub(crate) fn ensure_android_rust_target() -> Result<(), String> {
 }
 
 fn bootstrap_android_sdk(root: &Path) -> Result<(), String> {
-    ensure_command("python3", "--version").map_err(|_| {
-        "Python 3 is required to bootstrap the user-local Android SDK".to_owned()
-    })?;
+    ensure_command("python3", "--version")
+        .map_err(|_| "Python 3 is required to bootstrap the user-local Android SDK".to_owned())?;
 
     println!("crosslab: Android SDK is missing; starting user-local SDK setup");
     let mut command = Command::new("python3");
@@ -244,16 +243,12 @@ mod tests {
 
     #[test]
     fn platform_verification_accepts_standard_android_37_directory() {
-        let root = std::env::temp_dir().join(format!(
-            "crosslab-xtask-android-sdk-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("crosslab-xtask-android-sdk-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join(format!("ndk/{ANDROID_NDK_VERSION}"))).unwrap();
-        std::fs::create_dir_all(root.join(format!(
-            "build-tools/{ANDROID_BUILD_TOOLS_VERSION}"
-        )))
-        .unwrap();
+        std::fs::create_dir_all(root.join(format!("build-tools/{ANDROID_BUILD_TOOLS_VERSION}")))
+            .unwrap();
         let platform = root.join("platforms/android-37");
         std::fs::create_dir_all(&platform).unwrap();
         std::fs::write(platform.join("android.jar"), b"fixture").unwrap();
