@@ -6,6 +6,7 @@ This document records evidence for the M10 first real Linux + Android platform s
 
 - Task 9 integrated baseline: `main` at `f19aa4bb89d744f2ebf0f0fa2b204929fd8495a4`.
 - Host CI evidence: **verified** on Task 10 implementation head `fad35fd2f3535d148a64287fdde391d1613b720e`, GitHub Actions `35438748708`.
+- Physical-evidence enablement: **merged** through PR #40 as `c183b3c2dba3eb14f5063024d6d9deab996fae10`; exact-head CI `35479944418` on `13bb1103f42e35a3beb0d3ad2b2c8cc7befe93d8` was fully green.
 - Linux real-device evidence: **pending**.
 - Android real-device evidence: **pending**.
 - Darkmatter/System-dark evidence: **blocked** until an authoritative Darkmatter palette is supplied.
@@ -45,7 +46,7 @@ Additional host-appropriate checks:
 
 These checks prove reproducible host builds only. They do not prove Android process lifecycle, radio/network transitions, or physical-device reconnect behavior.
 
-Task 10 host verification: GitHub Actions `35438748708` on `fad35fd2f3535d148a64287fdde391d1613b720e` passed the preserved Rust gate, default Linux desktop build, Linux development-provisioning desktop build, deterministic UniFFI Kotlin generation, Android unit tests, default Android debug assembly, and Android development-provisioning debug assembly.
+Task 10 host verification: GitHub Actions `35438748708` on `fad35fd2f3535d148a64287fdde391d1613b720e` passed the preserved Rust gate, default Linux desktop build, Linux development-provisioning desktop build, deterministic UniFFI Kotlin generation, Android unit tests, default Android debug assembly, and Android development-provisioning debug assembly. The later physical-evidence enablement head `13bb1103f42e35a3beb0d3ad2b2c8cc7befe93d8` passed the same CI workflow in run `35479944418` before PR #40 merged.
 
 ## Real-device setup
 
