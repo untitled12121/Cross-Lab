@@ -31,7 +31,7 @@ pub(crate) fn setup() -> Result<(), String> {
     })?;
     verify_android_sdk(&sdk)?;
 
-    println!("crosslab: Android SDK -> {}", sdk.display());
+    println!("crosslab: Android SDK is ready");
     println!("crosslab: Rust/Gradle project dependencies are fetched automatically during build");
     println!("crosslab: setup complete");
     Ok(())
@@ -49,7 +49,7 @@ pub(crate) fn doctor() -> Result<(), String> {
 
         match android_sdk_root() {
             Some(sdk) => match verify_android_sdk(&sdk) {
-                Ok(()) => println!("crosslab: [ok] Android SDK {}", sdk.display()),
+                Ok(()) => println!("crosslab: [ok] Android SDK"),
                 Err(error) => {
                     failed = true;
                     println!("crosslab: [missing] {error}");
@@ -105,8 +105,7 @@ fn verify_android_sdk(sdk: &Path) -> Result<(), String> {
     let ndk = sdk.join("ndk").join(ANDROID_NDK_VERSION);
     if !ndk.is_dir() {
         return Err(format!(
-            "Android NDK {ANDROID_NDK_VERSION} is missing under {}",
-            sdk.display()
+            "Android NDK {ANDROID_NDK_VERSION} is missing from the configured SDK"
         ));
     }
 
@@ -116,8 +115,7 @@ fn verify_android_sdk(sdk: &Path) -> Result<(), String> {
         .join("android.jar");
     if !platform.is_file() {
         return Err(format!(
-            "Android platform {ANDROID_PLATFORM} is missing under {}",
-            sdk.display()
+            "Android platform {ANDROID_PLATFORM} is missing from the configured SDK"
         ));
     }
 
