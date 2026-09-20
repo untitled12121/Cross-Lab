@@ -91,7 +91,10 @@ impl PairingBootstrap {
         }
 
         let mut payload = [0_u8; PAYLOAD_LEN];
-        decode_hex(encoded, &mut payload)?;
+        if let Err(error) = decode_hex(encoded, &mut payload) {
+            payload.zeroize();
+            return Err(error);
+        }
 
         let profile = u16::from_be_bytes([payload[0], payload[1]]);
         if profile != PAIRING_BOOTSTRAP_PROFILE_V1 {
