@@ -1,4 +1,4 @@
-use crosslab_crypto::{SignatureAlgorithm, SigningKey, VerifyingKey};
+use crosslab_crypto::{SignatureAlgorithm, SigningKey, SigningProvider, VerifyingKey};
 
 use crate::{KeyId, OwnerId};
 
@@ -15,6 +15,14 @@ pub struct OwnerRootRecord {
 impl OwnerRootRecord {
     pub fn new(owner_id: OwnerId, signing_key: &SigningKey, root_epoch: u64) -> Self {
         Self::from_public_key(owner_id, signing_key.verifying_key(), root_epoch)
+    }
+
+    pub fn new_with_provider(
+        owner_id: OwnerId,
+        signing_provider: &dyn SigningProvider,
+        root_epoch: u64,
+    ) -> Self {
+        Self::from_public_key(owner_id, signing_provider.verifying_key(), root_epoch)
     }
 
     pub fn from_public_key(
