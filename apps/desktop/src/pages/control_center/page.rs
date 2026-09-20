@@ -201,9 +201,9 @@ impl Render for ControlCenterPage {
                         .h(px(appearance.metrics.control_height_default))
                         .px(px(appearance.spacing.lg))
                         .border_1()
-                        .border_color(theme.destructive)
-                        .bg(theme.destructive)
-                        .text_color(theme.destructive_foreground)
+                        .border_color(theme.danger)
+                        .bg(theme.danger)
+                        .text_color(theme.danger_foreground)
                         .focus_visible(|style| style.border_color(theme.ring))
                         .child("Revoke"),
                 )
