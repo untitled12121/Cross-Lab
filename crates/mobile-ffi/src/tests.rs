@@ -72,10 +72,7 @@ fn runtime_status_maps_to_owned_redacted_mobile_state() {
     let expected_local = "ab".repeat(32);
     let expected_peer = "cd".repeat(32);
     let expected_session = "ef".repeat(32);
-    assert_eq!(
-        snapshot.owner_id.as_deref(),
-        Some(expected_owner.as_str())
-    );
+    assert_eq!(snapshot.owner_id.as_deref(), Some(expected_owner.as_str()));
     assert_eq!(
         snapshot.local_device_id.as_deref(),
         Some(expected_local.as_str())
@@ -282,8 +279,14 @@ fn network_commands_require_running_lifecycle() {
         runtime.network_available(),
         Err(MobileRuntimeError::NotStarted)
     );
-    assert_eq!(runtime.disconnect_peer(), Err(MobileRuntimeError::NotStarted));
-    assert_eq!(runtime.reconnect_peer(), Err(MobileRuntimeError::NotStarted));
+    assert_eq!(
+        runtime.disconnect_peer(),
+        Err(MobileRuntimeError::NotStarted)
+    );
+    assert_eq!(
+        runtime.reconnect_peer(),
+        Err(MobileRuntimeError::NotStarted)
+    );
 
     runtime.start().expect("start succeeds");
     runtime
