@@ -66,7 +66,7 @@ cargo crosslab setup
 cargo crosslab
 ```
 
-The default command builds the native desktop application for the current operating system plus the Android arm64 debug APK. Use `cargo crosslab help` for desktop-only, Android-only, device-install, development-provisioning, and prerequisite-check commands.
+The default command builds the native desktop application for the current operating system and, on the currently configured Linux/macOS Android hosts, the Android arm64 debug APK. Use `cargo crosslab help` for desktop-only, Android-only, device-install, development-provisioning, and prerequisite-check commands.
 
 See [Building Cross-Lab](./docs/development/BUILD.md) for the complete guide.
 
