@@ -1,5 +1,5 @@
 use crosslab_crypto::{
-    CanonicalTranscript, Signature, SignatureAlgorithm, SigningKey, VerifyingKey,
+    CanonicalTranscript, Signature, SignatureAlgorithm, SigningKey, SigningProvider, VerifyingKey,
 };
 
 use crate::{IdentityError, KeyId, OwnerId, OwnerRootRecord};
@@ -25,6 +25,14 @@ impl RootSuccessor {
         current: &OwnerRootRecord,
         current_signing_key: &SigningKey,
         next_signing_key: &SigningKey,
+    ) -> Result<Self, IdentityError> {
+        Self::issue_with_providers(current, current_signing_key, next_signing_key)
+    }
+
+    pub fn issue_with_providers(
+        current: &OwnerRootRecord,
+        current_signing_key: &dyn SigningProvider,
+        next_signing_key: &dyn SigningProvider,
     ) -> Result<Self, IdentityError> {
         if current_signing_key.verifying_key() != current.root_public_key() {
             return Err(IdentityError::InvalidRootSuccessor);
@@ -57,8 +65,12 @@ impl RootSuccessor {
             next_root_algorithm,
             next_root_public_key,
             next_root_epoch,
-            current_signature: current_signing_key.sign_digest(&digest),
-            next_signature: next_signing_key.sign_digest(&digest),
+            current_signature: current_signing_key
+                .sign_digest(&digest)
+                .map_err(|_| IdentityError::SigningFailed)?,
+            next_signature: next_signing_key
+                .sign_digest(&digest)
+                .map_err(|_| IdentityError::SigningFailed)?,
         })
     }
 
