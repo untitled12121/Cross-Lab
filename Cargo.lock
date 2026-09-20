@@ -1726,12 +1726,15 @@ name = "crosslab-desktop"
 version = "0.1.0"
 dependencies = [
  "crosslab-core",
+ "crosslab-crypto",
  "crosslab-identity",
+ "crosslab-identity-store",
  "crosslab-policy",
  "crosslab-protocol",
  "crosslab-runtime",
  "crosslab-transport-quic",
  "gpui-kit",
+ "oo7",
  "serde",
  "serde_json",
  "tokio",
@@ -1742,6 +1745,13 @@ name = "crosslab-identity"
 version = "0.1.0"
 dependencies = [
  "crosslab-crypto",
+]
+
+[[package]]
+name = "crosslab-identity-store"
+version = "0.1.0"
+dependencies = [
+ "blake3",
 ]
 
 [[package]]
@@ -1771,6 +1781,7 @@ dependencies = [
  "crosslab-core",
  "crosslab-crypto",
  "crosslab-identity",
+ "crosslab-identity-store",
  "crosslab-policy",
  "crosslab-protocol",
  "crosslab-runtime",
