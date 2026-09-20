@@ -15,7 +15,7 @@ use oo7::{Keyring, Secret};
 
 const APP_ATTRIBUTE: (&str, &str) = ("application", "crosslab");
 const ANCHOR_KIND: (&str, &str) = ("kind", "identity-currentness-anchor");
-const SIGNER_KIND: (&str, &str) = ("kind", "device-signing-key");
+const SIGNER_KIND: (&str, &str) = ("kind", "identity-signing-key");
 const SIGNER_VERSION: (&str, &str) = ("version", "1");
 const BUNDLE_MAGIC: &[u8; 5] = b"CLIS\x01";
 
@@ -200,14 +200,44 @@ impl LinuxIdentityStore {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinuxSigningSlot {
+    OwnerRoot,
+    DeviceSigning,
+    LocalDevice,
+}
+
+impl LinuxSigningSlot {
+    const fn value(self) -> &'static str {
+        match self {
+            Self::OwnerRoot => "owner-root",
+            Self::DeviceSigning => "device-signing",
+            Self::LocalDevice => "local-device",
+        }
+    }
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::OwnerRoot => "Cross-Lab owner root signing key",
+            Self::DeviceSigning => "Cross-Lab device authority signing key",
+            Self::LocalDevice => "Cross-Lab local device signing key",
+        }
+    }
+}
+
 pub struct LinuxEd25519Signer {
     key: SigningKey,
 }
 
 impl LinuxEd25519Signer {
-    pub async fn load_or_create() -> Result<Self, LinuxIdentityStoreError> {
+    pub async fn load_or_create(slot: LinuxSigningSlot) -> Result<Self, LinuxIdentityStoreError> {
         let keyring = Keyring::new().await?;
-        let attributes = [APP_ATTRIBUTE, SIGNER_KIND, SIGNER_VERSION];
+        let attributes = [
+            APP_ATTRIBUTE,
+            SIGNER_KIND,
+            SIGNER_VERSION,
+            ("slot", slot.value()),
+        ];
         let items = keyring.search_items(&attributes).await?;
 
         if let Some(item) = items.first() {
@@ -224,22 +254,22 @@ impl LinuxEd25519Signer {
 
         let secret = random_bytes::<32>().map_err(|_| LinuxIdentityStoreError::Random)?;
         keyring
-            .create_item(
-                "Cross-Lab device signing key",
-                &attributes,
-                Secret::blob(secret),
-                false,
-            )
+            .create_item(slot.label(), &attributes, Secret::blob(secret), false)
             .await?;
         Ok(Self {
             key: SigningKey::from_secret_bytes(secret),
         })
     }
 
-    pub async fn wipe() -> Result<(), LinuxIdentityStoreError> {
+    pub async fn wipe(slot: LinuxSigningSlot) -> Result<(), LinuxIdentityStoreError> {
         let keyring = Keyring::new().await?;
         keyring
-            .delete(&[APP_ATTRIBUTE, SIGNER_KIND, SIGNER_VERSION])
+            .delete(&[
+                APP_ATTRIBUTE,
+                SIGNER_KIND,
+                SIGNER_VERSION,
+                ("slot", slot.value()),
+            ])
             .await?;
         Ok(())
     }
