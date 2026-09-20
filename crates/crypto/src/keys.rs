@@ -17,6 +17,27 @@ impl SignatureAlgorithm {
     }
 }
 
+pub trait SigningProvider {
+    fn verifying_key(&self) -> VerifyingKey;
+
+    fn sign_message(&self, message: &[u8]) -> Result<Signature, SigningProviderError>;
+
+    fn sign_digest(&self, digest: &[u8; 32]) -> Result<Signature, SigningProviderError> {
+        self.sign_message(digest)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SigningProviderError;
+
+impl fmt::Display for SigningProviderError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("signing provider operation failed")
+    }
+}
+
+impl std::error::Error for SigningProviderError {}
+
 pub struct SigningKey(ed25519_dalek::SigningKey);
 
 impl SigningKey {
@@ -41,6 +62,16 @@ impl SigningKey {
 
     pub fn sign_digest(&self, digest: &[u8; 32]) -> Signature {
         self.sign_message(digest)
+    }
+}
+
+impl SigningProvider for SigningKey {
+    fn verifying_key(&self) -> VerifyingKey {
+        SigningKey::verifying_key(self)
+    }
+
+    fn sign_message(&self, message: &[u8]) -> Result<Signature, SigningProviderError> {
+        Ok(SigningKey::sign_message(self, message))
     }
 }
 
