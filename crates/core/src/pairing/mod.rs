@@ -16,7 +16,8 @@ pub use flow::{
     PairingJoinerState,
 };
 pub use invitation::{
-    PairingInstant, PairingInvitation, PairingInvitationError, PairingInvitationState,
+    PairingInstant, PairingInvitation, PairingInvitationCreateError, PairingInvitationError,
+    PairingInvitationState,
 };
 pub use transcript::PairingTranscript;
 
