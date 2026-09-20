@@ -2,9 +2,7 @@ use std::process::Command;
 
 use crate::{
     cli::{App, BuildOptions},
-    environment::{
-        android_host_supported, ensure_android_environment, ensure_android_rust_target,
-    },
+    environment::{android_host_supported, ensure_android_environment, ensure_android_rust_target},
     process::{banner, gradle_command, repo_root, run_command},
 };
 
