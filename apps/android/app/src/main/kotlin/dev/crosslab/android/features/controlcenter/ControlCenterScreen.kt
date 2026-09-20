@@ -31,6 +31,7 @@ import dev.crosslab.android.features.devices.DevicesState
 import dev.crosslab.android.features.devices.RuntimeControllerState
 import dev.crosslab.android.features.devices.RuntimeLifecycle
 import dev.crosslab.android.features.owner.OwnerScreen
+import uniffi.crosslab_mobile_ffi.MobilePairingBootstrap
 
 private enum class ControlCenterSection {
     DEVICES,
@@ -43,6 +44,9 @@ fun ControlCenterScreen(
     runtime: RuntimeControllerState,
     onDisconnect: () -> Unit,
     onReconnect: () -> Unit,
+    pairingBootstrap: MobilePairingBootstrap?,
+    onPairingBootstrapScanned: (MobilePairingBootstrap) -> Unit,
+    onCancelPairing: () -> Unit,
 ) {
     val colors = theme.colors
     var section by remember { mutableStateOf(ControlCenterSection.DEVICES) }
@@ -135,6 +139,9 @@ fun ControlCenterScreen(
                     runtime = runtime,
                     onDisconnect = onDisconnect,
                     onReconnect = onReconnect,
+                    pairingBootstrap = pairingBootstrap,
+                    onPairingBootstrapScanned = onPairingBootstrapScanned,
+                    onCancelPairing = onCancelPairing,
                 )
 
             ControlCenterSection.OWNER ->
