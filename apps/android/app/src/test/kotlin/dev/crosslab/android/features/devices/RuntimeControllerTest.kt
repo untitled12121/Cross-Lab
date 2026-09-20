@@ -44,6 +44,8 @@ class RuntimeControllerTest {
         val controller = RuntimeController(port)
         val connected =
             RuntimeSnapshot(
+                ownerId = "aaaaaaaaaaaaaaaa".repeat(4),
+                localDeviceId = "bbbbbbbbbbbbbbbb".repeat(4),
                 peerDeviceId = "0123456789abcdef".repeat(4),
                 trust = RuntimeTrust.TRUSTED,
                 connectivity = RuntimeConnectivity.CONNECTED,
@@ -58,6 +60,23 @@ class RuntimeControllerTest {
         port.emit(connected)
 
         assertEquals(connected, controller.state().snapshot)
+    }
+
+    @Test
+    fun userPeerControlsOnlyReachARunningRuntime() {
+        val port = FakeRuntimePort()
+        val controller = RuntimeController(port)
+
+        controller.disconnectPeer()
+        controller.reconnectPeer()
+        controller.onForeground()
+        controller.disconnectPeer()
+        controller.reconnectPeer()
+        controller.onBackground()
+        controller.disconnectPeer()
+
+        assertEquals(1, port.disconnects)
+        assertEquals(1, port.reconnects)
     }
 
     @Test
@@ -80,6 +99,8 @@ class RuntimeControllerTest {
         var stops = 0
         var networkLost = 0
         var networkAvailable = 0
+        var disconnects = 0
+        var reconnects = 0
         private var current = RuntimeSnapshot.disconnected()
         private val snapshotListeners = CopyOnWriteArraySet<(RuntimeSnapshot) -> Unit>()
 
@@ -97,6 +118,14 @@ class RuntimeControllerTest {
 
         override fun networkAvailable() {
             networkAvailable += 1
+        }
+
+        override fun disconnectPeer() {
+            disconnects += 1
+        }
+
+        override fun reconnectPeer() {
+            reconnects += 1
         }
 
         override fun snapshot(): RuntimeSnapshot = current
