@@ -42,12 +42,13 @@ fn build_desktop(development: bool) -> Result<(), String> {
 fn build_android(development: bool) -> Result<(), String> {
     require_android_host()?;
     banner("android");
-    ensure_android_environment()?;
+    let sdk = ensure_android_environment()?;
     ensure_android_rust_target()?;
 
     let mut command = gradle_command();
     command
         .current_dir(repo_root().join("apps/android"))
+        .env("ANDROID_SDK_ROOT", sdk)
         .args([":app:assembleDebug", "--no-daemon"]);
     if development {
         command.arg("-PcrosslabDevelopmentProvisioning=true");
@@ -66,12 +67,13 @@ fn build_android(development: bool) -> Result<(), String> {
 pub(crate) fn install_android(development: bool) -> Result<(), String> {
     require_android_host()?;
     banner("android install");
-    ensure_android_environment()?;
+    let sdk = ensure_android_environment()?;
     ensure_android_rust_target()?;
 
     let mut command = gradle_command();
     command
         .current_dir(repo_root().join("apps/android"))
+        .env("ANDROID_SDK_ROOT", sdk)
         .args([":app:installDebug", "--no-daemon"]);
     if development {
         command.arg("-PcrosslabDevelopmentProvisioning=true");
