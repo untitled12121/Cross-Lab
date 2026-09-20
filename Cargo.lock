@@ -1735,6 +1735,7 @@ dependencies = [
  "crosslab-transport-quic",
  "gpui-kit",
  "oo7",
+ "qrcode-rs",
  "serde",
  "serde_json",
  "tokio",
@@ -6914,6 +6915,48 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41b1177fdf999d2321d3fb46ff47159d9c1fb9ad66a4879f8c50a0b504615e9b"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "qrcode-core"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26252cf2e15d05b24b4a2cb9335952d697e54f07949f79ee721951d563b19a71"
+
+[[package]]
+name = "qrcode-decode"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3054ba7f6b1906502789970337da290b1da2069d7225c9ec1c3f8351de807f78"
+dependencies = [
+ "qrcode-core",
+]
+
+[[package]]
+name = "qrcode-parse"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ae80b5d21e40035a88f449e2031985522de0d6a2c16bbfacc75b983698bf731"
+
+[[package]]
+name = "qrcode-render"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "74445b565ffecbed5c6ad34096df2a81f487c4befd6b91b75d11bdbe61d73094"
+dependencies = [
+ "qrcode-core",
+]
+
+[[package]]
+name = "qrcode-rs"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "320f7c1c48a10a0850746b87d5adf95f1db5209320c7f1853556c0bb774fc0f6"
+dependencies = [
+ "qrcode-core",
+ "qrcode-decode",
+ "qrcode-parse",
+ "qrcode-render",
 ]
 
 [[package]]
