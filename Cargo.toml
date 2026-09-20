@@ -5,6 +5,7 @@ members = [
     "crates/core",
     "crates/crypto",
     "crates/identity",
+    "crates/identity-store",
     "crates/mobile-ffi",
     "crates/policy",
     "crates/protocol",
@@ -28,6 +29,7 @@ ed25519-dalek = { version = "=3.0.0", default-features = false, features = ["zer
 getrandom = "=0.4.3"
 gpui-kit = "=0.6.1"
 hmac = "=0.13.0"
+oo7 = "=0.6.0"
 prost = "=0.14.4"
 quinn = { version = "=0.11.11", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
 rcgen = { version = "=0.14.10", default-features = false, features = ["ring"] }
