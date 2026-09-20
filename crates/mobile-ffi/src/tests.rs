@@ -282,9 +282,23 @@ fn network_commands_require_running_lifecycle() {
         runtime.network_available(),
         Err(MobileRuntimeError::NotStarted)
     );
+    assert_eq!(runtime.disconnect_peer(), Err(MobileRuntimeError::NotStarted));
+    assert_eq!(runtime.reconnect_peer(), Err(MobileRuntimeError::NotStarted));
 
     runtime.start().expect("start succeeds");
     runtime
         .network_available()
         .expect("network available succeeds while running");
+
+    #[cfg(not(feature = "development-provisioning"))]
+    {
+        assert_eq!(
+            runtime.disconnect_peer(),
+            Err(MobileRuntimeError::DevelopmentUnavailable)
+        );
+        assert_eq!(
+            runtime.reconnect_peer(),
+            Err(MobileRuntimeError::DevelopmentUnavailable)
+        );
+    }
 }
