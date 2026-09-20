@@ -21,13 +21,15 @@ M1-M9 are complete. M10 Tasks 3-9 are integrated on `main`. Task 10 host-side CI
 - Build help PR: #42, merged as `a8659c24f459f760e3a8365e68397e077f909251`; exact-head CI `35489274255` fully green on `57eaedc297dc6b7d72d4e627707078d933b059ba`, including direct verification of `cargo crosslab --help`.
 - Real-hardware DX fixes PR: #43, merged as `f8ec5e1e9ebfe32fa88af17abbecb9001e471059`; exact-head CI `35490894046` fully green on `dab3742143a781bfc9fcb7f033bbdcae0f8cc96b`. It adds user-local Android SDK bootstrap through `cargo crosslab setup`, broader SDK discovery, and display-aware desktop window sizing.
 - Owner/device management PR: #44, merged as `97bd9c534870e43db4ac4535704012f5214184d7`; exact-head CI `35507648082` fully green on `7f5953c82faedede9a08111136890a627122ec88`. It adds desktop and Android Devices/Owner control-center surfaces, presentation-safe owner/local/peer identity summaries, and development-slice peer disconnect/reconnect/revocation controls through existing runtime/trust boundaries.
+- Platform signing-provider PR: #45, merged as `dfca18aae64ff45e1861a54743691ebc90d6210a`; exact-head CI `35510597391` and Fuzz Smoke `35510597425` fully green on `d6c33d0cd48a8a0d6a23de47e5db7f1c6ebed96b`. ADR-0013 and Master Architecture revision 2.4 establish a fallible signing-provider boundary so production platform adapters need not export private key bytes.
 - PR #40 exact-head implementation: `13bb1103f42e35a3beb0d3ad2b2c8cc7befe93d8`, CI `35479944418` fully green.
 - Physical-evidence continuation branch: `m10-task10-real-device-evidence`; continue it from the current `main` checkpoint when a physical Linux + Android pair is available.
 - Evidence protocol: `docs/research/M10-platform-evidence.md`.
 - Active implementation plan: `docs/superpowers/plans/2026-09-17-m10-first-platform-slice.md`.
 - Owner/device management usability plan: `docs/superpowers/plans/2026-09-20-m10-owner-device-management.md` (implemented through PR #44).
+- Product pairing/signing foundation plan: `docs/superpowers/plans/2026-09-20-product-pairing-signing-foundation.md`; Task 1 (signing-provider boundary) is implemented through PR #45.
 - Approved design: `docs/superpowers/specs/2026-09-17-m10-platform-shell-design.md`.
-- Master Architecture revision 2.3 plus ADR-0008, ADR-0009, and ADR-0012 remain the M10 architecture baseline.
+- Master Architecture revision 2.4 plus ADR-0008, ADR-0009, ADR-0012, and ADR-0013 are the current architecture baseline.
 
 ## Integrated M10 Platform Slice
 
@@ -112,6 +114,7 @@ The slice remains **authenticated local device connection + device status** betw
 - Development provisioning files contain sensitive material and must never be committed or logged.
 - Production Quinn certificate provisioning/pinning remains a separate reviewed decision.
 - Persistent Android production identity material still requires a reviewed Keystore/StrongBox adapter.
+- Signing-sensitive shared domain APIs now accept the ADR-0013 `SigningProvider` boundary; software `SigningKey` remains for simulator/tests/development provisioning, while production platform adapters must provide protected provider implementations and fail closed on provider error.
 - Do not promote Iroh in M10; preserve ADR-0009 and `Libp2p trigger: no`.
 - Do not invent the missing canonical Darkmatter palette.
 - Reconnect always requires fresh Cross-Lab authentication/session authority.
@@ -129,18 +132,12 @@ The slice remains **authenticated local device connection + device status** betw
 
 ## Exact Next Task
 
-Task 10 evidence-enablement and the owner/device management usability extension are merged and CI-verified. The only remaining executable gate before Task 11 is the mandatory physical-device evidence; normal product pairing/production identity persistence remain later reviewed work and must not be treated as completed by M10:
+Two tracks are active and must remain distinct:
 
-1. use the merged Task 10 host-gate baseline and `docs/research/M10-platform-evidence.md` for physical Linux + Android evidence;
-2. continue on `m10-task10-real-device-evidence` when physical Linux + Android execution is available;
-3. use `docs/research/M10-platform-evidence.md` as the evidence contract and do not record provisioning contents, keys, device serials, MAC/IP addresses, SSIDs, or session identifiers;
-4. record the exact tested Cross-Lab commit, coarse Linux/Android environment identifiers, and a pass/fail evidence ID for every required scenario;
-5. confirm reconnect uses a different session without copying either session ID into documentation;
-6. confirm revocation causes reconnect denial rather than a generic network failure;
-7. confirm lifecycle churn creates no duplicate active runtime/session and idle/reconnect behavior remains bounded without polling;
-8. verify Ayu Light on physical devices;
-9. keep Darkmatter/System-dark explicitly blocked unless an authoritative palette is supplied;
-10. only after the evidence is complete, execute Task 11 fresh integration gates and decide M10 completion from the approved success criteria.
+1. **M10 completion track:** physical Linux + Android evidence is still mandatory before Task 11/M10 completion. Continue on `m10-task10-real-device-evidence` using `docs/research/M10-platform-evidence.md`; do not infer physical lifecycle/security results from CI.
+2. **Product pairing track:** PR #45 completed Task 1 of `docs/superpowers/plans/2026-09-20-product-pairing-signing-foundation.md`. Next implement Task 2: a versioned product pairing bootstrap envelope for the accepted ADR-0003 256-bit single-use secret profile. Keep discovery/transport hints non-authoritative, do not add numeric-code fallback, and keep secrets out of normal logs/UI state beyond the explicit QR/bootstrap presentation boundary.
+3. After the bootstrap envelope is verified, design Task 3 platform identity-store adapters. Do not claim production secure persistence until Linux/Android storage, backup/restore, lifecycle, and rollback behavior are implemented and evidenced.
+4. Darkmatter/System-dark remains blocked until an authoritative palette is supplied.
 
 ## Resume Procedure
 
