@@ -23,24 +23,17 @@ pub(crate) fn setup() -> Result<(), String> {
     }
 
     ensure_android_rust_target()?;
+    ensure_command("java", "-version")
+        .map_err(|_| "Java 17 is required for Android builds".to_owned())?;
 
-    if let Some(sdk) = android_sdk_root() {
-        println!("crosslab: Android SDK -> {}", sdk.display());
-        verify_android_sdk(&sdk)?;
-    } else {
-        println!(
-            "crosslab: Android SDK not found; install Android Studio/SDK and set ANDROID_SDK_ROOT"
-        );
-    }
+    let sdk = android_sdk_root().ok_or_else(|| {
+        "Android SDK not found; install Android Studio/SDK and set ANDROID_SDK_ROOT".to_owned()
+    })?;
+    verify_android_sdk(&sdk)?;
 
-    if command_available("java", "-version") {
-        println!("crosslab: Java detected");
-    } else {
-        println!("crosslab: Java 17 is required for Android builds");
-    }
-
+    println!("crosslab: Android SDK -> {}", sdk.display());
     println!("crosslab: Rust/Gradle project dependencies are fetched automatically during build");
-    println!("crosslab: run `cargo crosslab doctor` to verify the host");
+    println!("crosslab: setup complete");
     Ok(())
 }
 
