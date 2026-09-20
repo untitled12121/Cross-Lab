@@ -13,6 +13,44 @@ use crate::features::identity_store::{
 
 const INVITATION_LIFETIME: Duration = Duration::from_secs(5 * 60);
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProductIdentityPresentation {
+    owner_id: String,
+    local_device_id: String,
+}
+
+impl ProductIdentityPresentation {
+    fn from_identity(identity: &ProductIdentityState) -> Self {
+        Self {
+            owner_id: short_hex(identity.owner_id().as_bytes()),
+            local_device_id: short_hex(identity.local_device_id().as_bytes()),
+        }
+    }
+
+    pub fn owner_id(&self) -> &str {
+        &self.owner_id
+    }
+
+    pub fn local_device_id(&self) -> &str {
+        &self.local_device_id
+    }
+}
+
+pub async fn load_existing_product_identity(
+) -> Result<Option<ProductIdentityPresentation>, DesktopPairingError> {
+    let store = LinuxIdentityStore::from_environment()?;
+    let Some(payload) = store.load_payload().await? else {
+        return Ok(None);
+    };
+
+    let root = LinuxEd25519Signer::load_required(LinuxSigningSlot::OwnerRoot).await?;
+    let issuer = LinuxEd25519Signer::load_required(LinuxSigningSlot::DeviceSigning).await?;
+    let local = LinuxEd25519Signer::load_required(LinuxSigningSlot::LocalDevice).await?;
+    let identity = ProductIdentityState::decode(&payload)?;
+    identity.validate_providers(&root, &issuer, &local)?;
+    Ok(Some(ProductIdentityPresentation::from_identity(&identity)))
+}
+
 pub struct DesktopPairingInvitation {
     invitation: PairingInvitation,
     created_at: Instant,
@@ -169,22 +207,22 @@ impl From<PairingInvitationError> for DesktopPairingError {
 
 async fn load_or_create_product_identity() -> Result<ProductIdentityState, DesktopPairingError> {
     let store = LinuxIdentityStore::from_environment()?;
+
+    if let Some(payload) = store.load_payload().await? {
+        let root = LinuxEd25519Signer::load_required(LinuxSigningSlot::OwnerRoot).await?;
+        let issuer = LinuxEd25519Signer::load_required(LinuxSigningSlot::DeviceSigning).await?;
+        let local = LinuxEd25519Signer::load_required(LinuxSigningSlot::LocalDevice).await?;
+        let identity = ProductIdentityState::decode(&payload)?;
+        identity.validate_providers(&root, &issuer, &local)?;
+        return Ok(identity);
+    }
+
     let root = LinuxEd25519Signer::load_or_create(LinuxSigningSlot::OwnerRoot).await?;
     let issuer = LinuxEd25519Signer::load_or_create(LinuxSigningSlot::DeviceSigning).await?;
     let local = LinuxEd25519Signer::load_or_create(LinuxSigningSlot::LocalDevice).await?;
-
-    match store.load_payload().await? {
-        Some(payload) => {
-            let identity = ProductIdentityState::decode(&payload)?;
-            identity.validate_providers(&root, &issuer, &local)?;
-            Ok(identity)
-        }
-        None => {
-            let identity = ProductIdentityState::bootstrap(&root, &issuer, &local)?;
-            store.commit_payload(identity.encode()).await?;
-            Ok(identity)
-        }
-    }
+    let identity = ProductIdentityState::bootstrap(&root, &issuer, &local)?;
+    store.commit_payload(identity.encode()).await?;
+    Ok(identity)
 }
 
 fn short_hex(bytes: &[u8; 32]) -> String {
