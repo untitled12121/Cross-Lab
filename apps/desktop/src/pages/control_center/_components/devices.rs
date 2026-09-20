@@ -12,6 +12,7 @@ use gpui_kit::{
 pub(crate) fn devices_content(
     state: &DevicesFeatureState,
     actions: Option<Div>,
+    pairing: Option<Div>,
     notice: Option<&str>,
     cx: &App,
 ) -> Div {
@@ -65,6 +66,10 @@ pub(crate) fn devices_content(
                 .text_color(theme.muted_foreground)
                 .child(notice.to_owned()),
         );
+    }
+
+    if let Some(pairing) = pairing {
+        content = content.child(pairing);
     }
 
     content.child(match state.current() {
