@@ -63,13 +63,9 @@ fn bootstrap_round_trip_authenticates_the_existing_pairing_flow() {
         [0x99; 32],
     );
 
-    let mut inviter_flow = PairingInviterFlow::new(
-        invitation,
-        inviter,
-        joiner,
-        PairingInstant::from_ticks(10),
-    )
-    .unwrap();
+    let mut inviter_flow =
+        PairingInviterFlow::new(invitation, inviter, joiner, PairingInstant::from_ticks(10))
+            .unwrap();
     let joiner_flow = PairingJoinerFlow::new(secret, inviter, joiner).unwrap();
     let confirmation = joiner_flow.joiner_confirmation().unwrap();
 
