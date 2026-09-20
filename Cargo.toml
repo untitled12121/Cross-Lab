@@ -11,6 +11,7 @@ members = [
     "crates/runtime",
     "experiments/m9-networking",
     "transports/quic",
+    "xtask",
 ]
 resolver = "3"
 
