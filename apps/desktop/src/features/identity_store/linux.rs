@@ -264,7 +264,7 @@ pub enum LinuxIdentityStoreError {
     SignerMalformed,
     Random,
     Io(std::io::Error),
-    Keyring(oo7::Error),
+    Keyring(Box<oo7::Error>),
     Store(IdentityStoreError),
 }
 
@@ -298,7 +298,7 @@ impl From<std::io::Error> for LinuxIdentityStoreError {
 
 impl From<oo7::Error> for LinuxIdentityStoreError {
     fn from(error: oo7::Error) -> Self {
-        Self::Keyring(error)
+        Self::Keyring(Box::new(error))
     }
 }
 
