@@ -26,6 +26,8 @@ jobs:
         run: rustup toolchain install 1.98.1 --profile minimal --component clippy,rustfmt
       - name: Verify lockfile
         run: cargo metadata --locked --no-deps --format-version 1 > /dev/null
+      - name: Verify unified build command
+        run: cargo crosslab help
       - name: Validate theme JSON syntax
         run: |
           python - <<'PY'
@@ -63,9 +65,9 @@ jobs:
           bash scripts/generate-mobile-bindings.sh "$RUNNER_TEMP/crosslab-uniffi-kotlin"
           find "$RUNNER_TEMP/crosslab-uniffi-kotlin" -type f -name '*.kt' -print -quit | grep -q .
       - name: Build Linux desktop
-        run: cargo build -p crosslab-desktop --locked
+        run: cargo crosslab build desktop
       - name: Build Linux desktop development slice
-        run: cargo build -p crosslab-desktop --locked --features development-provisioning
+        run: cargo crosslab build desktop --development
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: Test
@@ -114,13 +116,7 @@ jobs:
         working-directory: apps/android
         run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
       - name: Android debug assembly
-        working-directory: apps/android
-        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+        run: cargo crosslab build android
       - name: Android development wiring assembly
-        working-directory: apps/android
-        run: |
-          ./gradlew :app:assembleDebug \
-            -PcrosslabDevelopmentProvisioning=true \
-            --no-daemon \
-            --stacktrace
+        run: cargo crosslab build android --development
 
