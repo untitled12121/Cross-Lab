@@ -230,7 +230,9 @@ pub struct LinuxEd25519Signer {
 }
 
 impl LinuxEd25519Signer {
-    pub async fn load_or_create(slot: LinuxSigningSlot) -> Result<Self, LinuxIdentityStoreError> {
+    pub async fn load(
+        slot: LinuxSigningSlot,
+    ) -> Result<Option<Self>, LinuxIdentityStoreError> {
         let keyring = Keyring::new().await?;
         let attributes = [
             APP_ATTRIBUTE,
@@ -240,18 +242,40 @@ impl LinuxEd25519Signer {
         ];
         let items = keyring.search_items(&attributes).await?;
 
-        if let Some(item) = items.first() {
-            let secret = item.secret().await?;
-            if secret.as_bytes().len() != 32 {
-                return Err(LinuxIdentityStoreError::SignerMalformed);
-            }
-            let mut bytes = [0_u8; 32];
-            bytes.copy_from_slice(secret.as_bytes());
-            return Ok(Self {
-                key: SigningKey::from_secret_bytes(bytes),
-            });
+        let Some(item) = items.first() else {
+            return Ok(None);
+        };
+        let secret = item.secret().await?;
+        if secret.as_bytes().len() != 32 {
+            return Err(LinuxIdentityStoreError::SignerMalformed);
+        }
+        let mut bytes = [0_u8; 32];
+        bytes.copy_from_slice(secret.as_bytes());
+        Ok(Some(Self {
+            key: SigningKey::from_secret_bytes(bytes),
+        }))
+    }
+
+    pub async fn load_required(
+        slot: LinuxSigningSlot,
+    ) -> Result<Self, LinuxIdentityStoreError> {
+        Self::load(slot)
+            .await?
+            .ok_or(LinuxIdentityStoreError::SignerMissing)
+    }
+
+    pub async fn load_or_create(slot: LinuxSigningSlot) -> Result<Self, LinuxIdentityStoreError> {
+        if let Some(existing) = Self::load(slot).await? {
+            return Ok(existing);
         }
 
+        let keyring = Keyring::new().await?;
+        let attributes = [
+            APP_ATTRIBUTE,
+            SIGNER_KIND,
+            SIGNER_VERSION,
+            ("slot", slot.value()),
+        ];
         let secret = random_bytes::<32>().map_err(|_| LinuxIdentityStoreError::Random)?;
         keyring
             .create_item(slot.label(), &attributes, Secret::blob(secret), false)
@@ -291,6 +315,7 @@ pub enum LinuxIdentityStoreError {
     InvalidPath,
     CurrentnessMissing,
     CurrentnessMismatch,
+    SignerMissing,
     SignerMalformed,
     Random,
     Io(std::io::Error),
@@ -309,6 +334,7 @@ impl core::fmt::Display for LinuxIdentityStoreError {
             Self::CurrentnessMismatch => {
                 formatter.write_str("Linux identity currentness anchor does not match")
             }
+            Self::SignerMissing => formatter.write_str("Linux protected signing key is missing"),
             Self::SignerMalformed => formatter.write_str("Linux device signing key is malformed"),
             Self::Random => formatter.write_str("Linux identity random generation failed"),
             Self::Io(error) => write!(formatter, "Linux identity-store I/O failed: {error}"),
