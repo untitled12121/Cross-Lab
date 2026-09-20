@@ -38,7 +38,7 @@ pub(crate) fn parse(args: impl IntoIterator<Item = String>) -> Result<Action, St
         "run" => parse_run(args),
         "help" | "--help" | "-h" => Ok(Action::Help),
         other => Err(format!(
-            "unknown command `{other}`; run `cargo crosslab help`"
+            "unknown command `{other}`; run `cargo crosslab --help`"
         )),
     }
 }
@@ -125,6 +125,13 @@ mod tests {
                 development: false,
             })
         );
+    }
+
+    #[test]
+    fn parses_root_help_flags() {
+        assert_eq!(parse(args(&["--help"])).unwrap(), Action::Help);
+        assert_eq!(parse(args(&["-h"])).unwrap(), Action::Help);
+        assert_eq!(parse(args(&["help"])).unwrap(), Action::Help);
     }
 
     #[test]
