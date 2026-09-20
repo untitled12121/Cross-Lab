@@ -7,6 +7,8 @@ interface RuntimePort {
     fun stop()
     fun networkLost()
     fun networkAvailable()
+    fun disconnectPeer()
+    fun reconnectPeer()
 
     fun snapshot(): RuntimeSnapshot = RuntimeSnapshot.disconnected()
 
@@ -105,6 +107,22 @@ class RuntimeController(
                 networkAvailable = true,
                 snapshot = port.snapshot(),
             )
+        }
+    }
+
+    fun disconnectPeer() {
+        update {
+            if (it.lifecycle != RuntimeLifecycle.RUNNING) return@update null
+            port.disconnectPeer()
+            it.copy(snapshot = port.snapshot())
+        }
+    }
+
+    fun reconnectPeer() {
+        update {
+            if (it.lifecycle != RuntimeLifecycle.RUNNING) return@update null
+            port.reconnectPeer()
+            it.copy(snapshot = port.snapshot())
         }
     }
 
