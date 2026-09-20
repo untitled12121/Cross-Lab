@@ -20,15 +20,17 @@ development-provisioning = [
 
 [dependencies]
 crosslab-core = { path = "../../crates/core" }
-crosslab-crypto = { path = "../../crates/crypto" }
 crosslab-identity = { path = "../../crates/identity" }
-crosslab-identity-store = { path = "../../crates/identity-store" }
 crosslab-policy = { path = "../../crates/policy" }
 crosslab-protocol = { path = "../../crates/protocol" }
 crosslab-runtime = { path = "../../crates/runtime" }
 crosslab-transport-quic = { path = "../../transports/quic", optional = true }
 gpui-kit.workspace = true
-oo7.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
 serde.workspace = true
 serde_json.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+crosslab-crypto = { path = "../../crates/crypto" }
+crosslab-identity-store = { path = "../../crates/identity-store" }
+oo7.workspace = true
