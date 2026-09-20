@@ -2,7 +2,7 @@ use crosslab_core::{
     PairingFlowError, PairingId, PairingInstant, PairingInvitation, PairingInvitationState,
     PairingInviterFlow, PairingInviterState, PairingJoinerFlow, PairingJoinerState, PairingSecret,
 };
-use crosslab_crypto::{Signature, SigningKey};
+use crosslab_crypto::{Signature, SigningKey, SigningProvider, SigningProviderError, VerifyingKey};
 use crosslab_identity::{
     AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, IdentityError,
     OwnerAuthorityState, OwnerId, OwnerRootRecord,
@@ -11,6 +11,20 @@ use crosslab_policy::{TransitionId, TrustState};
 use crosslab_protocol::{
     PairingConfirmation, PairingCredentialAccepted, PairingHello, PairingRole,
 };
+
+struct FailingSigningProvider {
+    verifying_key: VerifyingKey,
+}
+
+impl SigningProvider for FailingSigningProvider {
+    fn verifying_key(&self) -> VerifyingKey {
+        self.verifying_key
+    }
+
+    fn sign_message(&self, _: &[u8]) -> Result<Signature, SigningProviderError> {
+        Err(SigningProviderError)
+    }
+}
 
 struct Fixture {
     owner_id: OwnerId,
@@ -149,6 +163,22 @@ impl Fixture {
         );
         self.authority.accept_delegation(next).unwrap();
     }
+}
+
+#[test]
+fn joiner_fails_closed_when_signing_provider_fails() {
+    let fixture = Fixture::new();
+    let (mut inviter, mut joiner) = fixture.confirmed_flows();
+    let credential = fixture.issue_initial(&mut inviter);
+    let provider = FailingSigningProvider {
+        verifying_key: fixture.joiner_key.verifying_key(),
+    };
+
+    assert_eq!(
+        joiner.accept_credential_with_provider(&fixture.authority, &credential, &provider),
+        Err(PairingFlowError::SigningFailed)
+    );
+    assert_eq!(joiner.state(), PairingJoinerState::Failed);
 }
 
 #[test]
