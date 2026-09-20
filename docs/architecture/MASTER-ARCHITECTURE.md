@@ -1,7 +1,7 @@
 # Cross-Lab Master Architecture & Development Plan
 
 **Document status:** Architecture Baseline — Source of Truth  
-**Revision:** 2.5  
+**Revision:** 2.6  
 **Date:** 2026-09-20  
 **Project:** Cross-Lab  
 **Scope:** Architecture, security boundaries, repository structure, protocol foundations, platform strategy, development phases, and technology evaluation rules
@@ -26,7 +26,7 @@ The following rules apply:
 - License compatibility, security implications, platform support, maintenance status, and performance impact must be reviewed before code is reused or adapted.
 - The smallest architecture that cleanly satisfies the current milestone is preferred over speculative extensibility.
 
-Revision 2.5 incorporates accepted ADR-0014 product pairing bootstrap envelope v1 in addition to ADR-0013 platform signing-provider architecture and the previously accepted remote-networking/design-system decisions. Product pairing now has one deterministic secret-bearing cross-platform bootstrap representation while discovery/transport hints remain non-authoritative. Detailed protocol/security mechanics live in focused specifications; this document records the governing architecture and dependency boundaries.
+Revision 2.6 incorporates accepted ADR-0015 platform identity-store architecture in addition to ADR-0014 product pairing bootstrap and ADR-0013 signing-provider boundaries. Production identity/trust persistence is now explicitly split between durable public/security metadata and platform-local signing-provider/currentness state, with fail-closed startup and atomic security-transition requirements. Detailed protocol/security mechanics live in focused specifications; this document records the governing architecture and dependency boundaries.
 
 ---
 
@@ -223,6 +223,7 @@ Private keys remain local to the device and should use platform hardware-backed 
 - hardware security keys for selected administrative or recovery workflows.
 
 ADR-0013 standardizes the shared signing boundary: identity, pairing, trust, approval, and session-authentication logic consume an implementation-neutral signing provider that exposes public verification identity and fallible signing, not private key bytes. The existing software `SigningKey` remains valid for simulator/tests and explicit development provisioning. Production platform adapters choose the concrete key-storage/backing mechanism and must fail closed when the provider is unavailable or signing fails; the exact persistence, backup/restore, and rollback-resistance design remains platform-specific reviewed work.
+ADR-0015 defines the production identity-store boundary. Durable authority/credential/trust metadata, protected signing-provider references, and backend currentness/rollback anchors are validated together before runtime trust becomes usable after restart. Pairing/revocation/credential or authority transitions must commit as atomic logical security-state updates or fail closed. Exact Linux/Android backend implementations remain platform-adapter work and must be evidenced before production promotion.
 
 ### 6.3 Trust Graph
 
