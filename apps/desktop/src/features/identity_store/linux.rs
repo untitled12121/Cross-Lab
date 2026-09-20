@@ -141,11 +141,12 @@ impl LinuxIdentityStore {
         let keyring = Keyring::new().await?;
         let revision = anchor.revision().to_string();
         let attributes = [APP_ATTRIBUTE, ANCHOR_KIND, ("revision", revision.as_str())];
+        let protected_digest = anchor.protected_digest();
         keyring
             .create_item(
                 "Cross-Lab identity currentness anchor",
                 &attributes,
-                anchor.protected_digest(),
+                &protected_digest,
                 true,
             )
             .await?;
