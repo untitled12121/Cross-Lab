@@ -20,6 +20,14 @@ Project dependencies are resolved by Cargo and Gradle automatically. External pl
 
 ## Commands
 
+Run the built-in reference at any time:
+
+```bash
+cargo crosslab --help
+```
+
+Common commands:
+
 ```bash
 cargo crosslab                         # build all configured apps
 cargo crosslab build desktop           # build current-host desktop app

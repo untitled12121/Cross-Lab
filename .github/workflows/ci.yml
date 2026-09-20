@@ -26,8 +26,8 @@ jobs:
         run: rustup toolchain install 1.98.1 --profile minimal --component clippy,rustfmt
       - name: Verify lockfile
         run: cargo metadata --locked --no-deps --format-version 1 > /dev/null
-      - name: Verify unified build command
-        run: cargo crosslab help
+      - name: Verify unified build help
+        run: cargo crosslab --help
       - name: Validate theme JSON syntax
         run: |
           python - <<'PY'
