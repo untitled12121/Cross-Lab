@@ -20,6 +20,7 @@ development-provisioning = [
 
 [dependencies]
 crosslab-core = { path = "../core" }
+crosslab-crypto = { path = "../crypto" }
 crosslab-identity = { path = "../identity" }
 crosslab-identity-store = { path = "../identity-store" }
 crosslab-policy = { path = "../policy" }
