@@ -336,7 +336,11 @@ async fn revoke_connected(
 ) -> Result<(), ()> {
     let connection = connected.ok_or(())?;
     let revoked = server.revoke_peer_trust().map_err(|_| ())?;
-    connection.actor.revoke_peer(revoked).await.map_err(|_| ())?;
+    connection
+        .actor
+        .revoke_peer(revoked)
+        .await
+        .map_err(|_| ())?;
     connection.status.changed().await.map_err(|_| ())?;
     status_tx.send_replace(Some(connection.status.borrow().clone()));
     connection.reconnecting = true;
