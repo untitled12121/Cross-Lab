@@ -48,13 +48,13 @@ pub(crate) fn doctor() -> Result<(), String> {
         failed |= report_command("java", "-version", "Java 17");
 
         match android_sdk_root() {
-        Some(sdk) => match verify_android_sdk(&sdk) {
-            Ok(()) => println!("crosslab: [ok] Android SDK {}", sdk.display()),
-            Err(error) => {
-                failed = true;
-                println!("crosslab: [missing] {error}");
-            }
-        },
+            Some(sdk) => match verify_android_sdk(&sdk) {
+                Ok(()) => println!("crosslab: [ok] Android SDK {}", sdk.display()),
+                Err(error) => {
+                    failed = true;
+                    println!("crosslab: [missing] {error}");
+                }
+            },
             None => {
                 failed = true;
                 println!("crosslab: [missing] ANDROID_SDK_ROOT / ANDROID_HOME");
