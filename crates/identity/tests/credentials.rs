@@ -1,8 +1,22 @@
-use crosslab_crypto::SigningKey;
+use crosslab_crypto::{Signature, SigningKey, SigningProvider, SigningProviderError, VerifyingKey};
 use crosslab_identity::{
     AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, IdentityError,
     OwnerAuthorityState, OwnerId, OwnerRootRecord, RootSuccessor,
 };
+
+struct FailingSigningProvider {
+    verifying_key: VerifyingKey,
+}
+
+impl SigningProvider for FailingSigningProvider {
+    fn verifying_key(&self) -> VerifyingKey {
+        self.verifying_key
+    }
+
+    fn sign_message(&self, _: &[u8]) -> Result<Signature, SigningProviderError> {
+        Err(SigningProviderError)
+    }
+}
 
 fn fixture() -> (
     OwnerId,
@@ -24,6 +38,60 @@ fn fixture() -> (
     );
 
     (owner_id, root_key, root, device_signing_key, delegation)
+}
+
+#[test]
+fn provider_failure_fails_closed_during_credential_issue() {
+    let (owner_id, _, root, issuer_key, delegation) = fixture();
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(delegation).unwrap();
+    let failing = FailingSigningProvider {
+        verifying_key: issuer_key.verifying_key(),
+    };
+    let device_key = SigningKey::from_secret_bytes([0x77; 32]);
+
+    assert_eq!(
+        DeviceCredential::issue_for_public_key_with_provider(
+            owner_id,
+            DeviceId::from_bytes([0x78; 32]),
+            device_key.verifying_key(),
+            0,
+            &authority,
+            &failing,
+        ),
+        Err(IdentityError::SigningFailed)
+    );
+}
+
+#[test]
+fn provider_backed_credential_matches_software_key_output() {
+    let (owner_id, _, root, issuer_key, delegation) = fixture();
+    let mut authority = OwnerAuthorityState::new(root);
+    authority.accept_delegation(delegation).unwrap();
+    let device_key = SigningKey::from_secret_bytes([0x79; 32]);
+    let device_id = DeviceId::from_bytes([0x7a; 32]);
+
+    let software = DeviceCredential::issue_for_public_key(
+        owner_id,
+        device_id,
+        device_key.verifying_key(),
+        0,
+        &authority,
+        &issuer_key,
+    )
+    .unwrap();
+    let provider = DeviceCredential::issue_for_public_key_with_provider(
+        owner_id,
+        device_id,
+        device_key.verifying_key(),
+        0,
+        &authority,
+        &issuer_key,
+    )
+    .unwrap();
+
+    assert_eq!(provider.transcript_digest(), software.transcript_digest());
+    assert_eq!(provider.signature(), software.signature());
 }
 
 #[test]
