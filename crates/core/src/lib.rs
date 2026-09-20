@@ -10,7 +10,8 @@ pub use control::{ControlDispatchError, ControlDispatcher, EventSubscription, In
 pub use pairing::{
     PAIRING_BOOTSTRAP_PROFILE_V1, PairingBootstrap, PairingBootstrapCode, PairingBootstrapError,
     PairingConfirmationError, PairingConfirmationRole, PairingFlowError, PairingId, PairingInstant,
-    PairingInvitation, PairingInvitationError, PairingInvitationState, PairingInviterFlow,
+    PairingInvitation, PairingInvitationCreateError, PairingInvitationError, PairingInvitationState,
+    PairingInviterFlow,
     PairingInviterState, PairingJoinerFlow, PairingJoinerState, PairingSecret, PairingTranscript,
 };
 pub use session::{
