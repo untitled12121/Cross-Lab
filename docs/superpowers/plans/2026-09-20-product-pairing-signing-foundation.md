@@ -23,9 +23,9 @@ Prepare Cross-Lab for normal Add Device / pairing without promoting development 
 - Keep transport/discovery hints explicitly non-authoritative.
 - Do not add a short numeric-code fallback.
 
-## Task 3 — Platform identity-store design
+## Task 3 — Platform identity-store design ✅
 
-- Define platform adapter responsibilities for authority metadata, trust state, and signing-provider handles.
+- Accept ADR-0015 and define platform adapter responsibilities for authority metadata, trust state, signing-provider handles, atomic security commits, backup/restore behavior, and rollback/currentness checks.
 - Android and Linux implementations require separate evidence for confidentiality, lifecycle, backup/restore behavior, and rollback handling.
 - Do not claim production persistence until those adapters are implemented and verified.
 
@@ -35,3 +35,17 @@ Prepare Cross-Lab for normal Add Device / pairing without promoting development 
 - Existing pairing/session golden vectors unchanged.
 - Development provisioning still builds.
 - No private key bytes added to UI/FFI/protocol types.
+
+
+## Follow-on implementation
+
+The design tasks above do not by themselves make production pairing durable.
+
+Next platform work is:
+
+1. implementation-neutral identity-store contract + deterministic conformance tests;
+2. Android protected signing-provider/wrapped-key adapter and backup exclusions;
+3. Android crash/currentness/rollback tests;
+4. Linux desktop secret/provider adapter;
+5. Linux crash/currentness/rollback tests;
+6. only then wire normal Add Device UI to the durable production identity store.
