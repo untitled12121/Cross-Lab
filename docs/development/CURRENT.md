@@ -20,10 +20,12 @@ M1-M9 are complete. M10 Tasks 3-9 are integrated on `main`. Task 10 host-side CI
 - Build orchestration PR: #41, merged as `062773aaa8eda64e4aa5a8f3cae70a5893cf7dfd`; exact-head CI `35485671117` fully green on `ca3b502b42d7eb7620d8d06a691eb663c5369b42`.
 - Build help PR: #42, merged as `a8659c24f459f760e3a8365e68397e077f909251`; exact-head CI `35489274255` fully green on `57eaedc297dc6b7d72d4e627707078d933b059ba`, including direct verification of `cargo crosslab --help`.
 - Real-hardware DX fixes PR: #43, merged as `f8ec5e1e9ebfe32fa88af17abbecb9001e471059`; exact-head CI `35490894046` fully green on `dab3742143a781bfc9fcb7f033bbdcae0f8cc96b`. It adds user-local Android SDK bootstrap through `cargo crosslab setup`, broader SDK discovery, and display-aware desktop window sizing.
+- Owner/device management PR: #44, merged as `97bd9c534870e43db4ac4535704012f5214184d7`; exact-head CI `35507648082` fully green on `7f5953c82faedede9a08111136890a627122ec88`. It adds desktop and Android Devices/Owner control-center surfaces, presentation-safe owner/local/peer identity summaries, and development-slice peer disconnect/reconnect/revocation controls through existing runtime/trust boundaries.
 - PR #40 exact-head implementation: `13bb1103f42e35a3beb0d3ad2b2c8cc7befe93d8`, CI `35479944418` fully green.
 - Physical-evidence continuation branch: `m10-task10-real-device-evidence`; continue it from the current `main` checkpoint when a physical Linux + Android pair is available.
 - Evidence protocol: `docs/research/M10-platform-evidence.md`.
 - Active implementation plan: `docs/superpowers/plans/2026-09-17-m10-first-platform-slice.md`.
+- Owner/device management usability plan: `docs/superpowers/plans/2026-09-20-m10-owner-device-management.md` (implemented through PR #44).
 - Approved design: `docs/superpowers/specs/2026-09-17-m10-platform-shell-design.md`.
 - Master Architecture revision 2.3 plus ADR-0008, ADR-0009, and ADR-0012 remain the M10 architecture baseline.
 
@@ -47,6 +49,9 @@ Tasks 3-9 are integrated and verified:
 - the self-documenting `cargo crosslab --help` entry point lists all current commands, flags, defaults, host behavior, and examples and is verified directly in CI.
 - `cargo crosslab setup` can bootstrap the pinned Android command-line SDK into a user-owned data directory when no compatible SDK is installed; SDK license acceptance remains explicit and interactive.
 - desktop startup clamps the initial window to the available primary display and enforces a minimum usable size, avoiding oversized windowed launches on scaled/smaller displays.
+- Linux desktop and Android now expose a Devices + Owner control-center surface instead of only a passive status shell; Cross-Lab continues to use the owner trust domain rather than a mandatory cloud/email account.
+- presentation-safe owner/local/peer identifiers flow through runtime/FFI without exposing keys, credentials, channel binding, or raw transport objects.
+- the development hardware slice has explicit user-triggered disconnect/reconnect controls, while desktop development revocation uses the existing signed trust-transition path.
 
 ## Task 10 Host CI / Evidence Checkpoint
 
@@ -124,7 +129,7 @@ The slice remains **authenticated local device connection + device status** betw
 
 ## Exact Next Task
 
-Task 10 evidence-enablement code is merged and CI-verified. The only remaining executable gate before Task 11 is the mandatory physical-device evidence:
+Task 10 evidence-enablement and the owner/device management usability extension are merged and CI-verified. The only remaining executable gate before Task 11 is the mandatory physical-device evidence; normal product pairing/production identity persistence remain later reviewed work and must not be treated as completed by M10:
 
 1. use the merged Task 10 host-gate baseline and `docs/research/M10-platform-evidence.md` for physical Linux + Android evidence;
 2. continue on `m10-task10-real-device-evidence` when physical Linux + Android execution is available;
