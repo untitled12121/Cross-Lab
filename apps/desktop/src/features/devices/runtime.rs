@@ -1,3 +1,5 @@
+use core::fmt;
+
 use crosslab_runtime::RuntimeStatus;
 use tokio::sync::watch;
 
@@ -21,6 +23,25 @@ const COMMAND_CAPACITY: usize = 8;
 const RUNTIME_CAPACITY: usize = 8;
 #[cfg(feature = "development-provisioning")]
 const SESSION_TIMEOUT: Duration = Duration::from_secs(3);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DesktopRuntimeControlError {
+    Unavailable,
+    CommandQueueFull,
+    RuntimeClosed,
+}
+
+impl fmt::Display for DesktopRuntimeControlError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Unavailable => "runtime control is unavailable",
+            Self::CommandQueueFull => "runtime control queue is full",
+            Self::RuntimeClosed => "runtime control channel is closed",
+        })
+    }
+}
+
+impl std::error::Error for DesktopRuntimeControlError {}
 
 pub struct DesktopRuntimeController {
     status: watch::Receiver<Option<RuntimeStatus>>,
@@ -50,6 +71,41 @@ impl DesktopRuntimeController {
     pub fn subscribe_status(&self) -> watch::Receiver<Option<RuntimeStatus>> {
         self.status.clone()
     }
+
+    pub fn disconnect_current_peer(&self) -> Result<(), DesktopRuntimeControlError> {
+        self.send_control(DesktopCommandKind::DisconnectPeer)
+    }
+
+    pub fn revoke_current_peer(&self) -> Result<(), DesktopRuntimeControlError> {
+        self.send_control(DesktopCommandKind::RevokePeer)
+    }
+
+    #[cfg(feature = "development-provisioning")]
+    fn send_control(&self, command: DesktopCommandKind) -> Result<(), DesktopRuntimeControlError> {
+        let command_tx = self
+            .command_tx
+            .as_ref()
+            .ok_or(DesktopRuntimeControlError::Unavailable)?;
+        let command = match command {
+            DesktopCommandKind::DisconnectPeer => DesktopCommand::DisconnectPeer,
+            DesktopCommandKind::RevokePeer => DesktopCommand::RevokePeer,
+        };
+        command_tx.try_send(command).map_err(|error| match error {
+            mpsc::error::TrySendError::Full(_) => DesktopRuntimeControlError::CommandQueueFull,
+            mpsc::error::TrySendError::Closed(_) => DesktopRuntimeControlError::RuntimeClosed,
+        })
+    }
+
+    #[cfg(not(feature = "development-provisioning"))]
+    fn send_control(&self, _: DesktopCommandKind) -> Result<(), DesktopRuntimeControlError> {
+        Err(DesktopRuntimeControlError::Unavailable)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DesktopCommandKind {
+    DisconnectPeer,
+    RevokePeer,
 }
 
 impl Default for DesktopRuntimeController {
@@ -69,6 +125,8 @@ impl Drop for DesktopRuntimeController {
 
 #[cfg(feature = "development-provisioning")]
 enum DesktopCommand {
+    DisconnectPeer,
+    RevokePeer,
     Stop,
 }
 
@@ -132,9 +190,17 @@ async fn run_development(
         {
             tokio::select! {
                 command = command_rx.recv() => {
-                    if matches!(command, Some(DesktopCommand::Stop) | None) {
-                        stop_connected(connected.take(), &status_tx).await;
-                        return;
+                    match command {
+                        Some(DesktopCommand::DisconnectPeer) => {
+                            stop_connected(connected.take(), &status_tx).await;
+                        }
+                        Some(DesktopCommand::RevokePeer) => {
+                            let _ = revoke_connected(&mut server, connected.as_mut(), &status_tx).await;
+                        }
+                        Some(DesktopCommand::Stop) | None => {
+                            stop_connected(connected.take(), &status_tx).await;
+                            return;
+                        }
                     }
                 }
                 session = server.accept_authenticated(timeouts()) => {
@@ -177,6 +243,12 @@ async fn run_development(
         };
 
         match event {
+            DesktopEvent::Command(Some(DesktopCommand::DisconnectPeer)) => {
+                stop_connected(connected.take(), &status_tx).await;
+            }
+            DesktopEvent::Command(Some(DesktopCommand::RevokePeer)) => {
+                let _ = revoke_connected(&mut server, connected.as_mut(), &status_tx).await;
+            }
             DesktopEvent::Command(Some(DesktopCommand::Stop))
             | DesktopEvent::Command(None)
             | DesktopEvent::ActorClosed => {
@@ -197,14 +269,7 @@ async fn run_development(
                 }
             }
             DesktopEvent::RevokePeer => {
-                if let Some(connection) = connected.as_mut()
-                    && let Ok(revoked) = server.revoke_peer_trust()
-                    && connection.actor.revoke_peer(revoked).await.is_ok()
-                    && connection.status.changed().await.is_ok()
-                {
-                    status_tx.send_replace(Some(connection.status.borrow().clone()));
-                    connection.reconnecting = true;
-                }
+                let _ = revoke_connected(&mut server, connected.as_mut(), &status_tx).await;
             }
         }
     }
@@ -260,6 +325,21 @@ async fn network_lost(
     connected.actor.try_network_lost().map_err(|_| ())?;
     connected.status.changed().await.map_err(|_| ())?;
     status_tx.send_replace(Some(connected.status.borrow().clone()));
+    Ok(())
+}
+
+#[cfg(feature = "development-provisioning")]
+async fn revoke_connected(
+    server: &mut DevelopmentQuicServer,
+    connected: Option<&mut ConnectedRuntime>,
+    status_tx: &watch::Sender<Option<RuntimeStatus>>,
+) -> Result<(), ()> {
+    let connection = connected.ok_or(())?;
+    let revoked = server.revoke_peer_trust().map_err(|_| ())?;
+    connection.actor.revoke_peer(revoked).await.map_err(|_| ())?;
+    connection.status.changed().await.map_err(|_| ())?;
+    status_tx.send_replace(Some(connection.status.borrow().clone()));
+    connection.reconnecting = true;
     Ok(())
 }
 
