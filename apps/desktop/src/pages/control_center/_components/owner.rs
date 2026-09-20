@@ -6,7 +6,7 @@ use gpui_kit::{
     App, Div, ParentElement as _, Styled as _, component::theme::ActiveTheme as _, div, px,
 };
 
-pub(super) fn owner_content(state: &OwnerFeatureState, cx: &App) -> Div {
+pub(crate) fn owner_content(state: &OwnerFeatureState, cx: &App) -> Div {
     let theme = cx.theme();
     let appearance = active_theme(cx);
 
