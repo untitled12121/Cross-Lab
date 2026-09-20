@@ -40,8 +40,9 @@ COMMANDS:
       With no target, `all` is used.
 
   setup
-      Prepare/check local build tooling and install the Rust Android target.
-      Cargo and Gradle fetch project dependencies during builds.
+      Prepare local build tooling, install the Rust Android target, and bootstrap
+      a pinned user-local Android SDK when no compatible SDK is available.
+      Android SDK license acceptance remains explicit and interactive.
 
   doctor
       Report missing local prerequisites without changing the machine.
@@ -80,6 +81,8 @@ EXAMPLES:
   cargo crosslab run desktop --development
 
 NOTES:
+  Cargo and Gradle fetch project dependencies automatically.
+  If Android tooling is missing, run `cargo crosslab setup` once.
   Desktop builds are native to the current OS. The builder does not cross-compile
   Linux, Windows, and macOS desktop binaries from a single host."
     );

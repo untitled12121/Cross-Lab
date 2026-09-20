@@ -61,14 +61,16 @@ At the current M10 checkpoint, Linux desktop + Android are the verified real-pla
 
 Current Android configuration requires:
 
-- Java 17;
+- a Java runtime supported by the pinned Gradle wrapper (the Android source/bytecode target remains Java 17);
 - Android platform `android-37.0`;
 - Android NDK `28.2.13676358`;
 - Rust target `aarch64-linux-android`.
 
-Set `ANDROID_SDK_ROOT` or `ANDROID_HOME` when the SDK is not installed in the platform-default Android Studio location.
+Set `ANDROID_SDK_ROOT` or `ANDROID_HOME` when you want Cross-Lab to use a specific SDK location. Otherwise the builder discovers common Android Studio/system locations and its own user-local SDK location.
 
-`cargo crosslab setup` installs the Rust Android target automatically. It does not silently install privileged operating-system packages or Android Studio. That keeps host administration explicit while Cargo/Gradle continue to fetch project dependencies normally.
+If `cargo crosslab build` reports that the Android SDK is not ready, run `cargo crosslab setup` once and follow the license prompt, then retry the build.
+
+`cargo crosslab setup` installs the Rust Android target automatically. If no compatible Android SDK is found, it can bootstrap Cross-Lab's pinned command-line SDK into a user-owned data directory and install the required platform, build-tools, platform-tools, and NDK. The Android SDK license is shown/accepted interactively; Cross-Lab does not accept it silently or install privileged operating-system packages.
 
 ## M10 physical-device build
 

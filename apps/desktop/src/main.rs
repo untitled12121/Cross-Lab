@@ -14,8 +14,19 @@ fn main() {
         install_builtin_theme(ThemeId::AyuLight, cx)
             .expect("the built-in Ayu Light theme must remain valid");
 
+        let mut window_size = size(px(1040.), px(680.));
+        if let Some(display) = cx.primary_display() {
+            let display_size = display.bounds().size;
+            window_size.width = window_size.width.min(display_size.width * 0.85);
+            window_size.height = window_size.height.min(display_size.height * 0.85);
+        }
+
         let window_options = WindowOptions {
-            window_bounds: Some(WindowBounds::centered(size(px(1040.), px(680.)), cx)),
+            window_bounds: Some(WindowBounds::centered(window_size, cx)),
+            window_min_size: Some(gpui_kit::Size {
+                width: px(640.),
+                height: px(480.),
+            }),
             ..Default::default()
         };
 

@@ -73,7 +73,7 @@ fn empty_state(cx: &App) -> Div {
             div()
                 .text_size(px(appearance.typography.scales.caption.size))
                 .text_color(theme.muted_foreground)
-                .child("Runtime wiring arrives in M10 Task 9; this shell does not own networking."),
+                .child("Waiting for an authenticated Cross-Lab device session."),
         )
 }
 
