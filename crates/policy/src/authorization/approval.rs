@@ -1,6 +1,6 @@
 use core::fmt;
 
-use crosslab_crypto::{CanonicalTranscript, Signature, SigningKey};
+use crosslab_crypto::{CanonicalTranscript, Signature, SigningKey, SigningProvider};
 use crosslab_identity::{
     AuthorityDelegation, AuthorityRole, KeyId, OwnerAuthorityState, OwnerId, OwnerRootRecord,
 };
@@ -30,6 +30,7 @@ pub enum ApprovalError {
     InvalidDelegation,
     UnknownIssuer,
     InvalidSignature,
+    SigningFailed,
 }
 
 impl fmt::Display for ApprovalError {
@@ -41,6 +42,7 @@ impl fmt::Display for ApprovalError {
             Self::InvalidDelegation => "owner approval delegation is invalid",
             Self::UnknownIssuer => "owner approval issuer is not the expected authority",
             Self::InvalidSignature => "owner approval signature is invalid",
+            Self::SigningFailed => "owner approval signing provider operation failed",
         })
     }
 }
@@ -67,7 +69,7 @@ impl OwnerApprovalEvidence {
         expires_at: ApprovalInstant,
         root: &OwnerRootRecord,
         delegation: &AuthorityDelegation,
-        issuer_key: &SigningKey,
+        issuer_key: &dyn SigningProvider,
         minimum_delegation_epoch: u64,
     ) -> Result<Self, ApprovalError> {
         validate_lifetime(issued_at, expires_at)?;
@@ -86,7 +88,9 @@ impl OwnerApprovalEvidence {
             issuer_delegation_epoch: delegation.delegation_epoch(),
             signature: Signature::from_bytes([0; 64]),
         };
-        evidence.signature = issuer_key.sign_digest(&evidence.transcript_digest());
+        evidence.signature = issuer_key
+            .sign_digest(&evidence.transcript_digest())
+            .map_err(|_| ApprovalError::SigningFailed)?;
         Ok(evidence)
     }
 
@@ -96,6 +100,27 @@ impl OwnerApprovalEvidence {
         expires_at: ApprovalInstant,
         authority: &OwnerAuthorityState,
         issuer_key: &SigningKey,
+    ) -> Result<Self, ApprovalError> {
+        let delegation = authority
+            .current_delegation(AuthorityRole::Administrative)
+            .map_err(|_| ApprovalError::UnknownIssuer)?;
+        Self::issue_with_authority_parts(
+            scope,
+            issued_at,
+            expires_at,
+            authority.root(),
+            delegation,
+            issuer_key,
+            delegation.delegation_epoch(),
+        )
+    }
+
+    pub fn issue_with_provider(
+        scope: ApprovalScope,
+        issued_at: ApprovalInstant,
+        expires_at: ApprovalInstant,
+        authority: &OwnerAuthorityState,
+        issuer_key: &dyn SigningProvider,
     ) -> Result<Self, ApprovalError> {
         let delegation = authority
             .current_delegation(AuthorityRole::Administrative)
