@@ -112,7 +112,7 @@ fn expect_no_args(
 mod tests {
     use super::*;
 
-    fn args(values: &[&str]) -> impl Iterator<Item = String> + '_ {
+    fn args<'a>(values: &'a [&'a str]) -> impl Iterator<Item = String> + 'a {
         values.iter().map(|value| (*value).to_owned())
     }
 
