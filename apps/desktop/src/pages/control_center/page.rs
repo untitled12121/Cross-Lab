@@ -36,10 +36,10 @@ impl ControlCenterPage {
             DevicesFeatureState::empty,
             DevicesFeatureState::from_runtime,
         );
-        let owner = status.borrow().as_ref().map_or_else(
-            OwnerFeatureState::empty,
-            OwnerFeatureState::from_runtime,
-        );
+        let owner = status
+            .borrow()
+            .as_ref()
+            .map_or_else(OwnerFeatureState::empty, OwnerFeatureState::from_runtime);
 
         cx.spawn(async move |this, cx| {
             while status.changed().await.is_ok() {
@@ -213,9 +213,7 @@ impl Render for ControlCenterPage {
         let actions = None;
 
         let content = match self.section {
-            Section::Devices => {
-                devices_content(&self.devices, actions, self.notice.as_deref(), cx)
-            }
+            Section::Devices => devices_content(&self.devices, actions, self.notice.as_deref(), cx),
             Section::Owner => owner_content(&self.owner, cx),
         };
 
