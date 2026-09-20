@@ -14,7 +14,7 @@ cargo crosslab
 `cargo crosslab` is the default all-app build. It builds:
 
 - the desktop application for the **current host operating system**;
-- the Android arm64 debug APK.
+- the Android arm64 debug APK when the current host is Linux or macOS.
 
 Project dependencies are resolved by Cargo and Gradle automatically. External platform toolchains such as the Android SDK/JDK remain explicit host prerequisites.
 
@@ -42,6 +42,8 @@ apps/android/app/build/outputs/apk/debug/app-debug.apk
 ## Platform behavior
 
 The desktop target is native to the machine running the command. A Linux machine builds the Linux desktop app; a Windows machine invokes the same desktop crate for Windows; a macOS machine invokes it for macOS.
+
+Android host builds currently follow the repository's existing shell/NDK integration and are supported from Linux and macOS. On Windows, the default all-app command builds the Windows desktop target and reports Android as skipped rather than pretending that the unconfigured Android host path is verified.
 
 The builder intentionally does **not** cross-compile all desktop operating systems from one host. Release CI should use native runners per operating system when those platform slices are verified.
 
