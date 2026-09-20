@@ -1,4 +1,4 @@
-use crosslab_crypto::{Signature, SigningKey};
+use crosslab_crypto::{Signature, SigningKey, SigningProvider, SigningProviderError, VerifyingKey};
 use crosslab_identity::{
     AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,
     OwnerRootRecord,
@@ -7,6 +7,20 @@ use crosslab_policy::{
     PairingTrustTransition, TransitionId, TrustRecord, TrustState, TrustTransition,
     TrustTransitionError,
 };
+
+struct FailingSigningProvider {
+    verifying_key: VerifyingKey,
+}
+
+impl SigningProvider for FailingSigningProvider {
+    fn verifying_key(&self) -> VerifyingKey {
+        self.verifying_key
+    }
+
+    fn sign_message(&self, _: &[u8]) -> Result<Signature, SigningProviderError> {
+        Err(SigningProviderError)
+    }
+}
 
 fn fixture() -> (TrustRecord, SigningKey, OwnerRootRecord) {
     let owner_id = OwnerId::from_bytes([1; 32]);
@@ -59,6 +73,25 @@ fn fixture() -> (TrustRecord, SigningKey, OwnerRootRecord) {
     }
 
     (record, root_key, root)
+}
+
+#[test]
+fn root_revocation_fails_closed_when_signing_provider_fails() {
+    let (record, root_key, root) = fixture();
+    let authority = OwnerAuthorityState::new(root);
+    let provider = FailingSigningProvider {
+        verifying_key: root_key.verifying_key(),
+    };
+
+    assert_eq!(
+        TrustTransition::issue_root_revocation_with_provider(
+            &record,
+            TransitionId::from_bytes([0x7f; 32]),
+            &authority,
+            &provider,
+        ),
+        Err(TrustTransitionError::SigningFailed)
+    );
 }
 
 #[test]
