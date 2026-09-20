@@ -6,7 +6,7 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 **M10 first real Linux + Android platform slice remains in implementation.**
 
-M1-M9 are complete. M10 Tasks 3-9 are integrated on `main`. Task 10 host-side CI/evidence infrastructure is implementation-complete and verified on PR #39, but the mandatory physical Linux + Android lifecycle/security evidence is still pending. M10 must remain open until that evidence is collected and reviewed.
+M1-M9 are complete. M10 Tasks 3-9 are integrated on `main`. Task 10 host-side CI/evidence infrastructure and the physical-evidence execution tooling are now integrated on `main` through PR #40. The PR #40 exact-head CI is fully green, but the mandatory physical Linux + Android lifecycle/security evidence is still pending. M10 must remain open until that evidence is collected and reviewed.
 
 ## Canonical Baseline
 
@@ -16,7 +16,9 @@ M1-M9 are complete. M10 Tasks 3-9 are integrated on `main`. Task 10 host-side CI
 - Task 10 host-gate PR: #39, merged as `b31ecd3a8d6b9aaeb0ebae8944ab0c2b0d3b8db5`.
 - Verified Task 10 host-gate implementation head: `fad35fd2f3535d148a64287fdde391d1613b720e`, CI `35438748708` fully green.
 - Task 10 final documentation head: `969ca58a3fec716ab408a88508039b19fbe0fd7f`, exact-head CI `35459098042` fully green before merge.
-- Physical-evidence continuation branch: `m10-task10-real-device-evidence` (created from the post-merge documentation checkpoint).
+- Physical-evidence enablement PR: #40, merged as `c183b3c2dba3eb14f5063024d6d9deab996fae10`.
+- PR #40 exact-head implementation: `13bb1103f42e35a3beb0d3ad2b2c8cc7befe93d8`, CI `35479944418` fully green.
+- Physical-evidence continuation branch: `m10-task10-real-device-evidence`; continue it from the current `main` checkpoint when a physical Linux + Android pair is available.
 - Evidence protocol: `docs/research/M10-platform-evidence.md`.
 - Active implementation plan: `docs/superpowers/plans/2026-09-17-m10-first-platform-slice.md`.
 - Approved design: `docs/superpowers/specs/2026-09-17-m10-platform-shell-design.md`.
@@ -57,9 +59,13 @@ Task 10 currently provides:
 - Android JVM unit tests;
 - default Android debug assembly;
 - Android development-wiring debug assembly using `-PcrosslabDevelopmentProvisioning=true`;
-- a secret-safe real-device evidence protocol with explicit environment, lifecycle, reconnect, revocation, shutdown, duplicate-runtime, resource-behavior, and theme evidence rows.
+- a secret-safe real-device evidence protocol with explicit environment, lifecycle, reconnect, revocation, shutdown, duplicate-runtime, resource-behavior, and theme evidence rows;
+- Android `INTERNET` permission required by the real Quinn connection;
+- a development-only generator for synthetic throwaway Linux/Android identity + TLS provisioning that refuses relative/in-repository output and private-file overwrite;
+- a development-only Linux `SIGUSR1` revocation trigger routed through the runtime actor and signed trust-transition path;
+- development Quinn coverage proving peer revocation rejects a fresh reconnect.
 
-Host verification on `fad35fd2f3535d148a64287fdde391d1613b720e`, run `35438748708`, is fully green.
+Host verification on `fad35fd2f3535d148a64287fdde391d1613b720e`, run `35438748708`, is fully green. The merged physical-evidence enablement head `13bb1103f42e35a3beb0d3ad2b2c8cc7befe93d8`, run `35479944418`, is also fully green.
 
 The following Task 10 criteria remain physically unverified and **must not be inferred from CI**:
 
@@ -111,7 +117,7 @@ The slice remains **authenticated local device connection + device status** betw
 
 ## Exact Next Task
 
-Finish this verified Task 10 host-gate checkpoint, then collect the mandatory physical-device evidence before Task 11:
+Task 10 evidence-enablement code is merged and CI-verified. The only remaining executable gate before Task 11 is the mandatory physical-device evidence:
 
 1. use the merged Task 10 host-gate baseline and `docs/research/M10-platform-evidence.md` for physical Linux + Android evidence;
 2. continue on `m10-task10-real-device-evidence` when physical Linux + Android execution is available;
