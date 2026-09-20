@@ -21,6 +21,22 @@ pub enum MobileIdentityStoreError {
     RevisionOverflow,
 }
 
+impl core::fmt::Display for MobileIdentityStoreError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str(match self {
+            Self::UnsupportedSchema => "identity-store schema is unsupported",
+            Self::MalformedEnvelope => "identity-store envelope is malformed",
+            Self::MalformedAnchor => "identity-store currentness anchor is malformed",
+            Self::PayloadDigestMismatch => "identity-store payload digest does not match",
+            Self::StaleOrMixedState => "identity-store currentness validation failed",
+            Self::RevisionConflict => "identity-store revision changed concurrently",
+            Self::RevisionOverflow => "identity-store revision is exhausted",
+        })
+    }
+}
+
+impl std::error::Error for MobileIdentityStoreError {}
+
 #[uniffi::export]
 pub fn identity_store_prepare_commit(
     current_envelope: Option<Vec<u8>>,
