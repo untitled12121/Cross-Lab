@@ -50,6 +50,13 @@ impl OwnerFeatureState {
         self.current = None;
     }
 
+    pub fn set_product_identity(&mut self, owner_id: String, local_device_id: String) {
+        self.current = Some(OwnerPresentation {
+            owner_id,
+            local_device_id,
+        });
+    }
+
     pub const fn current(&self) -> Option<&OwnerPresentation> {
         self.current.as_ref()
     }
