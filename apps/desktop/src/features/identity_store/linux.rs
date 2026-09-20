@@ -158,11 +158,7 @@ impl LinuxIdentityStore {
     ) -> Result<(), LinuxIdentityStoreError> {
         let keyring = Keyring::new().await?;
         let revision = anchor.revision().to_string();
-        let attributes = [
-            APP_ATTRIBUTE,
-            ANCHOR_KIND,
-            ("revision", revision.as_str()),
-        ];
+        let attributes = [APP_ATTRIBUTE, ANCHOR_KIND, ("revision", revision.as_str())];
         let items = keyring.search_items(&attributes).await?;
         let item = items
             .first()
