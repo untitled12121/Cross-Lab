@@ -118,7 +118,6 @@ impl DesktopPairingInvitation {
                 .unwrap_or(u64::MAX),
         )
     }
-
 }
 
 pub struct QrModules {
