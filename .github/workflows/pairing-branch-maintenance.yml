@@ -27,5 +27,5 @@ jobs:
       - name: Show generated maintenance diff
         run: |
           cargo fmt --all
-          cargo generate-lockfile
+          cargo metadata --format-version 1 > /dev/null
           git diff -- Cargo.lock Cargo.toml apps/desktop crates/core crates/identity crates/identity-store crates/mobile-ffi
