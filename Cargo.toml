@@ -32,6 +32,7 @@ hmac = "=0.13.0"
 oo7 = { version = "=0.6.0", default-features = false, features = ["async-std", "native_crypto"] }
 prost = "=0.14.4"
 quinn = { version = "=0.11.11", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
+qrcode-rs = { version = "=2.1.1", default-features = false, features = ["std"] }
 rcgen = { version = "=0.14.10", default-features = false, features = ["ring"] }
 rustls = { version = "=0.23.45", default-features = false, features = ["ring", "std"] }
 serde = { version = "=1.0.229", features = ["derive"] }
