@@ -17,6 +17,7 @@ M1-M9 are complete. M10 Tasks 3-9 are integrated on `main`. Task 10 host-side CI
 - Verified Task 10 host-gate implementation head: `fad35fd2f3535d148a64287fdde391d1613b720e`, CI `35438748708` fully green.
 - Task 10 final documentation head: `969ca58a3fec716ab408a88508039b19fbe0fd7f`, exact-head CI `35459098042` fully green before merge.
 - Physical-evidence enablement PR: #40, merged as `c183b3c2dba3eb14f5063024d6d9deab996fae10`.
+- Build orchestration PR: #41, merged as `062773aaa8eda64e4aa5a8f3cae70a5893cf7dfd`; exact-head CI `35485671117` fully green on `ca3b502b42d7eb7620d8d06a691eb663c5369b42`.
 - PR #40 exact-head implementation: `13bb1103f42e35a3beb0d3ad2b2c8cc7befe93d8`, CI `35479944418` fully green.
 - Physical-evidence continuation branch: `m10-task10-real-device-evidence`; continue it from the current `main` checkpoint when a physical Linux + Android pair is available.
 - Evidence protocol: `docs/research/M10-platform-evidence.md`.
@@ -40,6 +41,7 @@ Tasks 3-9 are integrated and verified:
 - Android development provisioning is opt-in for debuggable builds and passes only an app-private provisioning-file path into Rust;
 - product-API integration tests cover authenticated connection, disconnect, fresh-session reconnect, revocation/reconnect denial, and presentation-state redaction;
 - the first Linux/Android development slice can build with the real runtime + Quinn development wiring enabled.
+- the unified Rust-native `cargo crosslab` build orchestrator is integrated, including host-aware desktop/Android builds, Android device install, development-provisioning builds, setup/doctor commands, and CI coverage of the same builder path.
 
 ## Task 10 Host CI / Evidence Checkpoint
 
