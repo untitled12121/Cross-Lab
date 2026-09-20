@@ -1753,6 +1753,8 @@ name = "crosslab-identity-store"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "crosslab-crypto",
+ "crosslab-identity",
 ]
 
 [[package]]
