@@ -85,13 +85,14 @@ pub(crate) fn android_host_supported() -> bool {
     matches!(env::consts::OS, "linux" | "macos")
 }
 
-pub(crate) fn ensure_android_environment() -> Result<(), String> {
+pub(crate) fn ensure_android_environment() -> Result<PathBuf, String> {
     ensure_command("java", "-version")
         .map_err(|_| "Java 17 is required for Android builds".to_owned())?;
     let sdk = android_sdk_root().ok_or_else(|| {
         "Android SDK not found; install Android Studio/SDK and set ANDROID_SDK_ROOT".to_owned()
     })?;
-    verify_android_sdk(&sdk)
+    verify_android_sdk(&sdk)?;
+    Ok(sdk)
 }
 
 pub(crate) fn ensure_android_rust_target() -> Result<(), String> {
