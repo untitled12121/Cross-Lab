@@ -255,7 +255,7 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<(), String> {
         .open(path)
         .map_err(|_| "refusing to overwrite provisioning file")?;
     file.write_all(bytes)
-        .map_err(|_| "failed to write provisioning file")
+        .map_err(|_| "failed to write provisioning file".to_owned())
 }
 
 #[cfg(not(unix))]
@@ -266,7 +266,7 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<(), String> {
         .open(path)
         .map_err(|_| "refusing to overwrite provisioning file")?;
     file.write_all(bytes)
-        .map_err(|_| "failed to write provisioning file")
+        .map_err(|_| "failed to write provisioning file".to_owned())
 }
 
 fn hex(bytes: &[u8]) -> String {
