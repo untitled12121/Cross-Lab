@@ -5,7 +5,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crosslab_crypto::{Signature, SigningKey, SigningProvider, SigningProviderError, VerifyingKey, random_bytes};
+use crosslab_crypto::{
+    Signature, SigningKey, SigningProvider, SigningProviderError, VerifyingKey, random_bytes,
+};
 use crosslab_identity_store::{
     IdentityStoreAnchor, IdentityStoreEnvelope, IdentityStoreError, prepare_commit, validate_loaded,
 };
@@ -59,7 +61,9 @@ impl LinuxIdentityStore {
             let anchor = IdentityStoreAnchor::decode(&bundle.anchor)?;
             let envelope = current_envelope
                 .as_ref()
-                .ok_or(LinuxIdentityStoreError::Store(IdentityStoreError::StaleOrMixedState))?;
+                .ok_or(LinuxIdentityStoreError::Store(
+                    IdentityStoreError::StaleOrMixedState,
+                ))?;
             validate_loaded(envelope, anchor)?;
             self.verify_anchor(anchor).await?;
         }
@@ -130,14 +134,13 @@ impl LinuxIdentityStore {
         Ok(())
     }
 
-    async fn create_anchor(&self, anchor: IdentityStoreAnchor) -> Result<(), LinuxIdentityStoreError> {
+    async fn create_anchor(
+        &self,
+        anchor: IdentityStoreAnchor,
+    ) -> Result<(), LinuxIdentityStoreError> {
         let keyring = Keyring::new().await?;
         let revision = anchor.revision().to_string();
-        let attributes = [
-            APP_ATTRIBUTE,
-            ANCHOR_KIND,
-            ("revision", revision.as_str()),
-        ];
+        let attributes = [APP_ATTRIBUTE, ANCHOR_KIND, ("revision", revision.as_str())];
         keyring
             .create_item(
                 "Cross-Lab identity currentness anchor",
@@ -149,7 +152,10 @@ impl LinuxIdentityStore {
         Ok(())
     }
 
-    async fn verify_anchor(&self, anchor: IdentityStoreAnchor) -> Result<(), LinuxIdentityStoreError> {
+    async fn verify_anchor(
+        &self,
+        anchor: IdentityStoreAnchor,
+    ) -> Result<(), LinuxIdentityStoreError> {
         let keyring = Keyring::new().await?;
         let revision = anchor.revision().to_string();
         let attributes = [
@@ -158,7 +164,9 @@ impl LinuxIdentityStore {
             ("revision", revision.as_str()),
         ];
         let items = keyring.search_items(&attributes).await?;
-        let item = items.first().ok_or(LinuxIdentityStoreError::CurrentnessMissing)?;
+        let item = items
+            .first()
+            .ok_or(LinuxIdentityStoreError::CurrentnessMissing)?;
         let secret = item.secret().await?;
         if secret.as_bytes() != anchor.protected_digest() {
             return Err(LinuxIdentityStoreError::CurrentnessMismatch);
@@ -170,16 +178,15 @@ impl LinuxIdentityStore {
         let keyring = Keyring::new().await?;
         let revision = revision.to_string();
         keyring
-            .delete(&[
-                APP_ATTRIBUTE,
-                ANCHOR_KIND,
-                ("revision", revision.as_str()),
-            ])
+            .delete(&[APP_ATTRIBUTE, ANCHOR_KIND, ("revision", revision.as_str())])
             .await?;
         Ok(())
     }
 
-    async fn delete_orphan_anchors(&self, current_revision: u64) -> Result<(), LinuxIdentityStoreError> {
+    async fn delete_orphan_anchors(
+        &self,
+        current_revision: u64,
+    ) -> Result<(), LinuxIdentityStoreError> {
         let keyring = Keyring::new().await?;
         let items = keyring.search_items(&[APP_ATTRIBUTE, ANCHOR_KIND]).await?;
         for item in items {
@@ -269,8 +276,12 @@ impl core::fmt::Display for LinuxIdentityStoreError {
         match self {
             Self::HomeUnavailable => formatter.write_str("Linux home directory is unavailable"),
             Self::InvalidPath => formatter.write_str("Linux identity-store path is invalid"),
-            Self::CurrentnessMissing => formatter.write_str("Linux identity currentness anchor is missing"),
-            Self::CurrentnessMismatch => formatter.write_str("Linux identity currentness anchor does not match"),
+            Self::CurrentnessMissing => {
+                formatter.write_str("Linux identity currentness anchor is missing")
+            }
+            Self::CurrentnessMismatch => {
+                formatter.write_str("Linux identity currentness anchor does not match")
+            }
             Self::SignerMalformed => formatter.write_str("Linux device signing key is malformed"),
             Self::Random => formatter.write_str("Linux identity random generation failed"),
             Self::Io(error) => write!(formatter, "Linux identity-store I/O failed: {error}"),
@@ -308,7 +319,8 @@ struct StoreBundle {
 
 impl StoreBundle {
     fn encode(&self) -> Vec<u8> {
-        let mut output = Vec::with_capacity(BUNDLE_MAGIC.len() + 8 + self.envelope.len() + self.anchor.len());
+        let mut output =
+            Vec::with_capacity(BUNDLE_MAGIC.len() + 8 + self.envelope.len() + self.anchor.len());
         output.extend_from_slice(BUNDLE_MAGIC);
         push_field(&mut output, &self.envelope);
         push_field(&mut output, &self.anchor);
@@ -336,7 +348,9 @@ fn push_field(output: &mut Vec<u8>, value: &[u8]) {
 }
 
 fn read_field(bytes: &[u8], offset: &mut usize) -> Result<Vec<u8>, LinuxIdentityStoreError> {
-    let header_end = offset.checked_add(4).ok_or(LinuxIdentityStoreError::InvalidPath)?;
+    let header_end = offset
+        .checked_add(4)
+        .ok_or(LinuxIdentityStoreError::InvalidPath)?;
     let len_bytes = bytes
         .get(*offset..header_end)
         .ok_or(LinuxIdentityStoreError::InvalidPath)?;
@@ -344,7 +358,9 @@ fn read_field(bytes: &[u8], offset: &mut usize) -> Result<Vec<u8>, LinuxIdentity
     if len > 16 * 1024 * 1024 {
         return Err(LinuxIdentityStoreError::InvalidPath);
     }
-    let end = header_end.checked_add(len).ok_or(LinuxIdentityStoreError::InvalidPath)?;
+    let end = header_end
+        .checked_add(len)
+        .ok_or(LinuxIdentityStoreError::InvalidPath)?;
     let value = bytes
         .get(header_end..end)
         .ok_or(LinuxIdentityStoreError::InvalidPath)?
