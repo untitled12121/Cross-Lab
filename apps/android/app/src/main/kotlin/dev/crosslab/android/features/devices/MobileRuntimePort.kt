@@ -55,6 +55,14 @@ class MobileRuntimePort(
         runtime.networkAvailable()
     }
 
+    override fun disconnectPeer() {
+        runtime.disconnectPeer()
+    }
+
+    override fun reconnectPeer() {
+        runtime.reconnectPeer()
+    }
+
     override fun snapshot(): RuntimeSnapshot = runtime.snapshot().toRuntimeSnapshot()
 
     override fun observeSnapshots(listener: (RuntimeSnapshot) -> Unit): AutoCloseable {
@@ -87,6 +95,8 @@ class MobileRuntimePort(
 
 private fun MobileRuntimeSnapshot.toRuntimeSnapshot(): RuntimeSnapshot =
     RuntimeSnapshot(
+        ownerId = ownerId,
+        localDeviceId = localDeviceId,
         peerDeviceId = peerDeviceId,
         trust =
             when (trust) {
