@@ -6,6 +6,7 @@
 mod development;
 mod dto;
 mod error;
+mod identity_store;
 mod runtime;
 
 pub use dto::{
@@ -13,6 +14,7 @@ pub use dto::{
     MobileRuntimeSnapshot, MobileSessionState, MobileTransportSecurity, MobileTrustState,
 };
 pub use error::MobileRuntimeError;
+pub use identity_store::{MobileIdentityCommit, MobileIdentityStoreError};
 pub use runtime::{MobileRuntime, MobileRuntimeEvent};
 
 uniffi::setup_scaffolding!();
