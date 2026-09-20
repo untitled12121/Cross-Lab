@@ -72,6 +72,7 @@ The Phase 0 baseline currently includes accepted ADR-0001 through ADR-0006. See 
 [`development/`](./development/) contains execution-state documentation:
 
 - [`CURRENT.md`](./development/CURRENT.md) — exact current resume point.
+- [`BUILD.md`](./development/BUILD.md) — unified local build, setup, and device-install commands.
 - [`ROADMAP.md`](./development/ROADMAP.md) — concise phase/milestone navigation.
 - [`WORKFLOW.md`](./development/WORKFLOW.md) — repository continuity and verification workflow.
 
