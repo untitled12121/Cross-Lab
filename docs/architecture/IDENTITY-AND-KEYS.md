@@ -270,10 +270,11 @@ Requirements:
 - avoid unnecessary serialization/copies of private key material;
 - do not expose private-key types through UI, protocol, transport, or plugin APIs;
 - use OS/hardware-backed non-exportable storage where practical on production platforms;
-- keep domain APIs capable of signing through a key-provider abstraction later without forcing keys to be exportable;
+- route authority/device signing through the implementation-neutral `crosslab-crypto::SigningProvider` boundary accepted by ADR-0013 so production platform adapters are not required to export private key bytes;
+- treat provider signing failure as a typed fail-closed domain failure;
 - test keys are synthetic and never reused as production credentials.
 
-Phase 1 may use in-memory software keys for deterministic/local simulator tests, but those keys are test-only and do not weaken production storage requirements.
+Phase 1 may use in-memory software `SigningKey` providers for deterministic/local simulator tests and explicit development provisioning, but those keys are test/development-only and do not weaken production storage requirements. Production platform adapters own the concrete secure-storage/key-handle implementation behind `SigningProvider`; selecting exact Linux/Android/macOS/Windows/iOS backends remains separately reviewed platform work.
 
 `OwnerAuthorityState` may also remain in-memory during Phase 1. This does not claim restart rollback resistance. Before platform production state relies on authority currentness across restart, local persistence must atomically preserve the active root, delegated-role epoch floors, and active delegated-role objects and revalidate them on load.
 
