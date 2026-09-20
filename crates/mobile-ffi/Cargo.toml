@@ -35,7 +35,6 @@ path = "src/bin/uniffi_bindgen.rs"
 required-features = ["bindgen"]
 
 [dev-dependencies]
-crosslab-crypto = { path = "../crypto" }
 rcgen.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
