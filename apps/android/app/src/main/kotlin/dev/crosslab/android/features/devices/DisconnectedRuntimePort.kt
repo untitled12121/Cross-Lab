@@ -8,4 +8,8 @@ class DisconnectedRuntimePort : RuntimePort {
     override fun networkLost() = Unit
 
     override fun networkAvailable() = Unit
+
+    override fun disconnectPeer() = Unit
+
+    override fun reconnectPeer() = Unit
 }
