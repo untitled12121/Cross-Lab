@@ -1,14 +1,18 @@
 use crate::{
     features::{
         appearance::{active_theme, font_weight},
-        devices::{DesktopRuntimeController, DevicesFeatureState, TrustDisplay},
+        devices::{DesktopRuntimeController, DevicesFeatureState},
         owner::OwnerFeatureState,
+        pairing::DesktopPairingInvitation,
     },
     pages::control_center::{
-        _components::{devices_content, owner_content},
+        _components::{devices_content, owner_content, pairing_invitation_panel},
         layout::control_center_layout,
     },
 };
+#[cfg(feature = "development-provisioning")]
+use crate::features::devices::TrustDisplay;
+
 use gpui_kit::{
     Context, InteractiveElement as _, IntoElement, ParentElement as _, Render, Styled as _, Window,
     base::Button, component::theme::ActiveTheme as _, div, px,
@@ -25,6 +29,8 @@ pub struct ControlCenterPage {
     devices: DevicesFeatureState,
     owner: OwnerFeatureState,
     runtime: DesktopRuntimeController,
+    pairing_invitation: Option<DesktopPairingInvitation>,
+    pairing_busy: bool,
     notice: Option<String>,
 }
 
@@ -72,6 +78,8 @@ impl ControlCenterPage {
             devices,
             owner,
             runtime,
+            pairing_invitation: None,
+            pairing_busy: false,
             notice: None,
         }
     }
@@ -80,6 +88,50 @@ impl ControlCenterPage {
         self.section = section;
         self.notice = None;
         cx.notify();
+    }
+
+    fn create_pairing_invitation(&mut self, cx: &mut Context<Self>) {
+        if self.pairing_busy {
+            return;
+        }
+
+        if let Some(mut invitation) = self.pairing_invitation.take() {
+            let _ = invitation.cancel();
+        }
+        self.pairing_busy = true;
+        self.notice = Some("Creating a protected one-time pairing invitation…".to_owned());
+        cx.notify();
+
+        cx.spawn(async move |this, cx| {
+            let result = DesktopPairingInvitation::create().await;
+            let _ = this.update(cx, |page, cx| {
+                page.pairing_busy = false;
+                match result {
+                    Ok(invitation) => {
+                        page.owner.set_product_identity(
+                            invitation.owner_id().to_owned(),
+                            invitation.local_device_id().to_owned(),
+                        );
+                        page.pairing_invitation = Some(invitation);
+                        page.notice = None;
+                    }
+                    Err(error) => {
+                        page.pairing_invitation = None;
+                        page.notice = Some(error.to_string());
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn cancel_pairing_invitation(&mut self, cx: &mut Context<Self>) {
+        if let Some(mut invitation) = self.pairing_invitation.take() {
+            let _ = invitation.cancel();
+            self.notice = Some("Pairing invitation cancelled.".to_owned());
+            cx.notify();
+        }
     }
 
     fn disconnect_peer(&mut self, cx: &mut Context<Self>) {
@@ -169,13 +221,59 @@ impl Render for ControlCenterPage {
                     .child("Owner"),
             );
 
+        let mut actions = div()
+            .flex()
+            .items_center()
+            .gap(px(appearance.spacing.sm))
+            .child(
+                Button::new("add-device")
+                    .accessibility_label(if self.pairing_invitation.is_some() {
+                        "Regenerate Add Device invitation"
+                    } else {
+                        "Add device"
+                    })
+                    .disabled(self.pairing_busy)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.create_pairing_invitation(cx);
+                    }))
+                    .h(px(appearance.metrics.control_height_default))
+                    .px(px(appearance.spacing.lg))
+                    .border_1()
+                    .border_color(theme.border)
+                    .bg(theme.accent)
+                    .text_color(theme.accent_foreground)
+                    .focus_visible(|style| style.border_color(theme.ring))
+                    .child(if self.pairing_busy {
+                        "Preparing…"
+                    } else if self.pairing_invitation.is_some() {
+                        "Regenerate"
+                    } else {
+                        "Add Device"
+                    }),
+            );
+
+        if self.pairing_invitation.is_some() {
+            actions = actions.child(
+                Button::new("cancel-pairing")
+                    .accessibility_label("Cancel pairing invitation")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.cancel_pairing_invitation(cx);
+                    }))
+                    .h(px(appearance.metrics.control_height_default))
+                    .px(px(appearance.spacing.lg))
+                    .border_1()
+                    .border_color(theme.border)
+                    .bg(theme.secondary)
+                    .text_color(theme.secondary_foreground)
+                    .focus_visible(|style| style.border_color(theme.ring))
+                    .child("Cancel"),
+            );
+        }
+
         #[cfg(feature = "development-provisioning")]
-        let actions = self.devices.current().map(|device| {
+        if let Some(device) = self.devices.current() {
             let revoked = device.trust() == TrustDisplay::Revoked;
-            div()
-                .flex()
-                .items_center()
-                .gap(px(appearance.spacing.sm))
+            actions = actions
                 .child(
                     Button::new("disconnect-peer")
                         .accessibility_label("Disconnect current device")
@@ -206,14 +304,22 @@ impl Render for ControlCenterPage {
                         .text_color(theme.danger_foreground)
                         .focus_visible(|style| style.border_color(theme.ring))
                         .child("Revoke"),
-                )
-        });
+                );
+        }
 
-        #[cfg(not(feature = "development-provisioning"))]
-        let actions = None;
+        let pairing_panel = self
+            .pairing_invitation
+            .as_ref()
+            .map(|invitation| pairing_invitation_panel(invitation, cx));
 
         let content = match self.section {
-            Section::Devices => devices_content(&self.devices, actions, self.notice.as_deref(), cx),
+            Section::Devices => devices_content(
+                &self.devices,
+                Some(actions),
+                pairing_panel,
+                self.notice.as_deref(),
+                cx,
+            ),
             Section::Owner => owner_content(&self.owner, cx),
         };
 
