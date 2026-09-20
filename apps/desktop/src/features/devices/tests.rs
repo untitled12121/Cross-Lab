@@ -1,5 +1,5 @@
 use crosslab_core::{SessionState, TransportSecurityClass};
-use crosslab_identity::DeviceId;
+use crosslab_identity::{DeviceId, OwnerId};
 use crosslab_policy::{NetworkClass, TrustState};
 use crosslab_protocol::ProtocolVersion;
 use crosslab_runtime::ConnectivityState;
@@ -12,6 +12,8 @@ use super::{
 #[test]
 fn maps_runtime_status_into_presentation_safe_state() {
     let state = DevicePresentation::from_fields(StatusFields {
+        owner_id: Some(OwnerId::from_bytes([0xaa; 32])),
+        local_device_id: Some(DeviceId::from_bytes([0xa1; 32])),
         peer_device_id: Some(DeviceId::from_bytes([0xab; 32])),
         trust_state: TrustState::Trusted,
         connectivity: ConnectivityState::Connected,
@@ -23,6 +25,8 @@ fn maps_runtime_status_into_presentation_safe_state() {
         capability_count: 2,
     });
 
+    assert_eq!(state.owner_id(), Some("aaaaaaaaaaaaaaaa"));
+    assert_eq!(state.local_device_id(), Some("a1a1a1a1a1a1a1a1"));
     assert_eq!(state.peer_id(), Some("abababababababab"));
     assert_eq!(state.trust(), TrustDisplay::Trusted);
     assert_eq!(state.connectivity(), ConnectivityDisplay::Connected);
@@ -37,6 +41,8 @@ fn maps_runtime_status_into_presentation_safe_state() {
 #[test]
 fn maps_fail_closed_runtime_states_without_secret_material() {
     let state = DevicePresentation::from_fields(StatusFields {
+        owner_id: Some(OwnerId::from_bytes([0xcc; 32])),
+        local_device_id: Some(DeviceId::from_bytes([0xc1; 32])),
         peer_device_id: Some(DeviceId::from_bytes([0xcd; 32])),
         trust_state: TrustState::Revoked,
         connectivity: ConnectivityState::Disconnected,
