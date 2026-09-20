@@ -2,7 +2,7 @@ use core::fmt;
 
 use crosslab_identity::{DeviceId, OwnerId};
 
-use super::{PairingId, PairingSecret};
+use super::{PairingBootstrapCode, PairingId, PairingSecret};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PairingInstant(u64);
@@ -86,6 +86,14 @@ impl PairingInvitation {
 
     pub const fn state(&self) -> PairingInvitationState {
         self.state
+    }
+
+    pub fn bootstrap_code_at(
+        &mut self,
+        now: PairingInstant,
+    ) -> Result<PairingBootstrapCode, PairingInvitationError> {
+        self.ensure_pending_at(now)?;
+        Ok(PairingBootstrapCode::from_invitation(self))
     }
 
     pub fn ensure_pending_at(&mut self, now: PairingInstant) -> Result<(), PairingInvitationError> {
