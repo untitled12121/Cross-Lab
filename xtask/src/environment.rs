@@ -13,6 +13,15 @@ const ANDROID_PLATFORM: &str = "android-37.0";
 pub(crate) fn setup() -> Result<(), String> {
     banner("setup");
     ensure_command("rustup", "--version")?;
+
+    if !android_host_supported() {
+        println!(
+            "crosslab: Android host builds are not configured on {}; desktop setup is ready",
+            env::consts::OS
+        );
+        return Ok(());
+    }
+
     ensure_android_rust_target()?;
 
     if let Some(sdk) = android_sdk_root() {
@@ -41,9 +50,11 @@ pub(crate) fn doctor() -> Result<(), String> {
 
     failed |= report_command("cargo", "--version", "Cargo");
     failed |= report_command("rustc", "--version", "Rust");
-    failed |= report_command("java", "-version", "Java 17");
 
-    match android_sdk_root() {
+    if android_host_supported() {
+        failed |= report_command("java", "-version", "Java 17");
+
+        match android_sdk_root() {
         Some(sdk) => match verify_android_sdk(&sdk) {
             Ok(()) => println!("crosslab: [ok] Android SDK {}", sdk.display()),
             Err(error) => {
@@ -51,10 +62,16 @@ pub(crate) fn doctor() -> Result<(), String> {
                 println!("crosslab: [missing] {error}");
             }
         },
-        None => {
-            failed = true;
-            println!("crosslab: [missing] ANDROID_SDK_ROOT / ANDROID_HOME");
+            None => {
+                failed = true;
+                println!("crosslab: [missing] ANDROID_SDK_ROOT / ANDROID_HOME");
+            }
         }
+    } else {
+        println!(
+            "crosslab: [skip] Android host build is not configured on {}",
+            env::consts::OS
+        );
     }
 
     println!(
@@ -69,6 +86,10 @@ pub(crate) fn doctor() -> Result<(), String> {
         println!("crosslab: host prerequisites look ready");
         Ok(())
     }
+}
+
+pub(crate) fn android_host_supported() -> bool {
+    matches!(env::consts::OS, "linux" | "macos")
 }
 
 pub(crate) fn ensure_android_environment() -> Result<(), String> {
