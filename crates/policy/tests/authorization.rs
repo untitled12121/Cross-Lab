@@ -1,4 +1,4 @@
-use crosslab_crypto::SigningKey;
+use crosslab_crypto::{Signature, SigningKey, SigningProvider, SigningProviderError, VerifyingKey};
 use crosslab_identity::{
     AuthorityDelegation, AuthorityRole, DeviceId, OwnerAuthorityState, OwnerId, OwnerRootRecord,
 };
@@ -8,6 +8,20 @@ use crosslab_policy::{
     LocalCapability, NetworkClass, Obligation, OperationName, OwnerApprovalEvidence, PolicyRule,
     PolicyState, RuleEffect, RuleId, SessionId, TrustState, VerifiedApproval,
 };
+
+struct FailingSigningProvider {
+    verifying_key: VerifyingKey,
+}
+
+impl SigningProvider for FailingSigningProvider {
+    fn verifying_key(&self) -> VerifyingKey {
+        self.verifying_key
+    }
+
+    fn sign_message(&self, _: &[u8]) -> Result<Signature, SigningProviderError> {
+        Err(SigningProviderError)
+    }
+}
 
 struct Fixture {
     source: DeviceId,
@@ -104,6 +118,27 @@ impl Fixture {
         .verify(&authority)
         .unwrap()
     }
+}
+
+#[test]
+fn owner_approval_fails_closed_when_signing_provider_fails() {
+    let fixture = Fixture::new();
+    let context = fixture.context();
+    let (authority, administrative_key) = fixture.administrative_authority();
+    let provider = FailingSigningProvider {
+        verifying_key: administrative_key.verifying_key(),
+    };
+
+    assert_eq!(
+        OwnerApprovalEvidence::issue_with_provider(
+            ApprovalScope::from_context(&context),
+            ApprovalInstant::from_ticks(10),
+            ApprovalInstant::from_ticks(20),
+            &authority,
+            &provider,
+        ),
+        Err(ApprovalError::SigningFailed)
+    );
 }
 
 #[test]
