@@ -8,7 +8,7 @@
 
 Prepare Cross-Lab for normal Add Device / pairing without promoting development provisioning into production identity.
 
-## Task 1 — Signing-provider boundary
+## Task 1 — Signing-provider boundary ✅
 
 - Accept ADR-0013.
 - Add a small fallible signing-provider interface in `crosslab-crypto`.
@@ -16,9 +16,9 @@ Prepare Cross-Lab for normal Add Device / pairing without promoting development 
 - Refactor identity, approval, trust, pairing, and session-authentication signing paths to consume the provider.
 - Preserve all existing cryptographic/wire vectors.
 
-## Task 2 — Product pairing bootstrap envelope
+## Task 2 — Product pairing bootstrap envelope ✅
 
-- Add a versioned presentation/bootstrap payload for the accepted pairing profile.
+- Accept ADR-0014 and add the versioned `crosslab:pair:v1:` presentation/bootstrap payload for the accepted pairing profile.
 - Keep the 256-bit secret single-use and out of normal network messages.
 - Keep transport/discovery hints explicitly non-authoritative.
 - Do not add a short numeric-code fallback.
