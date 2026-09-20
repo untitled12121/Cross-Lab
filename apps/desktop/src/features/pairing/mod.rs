@@ -119,9 +119,6 @@ impl DesktopPairingInvitation {
         )
     }
 
-    pub(crate) fn invitation_mut(&mut self) -> &mut PairingInvitation {
-        &mut self.invitation
-    }
 }
 
 pub struct QrModules {
