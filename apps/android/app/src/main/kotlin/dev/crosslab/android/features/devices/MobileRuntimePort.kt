@@ -14,6 +14,8 @@ import uniffi.crosslab_mobile_ffi.MobileTrustState
 class MobileRuntimePort(
     private val developmentProvisioningPath: String? = null,
 ) : RuntimePort {
+    override val peerControlAvailable: Boolean = developmentProvisioningPath != null
+
     private val runtime = MobileRuntime()
     private var developmentConfigured = false
     private val listeners = CopyOnWriteArraySet<(RuntimeSnapshot) -> Unit>()
