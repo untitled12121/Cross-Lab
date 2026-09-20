@@ -1,6 +1,7 @@
 use crosslab_core::{SessionAuthError, SessionAuthRole, SessionAuthTranscriptV1};
 use crosslab_crypto::{
-    CanonicalTranscript, SignatureAlgorithm, SigningKey, blake3_256, signed_object_digest,
+    CanonicalTranscript, Signature, SignatureAlgorithm, SigningKey, SigningProvider,
+    SigningProviderError, VerifyingKey, blake3_256, signed_object_digest,
 };
 use crosslab_identity::{
     AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,
@@ -12,6 +13,20 @@ const FEATURE_SET_DOMAIN: &[u8] = b"crosslab.session-auth.feature-set.v1\0";
 const CHANNEL_PROFILE_DOMAIN: &[u8] = b"crosslab.session-auth.channel-binding-profile.v1\0";
 const CHANNEL_VALUE_DOMAIN: &[u8] = b"crosslab.session-auth.channel-binding-value.v1\0";
 const INITIATOR_PROOF_LABEL: &[u8] = b"crosslab.session-auth.initiator-proof.v1";
+
+struct FailingSigningProvider {
+    verifying_key: VerifyingKey,
+}
+
+impl SigningProvider for FailingSigningProvider {
+    fn verifying_key(&self) -> VerifyingKey {
+        self.verifying_key
+    }
+
+    fn sign_message(&self, _: &[u8]) -> Result<Signature, SigningProviderError> {
+        Err(SigningProviderError)
+    }
+}
 
 struct Fixture {
     owner_id: OwnerId,
@@ -151,6 +166,20 @@ fn session_auth_transcript_matches_canonical_fields_and_golden_digest() {
             193, 66, 221, 201, 81, 21, 62, 210, 103, 196, 131, 43, 7, 5, 14, 52, 99, 81, 160, 66,
             173, 141, 4, 42, 239, 230, 10, 8, 38, 173, 131, 7,
         ]
+    );
+}
+
+#[test]
+fn provider_failure_fails_closed_when_creating_session_proof() {
+    let fixture = Fixture::new();
+    let transcript = fixture.transcript();
+    let provider = FailingSigningProvider {
+        verifying_key: fixture.initiator_key.verifying_key(),
+    };
+
+    assert_eq!(
+        transcript.create_proof_with_provider(SessionAuthRole::Initiator, &provider),
+        Err(SessionAuthError::SigningFailed)
     );
 }
 
