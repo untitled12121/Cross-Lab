@@ -22,7 +22,7 @@ impl From<uniffi::UnexpectedUniFFICallbackError> for MobileSigningCallbackError 
     }
 }
 
-#[uniffi::export(callback_interface)]
+#[uniffi::export(foreign)]
 pub trait MobileSigningProvider: Send + Sync {
     fn public_key(&self) -> Result<Vec<u8>, MobileSigningCallbackError>;
 
