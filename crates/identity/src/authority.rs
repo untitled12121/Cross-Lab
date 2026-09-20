@@ -1,5 +1,5 @@
 use crosslab_crypto::{
-    CanonicalTranscript, Signature, SignatureAlgorithm, SigningKey, VerifyingKey,
+    CanonicalTranscript, Signature, SignatureAlgorithm, SigningKey, SigningProvider, VerifyingKey,
 };
 
 use crate::{IdentityError, KeyId, OwnerId, OwnerRootRecord};
@@ -70,6 +70,45 @@ impl AuthorityDelegation {
             issuer_root_key_id,
             signature,
         }
+    }
+
+    pub fn issue_with_providers(
+        owner_id: OwnerId,
+        role: AuthorityRole,
+        delegated_key: &dyn SigningProvider,
+        delegation_epoch: u64,
+        issuer_root: &dyn SigningProvider,
+    ) -> Result<Self, IdentityError> {
+        let delegated_algorithm = SignatureAlgorithm::Ed25519;
+        let delegated_public_key = delegated_key.verifying_key();
+        let delegated_key_id = KeyId::derive(delegated_algorithm, &delegated_public_key);
+        let issuer_root_key_id =
+            KeyId::derive(SignatureAlgorithm::Ed25519, &issuer_root.verifying_key());
+        let digest = delegation_digest(
+            1,
+            owner_id,
+            role,
+            delegated_key_id,
+            delegated_algorithm,
+            delegated_public_key,
+            delegation_epoch,
+            issuer_root_key_id,
+        );
+        let signature = issuer_root
+            .sign_digest(&digest)
+            .map_err(|_| IdentityError::SigningFailed)?;
+
+        Ok(Self {
+            schema_version: 1,
+            owner_id,
+            role,
+            delegated_key_id,
+            delegated_algorithm,
+            delegated_public_key,
+            delegation_epoch,
+            issuer_root_key_id,
+            signature,
+        })
     }
 
     pub fn verify(&self, root: &OwnerRootRecord, minimum_epoch: u64) -> Result<(), IdentityError> {
