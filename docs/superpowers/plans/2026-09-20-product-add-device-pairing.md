@@ -41,6 +41,7 @@ Make normal local-first device enrollment usable from the Linux desktop and Andr
 
 ## Verification
 
+- Android target-aware Cargo lock graph is checked by the normal app build.
 - Full Rust format/check/clippy/test gate.
 - Android unit/build/default/development wiring gates.
 - QR parser negative cases and secret-redaction tests.
