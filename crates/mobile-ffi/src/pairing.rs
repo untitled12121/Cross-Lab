@@ -56,16 +56,6 @@ impl MobilePairingBootstrap {
     }
 }
 
-impl MobilePairingBootstrap {
-    pub(crate) fn take(&self) -> Result<PairingBootstrap, MobilePairingBootstrapError> {
-        self.bootstrap
-            .lock()
-            .expect("mobile pairing bootstrap lock poisoned")
-            .take()
-            .ok_or(MobilePairingBootstrapError::AlreadyConsumed)
-    }
-}
-
 #[uniffi::export]
 pub fn scan_pairing_bootstrap(
     code: String,
