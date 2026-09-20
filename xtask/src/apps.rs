@@ -2,7 +2,9 @@ use std::process::Command;
 
 use crate::{
     cli::{App, BuildOptions},
-    environment::{ensure_android_environment, ensure_android_rust_target},
+    environment::{
+        android_host_supported, ensure_android_environment, ensure_android_rust_target,
+    },
     process::{banner, gradle_command, repo_root, run_command},
 };
 
@@ -10,7 +12,15 @@ pub(crate) fn build(options: BuildOptions) -> Result<(), String> {
     match options.app {
         App::All => {
             build_desktop(options.development)?;
-            build_android(options.development)
+            if android_host_supported() {
+                build_android(options.development)
+            } else {
+                println!(
+                    "crosslab: Android host builds are not configured on {}; skipped",
+                    std::env::consts::OS
+                );
+                Ok(())
+            }
         }
         App::Desktop => build_desktop(options.development),
         App::Android => build_android(options.development),
@@ -30,6 +40,7 @@ fn build_desktop(development: bool) -> Result<(), String> {
 }
 
 fn build_android(development: bool) -> Result<(), String> {
+    require_android_host()?;
     banner("android");
     ensure_android_environment()?;
     ensure_android_rust_target()?;
@@ -53,6 +64,7 @@ fn build_android(development: bool) -> Result<(), String> {
 }
 
 pub(crate) fn install_android(development: bool) -> Result<(), String> {
+    require_android_host()?;
     banner("android install");
     ensure_android_environment()?;
     ensure_android_rust_target()?;
@@ -77,4 +89,16 @@ pub(crate) fn run_desktop(development: bool) -> Result<(), String> {
         command.args(["--features", "development-provisioning"]);
     }
     run_command(&mut command)
+}
+
+
+fn require_android_host() -> Result<(), String> {
+    if android_host_supported() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Android host builds are not configured on {}; use a Linux/macOS host or CI",
+            std::env::consts::OS
+        ))
+    }
 }
