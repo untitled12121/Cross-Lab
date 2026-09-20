@@ -26,6 +26,7 @@ crosslab-protocol = { path = "../../crates/protocol" }
 crosslab-runtime = { path = "../../crates/runtime" }
 crosslab-transport-quic = { path = "../../transports/quic", optional = true }
 gpui-kit.workspace = true
+qrcode-rs.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
 serde.workspace = true
 serde_json.workspace = true
