@@ -151,6 +151,88 @@ message PairingBootstrapV1 {
   }
 }
 
+enum AuthorityRoleV1 {
+  AUTHORITY_ROLE_UNSPECIFIED = 0;
+  AUTHORITY_ROLE_DEVICE_SIGNING = 1;
+  AUTHORITY_ROLE_ADMINISTRATIVE = 2;
+  AUTHORITY_ROLE_RECOVERY = 3;
+}
+
+message OwnerRootRecordV1 {
+  uint32 schema_version = 1;
+  bytes owner_id = 2;
+  bytes root_key_id = 3;
+  SignatureAlgorithmV1 root_algorithm = 4;
+  bytes root_public_key = 5;
+  uint64 root_epoch = 6;
+}
+
+message AuthorityDelegationV1 {
+  uint32 schema_version = 1;
+  bytes owner_id = 2;
+  AuthorityRoleV1 role = 3;
+  bytes delegated_key_id = 4;
+  SignatureAlgorithmV1 delegated_algorithm = 5;
+  bytes delegated_public_key = 6;
+  uint64 delegation_epoch = 7;
+  bytes issuer_root_key_id = 8;
+  SignatureAlgorithmV1 signature_algorithm = 9;
+  bytes signature = 10;
+}
+
+message PairingTrustTransitionV1 {
+  uint32 schema_version = 1;
+  bytes owner_id = 2;
+  bytes device_id = 3;
+  uint64 credential_epoch = 4;
+  bytes credential_signed_object_digest = 5;
+  bytes transition_id = 6;
+  bytes pairing_evidence_digest = 7;
+  bytes issuer_key_id = 8;
+  SignatureAlgorithmV1 signature_algorithm = 9;
+  bytes signature = 10;
+}
+
+message ProductPairingCredentialBundleV1 {
+  OwnerRootRecordV1 owner_root = 1;
+  AuthorityDelegationV1 device_signing = 2;
+  DeviceCredentialV1 credential = 3;
+}
+
+message ProductPairingTrustBundleV1 {
+  DeviceCredentialV1 credential = 1;
+  PairingTrustTransitionV1 transition = 2;
+}
+
+enum PairingAckKindV1 {
+  PAIRING_ACK_KIND_UNSPECIFIED = 0;
+  PAIRING_ACK_KIND_PERSISTED = 1;
+  PAIRING_ACK_KIND_COMPLETE = 2;
+}
+
+message PairingAckV1 {
+  bytes pairing_id = 1;
+  PairingRoleV1 role = 2;
+  PairingAckKindV1 kind = 3;
+}
+
+message PairingCancelV1 {
+  bytes pairing_id = 1;
+}
+
+message ProductPairingV1 {
+  uint32 pairing_profile = 1;
+  oneof body {
+    PairingHelloV1 hello = 2;
+    PairingConfirmationV1 confirmation = 3;
+    ProductPairingCredentialBundleV1 credential_bundle = 4;
+    PairingCredentialAcceptedV1 credential_accepted = 5;
+    ProductPairingTrustBundleV1 trust_bundle = 6;
+    PairingAckV1 ack = 7;
+    PairingCancelV1 cancel = 8;
+  }
+}
+
 enum SessionAuthRoleV1 {
   SESSION_AUTH_ROLE_UNSPECIFIED = 0;
   SESSION_AUTH_ROLE_INITIATOR = 1;
