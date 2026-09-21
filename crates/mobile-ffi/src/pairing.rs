@@ -62,6 +62,16 @@ impl MobilePairingBootstrap {
     }
 }
 
+impl MobilePairingBootstrap {
+    pub(crate) fn take(&self) -> Result<PairingBootstrap, MobilePairingBootstrapError> {
+        self.bootstrap
+            .lock()
+            .expect("mobile pairing bootstrap lock poisoned")
+            .take()
+            .ok_or(MobilePairingBootstrapError::AlreadyConsumed)
+    }
+}
+
 impl core::fmt::Debug for MobilePairingBootstrap {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         formatter.write_str("MobilePairingBootstrap([REDACTED])")
