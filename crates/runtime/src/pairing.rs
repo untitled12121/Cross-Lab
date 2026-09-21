@@ -960,10 +960,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            inviter.verify_joiner_confirmation(
-                &confirmation,
-                PairingInstant::from_ticks(21),
-            ),
+            inviter.verify_joiner_confirmation(&confirmation, PairingInstant::from_ticks(21),),
             Err(ProductPairingError::InvalidState)
         );
         assert_eq!(inviter.state(), ProductPairingState::Failed);
