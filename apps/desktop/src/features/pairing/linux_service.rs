@@ -165,11 +165,13 @@ impl LinuxProductPairingService {
                     server,
                     advertisement,
                     exchange,
-                    authority,
-                    issuer,
-                    started_at,
+                    ServiceContext {
+                        authority,
+                        issuer,
+                        started_at,
+                        status_tx,
+                    },
                     command_rx,
-                    status_tx,
                 ));
             })
             .map_err(|_| LinuxPairingServiceError::Thread)?;
@@ -203,16 +205,26 @@ enum ServiceCommand {
     Cancel,
 }
 
+struct ServiceContext {
+    authority: crosslab_identity::OwnerAuthorityState,
+    issuer: LinuxEd25519Signer,
+    started_at: Instant,
+    status_tx: watch::Sender<DesktopPairingStage>,
+}
+
 async fn run_service(
     server: ProductPairingQuicServer,
     advertisement: LinuxPairingAdvertisement,
     mut exchange: ProductPairingInviterExchange,
-    authority: crosslab_identity::OwnerAuthorityState,
-    issuer: LinuxEd25519Signer,
-    started_at: Instant,
+    context: ServiceContext,
     mut command_rx: mpsc::Receiver<ServiceCommand>,
-    status_tx: watch::Sender<DesktopPairingStage>,
 ) {
+    let ServiceContext {
+        authority,
+        issuer,
+        started_at,
+        status_tx,
+    } = context;
     let mut advertisement = Some(advertisement);
     let mut channel = loop {
         let remaining = INVITATION_LIFETIME.saturating_sub(started_at.elapsed());
