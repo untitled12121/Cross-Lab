@@ -334,7 +334,9 @@ impl Render for ControlCenterPage {
                         "Preparing…"
                     } else {
                         match self.pairing_invitation.as_ref() {
-                            Some(invitation) if invitation.status().terminal() => "Add another device",
+                            Some(invitation) if invitation.status().terminal() => {
+                                "Add another device"
+                            }
                             Some(_) => "Regenerate",
                             None => "Add Device",
                         }
