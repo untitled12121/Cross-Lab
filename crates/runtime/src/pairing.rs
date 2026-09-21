@@ -756,9 +756,10 @@ mod tests {
             )
             .unwrap();
         let inviter_commit = completion.commit();
-        let joiner_commit = joiner
+        let joiner_completion = joiner
             .accept_inviter_trust(completion.reciprocal_trust(), &fixture.authority)
             .unwrap();
+        let joiner_commit = joiner_completion.peer_commit();
 
         assert_eq!(inviter.state(), ProductPairingState::AwaitingPersistence);
         assert_eq!(joiner.state(), ProductPairingState::AwaitingPersistence);
@@ -768,6 +769,15 @@ mod tests {
             inviter_commit.peer_trust().device_id(),
             credential.device_id()
         );
+        assert_eq!(joiner_completion.owner_root(), *fixture.authority.root());
+        assert_eq!(
+            joiner_completion.device_signing(),
+            *fixture
+                .authority
+                .current_delegation(AuthorityRole::DeviceSigning)
+                .unwrap()
+        );
+        assert_eq!(joiner_completion.local_credential(), credential);
         assert_eq!(joiner_commit.peer_credential(), fixture.inviter_credential);
         assert_eq!(joiner_commit.peer_trust().state(), TrustState::Trusted);
         assert_eq!(
