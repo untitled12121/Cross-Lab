@@ -615,7 +615,6 @@ fn network_exchange_rejects_wrong_message_type_before_secret_confirmation() {
     assert_eq!(inviter.state(), ProductPairingExchangeState::Failed);
 }
 
-
 #[test]
 fn network_exchange_peer_cancel_is_terminal_for_both_roles() {
     let fixture = Fixture::new();
