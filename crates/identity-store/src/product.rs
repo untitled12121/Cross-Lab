@@ -721,7 +721,9 @@ mod tests {
         assert_eq!(loaded.revision(), second.revision());
 
         let restored = ProductIdentityState::decode(loaded.payload()).unwrap();
-        restored.validate_providers(&root, &issuer, &device).unwrap();
+        restored
+            .validate_providers(&root, &issuer, &device)
+            .unwrap();
         let peer = restored.trusted_peer(credential.device_id()).unwrap();
         assert_eq!(peer.credential(), credential);
         assert_eq!(
@@ -755,8 +757,16 @@ mod tests {
         assert_eq!(loaded.revision(), second.revision());
         let restored = ProductIdentityState::decode(loaded.payload()).unwrap();
         assert_eq!(restored.trusted_peers().len(), 1);
-        assert!(restored.trusted_peer(DeviceId::from_bytes([0x72; 32])).is_some());
-        assert!(restored.trusted_peer(DeviceId::from_bytes([0x73; 32])).is_none());
+        assert!(
+            restored
+                .trusted_peer(DeviceId::from_bytes([0x72; 32]))
+                .is_some()
+        );
+        assert!(
+            restored
+                .trusted_peer(DeviceId::from_bytes([0x73; 32]))
+                .is_none()
+        );
     }
 
     #[test]
@@ -764,10 +774,7 @@ mod tests {
         let (state, _, issuer, _) = fixture();
         let store = crate::MemoryIdentityStore::default();
         let first = store.compare_and_swap(None, state.encode()).unwrap();
-        let old_anchor = crate::IdentityStoreAnchor::new(
-            first.revision(),
-            first.envelope_digest(),
-        );
+        let old_anchor = crate::IdentityStoreAnchor::new(first.revision(), first.envelope_digest());
 
         let mut paired = state;
         add_peer(&mut paired, &issuer, 0x81);
