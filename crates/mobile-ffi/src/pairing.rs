@@ -1,8 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use crosslab_core::{
-    PAIRING_DNS_SD_SERVICE_TYPE, PairingBootstrap, PairingBootstrapError,
-    pairing_dns_sd_instance,
+    PAIRING_DNS_SD_SERVICE_TYPE, PairingBootstrap, PairingBootstrapError, pairing_dns_sd_instance,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
