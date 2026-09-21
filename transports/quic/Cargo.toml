@@ -21,6 +21,7 @@ crosslab-identity = { path = "../../crates/identity" }
 crosslab-policy = { path = "../../crates/policy" }
 crosslab-protocol = { path = "../../crates/protocol" }
 quinn.workspace = true
+rcgen.workspace = true
 rustls.workspace = true
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
@@ -29,5 +30,4 @@ tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
 [dev-dependencies]
 crosslab-runtime = { path = "../../crates/runtime" }
 crosslab-sim = { path = "../../apps/sim" }
-rcgen.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }
