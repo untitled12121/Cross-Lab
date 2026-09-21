@@ -5,7 +5,10 @@ use crosslab_core::{
     PairingJoinerFlow,
 };
 use crosslab_crypto::{SigningProvider, random_bytes};
-use crosslab_identity::{DeviceCredential, DeviceId, IdentityError, OwnerAuthorityState};
+use crosslab_identity::{
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, IdentityError,
+    OwnerAuthorityState, OwnerRootRecord,
+};
 use crosslab_policy::{PairingTrustTransition, TransitionId, TrustRecord};
 use crosslab_protocol::{
     PairingConfirmation, PairingCredentialAccepted, PairingHello, PairingRole,
@@ -76,6 +79,32 @@ impl ProductPairingInviterCompletion {
 
     pub const fn reciprocal_trust(&self) -> ProductPairingTrustBundle {
         self.reciprocal_trust
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProductPairingJoinerCompletion {
+    owner_root: OwnerRootRecord,
+    device_signing: AuthorityDelegation,
+    local_credential: DeviceCredential,
+    peer_commit: ProductPairingCommit,
+}
+
+impl ProductPairingJoinerCompletion {
+    pub const fn owner_root(&self) -> OwnerRootRecord {
+        self.owner_root
+    }
+
+    pub const fn device_signing(&self) -> AuthorityDelegation {
+        self.device_signing
+    }
+
+    pub const fn local_credential(&self) -> DeviceCredential {
+        self.local_credential
+    }
+
+    pub const fn peer_commit(&self) -> ProductPairingCommit {
+        self.peer_commit
     }
 }
 
@@ -358,6 +387,8 @@ pub struct ProductPairingJoiner {
     hello: PairingHello,
     bootstrap: Option<PairingBootstrap>,
     flow: Option<PairingJoinerFlow>,
+    owner_root: Option<OwnerRootRecord>,
+    device_signing: Option<AuthorityDelegation>,
     accepted_credential: Option<DeviceCredential>,
     state: ProductPairingState,
 }
@@ -395,6 +426,8 @@ impl ProductPairingJoiner {
             hello,
             bootstrap: Some(bootstrap),
             flow: None,
+            owner_root: None,
+            device_signing: None,
             accepted_credential: None,
             state: ProductPairingState::AwaitingPeerHello,
         })
@@ -472,6 +505,12 @@ impl ProductPairingJoiner {
         if self.state != ProductPairingState::AwaitingCredential {
             return self.fail(ProductPairingError::InvalidState);
         }
+        let owner_root = *authority.root();
+        let device_signing =
+            match authority.current_delegation(AuthorityRole::DeviceSigning) {
+                Ok(delegation) => *delegation,
+                Err(error) => return self.fail(error.into()),
+            };
         let result = self
             .flow
             .as_mut()
@@ -479,6 +518,8 @@ impl ProductPairingJoiner {
             .accept_credential_with_provider(authority, credential, local_signer);
         match result {
             Ok(accepted) => {
+                self.owner_root = Some(owner_root);
+                self.device_signing = Some(device_signing);
                 self.accepted_credential = Some(*credential);
                 self.state = ProductPairingState::AwaitingPeerTrust;
                 Ok(accepted)
@@ -495,10 +536,23 @@ impl ProductPairingJoiner {
         &mut self,
         bundle: ProductPairingTrustBundle,
         authority: &OwnerAuthorityState,
-    ) -> Result<ProductPairingCommit, ProductPairingError> {
+    ) -> Result<ProductPairingJoinerCompletion, ProductPairingError> {
         if self.state != ProductPairingState::AwaitingPeerTrust {
             return self.fail(ProductPairingError::InvalidState);
         }
+
+        let owner_root = match self.owner_root {
+            Some(root) => root,
+            None => return self.fail(ProductPairingError::InvalidState),
+        };
+        let device_signing = match self.device_signing {
+            Some(delegation) => delegation,
+            None => return self.fail(ProductPairingError::InvalidState),
+        };
+        let local_credential = match self.accepted_credential {
+            Some(credential) => credential,
+            None => return self.fail(ProductPairingError::InvalidState),
+        };
 
         let result = self
             .flow
@@ -508,10 +562,15 @@ impl ProductPairingJoiner {
         match result {
             Ok(trust) => {
                 self.state = ProductPairingState::AwaitingPersistence;
-                Ok(ProductPairingCommit {
-                    peer_credential: bundle.credential,
-                    peer_transition: bundle.transition,
-                    peer_trust: trust,
+                Ok(ProductPairingJoinerCompletion {
+                    owner_root,
+                    device_signing,
+                    local_credential,
+                    peer_commit: ProductPairingCommit {
+                        peer_credential: bundle.credential,
+                        peer_transition: bundle.transition,
+                        peer_trust: trust,
+                    },
                 })
             }
             Err(error) => self.fail(error.into()),
@@ -546,6 +605,8 @@ impl ProductPairingJoiner {
 
         self.bootstrap = None;
         self.flow = None;
+        self.owner_root = None;
+        self.device_signing = None;
         self.accepted_credential = None;
         self.state = ProductPairingState::Cancelled;
         Ok(())
