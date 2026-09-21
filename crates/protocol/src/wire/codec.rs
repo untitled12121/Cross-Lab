@@ -111,7 +111,9 @@ impl fmt::Display for ProtocolWireError {
             Self::MissingPairingBootstrapBody => "pairing bootstrap body is missing",
             Self::MissingProductPairingBody => "product pairing body is missing",
             Self::MissingProductPairingOwnerRoot => "product pairing owner root is missing",
-            Self::MissingProductPairingDelegation => "product pairing authority delegation is missing",
+            Self::MissingProductPairingDelegation => {
+                "product pairing authority delegation is missing"
+            }
             Self::MissingProductPairingCredential => "product pairing credential is missing",
             Self::MissingProductPairingTrustTransition => {
                 "product pairing trust transition is missing"
