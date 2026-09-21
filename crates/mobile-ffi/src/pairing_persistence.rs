@@ -74,7 +74,6 @@ pub fn product_identity_from_joiner_completion(
     Ok(MobileProductIdentity::from_state(&identity, true))
 }
 
-
 #[cfg(test)]
 mod tests {
     use crosslab_core::{PairingBootstrap, PairingInstant, PairingInvitation};
@@ -142,18 +141,12 @@ mod tests {
         let bootstrap = PairingBootstrap::decode(code.as_str()).unwrap();
         drop(code);
 
-        let mut inviter = ProductPairingInviter::new(
-            invitation,
-            inviter_identity.local_credential(),
-            &authority,
-        )
-        .unwrap();
-        let mut joiner = ProductPairingJoiner::new(
-            bootstrap,
-            DeviceId::from_bytes([0x95; 32]),
-            &joiner_key,
-        )
-        .unwrap();
+        let mut inviter =
+            ProductPairingInviter::new(invitation, inviter_identity.local_credential(), &authority)
+                .unwrap();
+        let mut joiner =
+            ProductPairingJoiner::new(bootstrap, DeviceId::from_bytes([0x95; 32]), &joiner_key)
+                .unwrap();
 
         inviter
             .accept_joiner_hello(joiner.hello(), PairingInstant::from_ticks(10))
@@ -199,9 +192,11 @@ mod tests {
         inviter_restored
             .validate_providers(&root, &issuer, &inviter_key)
             .unwrap();
-        assert!(inviter_restored
-            .trusted_peer(joiner_credential.device_id())
-            .is_some());
+        assert!(
+            inviter_restored
+                .trusted_peer(joiner_credential.device_id())
+                .is_some()
+        );
 
         let mobile_joiner_completion = Arc::new(MobileProductPairingJoinerCompletion {
             inner: joiner_completion,
@@ -215,9 +210,11 @@ mod tests {
         joiner_restored
             .validate_local_device_provider(&joiner_key)
             .unwrap();
-        assert!(joiner_restored
-            .trusted_peer(inviter_identity.local_device_id())
-            .is_some());
+        assert!(
+            joiner_restored
+                .trusted_peer(inviter_identity.local_device_id())
+                .is_some()
+        );
 
         assert!(format!("{mobile_inviter_commit:?}").contains("[REDACTED]"));
         assert!(format!("{mobile_joiner_completion:?}").contains("[REDACTED]"));
