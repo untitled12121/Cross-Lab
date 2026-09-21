@@ -47,10 +47,7 @@ pub struct ProductPairingTrustBundle {
 }
 
 impl ProductPairingTrustBundle {
-    pub const fn new(
-        credential: DeviceCredential,
-        transition: PairingTrustTransition,
-    ) -> Self {
+    pub const fn new(credential: DeviceCredential, transition: PairingTrustTransition) -> Self {
         Self {
             credential,
             transition,
