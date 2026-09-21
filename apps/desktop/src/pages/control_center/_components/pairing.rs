@@ -72,7 +72,11 @@ pub(crate) fn pairing_invitation_panel(invitation: &DesktopPairingInvitation, cx
             },
             cx,
         ))
-        .child(info("Transport", "Route discovery is separate from identity", cx));
+        .child(info(
+            "Transport",
+            "Route discovery is separate from identity",
+            cx,
+        ));
 
     let pairing_body = if status == DesktopPairingStage::Waiting {
         div()
