@@ -1755,6 +1755,7 @@ dependencies = [
  "blake3",
  "crosslab-crypto",
  "crosslab-identity",
+ "crosslab-policy",
 ]
 
 [[package]]
