@@ -10,12 +10,12 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 
 ## Canonical Baseline
 
-- Current `main` before PR #53 merge: `711b7c0fadfa53be5a17b5b8fd8ed10c808b14a8`.
+- Current `main` after PR #53: `9453b0e7f3e67578c79615acb1034c849a82603d`.
 - PR #49 — Linux Add Device QR invitation UI + Android CameraX/ML Kit scanner: merged as `445bbf32178dff94f339fc1ae80447967f5da215`; exact-head CI `35533414673` green on `7d3176ffd4387d3e29982ae5fe641249d6d33445`.
 - PR #50 — shared product pairing coordinator + durable reciprocal trust persistence: merged as `3af825e6f78bef4512168f587f452c1b0267b6a7`; exact-head CI `35567548228` and Fuzz Smoke `35567548208` green on `ec59f99f7c09898aa2533d8b40bd4e980fa2b022`.
 - PR #51 — ADR-0016 LAN discovery profile + versioned product-pairing wire + provisional Quinn pairing channel: merged as `cf2add350ffa60056d74ac57b0a187a0297d8777`; exact-head CI `35593397861` and Fuzz Smoke `35593397844` green on `2702cc0c926cf044c65aef0376f573aaedae8c6f`.
 - PR #52 — bounded DNS-SD discovery adapters: merged as `2881a8cb042207bf55a1ede9f2dc61f30ccd4eb9`; exact-head CI `35598750651` green on `2ef9ab362fb9fa59d7693662ec8de2f65e5031af`.
-- PR #53 — product pairing network/platform lifecycle: exact implementation head `cc099fd7bf3335f51f54d4e09f2d002ab136e4e0`; CI `35641211049` green after the final lifecycle/security review. Documentation checkpoint follows before merge.
+- PR #53 — product pairing network/platform lifecycle: merged as `9453b0e7f3e67578c79615acb1034c849a82603d`; implementation head `cc099fd7bf3335f51f54d4e09f2d002ab136e4e0` and documentation head `c5570add764ac1e223b08bdb63737abd3b182a25` both passed the full Rust + Android gate (`35641211049` / `35643137494`).
 - Master Architecture revision 2.7 and ADR-0016 govern local product pairing.
 - Physical-evidence continuation branch: `m10-task10-real-device-evidence`.
 - M10 evidence protocol: `docs/research/M10-platform-evidence.md`.
@@ -77,12 +77,11 @@ Phase 3 adaptive networking does not begin until Phase 2 is complete.
 
 ## Exact Next Task
 
-1. merge PR #53 after the documentation checkpoint exact-head gate;
-2. start Phase 2 with automatic trusted-device connection/reconnect and device presence/status as one coherent vertical slice;
-3. expose that state cleanly in Linux GPUI and Android Compose;
-4. then continue through permissions, clipboard, resumable file transfer, notifications, audit/history, and revocation/device removal;
-5. keep M10 physical evidence separately pending until owner hardware is available;
-6. stop before Phase 3.
+1. implement Phase 2 automatic trusted-device connection/reconnect and device presence/status as one coherent vertical slice;
+2. expose that state cleanly in Linux GPUI and Android Compose;
+3. then continue through permissions, clipboard, resumable file transfer, notifications, audit/history, and revocation/device removal;
+4. keep M10 physical evidence separately pending until owner hardware is available;
+5. stop before Phase 3.
 
 ## Resume Procedure
 
