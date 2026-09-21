@@ -10,10 +10,11 @@ M1-M9 are complete. M10 host/runtime/UI foundations are integrated on `main`; ph
 
 ## Canonical Baseline
 
-- Current `main` after PR #51: `cf2add350ffa60056d74ac57b0a187a0297d8777`.
+- Current `main` after PR #52: `2881a8cb042207bf55a1ede9f2dc61f30ccd4eb9`.
 - PR #49 — Linux Add Device QR invitation UI + Android CameraX/ML Kit scanner: merged as `445bbf32178dff94f339fc1ae80447967f5da215`; exact-head CI `35533414673` green on `7d3176ffd4387d3e29982ae5fe641249d6d33445`.
 - PR #50 — shared product pairing coordinator + durable reciprocal trust persistence: merged as `3af825e6f78bef4512168f587f452c1b0267b6a7`; exact-head CI `35567548228` and Fuzz Smoke `35567548208` green on `ec59f99f7c09898aa2533d8b40bd4e980fa2b022`.
 - PR #51 — ADR-0016 LAN discovery profile + versioned product-pairing wire + provisional Quinn pairing channel: merged as `cf2add350ffa60056d74ac57b0a187a0297d8777`; exact-head CI `35593397861` and Fuzz Smoke `35593397844` green on `2702cc0c926cf044c65aef0376f573aaedae8c6f`.
+- PR #52 — bounded DNS-SD discovery adapters: merged as `2881a8cb042207bf55a1ede9f2dc61f30ccd4eb9`; exact-head CI `35598750651` green on `2ef9ab362fb9fa59d7693662ec8de2f65e5031af`.
 - Master Architecture revision 2.7 and ADR-0016 govern local product pairing.
 - Physical-evidence continuation branch: `m10-task10-real-device-evidence`.
 - M10 evidence protocol: `docs/research/M10-platform-evidence.md`.
@@ -36,11 +37,10 @@ M1-M9 are complete. M10 host/runtime/UI foundations are integrated on `main`; ph
 - ADR-0016 bounded DNS-SD discovery profile.
 - Versioned product-pairing wire messages for authority/credential bundles, reciprocal trust, persistence/final acknowledgements, and cancellation.
 - Provisional Quinn product-pairing channel with ephemeral invitation TLS material, TLS 1.3 only, no 0-RTT, one connection/one bidirectional stream, bounded frames/timeouts, and graceful final acknowledgement delivery.
+- ADR-0016 shared discovery identity plus Linux Avahi advertisement and Android bounded NsdManager resolution with exact PairingId/TXT filtering.
 
 ## Active / Pending M10 Product Pairing Work
 
-- Linux bounded DNS-SD advertisement lifecycle for a live invitation.
-- Android bounded `NsdManager` discovery after QR validation.
 - Carry the existing shared coordinator over the provisional Quinn channel.
 - Connect Linux Add Device and Android scanner UI lifecycles to real pairing state.
 - Product-visible success only after local persistence acknowledgement.
@@ -74,9 +74,9 @@ Phase 3 adaptive networking does not begin until the Phase 2 MVP is complete.
 
 ## Exact Next Task
 
-1. implement Linux DNS-SD advertisement and Android bounded `NsdManager` discovery against ADR-0016;
-2. wire the shared product pairing coordinator over the Quinn pairing channel;
-3. connect both platform UI lifecycles and persistence acknowledgements;
+1. wire the shared product pairing coordinator over the Quinn pairing channel;
+2. connect Linux invitation/listener/advertisement and Android scan/discovery/client lifecycles;
+3. wire atomic persistence acknowledgements and product-visible success;
 4. complete automated failure/cancellation/timeout/reconnect tests;
 5. checkpoint M10 implementation while keeping physical-device evidence explicitly pending;
 6. continue directly into Phase 2 Linux + Android MVP slices, stopping before Phase 3.
