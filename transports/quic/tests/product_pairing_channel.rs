@@ -86,14 +86,14 @@ async fn pairing_listener_allows_only_one_accept_operation() {
     )
     .unwrap();
 
-    assert_eq!(
-        server.accept().await.unwrap_err(),
-        ProductPairingQuicError::Timeout
-    );
+    assert!(matches!(
+        server.accept().await,
+        Err(ProductPairingQuicError::Timeout)
+    ));
 
     // A timed-out accept is retryable because no joiner was bound to the invitation.
-    assert_eq!(
-        server.accept().await.unwrap_err(),
-        ProductPairingQuicError::Timeout
-    );
+    assert!(matches!(
+        server.accept().await,
+        Err(ProductPairingQuicError::Timeout)
+    ));
 }
