@@ -119,8 +119,9 @@ impl ProductPairingQuicServer {
         let certificate = CertificateDer::from(certified.cert.der().as_ref().to_vec());
         let private_key = PrivatePkcs8KeyDer::from(certified.signing_key.serialize_der());
 
-        let mut tls = rustls::ServerConfig::builder()
-            .with_no_client_auth()
+        let mut tls =
+            rustls::ServerConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
+                .with_no_client_auth()
             .with_single_cert(vec![certificate], private_key.into())
             .map_err(|_| ProductPairingQuicError::Tls)?;
         tls.alpn_protocols = vec![PRODUCT_PAIRING_ALPN_V1.to_vec()];
@@ -205,8 +206,9 @@ impl ProductPairingQuicClient {
         remote_addr: SocketAddr,
         timeouts: ProductPairingQuicTimeouts,
     ) -> Result<ProductPairingQuicChannel, ProductPairingQuicError> {
-        let mut tls = rustls::ClientConfig::builder()
-            .dangerous()
+        let mut tls =
+            rustls::ClientConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
+                .dangerous()
             .with_custom_certificate_verifier(PairingServerCertVerifier::new())
             .with_no_client_auth();
         tls.alpn_protocols = vec![PRODUCT_PAIRING_ALPN_V1.to_vec()];
