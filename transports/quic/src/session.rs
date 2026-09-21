@@ -5,8 +5,8 @@ use crosslab_core::{
     SessionAuthRole as CoreSessionAuthRole, SessionAuthTranscriptV1, SessionError,
     SessionHandshakeSide, SessionState, TransportSecurityClass,
 };
-use crosslab_crypto::{SigningKey, random_bytes};
-use crosslab_identity::{DeviceCredential, OwnerAuthorityState};
+use crosslab_crypto::{SigningProvider, random_bytes};
+use crosslab_identity::{DeviceCredential, DeviceId, OwnerAuthorityState};
 use crosslab_policy::TrustRecord;
 use crosslab_protocol::{
     FeatureSet, FrameLimit, ProtocolRange, SessionAuthBootstrapMessage, SessionAuthHello,
@@ -29,17 +29,22 @@ const SESSION_FAILURE_CODE: VarInt = VarInt::from_u32(3);
 pub struct QuicSessionAuthConfig<'a> {
     authority: &'a OwnerAuthorityState,
     local_credential: DeviceCredential,
-    local_signing_key: &'a SigningKey,
-    peer_trust: &'a TrustRecord,
+    local_signer: &'a dyn SigningProvider,
+    peer_trusts: PeerTrusts<'a>,
     protocol_ranges: Vec<ProtocolRange>,
     features: FeatureSet,
+}
+
+enum PeerTrusts<'a> {
+    One(&'a TrustRecord),
+    Many(&'a [TrustRecord]),
 }
 
 impl<'a> QuicSessionAuthConfig<'a> {
     pub fn new(
         authority: &'a OwnerAuthorityState,
         local_credential: DeviceCredential,
-        local_signing_key: &'a SigningKey,
+        local_signer: &'a dyn SigningProvider,
         peer_trust: &'a TrustRecord,
         protocol_ranges: Vec<ProtocolRange>,
         features: FeatureSet,
@@ -47,10 +52,35 @@ impl<'a> QuicSessionAuthConfig<'a> {
         Self {
             authority,
             local_credential,
-            local_signing_key,
-            peer_trust,
+            local_signer,
+            peer_trusts: PeerTrusts::One(peer_trust),
             protocol_ranges,
             features,
+        }
+    }
+
+    pub fn new_with_peer_trusts(
+        authority: &'a OwnerAuthorityState,
+        local_credential: DeviceCredential,
+        local_signer: &'a dyn SigningProvider,
+        peer_trusts: &'a [TrustRecord],
+        protocol_ranges: Vec<ProtocolRange>,
+        features: FeatureSet,
+    ) -> Self {
+        Self {
+            authority,
+            local_credential,
+            local_signer,
+            peer_trusts: PeerTrusts::Many(peer_trusts),
+            protocol_ranges,
+            features,
+        }
+    }
+
+    fn peer_trust(&self, device_id: DeviceId) -> Option<&TrustRecord> {
+        match self.peer_trusts {
+            PeerTrusts::One(trust) => (trust.device_id() == device_id).then_some(trust),
+            PeerTrusts::Many(trusts) => trusts.iter().find(|trust| trust.device_id() == device_id),
         }
     }
 }
@@ -260,7 +290,7 @@ async fn bootstrap_initiator(
     let responder_hello = expect_hello(receive_bootstrap(&mut control_recv).await?)?;
     let transcript = transcript_for(auth, &initiator_hello, &responder_hello, &binding)?;
     let initiator_proof = transcript
-        .create_proof(CoreSessionAuthRole::Initiator, auth.local_signing_key)
+        .create_proof_with_provider(CoreSessionAuthRole::Initiator, auth.local_signer)
         .map_err(|error| QuicSessionError::Session(SessionError::Auth(error)))?;
     send_bootstrap(
         &mut control_send,
@@ -308,7 +338,7 @@ async fn bootstrap_responder(
     let initiator_proof =
         proof_from_message(expect_proof(receive_bootstrap(&mut control_recv).await?)?);
     let responder_proof = transcript
-        .create_proof(CoreSessionAuthRole::Responder, auth.local_signing_key)
+        .create_proof_with_provider(CoreSessionAuthRole::Responder, auth.local_signer)
         .map_err(|error| QuicSessionError::Session(SessionError::Auth(error)))?;
     send_bootstrap(
         &mut control_send,
@@ -392,13 +422,20 @@ fn authenticate_session(
         responder.protocol_ranges(),
         responder.features(),
     );
+    let peer_device_id = match local_role {
+        CoreSessionAuthRole::Initiator => responder_credential.device_id(),
+        CoreSessionAuthRole::Responder => initiator_credential.device_id(),
+    };
+    let peer_trust = auth.peer_trust(peer_device_id).ok_or_else(|| {
+        QuicSessionError::Session(SessionError::PeerNotTrusted)
+    })?;
     let mut session = LogicalSession::new();
     session.authenticate(SessionActivation::new(
         auth.authority,
         initiator_side,
         responder_side,
         local_role,
-        auth.peer_trust,
+        peer_trust,
         initiator.nonce(),
         responder.nonce(),
         binding,
