@@ -56,7 +56,9 @@ impl fmt::Display for ProductPairingError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Random => formatter.write_str("secure pairing randomness is unavailable"),
-            Self::InvalidState => formatter.write_str("product pairing operation is out of sequence"),
+            Self::InvalidState => {
+                formatter.write_str("product pairing operation is out of sequence")
+            }
             Self::LocalIdentityMismatch => {
                 formatter.write_str("local product identity does not match the pairing invitation")
             }
@@ -451,9 +453,7 @@ impl ProductPairingJoiner {
 mod tests {
     use crosslab_core::{PairingInvitation, PairingSecret};
     use crosslab_crypto::SigningKey;
-    use crosslab_identity::{
-        AuthorityDelegation, AuthorityRole, OwnerId, OwnerRootRecord,
-    };
+    use crosslab_identity::{AuthorityDelegation, AuthorityRole, OwnerId, OwnerRootRecord};
     use crosslab_policy::TrustState;
 
     use super::*;
@@ -568,7 +568,11 @@ mod tests {
             .verify_inviter_confirmation(&inviter_confirmation)
             .unwrap();
         let credential = inviter
-            .issue_joiner_credential(&fixture.authority, &fixture.issuer, PairingInstant::from_ticks(30))
+            .issue_joiner_credential(
+                &fixture.authority,
+                &fixture.issuer,
+                PairingInstant::from_ticks(30),
+            )
             .unwrap();
         let accepted = joiner
             .accept_credential(&fixture.authority, &credential, &fixture.joiner_key)
@@ -643,7 +647,11 @@ mod tests {
             .verify_inviter_confirmation(&inviter_confirmation)
             .unwrap();
         let credential = inviter
-            .issue_joiner_credential(&fixture.authority, &fixture.issuer, PairingInstant::from_ticks(30))
+            .issue_joiner_credential(
+                &fixture.authority,
+                &fixture.issuer,
+                PairingInstant::from_ticks(30),
+            )
             .unwrap();
         let accepted = joiner
             .accept_credential(&fixture.authority, &credential, &fixture.joiner_key)
