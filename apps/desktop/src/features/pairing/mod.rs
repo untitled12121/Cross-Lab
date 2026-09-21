@@ -8,6 +8,12 @@ use crosslab_identity_store::{ProductIdentityError, ProductIdentityState};
 use crosslab_runtime::ProductPairingCommit;
 use qrcode_rs::{Color, EcLevel, QrCode};
 
+#[cfg(target_os = "linux")]
+mod linux_discovery;
+
+#[cfg(target_os = "linux")]
+pub use linux_discovery::{LinuxPairingAdvertisement, LinuxPairingDiscoveryError};
+
 use crate::features::identity_store::{
     LinuxEd25519Signer, LinuxIdentityStore, LinuxIdentityStoreError, LinuxSigningSlot,
 };
