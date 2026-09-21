@@ -285,7 +285,7 @@ pub enum ProductPairingMessage {
     Confirmation(PairingConfirmation),
     CredentialBundle(Box<ProductPairingCredentialBundle>),
     CredentialAccepted(PairingCredentialAccepted),
-    TrustBundle(ProductPairingTrustBundleMessage),
+    TrustBundle(Box<ProductPairingTrustBundleMessage>),
     Ack(ProductPairingAck),
     Cancel { pairing_id: [u8; 16] },
 }
@@ -592,8 +592,8 @@ impl TryFrom<ProductPairingV1> for ProductPairingMessage {
                     .transition
                     .ok_or(ProtocolWireError::MissingProductPairingTrustTransition)?
                     .try_into()?;
-                Ok(Self::TrustBundle(ProductPairingTrustBundleMessage::new(
-                    credential, transition,
+                Ok(Self::TrustBundle(Box::new(
+                    ProductPairingTrustBundleMessage::new(credential, transition),
                 )))
             }
             product_pairing_v1::Body::Ack(ack) => Ok(Self::Ack(ProductPairingAck::new(
