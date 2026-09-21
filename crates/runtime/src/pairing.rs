@@ -623,12 +623,14 @@ mod tests {
     use crosslab_core::{PairingInvitation, PairingSecret};
     use crosslab_crypto::SigningKey;
     use crosslab_identity::{AuthorityDelegation, AuthorityRole, OwnerId, OwnerRootRecord};
+    use crosslab_identity_store::{MemoryIdentityStore, ProductIdentityState};
     use crosslab_policy::TrustState;
 
     use super::*;
 
     struct Fixture {
         authority: OwnerAuthorityState,
+        root_key: SigningKey,
         issuer: SigningKey,
         inviter_key: SigningKey,
         joiner_key: SigningKey,
@@ -675,6 +677,7 @@ mod tests {
 
             Self {
                 authority,
+                root_key,
                 issuer,
                 inviter_key,
                 joiner_key: SigningKey::from_secret_bytes([0x17; 32]),
@@ -784,6 +787,118 @@ mod tests {
             joiner_commit.peer_trust().device_id(),
             fixture.inviter_credential.device_id()
         );
+
+        inviter.mark_persisted().unwrap();
+        joiner.mark_persisted().unwrap();
+        assert_eq!(inviter.state(), ProductPairingState::Complete);
+        assert_eq!(joiner.state(), ProductPairingState::Complete);
+    }
+
+    #[test]
+    fn successful_pairing_persists_both_sides_and_reconstructs_trust() {
+        let fixture = Fixture::new();
+        let (mut inviter, mut joiner) = fixture.coordinators();
+
+        inviter
+            .accept_joiner_hello(joiner.hello(), PairingInstant::from_ticks(10))
+            .unwrap();
+        let joiner_confirmation = joiner.accept_inviter_hello(inviter.hello()).unwrap();
+        let inviter_confirmation = inviter
+            .verify_joiner_confirmation(&joiner_confirmation, PairingInstant::from_ticks(20))
+            .unwrap();
+        joiner
+            .verify_inviter_confirmation(&inviter_confirmation)
+            .unwrap();
+        let joiner_credential = inviter
+            .issue_joiner_credential(
+                &fixture.authority,
+                &fixture.issuer,
+                PairingInstant::from_ticks(30),
+            )
+            .unwrap();
+        let accepted = joiner
+            .accept_credential(
+                &fixture.authority,
+                &joiner_credential,
+                &fixture.joiner_key,
+            )
+            .unwrap();
+        let inviter_completion = inviter
+            .verify_credential_acceptance(
+                &accepted,
+                TransitionId::from_bytes([0x1d; 32]),
+                &fixture.authority,
+                &fixture.issuer,
+                PairingInstant::from_ticks(40),
+            )
+            .unwrap();
+        let joiner_completion = joiner
+            .accept_inviter_trust(inviter_completion.reciprocal_trust(), &fixture.authority)
+            .unwrap();
+
+        let device_signing = *fixture
+            .authority
+            .current_delegation(AuthorityRole::DeviceSigning)
+            .unwrap();
+        let inviter_identity = ProductIdentityState::join_owner_domain(
+            *fixture.authority.root(),
+            device_signing,
+            fixture.inviter_credential,
+            &fixture.inviter_key,
+        )
+        .unwrap()
+        .with_paired_peer(
+            inviter_completion.commit().peer_credential(),
+            inviter_completion.commit().peer_transition(),
+        )
+        .unwrap();
+        let joiner_identity = ProductIdentityState::join_owner_domain(
+            joiner_completion.owner_root(),
+            joiner_completion.device_signing(),
+            joiner_completion.local_credential(),
+            &fixture.joiner_key,
+        )
+        .unwrap()
+        .with_paired_peer(
+            joiner_completion.peer_commit().peer_credential(),
+            joiner_completion.peer_commit().peer_transition(),
+        )
+        .unwrap();
+
+        let inviter_store = MemoryIdentityStore::default();
+        inviter_store
+            .compare_and_swap(None, inviter_identity.encode())
+            .unwrap();
+        let joiner_store = MemoryIdentityStore::default();
+        joiner_store
+            .compare_and_swap(None, joiner_identity.encode())
+            .unwrap();
+
+        let inviter_restored = ProductIdentityState::decode(
+            inviter_store.load().unwrap().unwrap().payload(),
+        )
+        .unwrap();
+        inviter_restored
+            .validate_providers(
+                &fixture.root_key,
+                &fixture.issuer,
+                &fixture.inviter_key,
+            )
+            .unwrap();
+        assert!(inviter_restored
+            .trusted_peer(joiner_credential.device_id())
+            .is_some());
+
+        let joiner_restored = ProductIdentityState::decode(
+            joiner_store.load().unwrap().unwrap().payload(),
+        )
+        .unwrap();
+        joiner_restored
+            .validate_local_device_provider(&fixture.joiner_key)
+            .unwrap();
+        assert!(joiner_restored
+            .trusted_peer(fixture.inviter_credential.device_id())
+            .is_some());
 
         inviter.mark_persisted().unwrap();
         joiner.mark_persisted().unwrap();
