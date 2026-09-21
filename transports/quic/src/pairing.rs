@@ -281,6 +281,21 @@ impl ProductPairingQuicChannel {
         decode_product_pairing(&frame).map_err(Into::into)
     }
 
+    pub async fn finish(mut self) -> Result<(), ProductPairingQuicError> {
+        self.send
+            .finish()
+            .map_err(|_| ProductPairingQuicError::Stream)?;
+        let stopped = timeout(self.message_timeout, self.send.stopped())
+            .await
+            .map_err(|_| ProductPairingQuicError::Timeout)?
+            .map_err(|_| ProductPairingQuicError::Stream)?;
+        if stopped.is_some() {
+            return Err(ProductPairingQuicError::Stream);
+        }
+        self.close();
+        Ok(())
+    }
+
     pub fn close(&self) {
         self.connection
             .close(PAIRING_CLOSE_CODE, b"product pairing channel closed");
