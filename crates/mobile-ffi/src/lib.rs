@@ -21,9 +21,7 @@ pub use identity_store::{MobileIdentityCommit, MobileIdentityStoreError};
 pub use pairing::{
     MobilePairingBootstrap, MobilePairingBootstrapError, MobilePairingBootstrapSummary,
 };
-pub use pairing_persistence::{
-    MobileProductPairingCommit, MobileProductPairingJoinerCompletion,
-};
+pub use pairing_persistence::{MobileProductPairingCommit, MobileProductPairingJoinerCompletion};
 pub use product_identity::{
     MobileProductIdentity, MobileProductIdentityError, MobileSigningCallbackError,
     MobileSigningProvider,
