@@ -10,8 +10,8 @@ pub use actor::{RuntimeActor, RuntimeActorConfig, RuntimeActorError, RuntimeActo
 pub use node::{NodeError, NodeEvent, RuntimeNode};
 pub use pairing::{
     ProductPairingCommit, ProductPairingError, ProductPairingInviter,
-    ProductPairingInviterCompletion, ProductPairingJoiner, ProductPairingState,
-    ProductPairingTrustBundle,
+    ProductPairingInviterCompletion, ProductPairingJoiner, ProductPairingJoinerCompletion,
+    ProductPairingState, ProductPairingTrustBundle,
 };
 pub use status::{ConnectivityState, RuntimeStatus, TransportStatus};
 
