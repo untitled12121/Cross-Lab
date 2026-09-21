@@ -53,6 +53,7 @@ async fn provisional_pairing_channel_round_trips_bounded_messages() {
             )))
             .await
             .unwrap();
+        channel.finish().await.unwrap();
     });
 
     let mut client = ProductPairingQuicClient::connect(
