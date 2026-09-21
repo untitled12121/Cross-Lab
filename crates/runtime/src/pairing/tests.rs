@@ -516,7 +516,6 @@ fn cancellation_drops_uncommitted_pairing_state() {
     );
 }
 
-
 #[test]
 fn network_exchange_carries_pairing_to_reciprocal_completion() {
     let fixture = Fixture::new();
@@ -529,10 +528,7 @@ fn network_exchange_carries_pairing_to_reciprocal_completion() {
         .unwrap();
     let joiner_confirmation = joiner.accept_inviter_hello(inviter_hello).unwrap();
     let inviter_confirmation = inviter
-        .accept_joiner_confirmation(
-            joiner_confirmation,
-            PairingInstant::from_ticks(20),
-        )
+        .accept_joiner_confirmation(joiner_confirmation, PairingInstant::from_ticks(20))
         .unwrap();
     joiner
         .accept_inviter_confirmation(inviter_confirmation)
