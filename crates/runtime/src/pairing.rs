@@ -513,11 +513,10 @@ impl ProductPairingJoiner {
             return self.fail(ProductPairingError::InvalidState);
         }
         let owner_root = *authority.root();
-        let device_signing =
-            match authority.current_delegation(AuthorityRole::DeviceSigning) {
-                Ok(delegation) => *delegation,
-                Err(error) => return self.fail(error.into()),
-            };
+        let device_signing = match authority.current_delegation(AuthorityRole::DeviceSigning) {
+            Ok(delegation) => *delegation,
+            Err(error) => return self.fail(error.into()),
+        };
         let result = self
             .flow
             .as_mut()
@@ -831,11 +830,7 @@ mod tests {
             )
             .unwrap();
         let accepted = joiner
-            .accept_credential(
-                &fixture.authority,
-                &joiner_credential,
-                &fixture.joiner_key,
-            )
+            .accept_credential(&fixture.authority, &joiner_credential, &fixture.joiner_key)
             .unwrap();
         let inviter_completion = inviter
             .verify_credential_acceptance(
@@ -888,31 +883,27 @@ mod tests {
             .compare_and_swap(None, joiner_identity.encode())
             .unwrap();
 
-        let inviter_restored = ProductIdentityState::decode(
-            inviter_store.load().unwrap().unwrap().payload(),
-        )
-        .unwrap();
+        let inviter_restored =
+            ProductIdentityState::decode(inviter_store.load().unwrap().unwrap().payload()).unwrap();
         inviter_restored
-            .validate_providers(
-                &fixture.root_key,
-                &fixture.issuer,
-                &fixture.inviter_key,
-            )
+            .validate_providers(&fixture.root_key, &fixture.issuer, &fixture.inviter_key)
             .unwrap();
-        assert!(inviter_restored
-            .trusted_peer(joiner_credential.device_id())
-            .is_some());
+        assert!(
+            inviter_restored
+                .trusted_peer(joiner_credential.device_id())
+                .is_some()
+        );
 
-        let joiner_restored = ProductIdentityState::decode(
-            joiner_store.load().unwrap().unwrap().payload(),
-        )
-        .unwrap();
+        let joiner_restored =
+            ProductIdentityState::decode(joiner_store.load().unwrap().unwrap().payload()).unwrap();
         joiner_restored
             .validate_local_device_provider(&fixture.joiner_key)
             .unwrap();
-        assert!(joiner_restored
-            .trusted_peer(fixture.inviter_credential.device_id())
-            .is_some());
+        assert!(
+            joiner_restored
+                .trusted_peer(fixture.inviter_credential.device_id())
+                .is_some()
+        );
 
         inviter.mark_persisted().unwrap();
         joiner.mark_persisted().unwrap();
