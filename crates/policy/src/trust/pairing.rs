@@ -15,6 +15,7 @@ const INITIAL_CREDENTIAL_EPOCH: u64 = 0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PairingTrustTransitionError {
+    UnsupportedSchema,
     Identity(IdentityError),
     CredentialMismatch,
     NonInitialCredentialEpoch,
@@ -26,6 +27,9 @@ pub enum PairingTrustTransitionError {
 impl fmt::Display for PairingTrustTransitionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::UnsupportedSchema => {
+                formatter.write_str("pairing trust transition schema is unsupported")
+            }
             Self::Identity(error) => fmt::Display::fmt(error, formatter),
             Self::CredentialMismatch => {
                 formatter.write_str("pairing trust transition credential does not match")
@@ -67,6 +71,31 @@ pub struct PairingTrustTransition {
 }
 
 impl PairingTrustTransition {
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_unverified_signed_parts(
+        schema_version: u16,
+        owner_id: OwnerId,
+        device_id: DeviceId,
+        credential_epoch: u64,
+        credential_signed_object_digest: [u8; 32],
+        transition_id: TransitionId,
+        pairing_evidence_digest: [u8; 32],
+        issuer_key_id: KeyId,
+        signature: Signature,
+    ) -> Self {
+        Self {
+            schema_version,
+            owner_id,
+            device_id,
+            credential_epoch,
+            credential_signed_object_digest,
+            transition_id,
+            pairing_evidence_digest,
+            issuer_key_id,
+            signature,
+        }
+    }
+
     pub fn issue(
         credential: &DeviceCredential,
         transition_id: TransitionId,
@@ -121,6 +150,9 @@ impl PairingTrustTransition {
         credential: &DeviceCredential,
         authority: &OwnerAuthorityState,
     ) -> Result<TrustRecord, PairingTrustTransitionError> {
+        if self.schema_version != 1 {
+            return Err(PairingTrustTransitionError::UnsupportedSchema);
+        }
         if self.credential_epoch != INITIAL_CREDENTIAL_EPOCH
             || credential.credential_epoch() != INITIAL_CREDENTIAL_EPOCH
         {
@@ -181,8 +213,40 @@ impl PairingTrustTransition {
         transcript.digest()
     }
 
+    pub const fn schema_version(&self) -> u16 {
+        self.schema_version
+    }
+
+    pub const fn owner_id(&self) -> OwnerId {
+        self.owner_id
+    }
+
+    pub const fn device_id(&self) -> DeviceId {
+        self.device_id
+    }
+
+    pub const fn credential_epoch(&self) -> u64 {
+        self.credential_epoch
+    }
+
+    pub const fn credential_signed_object_digest(&self) -> [u8; 32] {
+        self.credential_signed_object_digest
+    }
+
+    pub const fn transition_id(&self) -> TransitionId {
+        self.transition_id
+    }
+
     pub const fn pairing_evidence_digest(&self) -> [u8; 32] {
         self.pairing_evidence_digest
+    }
+
+    pub const fn issuer_key_id(&self) -> KeyId {
+        self.issuer_key_id
+    }
+
+    pub const fn signature(&self) -> Signature {
+        self.signature
     }
 }
 
