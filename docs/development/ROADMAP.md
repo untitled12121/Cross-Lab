@@ -6,49 +6,52 @@ This file is a concise navigation view. `docs/architecture/MASTER-ARCHITECTURE.m
 
 **Status: Complete**
 
-Completed milestones:
+P0.1-P0.9 are complete. Closeout record: `docs/plans/phase-0/PHASE-0-CLOSEOUT.md`.
 
-- P0.1 — Project foundation and continuity workflow
-- P0.2 — Threat model and trust boundaries
-- P0.3 — Identity hierarchy, credentials, roles, rotation, and epochs
-- P0.4 — Pairing, trust establishment, and revocation
-- P0.5 — Capability and authorization model
-- P0.6 — Protocol envelope, compatibility, errors, retries, cancellation, replay, and canonical transcripts
-- P0.7 — Secure logical sessions, channel binding, control/data-plane authorization, and transport contract
-- P0.8 — Recovery authority, update trust, audit/privacy, and reserved plugin boundary
-- P0.9 — Core Simulator specification and Phase 0 closeout
+## Phase 1 — Core Simulator and First Platform Slice
 
-Closeout record: `docs/plans/phase-0/PHASE-0-CLOSEOUT.md`.
-
-## Phase 1 — Core Simulator
-
-**Status: Active**
-
-Implementation sequence:
+**Status: M1-M9 complete; M10 implementation active**
 
 - M1 — Repository Foundation — **Complete**
-- M2 — Crypto + Identity — **Complete and integrated into `main`**
-- **M3 — Trust + Policy — Next**
-- M4 — Protocol
-- M5 — Pairing + Authenticated Logical Session Simulator
-- M6 — Authorized Data Streams
-- M7 — Failure and Security Lifecycle
-- M8 — Quinn Transport
-- M9 — Remote Networking Evaluation ADR
-- M10 — First Linux Desktop + Android Vertical Slice
+- M2 — Crypto + Identity — **Complete**
+- M3 — Trust + Policy — **Complete**
+- M4 — Protocol — **Complete**
+- M5 — Pairing + Authenticated Logical Session Simulator — **Complete**
+- M6 — Authorized Data Streams — **Complete**
+- M7 — Failure and Security Lifecycle — **Complete**
+- M8 — Quinn Transport — **Complete**
+- M9 — Remote Networking Evaluation ADR — **Complete**
+- M10 — First Linux Desktop + Android Vertical Slice — **Active**
 
-Milestone records/plans:
+M10's host/runtime/UI foundations are integrated. Normal product pairing is being completed using ADR-0016 bounded DNS-SD discovery and provisional Quinn pairing. Physical Linux + Android evidence remains a separate owner-hardware gate.
 
-- M1: `docs/plans/phase-1/M1-repository-foundation.md`
-- M2: `docs/plans/phase-1/M2-crypto-identity.md`
-- M3: `docs/plans/phase-1/M3-trust-policy.md`
+## Phase 2 — Linux + Android MVP
 
-`main` remains the canonical integrated branch. M3 starts only after its design is approved, then uses a short purpose branch such as `trust-policy`.
+**Status: Next; begin immediately after M10 product pairing completion**
+
+Target:
+
+- discovery and secure pairing;
+- automatic trusted-device connection/reconnect;
+- device status/presence;
+- permissions/capability controls;
+- clipboard;
+- resumable file transfer;
+- notifications;
+- audit/history;
+- revocation/device removal;
+- polished native Linux GPUI and Android Compose UX.
+
+Cross-Lab 0.1 succeeds when two real Linux/Android devices can perform the required MVP operations without mandatory cloud infrastructure.
+
+## Phase 3 — Adaptive Networking
+
+**Status: Not started**
+
+Starts only after Phase 2 is complete. Scope remains Ethernet/LAN optimization, BLE discovery, Wi-Fi Direct/platform peer Wi-Fi, USB, Internet P2P/NAT traversal, owner relay, route scoring, and controlled route switching.
 
 ## Later Phases
 
-- Phase 2 — Linux + Android MVP
-- Phase 3 — Adaptive Networking
 - Phase 4 — Windows
 - Phase 5 — Realtime Media and Peripherals
 - Phase 6 — Display and Remote Control
