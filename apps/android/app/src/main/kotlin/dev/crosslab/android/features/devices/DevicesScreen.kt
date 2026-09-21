@@ -26,6 +26,8 @@ import dev.crosslab.android.components.ui.StatusTone
 import dev.crosslab.android.features.appearance.ThemeDocument
 import dev.crosslab.android.features.appearance.toComposeColor
 import dev.crosslab.android.features.appearance.toTextStyle
+import dev.crosslab.android.features.pairing.PairingJoinerStage
+import dev.crosslab.android.features.pairing.PairingJoinerState
 import dev.crosslab.android.features.pairing.PairingScannerPanel
 import uniffi.crosslab_mobile_ffi.MobilePairingBootstrap
 
@@ -36,7 +38,7 @@ fun DevicesScreen(
     runtime: RuntimeControllerState,
     onDisconnect: () -> Unit,
     onReconnect: () -> Unit,
-    pairingBootstrap: MobilePairingBootstrap?,
+    pairing: PairingJoinerState,
     onPairingBootstrapScanned: (MobilePairingBootstrap) -> Unit,
     onCancelPairing: () -> Unit,
 ) {
@@ -76,8 +78,14 @@ fun DevicesScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(theme.spacing.sm.toFloat().dp)) {
                 ControlButton(
                     theme = theme,
-                    label = if (scanning) "Scanning…" else "Add Device",
-                    active = scanning,
+                    label =
+                        when {
+                            scanning -> "Scanning…"
+                            pairing.active -> "Pairing…"
+                            else -> "Add Device"
+                        },
+                    active = scanning || pairing.active,
+                    enabled = !pairing.active,
                     onClick = { scanning = !scanning },
                 )
 
@@ -113,10 +121,10 @@ fun DevicesScreen(
                 onCancel = { scanning = false },
             )
             Spacer(Modifier.height(theme.spacing.xl.toFloat().dp))
-        } else if (pairingBootstrap != null) {
-            PairingBootstrapPanel(
+        } else if (pairing.stage != PairingJoinerStage.IDLE) {
+            PairingProgressPanel(
                 theme = theme,
-                bootstrap = pairingBootstrap,
+                pairing = pairing,
                 onCancel = onCancelPairing,
             )
             Spacer(Modifier.height(theme.spacing.xl.toFloat().dp))
@@ -298,13 +306,30 @@ private fun DetailRow(
 
 
 @Composable
-private fun PairingBootstrapPanel(
+private fun PairingProgressPanel(
     theme: ThemeDocument,
-    bootstrap: MobilePairingBootstrap,
+    pairing: PairingJoinerState,
     onCancel: () -> Unit,
 ) {
     val colors = theme.colors
-    val summary = remember(bootstrap) { runCatching { bootstrap.summary() }.getOrNull() }
+    val tone =
+        when (pairing.stage) {
+            PairingJoinerStage.PAIRED -> StatusTone.ACCENT
+            PairingJoinerStage.FAILED -> StatusTone.CRITICAL
+            PairingJoinerStage.CANCELLED -> StatusTone.NEUTRAL
+            else -> StatusTone.ACCENT
+        }
+    val label =
+        when (pairing.stage) {
+            PairingJoinerStage.FINDING_DEVICE -> "Finding device"
+            PairingJoinerStage.CONNECTING -> "Connecting securely"
+            PairingJoinerStage.SAVING_TRUST -> "Saving trust"
+            PairingJoinerStage.FINALIZING -> "Finalizing"
+            PairingJoinerStage.PAIRED -> "Paired"
+            PairingJoinerStage.FAILED -> "Pairing failed"
+            PairingJoinerStage.CANCELLED -> "Pairing cancelled"
+            PairingJoinerStage.IDLE -> "Ready"
+        }
 
     Column(
         modifier =
@@ -320,8 +345,8 @@ private fun PairingBootstrapPanel(
                 .padding(theme.spacing.lg.toFloat().dp),
     ) {
         StatusBadge(
-            label = "Invitation recognized",
-            tone = StatusTone.ACCENT,
+            label = label,
+            tone = tone,
             textScale = theme.typography.scales.caption,
             border = colors.border.toComposeColor(),
             neutralBackground = colors.muted.toComposeColor(),
@@ -331,33 +356,54 @@ private fun PairingBootstrapPanel(
             criticalBackground = colors.destructive.toComposeColor(),
             criticalForeground = colors.destructiveForeground.toComposeColor(),
         )
-        Spacer(Modifier.height(theme.spacing.md.toFloat().dp))
-        BasicText(
-            text =
-                if (summary != null) {
-                    "Owner ${summary.ownerId} · inviter ${summary.inviterDeviceId}"
-                } else {
-                    "The scanned invitation is no longer available."
-                },
-            style =
-                theme.typography.scales.body
-                    .toTextStyle()
-                    .copy(color = colors.foreground.toComposeColor()),
-        )
-        Spacer(Modifier.height(theme.spacing.xs.toFloat().dp))
-        BasicText(
-            text =
-                "The one-time secret remains inside the shared Rust pairing handle. " +
-                    "Cross-Lab is waiting for the local pairing transport.",
-            style =
-                theme.typography.scales.caption
-                    .toTextStyle()
-                    .copy(color = colors.mutedForeground.toComposeColor()),
-        )
+
+        if (pairing.ownerId != null || pairing.inviterDeviceId != null) {
+            Spacer(Modifier.height(theme.spacing.md.toFloat().dp))
+            BasicText(
+                text =
+                    buildString {
+                        pairing.ownerId?.let {
+                            append("Owner ")
+                            append(it)
+                        }
+                        if (pairing.ownerId != null && pairing.inviterDeviceId != null) {
+                            append(" · ")
+                        }
+                        pairing.inviterDeviceId?.let {
+                            append("inviter ")
+                            append(it)
+                        }
+                    },
+                style =
+                    theme.typography.scales.body
+                        .toTextStyle()
+                        .copy(color = colors.foreground.toComposeColor()),
+            )
+        }
+
+        pairing.message?.let { message ->
+            Spacer(Modifier.height(theme.spacing.xs.toFloat().dp))
+            BasicText(
+                text = message,
+                style =
+                    theme.typography.scales.caption
+                        .toTextStyle()
+                        .copy(
+                            color =
+                                if (pairing.stage == PairingJoinerStage.FAILED) {
+                                    colors.destructive.toComposeColor()
+                                } else {
+                                    colors.mutedForeground.toComposeColor()
+                                },
+                        ),
+            )
+        }
+
         Spacer(Modifier.height(theme.spacing.md.toFloat().dp))
         ControlButton(
             theme = theme,
-            label = "Cancel pairing",
+            label = if (pairing.active) "Cancel pairing" else "Dismiss",
+            destructive = pairing.active,
             onClick = onCancel,
         )
     }
