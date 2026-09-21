@@ -12,7 +12,7 @@ pub use pairing::{
     PairingConfirmationError, PairingConfirmationRole, PairingFlowError, PairingId, PairingInstant,
     PairingInvitation, PairingInvitationCreateError, PairingInvitationError,
     PairingInvitationState, PairingInviterFlow, PairingInviterState, PairingJoinerFlow,
-    PairingJoinerState, PairingSecret, PairingTranscript,
+    PairingJoinerState, PairingSecret, PairingTranscript, PairingTrustEstablishment,
 };
 pub use session::{
     LogicalSession, NegotiatedCapability, SessionActivation, SessionAuthError, SessionAuthProof,
