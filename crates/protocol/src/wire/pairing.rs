@@ -2,8 +2,7 @@ use core::fmt;
 
 use crosslab_crypto::{Signature, SignatureAlgorithm, VerifyingKey};
 use crosslab_identity::{
-    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, KeyId, OwnerId,
-    OwnerRootRecord,
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, KeyId, OwnerId, OwnerRootRecord,
 };
 use crosslab_policy::{PairingTrustTransition, TransitionId};
 use prost::Message;
@@ -229,10 +228,7 @@ pub struct ProductPairingTrustBundleMessage {
 }
 
 impl ProductPairingTrustBundleMessage {
-    pub const fn new(
-        credential: DeviceCredential,
-        transition: PairingTrustTransition,
-    ) -> Self {
+    pub const fn new(credential: DeviceCredential, transition: PairingTrustTransition) -> Self {
         Self {
             credential,
             transition,
@@ -262,11 +258,7 @@ pub struct ProductPairingAck {
 }
 
 impl ProductPairingAck {
-    pub const fn new(
-        pairing_id: [u8; 16],
-        role: PairingRole,
-        kind: ProductPairingAckKind,
-    ) -> Self {
+    pub const fn new(pairing_id: [u8; 16], role: PairingRole, kind: ProductPairingAckKind) -> Self {
         Self {
             pairing_id,
             role,
@@ -534,13 +526,11 @@ impl From<&ProductPairingMessage> for ProductPairingV1 {
                     transition: Some(PairingTrustTransitionV1::from(&bundle.transition)),
                 })
             }
-            ProductPairingMessage::Ack(ack) => {
-                product_pairing_v1::Body::Ack(PairingAckV1 {
-                    pairing_id: ack.pairing_id.to_vec(),
-                    role: role_to_wire(ack.role),
-                    kind: ack_kind_to_wire(ack.kind),
-                })
-            }
+            ProductPairingMessage::Ack(ack) => product_pairing_v1::Body::Ack(PairingAckV1 {
+                pairing_id: ack.pairing_id.to_vec(),
+                role: role_to_wire(ack.role),
+                kind: ack_kind_to_wire(ack.kind),
+            }),
             ProductPairingMessage::Cancel { pairing_id } => {
                 product_pairing_v1::Body::Cancel(PairingCancelV1 {
                     pairing_id: pairing_id.to_vec(),
@@ -605,23 +595,16 @@ impl TryFrom<ProductPairingV1> for ProductPairingMessage {
                     .ok_or(ProtocolWireError::MissingProductPairingTrustTransition)?
                     .try_into()?;
                 Ok(Self::TrustBundle(ProductPairingTrustBundleMessage::new(
-                    credential,
-                    transition,
+                    credential, transition,
                 )))
             }
             product_pairing_v1::Body::Ack(ack) => Ok(Self::Ack(ProductPairingAck::new(
-                copy_16(
-                    ack.pairing_id,
-                    ProtocolWireError::InvalidPairingIdLength,
-                )?,
+                copy_16(ack.pairing_id, ProtocolWireError::InvalidPairingIdLength)?,
                 role_from_wire(ack.role)?,
                 ack_kind_from_wire(ack.kind)?,
             ))),
             product_pairing_v1::Body::Cancel(cancel) => Ok(Self::Cancel {
-                pairing_id: copy_16(
-                    cancel.pairing_id,
-                    ProtocolWireError::InvalidPairingIdLength,
-                )?,
+                pairing_id: copy_16(cancel.pairing_id, ProtocolWireError::InvalidPairingIdLength)?,
             }),
         }
     }
@@ -741,9 +724,7 @@ impl From<&PairingTrustTransition> for PairingTrustTransitionV1 {
             owner_id: transition.owner_id().to_bytes().to_vec(),
             device_id: transition.device_id().to_bytes().to_vec(),
             credential_epoch: transition.credential_epoch(),
-            credential_signed_object_digest: transition
-                .credential_signed_object_digest()
-                .to_vec(),
+            credential_signed_object_digest: transition.credential_signed_object_digest().to_vec(),
             transition_id: transition.transition_id().to_bytes().to_vec(),
             pairing_evidence_digest: transition.pairing_evidence_digest().to_vec(),
             issuer_key_id: transition.issuer_key_id().to_bytes().to_vec(),
@@ -842,7 +823,9 @@ const fn authority_role_to_wire(role: AuthorityRole) -> i32 {
 fn authority_role_from_wire(value: i32) -> Result<AuthorityRole, ProtocolWireError> {
     match value {
         value if value == AuthorityRoleV1::DeviceSigning as i32 => Ok(AuthorityRole::DeviceSigning),
-        value if value == AuthorityRoleV1::Administrative as i32 => Ok(AuthorityRole::Administrative),
+        value if value == AuthorityRoleV1::Administrative as i32 => {
+            Ok(AuthorityRole::Administrative)
+        }
         value if value == AuthorityRoleV1::Recovery as i32 => Ok(AuthorityRole::Recovery),
         value => Err(ProtocolWireError::InvalidAuthorityRole(value)),
     }
