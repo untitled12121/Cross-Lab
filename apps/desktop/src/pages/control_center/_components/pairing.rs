@@ -56,6 +56,39 @@ pub(crate) fn pairing_invitation_panel(invitation: &DesktopPairingInvitation, cx
                 .child(status.message()),
         );
 
+    let details = div()
+        .flex()
+        .flex_col()
+        .gap(px(appearance.spacing.md))
+        .child(status_panel)
+        .child(info("Owner", invitation.owner_id(), cx))
+        .child(info("This device", invitation.local_device_id(), cx))
+        .child(info(
+            "Trust",
+            if status == DesktopPairingStage::Paired {
+                "Saved on both devices"
+            } else {
+                "Not granted until pairing completes"
+            },
+            cx,
+        ))
+        .child(info("Transport", "Route discovery is separate from identity", cx));
+
+    let pairing_body = if status == DesktopPairingStage::Waiting {
+        div()
+            .flex()
+            .items_start()
+            .gap(px(appearance.spacing.xl))
+            .child(qr)
+            .child(details)
+    } else {
+        div()
+            .flex()
+            .items_start()
+            .gap(px(appearance.spacing.xl))
+            .child(details)
+    };
+
     div()
         .flex()
         .flex_col()
@@ -84,32 +117,7 @@ pub(crate) fn pairing_invitation_panel(invitation: &DesktopPairingInvitation, cx
                         ),
                 ),
         )
-        .child(
-            div()
-                .flex()
-                .items_start()
-                .gap(px(appearance.spacing.xl))
-                .when(status == DesktopPairingStage::Waiting, |panel| panel.child(qr))
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(px(appearance.spacing.md))
-                        .child(status_panel)
-                        .child(info("Owner", invitation.owner_id(), cx))
-                        .child(info("This device", invitation.local_device_id(), cx))
-                        .child(info(
-                            "Trust",
-                            if status == DesktopPairingStage::Paired {
-                                "Saved on both devices"
-                            } else {
-                                "Not granted until pairing completes"
-                            },
-                            cx,
-                        ))
-                        .child(info("Transport", "Route discovery is separate from identity", cx)),
-                ),
-        )
+        .child(pairing_body)
         .child(
             div()
                 .text_size(px(appearance.typography.scales.caption.size))
