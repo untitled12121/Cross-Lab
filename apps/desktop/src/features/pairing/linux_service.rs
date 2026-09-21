@@ -17,8 +17,8 @@ use crosslab_transport_quic::{
 use tokio::sync::{mpsc, watch};
 
 use super::{
-    INVITATION_LIFETIME, LinuxEd25519Signer, LinuxPairingAdvertisement,
-    LinuxPairingDiscoveryError, persist_product_pairing_commit,
+    INVITATION_LIFETIME, LinuxEd25519Signer, LinuxPairingAdvertisement, LinuxPairingDiscoveryError,
+    persist_product_pairing_commit,
 };
 
 const COMMAND_CAPACITY: usize = 2;
