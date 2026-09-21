@@ -13,6 +13,7 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import dev.crosslab.android.features.devices.MobileRuntimePort
 import dev.crosslab.android.features.identity.AndroidEd25519Signer
 import dev.crosslab.android.features.identity.AndroidIdentityStore
+import dev.crosslab.android.features.identity.AndroidProductIdentityRepository
 import dev.crosslab.android.features.identity.AndroidSigningSlot
 import dev.crosslab.android.features.devices.RuntimeController
 
@@ -24,6 +25,9 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
         private set
 
     lateinit var localDeviceSigner: AndroidEd25519Signer
+        private set
+
+    lateinit var identityRepository: AndroidProductIdentityRepository
         private set
 
     private lateinit var connectivityManager: ConnectivityManager
@@ -44,6 +48,14 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
         runtimeController = RuntimeController(MobileRuntimePort(developmentProvisioningPath()))
         identityStore = AndroidIdentityStore(this)
         localDeviceSigner = AndroidEd25519Signer(this, AndroidSigningSlot.LOCAL_DEVICE)
+        identityRepository =
+            AndroidProductIdentityRepository(
+                store = identityStore,
+                rootSigner = AndroidEd25519Signer(this, AndroidSigningSlot.OWNER_ROOT),
+                deviceSigningSigner =
+                    AndroidEd25519Signer(this, AndroidSigningSlot.DEVICE_SIGNING),
+                localDeviceSigner = localDeviceSigner,
+            )
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
 
         connectivityManager = getSystemService(ConnectivityManager::class.java)
