@@ -122,8 +122,8 @@ impl ProductPairingQuicServer {
         let mut tls =
             rustls::ServerConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
                 .with_no_client_auth()
-            .with_single_cert(vec![certificate], private_key.into())
-            .map_err(|_| ProductPairingQuicError::Tls)?;
+                .with_single_cert(vec![certificate], private_key.into())
+                .map_err(|_| ProductPairingQuicError::Tls)?;
         tls.alpn_protocols = vec![PRODUCT_PAIRING_ALPN_V1.to_vec()];
         tls.max_early_data_size = 0;
 
@@ -209,8 +209,8 @@ impl ProductPairingQuicClient {
         let mut tls =
             rustls::ClientConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
                 .dangerous()
-            .with_custom_certificate_verifier(PairingServerCertVerifier::new())
-            .with_no_client_auth();
+                .with_custom_certificate_verifier(PairingServerCertVerifier::new())
+                .with_no_client_auth();
         tls.alpn_protocols = vec![PRODUCT_PAIRING_ALPN_V1.to_vec()];
         tls.enable_early_data = false;
 
