@@ -1,7 +1,10 @@
 use std::{
     fmt,
     net::SocketAddr,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 
@@ -66,6 +69,7 @@ pub enum ProductPairingQuicError {
     Tls,
     Connect,
     Accept,
+    AlreadyAccepted,
     Stream,
     Timeout,
     Record,
@@ -79,6 +83,9 @@ impl fmt::Display for ProductPairingQuicError {
             Self::Tls => formatter.write_str("product pairing TLS setup failed"),
             Self::Connect => formatter.write_str("product pairing QUIC connection failed"),
             Self::Accept => formatter.write_str("product pairing QUIC accept failed"),
+            Self::AlreadyAccepted => {
+                formatter.write_str("product pairing invitation already accepted a joiner")
+            }
             Self::Stream => formatter.write_str("product pairing QUIC stream setup failed"),
             Self::Timeout => formatter.write_str("product pairing QUIC operation timed out"),
             Self::Record => formatter.write_str("product pairing QUIC record failed"),
@@ -98,6 +105,7 @@ impl From<ProtocolWireError> for ProductPairingQuicError {
 pub struct ProductPairingQuicServer {
     endpoint: Endpoint,
     timeouts: ProductPairingQuicTimeouts,
+    accepted: AtomicBool,
 }
 
 impl ProductPairingQuicServer {
@@ -124,7 +132,11 @@ impl ProductPairingQuicServer {
 
         let endpoint =
             Endpoint::server(config, bind_addr).map_err(|_| ProductPairingQuicError::Bind)?;
-        Ok(Self { endpoint, timeouts })
+        Ok(Self {
+            endpoint,
+            timeouts,
+            accepted: AtomicBool::new(false),
+        })
     }
 
     pub fn local_addr(&self) -> Result<SocketAddr, ProductPairingQuicError> {
@@ -134,6 +146,22 @@ impl ProductPairingQuicServer {
     }
 
     pub async fn accept(&self) -> Result<ProductPairingQuicChannel, ProductPairingQuicError> {
+        if self
+            .accepted
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return Err(ProductPairingQuicError::AlreadyAccepted);
+        }
+
+        let result = self.accept_inner().await;
+        if result.is_err() {
+            self.accepted.store(false, Ordering::Release);
+        }
+        result
+    }
+
+    async fn accept_inner(&self) -> Result<ProductPairingQuicChannel, ProductPairingQuicError> {
         let incoming = timeout(self.timeouts.connect, self.endpoint.accept())
             .await
             .map_err(|_| ProductPairingQuicError::Timeout)?
