@@ -16,9 +16,7 @@ use crosslab_transport_quic::{
 use crate::{
     pairing::{MobilePairingBootstrap, MobilePairingBootstrapError},
     pairing_persistence::MobileProductPairingJoinerCompletion,
-    product_identity::{
-        ForeignSigningProvider, MobileProductIdentityError, MobileSigningProvider,
-    },
+    product_identity::{ForeignSigningProvider, MobileProductIdentityError, MobileSigningProvider},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Error)]
@@ -275,8 +273,12 @@ mod tests {
             "127.0.0.1:443".parse().unwrap()
         );
 
-        let v6 = socket_addr(vec![0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], 443, 7)
-            .unwrap();
+        let v6 = socket_addr(
+            vec![0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            443,
+            7,
+        )
+        .unwrap();
         let SocketAddr::V6(v6) = v6 else {
             panic!("expected IPv6 route");
         };
