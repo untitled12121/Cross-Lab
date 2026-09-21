@@ -258,6 +258,149 @@ pub mod pairing_bootstrap_v1 {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, prost::Enumeration)]
 #[repr(i32)]
+pub enum AuthorityRoleV1 {
+    Unspecified = 0,
+    DeviceSigning = 1,
+    Administrative = 2,
+    Recovery = 3,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct OwnerRootRecordV1 {
+    #[prost(uint32, tag = "1")]
+    pub schema_version: u32,
+    #[prost(bytes = "vec", tag = "2")]
+    pub owner_id: Vec<u8>,
+    #[prost(bytes = "vec", tag = "3")]
+    pub root_key_id: Vec<u8>,
+    #[prost(enumeration = "SignatureAlgorithmV1", tag = "4")]
+    pub root_algorithm: i32,
+    #[prost(bytes = "vec", tag = "5")]
+    pub root_public_key: Vec<u8>,
+    #[prost(uint64, tag = "6")]
+    pub root_epoch: u64,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct AuthorityDelegationV1 {
+    #[prost(uint32, tag = "1")]
+    pub schema_version: u32,
+    #[prost(bytes = "vec", tag = "2")]
+    pub owner_id: Vec<u8>,
+    #[prost(enumeration = "AuthorityRoleV1", tag = "3")]
+    pub role: i32,
+    #[prost(bytes = "vec", tag = "4")]
+    pub delegated_key_id: Vec<u8>,
+    #[prost(enumeration = "SignatureAlgorithmV1", tag = "5")]
+    pub delegated_algorithm: i32,
+    #[prost(bytes = "vec", tag = "6")]
+    pub delegated_public_key: Vec<u8>,
+    #[prost(uint64, tag = "7")]
+    pub delegation_epoch: u64,
+    #[prost(bytes = "vec", tag = "8")]
+    pub issuer_root_key_id: Vec<u8>,
+    #[prost(enumeration = "SignatureAlgorithmV1", tag = "9")]
+    pub signature_algorithm: i32,
+    #[prost(bytes = "vec", tag = "10")]
+    pub signature: Vec<u8>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct PairingTrustTransitionV1 {
+    #[prost(uint32, tag = "1")]
+    pub schema_version: u32,
+    #[prost(bytes = "vec", tag = "2")]
+    pub owner_id: Vec<u8>,
+    #[prost(bytes = "vec", tag = "3")]
+    pub device_id: Vec<u8>,
+    #[prost(uint64, tag = "4")]
+    pub credential_epoch: u64,
+    #[prost(bytes = "vec", tag = "5")]
+    pub credential_signed_object_digest: Vec<u8>,
+    #[prost(bytes = "vec", tag = "6")]
+    pub transition_id: Vec<u8>,
+    #[prost(bytes = "vec", tag = "7")]
+    pub pairing_evidence_digest: Vec<u8>,
+    #[prost(bytes = "vec", tag = "8")]
+    pub issuer_key_id: Vec<u8>,
+    #[prost(enumeration = "SignatureAlgorithmV1", tag = "9")]
+    pub signature_algorithm: i32,
+    #[prost(bytes = "vec", tag = "10")]
+    pub signature: Vec<u8>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct ProductPairingCredentialBundleV1 {
+    #[prost(message, optional, tag = "1")]
+    pub owner_root: Option<OwnerRootRecordV1>,
+    #[prost(message, optional, tag = "2")]
+    pub device_signing: Option<AuthorityDelegationV1>,
+    #[prost(message, optional, tag = "3")]
+    pub credential: Option<DeviceCredentialV1>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct ProductPairingTrustBundleV1 {
+    #[prost(message, optional, tag = "1")]
+    pub credential: Option<DeviceCredentialV1>,
+    #[prost(message, optional, tag = "2")]
+    pub transition: Option<PairingTrustTransitionV1>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, prost::Enumeration)]
+#[repr(i32)]
+pub enum PairingAckKindV1 {
+    Unspecified = 0,
+    Persisted = 1,
+    Complete = 2,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct PairingAckV1 {
+    #[prost(bytes = "vec", tag = "1")]
+    pub pairing_id: Vec<u8>,
+    #[prost(enumeration = "PairingRoleV1", tag = "2")]
+    pub role: i32,
+    #[prost(enumeration = "PairingAckKindV1", tag = "3")]
+    pub kind: i32,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct PairingCancelV1 {
+    #[prost(bytes = "vec", tag = "1")]
+    pub pairing_id: Vec<u8>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct ProductPairingV1 {
+    #[prost(uint32, tag = "1")]
+    pub pairing_profile: u32,
+    #[prost(oneof = "product_pairing_v1::Body", tags = "2, 3, 4, 5, 6, 7, 8")]
+    pub body: Option<product_pairing_v1::Body>,
+}
+
+pub mod product_pairing_v1 {
+    #[derive(Clone, PartialEq, prost::Oneof)]
+    pub enum Body {
+        #[prost(message, tag = "2")]
+        Hello(super::PairingHelloV1),
+        #[prost(message, tag = "3")]
+        Confirmation(super::PairingConfirmationV1),
+        #[prost(message, tag = "4")]
+        CredentialBundle(super::ProductPairingCredentialBundleV1),
+        #[prost(message, tag = "5")]
+        CredentialAccepted(super::PairingCredentialAcceptedV1),
+        #[prost(message, tag = "6")]
+        TrustBundle(super::ProductPairingTrustBundleV1),
+        #[prost(message, tag = "7")]
+        Ack(super::PairingAckV1),
+        #[prost(message, tag = "8")]
+        Cancel(super::PairingCancelV1),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, prost::Enumeration)]
+#[repr(i32)]
 pub enum SessionAuthRoleV1 {
     Unspecified = 0,
     Initiator = 1,

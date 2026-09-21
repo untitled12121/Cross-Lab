@@ -1,8 +1,8 @@
 # Cross-Lab Master Architecture & Development Plan
 
 **Document status:** Architecture Baseline — Source of Truth  
-**Revision:** 2.6  
-**Date:** 2026-09-20  
+**Revision:** 2.7  
+**Date:** 2026-09-21  
 **Project:** Cross-Lab  
 **Scope:** Architecture, security boundaries, repository structure, protocol foundations, platform strategy, development phases, and technology evaluation rules
 
@@ -26,7 +26,7 @@ The following rules apply:
 - License compatibility, security implications, platform support, maintenance status, and performance impact must be reviewed before code is reused or adapted.
 - The smallest architecture that cleanly satisfies the current milestone is preferred over speculative extensibility.
 
-Revision 2.6 incorporates accepted ADR-0015 platform identity-store architecture in addition to ADR-0014 product pairing bootstrap and ADR-0013 signing-provider boundaries. Production identity/trust persistence is now explicitly split between durable public/security metadata and platform-local signing-provider/currentness state, with fail-closed startup and atomic security-transition requirements. Detailed protocol/security mechanics live in focused specifications; this document records the governing architecture and dependency boundaries.
+Revision 2.7 incorporates accepted ADR-0016 bounded LAN discovery and provisional QUIC product-pairing profile in addition to the accepted production identity-store, pairing-bootstrap, and signing-provider boundaries. Product pairing discovery is short-lived DNS-SD keyed only by PairingId; route/TLS metadata remains non-authoritative, and the existing ADR-0003 high-entropy-secret pairing protocol remains the trust mechanism. Detailed protocol/security mechanics live in focused specifications; this document records the governing architecture and dependency boundaries.
 
 ---
 
@@ -759,6 +759,10 @@ Bulk transfer should prefer higher-bandwidth transports where available.
 `nusb` is a candidate host-side USB dependency. USB device/gadget functionality on Android, iOS, and other platforms remains platform-specific.
 
 Active network scanning is not the default Cross-Lab discovery strategy.
+
+ADR-0016 selects the first product LAN pairing discovery profile: while a single-use invitation is pending, the inviter advertises a bounded DNS-SD `_crosslab-pair._udp.local.` service whose instance is derived only from the random PairingId. The joiner browses only after scanning a valid bootstrap and resolves only that expected instance. Owner/device identifiers, device names, secrets, trust, and capability data are not advertised.
+
+The associated provisional pairing channel uses Quinn/QUIC with TLS 1.3 and ALPN `crosslab-pairing-v1`. Its per-invitation TLS certificate protects the provisional route but is not Cross-Lab identity authority; ADR-0003 transcript confirmation, credential authorization, proof-of-possession, and ADR-0015 persistence remain mandatory before normal authenticated sessions are possible.
 
 ---
 

@@ -19,6 +19,7 @@ pub enum ProtocolWireError {
     InvalidEventIdLength(usize),
     InvalidStreamIdLength(usize),
     InvalidOperationIdLength(usize),
+    InvalidTransitionIdLength(usize),
     InvalidPairingIdLength(usize),
     InvalidOwnerIdLength(usize),
     InvalidDeviceIdLength(usize),
@@ -33,6 +34,11 @@ pub enum ProtocolWireError {
     InvalidSignatureLength(usize),
     MissingEnvelopeBody,
     MissingPairingBootstrapBody,
+    MissingProductPairingBody,
+    MissingProductPairingOwnerRoot,
+    MissingProductPairingDelegation,
+    MissingProductPairingCredential,
+    MissingProductPairingTrustTransition,
     MissingSessionAuthBootstrapBody,
     MissingDeviceCredential,
     MissingCapabilityVersion,
@@ -52,6 +58,10 @@ pub enum ProtocolWireError {
     InvalidStreamDirection(i32),
     InvalidPairingProfile(u32),
     InvalidPairingRole(i32),
+    InvalidPairingAckKind(i32),
+    InvalidAuthorityRole(i32),
+    InvalidAuthorityRecord,
+    InvalidPairingTrustTransition,
     InvalidSessionAuthProfile(u32),
     InvalidSessionAuthRole(i32),
     InvalidSignatureAlgorithm(i32),
@@ -78,6 +88,7 @@ impl fmt::Display for ProtocolWireError {
             Self::InvalidEventIdLength(_) => "event identifier length is invalid",
             Self::InvalidStreamIdLength(_) => "stream identifier length is invalid",
             Self::InvalidOperationIdLength(_) => "operation identifier length is invalid",
+            Self::InvalidTransitionIdLength(_) => "transition identifier length is invalid",
             Self::InvalidPairingIdLength(_) => "pairing identifier length is invalid",
             Self::InvalidOwnerIdLength(_) => "owner identifier length is invalid",
             Self::InvalidDeviceIdLength(_) => "device identifier length is invalid",
@@ -98,6 +109,15 @@ impl fmt::Display for ProtocolWireError {
             Self::InvalidSignatureLength(_) => "signature length is invalid",
             Self::MissingEnvelopeBody => "control envelope body is missing",
             Self::MissingPairingBootstrapBody => "pairing bootstrap body is missing",
+            Self::MissingProductPairingBody => "product pairing body is missing",
+            Self::MissingProductPairingOwnerRoot => "product pairing owner root is missing",
+            Self::MissingProductPairingDelegation => {
+                "product pairing authority delegation is missing"
+            }
+            Self::MissingProductPairingCredential => "product pairing credential is missing",
+            Self::MissingProductPairingTrustTransition => {
+                "product pairing trust transition is missing"
+            }
             Self::MissingSessionAuthBootstrapBody => {
                 "session authentication bootstrap body is missing"
             }
@@ -119,6 +139,10 @@ impl fmt::Display for ProtocolWireError {
             Self::InvalidStreamDirection(_) => "stream direction is invalid",
             Self::InvalidPairingProfile(_) => "pairing profile is invalid",
             Self::InvalidPairingRole(_) => "pairing role is invalid",
+            Self::InvalidPairingAckKind(_) => "pairing acknowledgement kind is invalid",
+            Self::InvalidAuthorityRole(_) => "authority role is invalid",
+            Self::InvalidAuthorityRecord => "authority record is invalid",
+            Self::InvalidPairingTrustTransition => "pairing trust transition is invalid",
             Self::InvalidSessionAuthProfile(_) => "session authentication profile is invalid",
             Self::InvalidSessionAuthRole(_) => "session authentication role is invalid",
             Self::InvalidSignatureAlgorithm(_) => "signature algorithm is invalid",
