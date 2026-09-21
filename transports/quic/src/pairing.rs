@@ -113,8 +113,9 @@ impl ProductPairingQuicServer {
         bind_addr: SocketAddr,
         timeouts: ProductPairingQuicTimeouts,
     ) -> Result<Self, ProductPairingQuicError> {
-        let certified = rcgen::generate_simple_self_signed(vec![PRODUCT_PAIRING_SERVER_NAME.into()])
-            .map_err(|_| ProductPairingQuicError::Tls)?;
+        let certified =
+            rcgen::generate_simple_self_signed(vec![PRODUCT_PAIRING_SERVER_NAME.into()])
+                .map_err(|_| ProductPairingQuicError::Tls)?;
         let certificate = CertificateDer::from(certified.cert.der().as_ref().to_vec());
         let private_key = PrivatePkcs8KeyDer::from(certified.signing_key.serialize_der());
 
@@ -125,8 +126,7 @@ impl ProductPairingQuicServer {
         tls.alpn_protocols = vec![PRODUCT_PAIRING_ALPN_V1.to_vec()];
         tls.max_early_data_size = 0;
 
-        let crypto =
-            QuicServerConfig::try_from(tls).map_err(|_| ProductPairingQuicError::Tls)?;
+        let crypto = QuicServerConfig::try_from(tls).map_err(|_| ProductPairingQuicError::Tls)?;
         let mut config = ServerConfig::with_crypto(Arc::new(crypto));
         config.transport = pairing_transport_config()?;
 
@@ -186,7 +186,8 @@ impl ProductPairingQuicServer {
     }
 
     pub fn close(&self) {
-        self.endpoint.close(PAIRING_CLOSE_CODE, b"product pairing listener closed");
+        self.endpoint
+            .close(PAIRING_CLOSE_CODE, b"product pairing listener closed");
     }
 }
 
@@ -211,8 +212,7 @@ impl ProductPairingQuicClient {
         tls.alpn_protocols = vec![PRODUCT_PAIRING_ALPN_V1.to_vec()];
         tls.enable_early_data = false;
 
-        let crypto =
-            QuicClientConfig::try_from(tls).map_err(|_| ProductPairingQuicError::Tls)?;
+        let crypto = QuicClientConfig::try_from(tls).map_err(|_| ProductPairingQuicError::Tls)?;
         let mut config = ClientConfig::new(Arc::new(crypto));
         config.transport_config(pairing_transport_config()?);
 
