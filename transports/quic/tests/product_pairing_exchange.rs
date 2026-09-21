@@ -75,7 +75,8 @@ async fn full_product_pairing_coordinator_runs_over_provisional_quic() {
     let remote = server.local_addr().unwrap();
 
     let server_task = tokio::spawn(async move {
-        let pairing = ProductPairingInviter::new(invitation, inviter_credential, &authority).unwrap();
+        let pairing =
+            ProductPairingInviter::new(invitation, inviter_credential, &authority).unwrap();
         let mut exchange = ProductPairingInviterExchange::new(pairing);
         let mut channel = server.accept().await.unwrap();
 
@@ -98,12 +99,7 @@ async fn full_product_pairing_coordinator_runs_over_provisional_quic() {
 
         let proof = channel.receive().await.unwrap();
         let commit = exchange
-            .accept_credential_proof(
-                proof,
-                &authority,
-                &issuer,
-                PairingInstant::from_ticks(40),
-            )
+            .accept_credential_proof(proof, &authority, &issuer, PairingInstant::from_ticks(40))
             .unwrap();
         assert_eq!(commit.peer_credential().owner_id(), owner_id);
 
@@ -136,9 +132,7 @@ async fn full_product_pairing_coordinator_runs_over_provisional_quic() {
     channel.send(&confirmation).await.unwrap();
 
     let confirmation = channel.receive().await.unwrap();
-    exchange
-        .accept_inviter_confirmation(confirmation)
-        .unwrap();
+    exchange.accept_inviter_confirmation(confirmation).unwrap();
 
     let credential = channel.receive().await.unwrap();
     let proof = exchange
