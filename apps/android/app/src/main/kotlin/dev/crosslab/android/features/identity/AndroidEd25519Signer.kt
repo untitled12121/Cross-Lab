@@ -53,6 +53,9 @@ class AndroidEd25519Signer(
     val available: Boolean
         get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
 
+    val exists: Boolean
+        get() = keyFile.baseFile.isFile
+
     @Synchronized
     fun ensureCreated(): ByteArray {
         requireSupported()
