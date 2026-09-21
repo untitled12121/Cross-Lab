@@ -780,7 +780,7 @@ impl TryFrom<PairingTrustTransitionV1> for PairingTrustTransition {
             )?,
             TransitionId::from_bytes(copy_32(
                 wire.transition_id,
-                ProtocolWireError::InvalidOperationIdLength,
+                ProtocolWireError::InvalidTransitionIdLength,
             )?),
             copy_32(
                 wire.pairing_evidence_digest,
