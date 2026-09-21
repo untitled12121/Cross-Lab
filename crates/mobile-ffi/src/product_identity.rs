@@ -144,7 +144,12 @@ impl From<ProductIdentityError> for MobileProductIdentityError {
             ProductIdentityError::Malformed => Self::Malformed,
             ProductIdentityError::UnsupportedSchema => Self::UnsupportedSchema,
             ProductIdentityError::ProviderMismatch => Self::ProviderMismatch,
-            ProductIdentityError::Identity(_) => Self::Identity,
+            ProductIdentityError::PeerLimit
+            | ProductIdentityError::PeerOwnerMismatch
+            | ProductIdentityError::LocalDeviceAsPeer
+            | ProductIdentityError::DuplicatePeer
+            | ProductIdentityError::Identity(_)
+            | ProductIdentityError::Trust(_) => Self::Identity,
         }
     }
 }
