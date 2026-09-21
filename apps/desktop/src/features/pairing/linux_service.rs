@@ -134,6 +134,7 @@ impl LinuxProductPairingService {
         issuer: LinuxEd25519Signer,
         started_at: Instant,
     ) -> Result<Self, LinuxPairingServiceError> {
+        let pairing_id = invitation.pairing_id();
         let authority = identity.authority_state()?;
         let pairing =
             ProductPairingInviter::new(invitation, identity.local_credential(), &authority)
@@ -145,13 +146,7 @@ impl LinuxProductPairingService {
             ProductPairingQuicTimeouts::default(),
         )?;
         let port = server.local_addr()?.port();
-        let pairing_id = identity.local_credential().owner_id();
-        let _ = pairing_id;
-        let advertisement_pairing_id = crosslab_core::PairingId::from_bytes(
-            exchange_pairing_id(&exchange),
-        );
-        let advertisement =
-            LinuxPairingAdvertisement::start(advertisement_pairing_id, port).await?;
+        let advertisement = LinuxPairingAdvertisement::start(pairing_id, port).await?;
 
         let (command_tx, command_rx) = mpsc::channel(COMMAND_CAPACITY);
         let (status_tx, status) = watch::channel(DesktopPairingStage::Waiting);
@@ -278,10 +273,21 @@ async fn run_service(
     .await;
 
     match result {
-        Ok(()) => status_tx.send_replace(DesktopPairingStage::Paired),
-        Err(ServiceRunError::Cancelled) => status_tx.send_replace(DesktopPairingStage::Cancelled),
-        Err(ServiceRunError::Failed) => status_tx.send_replace(DesktopPairingStage::Failed),
-    };
+        Ok(()) => {
+            let stage = if channel.finish().await.is_ok() {
+                DesktopPairingStage::Paired
+            } else {
+                DesktopPairingStage::Failed
+            };
+            status_tx.send_replace(stage);
+        }
+        Err(ServiceRunError::Cancelled) => {
+            status_tx.send_replace(DesktopPairingStage::Cancelled);
+        }
+        Err(ServiceRunError::Failed) => {
+            status_tx.send_replace(DesktopPairingStage::Failed);
+        }
+    }
 }
 
 async fn run_exchange(
@@ -384,15 +390,6 @@ fn now(started_at: Instant) -> PairingInstant {
             .try_into()
             .unwrap_or(u64::MAX),
     )
-}
-
-fn exchange_pairing_id(exchange: &ProductPairingInviterExchange) -> [u8; 16] {
-    // The exchange only accepts messages for this invitation. Its first outbound
-    // hello carries the same PairingId used for DNS-SD routing.
-    match exchange.initial_hello() {
-        ProductPairingMessage::Hello(hello) => hello.pairing_id(),
-        _ => unreachable!("inviter exchange initial message is always hello"),
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
