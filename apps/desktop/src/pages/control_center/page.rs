@@ -5,7 +5,7 @@ use crate::{
         appearance::{active_theme, font_weight},
         devices::{DesktopRuntimeController, DevicesFeatureState},
         owner::OwnerFeatureState,
-        pairing::{DesktopPairingInvitation, load_existing_product_identity},
+        pairing::{DesktopPairingInvitation, DesktopPairingStage, load_existing_product_identity},
     },
     pages::control_center::{
         _components::{devices_content, owner_content, pairing_invitation_panel},
@@ -30,6 +30,7 @@ pub struct ControlCenterPage {
     owner: OwnerFeatureState,
     runtime: DesktopRuntimeController,
     pairing_invitation: Option<DesktopPairingInvitation>,
+    pairing_generation: u64,
     pairing_busy: bool,
     notice: Option<String>,
 }
@@ -97,6 +98,7 @@ impl ControlCenterPage {
             owner,
             runtime,
             pairing_invitation: None,
+            pairing_generation: 0,
             pairing_busy: false,
             notice: None,
         }
@@ -114,42 +116,106 @@ impl ControlCenterPage {
         }
 
         if let Some(mut invitation) = self.pairing_invitation.take() {
-            let _ = invitation.cancel();
+            if !invitation.status().terminal() {
+                let _ = invitation.cancel();
+            }
         }
+        self.pairing_generation = self.pairing_generation.wrapping_add(1);
+        let generation = self.pairing_generation;
         self.pairing_busy = true;
         self.notice = Some("Creating a protected one-time pairing invitation…".to_owned());
         cx.notify();
 
         cx.spawn(async move |this, cx| {
             let result = DesktopPairingInvitation::create().await;
-            let _ = this.update(cx, |page, cx| {
-                page.pairing_busy = false;
-                match result {
-                    Ok(invitation) => {
-                        page.owner.set_product_identity(
-                            invitation.owner_id().to_owned(),
-                            invitation.local_device_id().to_owned(),
-                        );
-                        page.pairing_invitation = Some(invitation);
-                        page.notice = None;
+            let Ok(invitation) = result else {
+                let error = result.err().expect("failed pairing invitation has an error");
+                let _ = this.update(cx, |page, cx| {
+                    if page.pairing_generation != generation {
+                        return;
                     }
-                    Err(error) => {
-                        page.pairing_invitation = None;
-                        page.notice = Some(error.to_string());
+                    page.pairing_busy = false;
+                    page.pairing_invitation = None;
+                    page.notice = Some(error.to_string());
+                    cx.notify();
+                });
+                return;
+            };
+
+            let mut status = invitation.subscribe_status();
+            if this
+                .update(cx, |page, cx| {
+                    if page.pairing_generation != generation {
+                        return;
                     }
+                    page.pairing_busy = false;
+                    page.owner.set_product_identity(
+                        invitation.owner_id().to_owned(),
+                        invitation.local_device_id().to_owned(),
+                    );
+                    page.pairing_invitation = Some(invitation);
+                    page.notice = None;
+                    cx.notify();
+                })
+                .is_err()
+            {
+                return;
+            }
+
+            while status.changed().await.is_ok() {
+                let stage = *status.borrow_and_update();
+                if this
+                    .update(cx, |page, cx| {
+                        if page.pairing_generation != generation {
+                            return;
+                        }
+                        page.notice = match stage {
+                            DesktopPairingStage::Paired => {
+                                Some("Device paired and trust saved on both devices.".to_owned())
+                            }
+                            DesktopPairingStage::Failed => Some(
+                                "Pairing did not complete. Generate a new invitation to retry."
+                                    .to_owned(),
+                            ),
+                            DesktopPairingStage::Expired => {
+                                Some("Pairing invitation expired.".to_owned())
+                            }
+                            DesktopPairingStage::Cancelled => {
+                                Some("Pairing invitation cancelled.".to_owned())
+                            }
+                            _ => None,
+                        };
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    return;
                 }
-                cx.notify();
-            });
+            }
         })
         .detach();
     }
 
     fn cancel_pairing_invitation(&mut self, cx: &mut Context<Self>) {
-        if let Some(mut invitation) = self.pairing_invitation.take() {
-            let _ = invitation.cancel();
-            self.notice = Some("Pairing invitation cancelled.".to_owned());
-            cx.notify();
+        let Some(invitation) = self.pairing_invitation.as_mut() else {
+            return;
+        };
+
+        if invitation.status().terminal() {
+            self.pairing_generation = self.pairing_generation.wrapping_add(1);
+            self.pairing_invitation = None;
+            self.notice = None;
+        } else {
+            match invitation.cancel() {
+                Ok(()) => {
+                    self.notice = Some("Cancelling pairing invitation…".to_owned());
+                }
+                Err(error) => {
+                    self.notice = Some(error.to_string());
+                }
+            }
         }
+        cx.notify();
     }
 
     fn disconnect_peer(&mut self, cx: &mut Context<Self>) {
@@ -245,10 +311,12 @@ impl Render for ControlCenterPage {
             .gap(px(appearance.spacing.sm))
             .child(
                 Button::new("add-device")
-                    .accessibility_label(if self.pairing_invitation.is_some() {
-                        "Regenerate Add Device invitation"
-                    } else {
-                        "Add device"
+                    .accessibility_label(match self.pairing_invitation.as_ref() {
+                        Some(invitation) if invitation.status().terminal() => {
+                            "Create another Add Device invitation"
+                        }
+                        Some(_) => "Regenerate Add Device invitation",
+                        None => "Add device",
                     })
                     .disabled(self.pairing_busy)
                     .on_click(cx.listener(|this, _, _, cx| {
@@ -263,17 +331,24 @@ impl Render for ControlCenterPage {
                     .focus_visible(|style| style.border_color(theme.ring))
                     .child(if self.pairing_busy {
                         "Preparing…"
-                    } else if self.pairing_invitation.is_some() {
-                        "Regenerate"
                     } else {
-                        "Add Device"
+                        match self.pairing_invitation.as_ref() {
+                            Some(invitation) if invitation.status().terminal() => "Add another device",
+                            Some(_) => "Regenerate",
+                            None => "Add Device",
+                        }
                     }),
             );
 
-        if self.pairing_invitation.is_some() {
+        if let Some(invitation) = self.pairing_invitation.as_ref() {
+            let terminal = invitation.status().terminal();
             actions = actions.child(
                 Button::new("cancel-pairing")
-                    .accessibility_label("Cancel pairing invitation")
+                    .accessibility_label(if terminal {
+                        "Dismiss pairing status"
+                    } else {
+                        "Cancel pairing invitation"
+                    })
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.cancel_pairing_invitation(cx);
                     }))
@@ -284,7 +359,7 @@ impl Render for ControlCenterPage {
                     .bg(theme.secondary)
                     .text_color(theme.secondary_foreground)
                     .focus_visible(|style| style.border_color(theme.ring))
-                    .child("Cancel"),
+                    .child(if terminal { "Dismiss" } else { "Cancel" }),
             );
         }
 
