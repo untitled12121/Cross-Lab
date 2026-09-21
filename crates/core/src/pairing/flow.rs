@@ -41,6 +41,22 @@ pub enum PairingJoinerState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PairingTrustEstablishment {
+    transition: PairingTrustTransition,
+    trust: TrustRecord,
+}
+
+impl PairingTrustEstablishment {
+    pub const fn transition(&self) -> PairingTrustTransition {
+        self.transition
+    }
+
+    pub const fn trust(&self) -> TrustRecord {
+        self.trust
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PairingFlowError {
     InvitationNotPending,
     InvitationExpired,
@@ -51,6 +67,7 @@ pub enum PairingFlowError {
     CredentialMismatch,
     JoinerKeyMismatch,
     InvalidCredentialAcceptance,
+    InvalidPeerTrustEvidence,
     Identity(IdentityError),
     TrustTransition(PairingTrustTransitionError),
     SigningFailed,
@@ -68,6 +85,9 @@ impl fmt::Display for PairingFlowError {
             Self::CredentialMismatch => "device credential does not match the confirmed pairing",
             Self::JoinerKeyMismatch => "joiner private key does not match the issued credential",
             Self::InvalidCredentialAcceptance => "credential acceptance proof verification failed",
+            Self::InvalidPeerTrustEvidence => {
+                "peer trust evidence does not match the confirmed pairing"
+            }
             Self::Identity(error) => return fmt::Display::fmt(error, formatter),
             Self::TrustTransition(error) => return fmt::Display::fmt(error, formatter),
             Self::SigningFailed => "pairing signing provider operation failed",
@@ -88,6 +108,7 @@ struct PairingContext {
     pairing_id: PairingId,
     owner_id: OwnerId,
     inviter_device_id: DeviceId,
+    inviter_device_key: VerifyingKey,
     joiner_device_id: DeviceId,
     joiner_device_key: VerifyingKey,
     transcript: PairingTranscript,
@@ -124,6 +145,7 @@ impl PairingContext {
             pairing_id,
             owner_id: inviter.owner_id(),
             inviter_device_id: inviter.device_id(),
+            inviter_device_key: inviter.device_public_key(),
             joiner_device_id: joiner.device_id(),
             joiner_device_key: joiner.device_public_key(),
             transcript,
@@ -274,6 +296,41 @@ impl PairingInviterFlow {
         issuer_key: &dyn SigningProvider,
         now: PairingInstant,
     ) -> Result<TrustRecord, PairingFlowError> {
+        self.commit_trust_with_evidence_with_provider(
+            accepted,
+            transition_id,
+            authority,
+            issuer_key,
+            now,
+        )
+        .map(|establishment| establishment.trust())
+    }
+
+    pub fn commit_trust_with_evidence(
+        &mut self,
+        accepted: &PairingCredentialAccepted,
+        transition_id: TransitionId,
+        authority: &OwnerAuthorityState,
+        issuer_key: &SigningKey,
+        now: PairingInstant,
+    ) -> Result<PairingTrustEstablishment, PairingFlowError> {
+        self.commit_trust_with_evidence_with_provider(
+            accepted,
+            transition_id,
+            authority,
+            issuer_key,
+            now,
+        )
+    }
+
+    pub fn commit_trust_with_evidence_with_provider(
+        &mut self,
+        accepted: &PairingCredentialAccepted,
+        transition_id: TransitionId,
+        authority: &OwnerAuthorityState,
+        issuer_key: &dyn SigningProvider,
+        now: PairingInstant,
+    ) -> Result<PairingTrustEstablishment, PairingFlowError> {
         if self.state != PairingInviterState::AwaitingCredentialAcceptance {
             return self.fail(PairingFlowError::UnexpectedState);
         }
@@ -337,7 +394,7 @@ impl PairingInviterFlow {
         }
 
         self.state = PairingInviterState::Trusted;
-        Ok(trust)
+        Ok(PairingTrustEstablishment { transition, trust })
     }
 
     fn ensure_current(&mut self, now: PairingInstant) -> Result<(), PairingFlowError> {
@@ -365,6 +422,7 @@ impl PairingInviterFlow {
 pub struct PairingJoinerFlow {
     secret: PairingSecret,
     context: PairingContext,
+    accepted: Option<PairingCredentialAccepted>,
     state: PairingJoinerState,
 }
 
@@ -377,6 +435,7 @@ impl PairingJoinerFlow {
         Ok(Self {
             secret,
             context: PairingContext::new(inviter, joiner)?,
+            accepted: None,
             state: PairingJoinerState::AwaitingInviterConfirmation,
         })
     }
@@ -475,15 +534,55 @@ impl PairingJoinerFlow {
             Err(_) => return self.fail(PairingFlowError::SigningFailed),
         };
 
-        self.state = PairingJoinerState::Accepted;
-        Ok(PairingCredentialAccepted::new(
+        let accepted = PairingCredentialAccepted::new(
             self.context.pairing_id.to_bytes(),
             transcript_digest,
             credential_digest,
             self.context.joiner_device_id,
             credential.device_key_id(),
             signature,
-        ))
+        );
+        self.accepted = Some(accepted);
+        self.state = PairingJoinerState::Accepted;
+        Ok(accepted)
+    }
+
+    pub fn establish_inviter_trust(
+        &self,
+        credential: &DeviceCredential,
+        transition: &PairingTrustTransition,
+        authority: &OwnerAuthorityState,
+    ) -> Result<TrustRecord, PairingFlowError> {
+        if self.state != PairingJoinerState::Accepted {
+            return Err(PairingFlowError::UnexpectedState);
+        }
+        if credential.owner_id() != self.context.owner_id
+            || credential.device_id() != self.context.inviter_device_id
+            || credential.device_public_key() != self.context.inviter_device_key
+        {
+            return Err(PairingFlowError::CredentialMismatch);
+        }
+        credential.verify(authority, credential.credential_epoch())?;
+
+        let accepted = self.accepted.ok_or(PairingFlowError::UnexpectedState)?;
+        let proof_digest = credential_acceptance_digest(
+            accepted.pairing_transcript_digest(),
+            accepted.device_credential_signed_object_digest(),
+            accepted.joiner_device_id(),
+            accepted.joiner_device_key_id(),
+        );
+        let expected_evidence = signed_object_digest(
+            proof_digest,
+            SignatureAlgorithm::Ed25519,
+            &accepted.signature(),
+        );
+        if transition.pairing_evidence_digest() != expected_evidence {
+            return Err(PairingFlowError::InvalidPeerTrustEvidence);
+        }
+
+        transition
+            .establish(credential, authority)
+            .map_err(PairingFlowError::TrustTransition)
     }
 
     fn fail<T>(&mut self, error: PairingFlowError) -> Result<T, PairingFlowError> {

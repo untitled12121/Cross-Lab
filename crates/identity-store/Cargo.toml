@@ -13,4 +13,5 @@ workspace = true
 [dependencies]
 crosslab-crypto = { path = "../crypto" }
 crosslab-identity = { path = "../identity" }
+crosslab-policy = { path = "../policy" }
 blake3.workspace = true

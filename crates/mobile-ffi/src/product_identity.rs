@@ -37,6 +37,17 @@ pub struct MobileProductIdentity {
     pub local_device_id: String,
 }
 
+impl MobileProductIdentity {
+    pub(crate) fn from_state(state: &ProductIdentityState, created: bool) -> Self {
+        Self {
+            created,
+            payload: state.encode(),
+            owner_id: short_hex(state.owner_id().as_bytes()),
+            local_device_id: short_hex(state.local_device_id().as_bytes()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Error)]
 pub enum MobileProductIdentityError {
     SigningProvider,
@@ -69,6 +80,17 @@ impl core::fmt::Display for MobileProductIdentityError {
 impl std::error::Error for MobileProductIdentityError {}
 
 #[uniffi::export]
+pub fn product_identity_load(
+    current_payload: Vec<u8>,
+    local_device_signer: Arc<dyn MobileSigningProvider>,
+) -> Result<MobileProductIdentity, MobileProductIdentityError> {
+    let local = ForeignSigningProvider::new(local_device_signer)?;
+    let state = ProductIdentityState::decode(&current_payload)?;
+    state.validate_local_device_provider(&local)?;
+    Ok(MobileProductIdentity::from_state(&state, false))
+}
+
+#[uniffi::export]
 pub fn product_identity_load_or_create(
     current_payload: Option<Vec<u8>>,
     root_signer: Arc<dyn MobileSigningProvider>,
@@ -91,21 +113,18 @@ pub fn product_identity_load_or_create(
         ),
     };
 
-    Ok(MobileProductIdentity {
-        created,
-        payload: state.encode(),
-        owner_id: short_hex(state.owner_id().as_bytes()),
-        local_device_id: short_hex(state.local_device_id().as_bytes()),
-    })
+    Ok(MobileProductIdentity::from_state(&state, created))
 }
 
-struct ForeignSigningProvider {
+pub(crate) struct ForeignSigningProvider {
     inner: Arc<dyn MobileSigningProvider>,
     verifying_key: VerifyingKey,
 }
 
 impl ForeignSigningProvider {
-    fn new(inner: Arc<dyn MobileSigningProvider>) -> Result<Self, MobileProductIdentityError> {
+    pub(crate) fn new(
+        inner: Arc<dyn MobileSigningProvider>,
+    ) -> Result<Self, MobileProductIdentityError> {
         let bytes = inner
             .public_key()
             .map_err(|_| MobileProductIdentityError::SigningProvider)?;
@@ -144,7 +163,12 @@ impl From<ProductIdentityError> for MobileProductIdentityError {
             ProductIdentityError::Malformed => Self::Malformed,
             ProductIdentityError::UnsupportedSchema => Self::UnsupportedSchema,
             ProductIdentityError::ProviderMismatch => Self::ProviderMismatch,
-            ProductIdentityError::Identity(_) => Self::Identity,
+            ProductIdentityError::PeerLimit
+            | ProductIdentityError::PeerOwnerMismatch
+            | ProductIdentityError::LocalDeviceAsPeer
+            | ProductIdentityError::DuplicatePeer
+            | ProductIdentityError::Identity(_)
+            | ProductIdentityError::Trust(_) => Self::Identity,
         }
     }
 }

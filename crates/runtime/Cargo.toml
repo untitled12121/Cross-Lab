@@ -12,10 +12,12 @@ workspace = true
 
 [dependencies]
 crosslab-core = { path = "../core" }
+crosslab-crypto = { path = "../crypto" }
 crosslab-identity = { path = "../identity" }
 crosslab-policy = { path = "../policy" }
 crosslab-protocol = { path = "../protocol" }
 tokio = { workspace = true, features = ["rt", "sync", "time"] }
 
+
 [dev-dependencies]
-crosslab-crypto = { path = "../crypto" }
+crosslab-identity-store = { path = "../identity-store" }

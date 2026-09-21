@@ -5,6 +5,7 @@ use crosslab_core::{
     PairingInstant, PairingInvitation, PairingInvitationCreateError, PairingInvitationError,
 };
 use crosslab_identity_store::{ProductIdentityError, ProductIdentityState};
+use crosslab_runtime::ProductPairingCommit;
 use qrcode_rs::{Color, EcLevel, QrCode};
 
 use crate::features::identity_store::{
@@ -49,6 +50,26 @@ pub async fn load_existing_product_identity()
     let identity = ProductIdentityState::decode(&payload)?;
     identity.validate_providers(&root, &issuer, &local)?;
     Ok(Some(ProductIdentityPresentation::from_identity(&identity)))
+}
+
+pub async fn persist_product_pairing_commit(
+    commit: ProductPairingCommit,
+) -> Result<ProductIdentityPresentation, DesktopPairingError> {
+    let store = LinuxIdentityStore::from_environment()?;
+    let payload = store
+        .load_payload()
+        .await?
+        .ok_or(DesktopPairingError::IdentityMissing)?;
+
+    let root = LinuxEd25519Signer::load_required(LinuxSigningSlot::OwnerRoot).await?;
+    let issuer = LinuxEd25519Signer::load_required(LinuxSigningSlot::DeviceSigning).await?;
+    let local = LinuxEd25519Signer::load_required(LinuxSigningSlot::LocalDevice).await?;
+    let identity = ProductIdentityState::decode(&payload)?;
+    identity.validate_providers(&root, &issuer, &local)?;
+
+    let next = identity.with_paired_peer(commit.peer_credential(), commit.peer_transition())?;
+    store.commit_payload(next.encode()).await?;
+    Ok(ProductIdentityPresentation::from_identity(&next))
 }
 
 pub struct DesktopPairingInvitation {
@@ -156,6 +177,7 @@ impl Drop for QrModules {
 
 #[derive(Debug)]
 pub enum DesktopPairingError {
+    IdentityMissing,
     IdentityStore(LinuxIdentityStoreError),
     ProductIdentity(ProductIdentityError),
     InvitationCreate(PairingInvitationCreateError),
@@ -166,6 +188,9 @@ pub enum DesktopPairingError {
 impl core::fmt::Display for DesktopPairingError {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
+            Self::IdentityMissing => {
+                formatter.write_str("product identity is unavailable for pairing persistence")
+            }
             Self::IdentityStore(error) => fmt::Display::fmt(error, formatter),
             Self::ProductIdentity(error) => fmt::Display::fmt(error, formatter),
             Self::InvitationCreate(error) => fmt::Display::fmt(error, formatter),

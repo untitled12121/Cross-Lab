@@ -13,7 +13,7 @@ pub use bootstrap::{
 };
 pub use flow::{
     PairingFlowError, PairingInviterFlow, PairingInviterState, PairingJoinerFlow,
-    PairingJoinerState,
+    PairingJoinerState, PairingTrustEstablishment,
 };
 pub use invitation::{
     PairingInstant, PairingInvitation, PairingInvitationCreateError, PairingInvitationError,

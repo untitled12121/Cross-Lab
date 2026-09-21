@@ -1755,6 +1755,7 @@ dependencies = [
  "blake3",
  "crosslab-crypto",
  "crosslab-identity",
+ "crosslab-policy",
 ]
 
 [[package]]
@@ -1820,6 +1821,7 @@ dependencies = [
  "crosslab-core",
  "crosslab-crypto",
  "crosslab-identity",
+ "crosslab-identity-store",
  "crosslab-policy",
  "crosslab-protocol",
  "tokio",

@@ -10,4 +10,6 @@ pub use envelope::{
 };
 pub use memory::MemoryIdentityStore;
 
-pub use product::{ProductIdentityError, ProductIdentityState};
+pub use product::{
+    MAX_PRODUCT_TRUSTED_PEERS, ProductIdentityError, ProductIdentityState, ProductTrustedPeer,
+};
