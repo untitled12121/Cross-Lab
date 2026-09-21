@@ -79,7 +79,7 @@ impl<'a> QuicSessionAuthConfig<'a> {
 
     fn peer_trust(&self, device_id: DeviceId) -> Option<&TrustRecord> {
         match self.peer_trusts {
-            PeerTrusts::One(trust) => (trust.device_id() == device_id).then_some(trust),
+            PeerTrusts::One(trust) => Some(trust),
             PeerTrusts::Many(trusts) => trusts.iter().find(|trust| trust.device_id() == device_id),
         }
     }
