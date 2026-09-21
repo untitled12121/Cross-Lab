@@ -31,6 +31,7 @@ import dev.crosslab.android.features.devices.DevicesState
 import dev.crosslab.android.features.devices.RuntimeControllerState
 import dev.crosslab.android.features.devices.RuntimeLifecycle
 import dev.crosslab.android.features.owner.OwnerScreen
+import dev.crosslab.android.features.pairing.PairingJoinerState
 import uniffi.crosslab_mobile_ffi.MobilePairingBootstrap
 
 private enum class ControlCenterSection {
@@ -44,7 +45,7 @@ fun ControlCenterScreen(
     runtime: RuntimeControllerState,
     onDisconnect: () -> Unit,
     onReconnect: () -> Unit,
-    pairingBootstrap: MobilePairingBootstrap?,
+    pairing: PairingJoinerState,
     onPairingBootstrapScanned: (MobilePairingBootstrap) -> Unit,
     onCancelPairing: () -> Unit,
 ) {
@@ -139,7 +140,7 @@ fun ControlCenterScreen(
                     runtime = runtime,
                     onDisconnect = onDisconnect,
                     onReconnect = onReconnect,
-                    pairingBootstrap = pairingBootstrap,
+                    pairing = pairing,
                     onPairingBootstrapScanned = onPairingBootstrapScanned,
                     onCancelPairing = onCancelPairing,
                 )
