@@ -1821,6 +1821,7 @@ dependencies = [
  "crosslab-core",
  "crosslab-crypto",
  "crosslab-identity",
+ "crosslab-identity-store",
  "crosslab-policy",
  "crosslab-protocol",
  "tokio",
