@@ -9,8 +9,9 @@ mod status;
 pub use actor::{RuntimeActor, RuntimeActorConfig, RuntimeActorError, RuntimeActorSession};
 pub use node::{NodeError, NodeEvent, RuntimeNode};
 pub use pairing::{
-    ProductPairingCommit, ProductPairingError, ProductPairingInviter, ProductPairingJoiner,
-    ProductPairingState,
+    ProductPairingCommit, ProductPairingError, ProductPairingInviter,
+    ProductPairingInviterCompletion, ProductPairingJoiner, ProductPairingState,
+    ProductPairingTrustBundle,
 };
 pub use status::{ConnectivityState, RuntimeStatus, TransportStatus};
 
