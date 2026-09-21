@@ -687,7 +687,7 @@ mod tests {
         let accepted = joiner
             .accept_credential(&fixture.authority, &credential, &fixture.joiner_key)
             .unwrap();
-        let commit = inviter
+        let completion = inviter
             .verify_credential_acceptance(
                 &accepted,
                 TransitionId::from_bytes([0x1b; 32]),
@@ -696,14 +696,33 @@ mod tests {
                 PairingInstant::from_ticks(40),
             )
             .unwrap();
+        let inviter_commit = completion.commit();
+        let joiner_commit = joiner
+            .accept_inviter_trust(completion.reciprocal_trust(), &fixture.authority)
+            .unwrap();
 
         assert_eq!(inviter.state(), ProductPairingState::AwaitingPersistence);
-        assert_eq!(commit.peer_credential(), credential);
-        assert_eq!(commit.peer_trust().state(), TrustState::Trusted);
-        assert_eq!(commit.peer_trust().device_id(), credential.device_id());
+        assert_eq!(joiner.state(), ProductPairingState::AwaitingPersistence);
+        assert_eq!(inviter_commit.peer_credential(), credential);
+        assert_eq!(inviter_commit.peer_trust().state(), TrustState::Trusted);
+        assert_eq!(
+            inviter_commit.peer_trust().device_id(),
+            credential.device_id()
+        );
+        assert_eq!(
+            joiner_commit.peer_credential(),
+            fixture.inviter_credential
+        );
+        assert_eq!(joiner_commit.peer_trust().state(), TrustState::Trusted);
+        assert_eq!(
+            joiner_commit.peer_trust().device_id(),
+            fixture.inviter_credential.device_id()
+        );
 
         inviter.mark_persisted().unwrap();
+        joiner.mark_persisted().unwrap();
         assert_eq!(inviter.state(), ProductPairingState::Complete);
+        assert_eq!(joiner.state(), ProductPairingState::Complete);
     }
 
     #[test]
@@ -766,6 +785,58 @@ mod tests {
         let accepted = joiner
             .accept_credential(&fixture.authority, &credential, &fixture.joiner_key)
             .unwrap();
+        let completion = inviter
+            .verify_credential_acceptance(
+                &accepted,
+                TransitionId::from_bytes([0x1b; 32]),
+                &fixture.authority,
+                &fixture.issuer,
+                PairingInstant::from_ticks(40),
+            )
+            .unwrap();
+        joiner
+            .accept_inviter_trust(completion.reciprocal_trust(), &fixture.authority)
+            .unwrap();
+
+        inviter.persistence_failed().unwrap();
+        joiner.persistence_failed().unwrap();
+        assert_eq!(inviter.state(), ProductPairingState::Failed);
+        assert_eq!(joiner.state(), ProductPairingState::Failed);
+        assert_eq!(
+            inviter.mark_persisted(),
+            Err(ProductPairingError::InvalidState)
+        );
+        assert_eq!(
+            joiner.mark_persisted(),
+            Err(ProductPairingError::InvalidState)
+        );
+    }
+
+    #[test]
+    fn joiner_rejects_peer_trust_from_another_pairing_evidence() {
+        let fixture = Fixture::new();
+        let (mut inviter, mut joiner) = fixture.coordinators();
+
+        inviter
+            .accept_joiner_hello(joiner.hello(), PairingInstant::from_ticks(10))
+            .unwrap();
+        let joiner_confirmation = joiner.accept_inviter_hello(inviter.hello()).unwrap();
+        let inviter_confirmation = inviter
+            .verify_joiner_confirmation(&joiner_confirmation, PairingInstant::from_ticks(20))
+            .unwrap();
+        joiner
+            .verify_inviter_confirmation(&inviter_confirmation)
+            .unwrap();
+        let credential = inviter
+            .issue_joiner_credential(
+                &fixture.authority,
+                &fixture.issuer,
+                PairingInstant::from_ticks(30),
+            )
+            .unwrap();
+        let accepted = joiner
+            .accept_credential(&fixture.authority, &credential, &fixture.joiner_key)
+            .unwrap();
         inviter
             .verify_credential_acceptance(
                 &accepted,
@@ -776,12 +847,29 @@ mod tests {
             )
             .unwrap();
 
-        inviter.persistence_failed().unwrap();
-        assert_eq!(inviter.state(), ProductPairingState::Failed);
-        assert_eq!(
-            inviter.mark_persisted(),
-            Err(ProductPairingError::InvalidState)
+        let unrelated_transition = PairingTrustTransition::issue(
+            &fixture.inviter_credential,
+            TransitionId::from_bytes([0x1c; 32]),
+            [0xee; 32],
+            &fixture.authority,
+            &fixture.issuer,
+        )
+        .unwrap();
+        let result = joiner.accept_inviter_trust(
+            ProductPairingTrustBundle {
+                credential: fixture.inviter_credential,
+                transition: unrelated_transition,
+            },
+            &fixture.authority,
         );
+
+        assert_eq!(
+            result,
+            Err(ProductPairingError::Flow(
+                PairingFlowError::InvalidPeerTrustEvidence
+            ))
+        );
+        assert_eq!(joiner.state(), ProductPairingState::Failed);
     }
 
     #[test]
