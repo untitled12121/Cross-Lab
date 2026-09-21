@@ -144,6 +144,16 @@ impl ProductIdentityState {
         Ok(authority)
     }
 
+    pub fn with_paired_peer(
+        &self,
+        credential: DeviceCredential,
+        transition: PairingTrustTransition,
+    ) -> Result<Self, ProductIdentityError> {
+        let mut next = self.clone();
+        next.add_paired_peer(credential, transition)?;
+        Ok(next)
+    }
+
     pub fn add_paired_peer(
         &mut self,
         credential: DeviceCredential,
@@ -577,6 +587,102 @@ mod tests {
         assert_eq!(persisted.credential(), peer);
         assert_eq!(trust.state(), TrustState::Trusted);
         assert_eq!(trust.device_id(), peer.device_id());
+    }
+
+    #[test]
+    fn paired_peer_commit_round_trips_through_currentness_store() {
+        let (state, root, issuer, device) = fixture();
+        let store = crate::MemoryIdentityStore::default();
+        let first = store.compare_and_swap(None, state.encode()).unwrap();
+
+        let authority = state.authority_state().unwrap();
+        let peer_key = SigningKey::from_secret_bytes([0x61; 32]);
+        let credential = DeviceCredential::issue(
+            state.owner_id(),
+            DeviceId::from_bytes([0x62; 32]),
+            &peer_key,
+            0,
+            &authority,
+            &issuer,
+        )
+        .unwrap();
+        let transition = PairingTrustTransition::issue(
+            &credential,
+            TransitionId::from_bytes([0x63; 32]),
+            [0x64; 32],
+            &authority,
+            &issuer,
+        )
+        .unwrap();
+        let next = state.with_paired_peer(credential, transition).unwrap();
+
+        assert!(state.trusted_peers().is_empty());
+        let second = store
+            .compare_and_swap(Some(first.revision()), next.encode())
+            .unwrap();
+        let loaded = store.load().unwrap().unwrap();
+        assert_eq!(loaded.revision(), second.revision());
+
+        let restored = ProductIdentityState::decode(loaded.payload()).unwrap();
+        restored.validate_providers(&root, &issuer, &device).unwrap();
+        let peer = restored.trusted_peer(credential.device_id()).unwrap();
+        assert_eq!(peer.credential(), credential);
+        assert_eq!(
+            peer.trust(&restored.authority_state().unwrap())
+                .unwrap()
+                .state(),
+            TrustState::Trusted
+        );
+    }
+
+    #[test]
+    fn paired_peer_commit_rejects_stale_writer_without_partial_state() {
+        let (state, _, issuer, _) = fixture();
+        let store = crate::MemoryIdentityStore::default();
+        let first = store.compare_and_swap(None, state.encode()).unwrap();
+
+        let mut newer = state.clone();
+        add_peer(&mut newer, &issuer, 0x71);
+        let second = store
+            .compare_and_swap(Some(first.revision()), newer.encode())
+            .unwrap();
+
+        let mut stale = state;
+        add_peer(&mut stale, &issuer, 0x72);
+        assert_eq!(
+            store.compare_and_swap(Some(first.revision()), stale.encode()),
+            Err(crate::IdentityStoreError::RevisionConflict)
+        );
+
+        let loaded = store.load().unwrap().unwrap();
+        assert_eq!(loaded.revision(), second.revision());
+        let restored = ProductIdentityState::decode(loaded.payload()).unwrap();
+        assert_eq!(restored.trusted_peers().len(), 1);
+        assert!(restored.trusted_peer(DeviceId::from_bytes([0x72; 32])).is_some());
+        assert!(restored.trusted_peer(DeviceId::from_bytes([0x73; 32])).is_none());
+    }
+
+    #[test]
+    fn paired_peer_reload_fails_closed_on_currentness_rollback() {
+        let (state, _, issuer, _) = fixture();
+        let store = crate::MemoryIdentityStore::default();
+        let first = store.compare_and_swap(None, state.encode()).unwrap();
+        let old_anchor = crate::IdentityStoreAnchor::new(
+            first.revision(),
+            first.envelope_digest(),
+        );
+
+        let mut paired = state;
+        add_peer(&mut paired, &issuer, 0x81);
+        store
+            .compare_and_swap(Some(first.revision()), paired.encode())
+            .unwrap();
+        store.replace_anchor_for_test(old_anchor);
+
+        assert_eq!(
+            store.load(),
+            Err(crate::IdentityStoreError::StaleOrMixedState)
+        );
     }
 
     #[test]
