@@ -52,7 +52,7 @@ impl MemoryIdentityStore {
     }
 
     #[cfg(test)]
-    fn replace_anchor_for_test(&self, anchor: IdentityStoreAnchor) {
+    pub(crate) fn replace_anchor_for_test(&self, anchor: IdentityStoreAnchor) {
         self.state
             .lock()
             .expect("memory identity-store lock poisoned")
