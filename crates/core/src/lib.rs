@@ -8,9 +8,9 @@ mod transport;
 
 pub use control::{ControlDispatchError, ControlDispatcher, EventSubscription, InboundControl};
 pub use pairing::{
-    PAIRING_BOOTSTRAP_PROFILE_V1, PAIRING_DNS_SD_SERVICE_TYPE,
-    PAIRING_DNS_SD_TXT_VERSION_KEY, PAIRING_DNS_SD_TXT_VERSION_V1, PairingBootstrap,
-    PairingBootstrapCode, PairingBootstrapError, PairingConfirmationError, PairingConfirmationRole, PairingFlowError, PairingId, PairingInstant,
+    PAIRING_BOOTSTRAP_PROFILE_V1, PAIRING_DNS_SD_SERVICE_TYPE, PAIRING_DNS_SD_TXT_VERSION_KEY,
+    PAIRING_DNS_SD_TXT_VERSION_V1, PairingBootstrap, PairingBootstrapCode, PairingBootstrapError,
+    PairingConfirmationError, PairingConfirmationRole, PairingFlowError, PairingId, PairingInstant,
     PairingInvitation, PairingInvitationCreateError, PairingInvitationError,
     PairingInvitationState, PairingInviterFlow, PairingInviterState, PairingJoinerFlow,
     PairingJoinerState, PairingSecret, PairingTranscript, PairingTrustEstablishment,
