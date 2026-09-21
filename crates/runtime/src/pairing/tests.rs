@@ -771,7 +771,7 @@ fn network_exchange_rejects_wrong_final_ack_role() {
     joiner.local_persisted().unwrap();
 
     let wrong = ProductPairingMessage::Ack(crosslab_protocol::ProductPairingAck::new(
-        joiner.hello().pairing_id(),
+        fixture.invitation.pairing_id().to_bytes(),
         PairingRole::Joiner,
         crosslab_protocol::ProductPairingAckKind::Complete,
     ));
