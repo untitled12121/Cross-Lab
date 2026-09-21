@@ -103,13 +103,13 @@ fn product_pairing_messages_round_trip() {
         .authority
         .current_delegation(AuthorityRole::DeviceSigning)
         .unwrap();
-    fixture.round_trip(ProductPairingMessage::CredentialBundle(
+    fixture.round_trip(ProductPairingMessage::CredentialBundle(Box::new(
         ProductPairingCredentialBundle::new(
             *fixture.authority.root(),
             device_signing,
             fixture.joiner_credential,
         ),
-    ));
+    )));
 
     fixture.round_trip(ProductPairingMessage::CredentialAccepted(
         PairingCredentialAccepted::new(
