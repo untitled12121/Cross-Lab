@@ -135,8 +135,8 @@ impl MobileProductPairingJoinerSession {
 pub fn start_product_pairing_joiner(
     bootstrap: Arc<MobilePairingBootstrap>,
     address: Vec<u8>,
-    port: u16,
-    scope_id: u32,
+    port: i32,
+    scope_id: i32,
     local_device_signer: Arc<dyn MobileSigningProvider>,
 ) -> Result<Arc<MobileProductPairingJoinerSession>, MobileProductPairingNetworkError> {
     let bootstrap = bootstrap.take()?;
@@ -188,12 +188,15 @@ pub fn start_product_pairing_joiner(
 
 fn socket_addr(
     address: Vec<u8>,
-    port: u16,
-    scope_id: u32,
+    port: i32,
+    scope_id: i32,
 ) -> Result<SocketAddr, MobileProductPairingNetworkError> {
-    if port == 0 {
-        return Err(MobileProductPairingNetworkError::InvalidRoute);
-    }
+    let port = u16::try_from(port)
+        .ok()
+        .filter(|port| *port != 0)
+        .ok_or(MobileProductPairingNetworkError::InvalidRoute)?;
+    let scope_id = u32::try_from(scope_id)
+        .map_err(|_| MobileProductPairingNetworkError::InvalidRoute)?;
 
     match address.as_slice() {
         [a, b, c, d] => Ok(SocketAddr::V4(SocketAddrV4::new(
