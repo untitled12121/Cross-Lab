@@ -152,6 +152,10 @@ impl DesktopPairingInvitation {
         self.service.subscribe_status()
     }
 
+    pub fn status(&self) -> DesktopPairingStage {
+        self.service.status()
+    }
+
     pub fn now(&self) -> PairingInstant {
         PairingInstant::from_ticks(
             self.created_at
