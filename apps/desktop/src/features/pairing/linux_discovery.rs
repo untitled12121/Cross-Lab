@@ -1,8 +1,8 @@
 use core::fmt;
 
 use crosslab_core::{
-    PAIRING_DNS_SD_SERVICE_TYPE, PAIRING_DNS_SD_TXT_VERSION_KEY,
-    PAIRING_DNS_SD_TXT_VERSION_V1, PairingId, pairing_dns_sd_instance,
+    PAIRING_DNS_SD_SERVICE_TYPE, PAIRING_DNS_SD_TXT_VERSION_KEY, PAIRING_DNS_SD_TXT_VERSION_V1,
+    PairingId, pairing_dns_sd_instance,
 };
 use zbus::{Connection, Proxy, zvariant::OwnedObjectPath};
 
@@ -20,7 +20,10 @@ pub struct LinuxPairingAdvertisement {
 }
 
 impl LinuxPairingAdvertisement {
-    pub async fn start(pairing_id: PairingId, port: u16) -> Result<Self, LinuxPairingDiscoveryError> {
+    pub async fn start(
+        pairing_id: PairingId,
+        port: u16,
+    ) -> Result<Self, LinuxPairingDiscoveryError> {
         let connection = Connection::system().await?;
         let server = Proxy::new(
             &connection,
@@ -100,9 +103,7 @@ impl From<zbus::Error> for LinuxPairingDiscoveryError {
 }
 
 fn advertisement_txt() -> Vec<Vec<u8>> {
-    vec![
-        format!("{PAIRING_DNS_SD_TXT_VERSION_KEY}={PAIRING_DNS_SD_TXT_VERSION_V1}").into_bytes(),
-    ]
+    vec![format!("{PAIRING_DNS_SD_TXT_VERSION_KEY}={PAIRING_DNS_SD_TXT_VERSION_V1}").into_bytes()]
 }
 
 #[cfg(test)]
