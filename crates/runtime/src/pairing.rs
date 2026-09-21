@@ -6,7 +6,7 @@ use crosslab_core::{
 };
 use crosslab_crypto::{SigningProvider, random_bytes};
 use crosslab_identity::{DeviceCredential, DeviceId, IdentityError, OwnerAuthorityState};
-use crosslab_policy::{TransitionId, TrustRecord};
+use crosslab_policy::{PairingTrustTransition, TransitionId, TrustRecord};
 use crosslab_protocol::{
     PairingConfirmation, PairingCredentialAccepted, PairingHello, PairingRole,
 };
@@ -29,6 +29,7 @@ pub enum ProductPairingState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProductPairingCommit {
     peer_credential: DeviceCredential,
+    peer_transition: PairingTrustTransition,
     peer_trust: TrustRecord,
 }
 
@@ -37,8 +38,44 @@ impl ProductPairingCommit {
         self.peer_credential
     }
 
+    pub const fn peer_transition(&self) -> PairingTrustTransition {
+        self.peer_transition
+    }
+
     pub const fn peer_trust(&self) -> TrustRecord {
         self.peer_trust
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProductPairingTrustBundle {
+    credential: DeviceCredential,
+    transition: PairingTrustTransition,
+}
+
+impl ProductPairingTrustBundle {
+    pub const fn credential(&self) -> DeviceCredential {
+        self.credential
+    }
+
+    pub const fn transition(&self) -> PairingTrustTransition {
+        self.transition
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProductPairingInviterCompletion {
+    commit: ProductPairingCommit,
+    reciprocal_trust: ProductPairingTrustBundle,
+}
+
+impl ProductPairingInviterCompletion {
+    pub const fn commit(&self) -> ProductPairingCommit {
+        self.commit
+    }
+
+    pub const fn reciprocal_trust(&self) -> ProductPairingTrustBundle {
+        self.reciprocal_trust
     }
 }
 
@@ -223,10 +260,12 @@ impl ProductPairingInviter {
         authority: &OwnerAuthorityState,
         issuer: &dyn SigningProvider,
         now: PairingInstant,
-    ) -> Result<ProductPairingCommit, ProductPairingError> {
+    ) -> Result<ProductPairingInviterCompletion, ProductPairingError> {
         if self.state != ProductPairingState::AwaitingCredentialAcceptance {
             return self.fail(ProductPairingError::InvalidState);
         }
+        let reciprocal_transition_id =
+            TransitionId::generate().map_err(|_| ProductPairingError::Random)?;
         let credential = self
             .issued_credential
             .ok_or(ProductPairingError::InvalidState)?;
@@ -234,17 +273,45 @@ impl ProductPairingInviter {
             .flow
             .as_mut()
             .ok_or(ProductPairingError::InvalidState)?
-            .commit_trust_with_provider(accepted, transition_id, authority, issuer, now);
-        match result {
-            Ok(trust) => {
-                self.state = ProductPairingState::AwaitingPersistence;
-                Ok(ProductPairingCommit {
-                    peer_credential: credential,
-                    peer_trust: trust,
-                })
+            .commit_trust_with_evidence_with_provider(
+                accepted,
+                transition_id,
+                authority,
+                issuer,
+                now,
+            );
+
+        let establishment = match result {
+            Ok(establishment) => establishment,
+            Err(error) => return self.fail(error.into()),
+        };
+        let reciprocal_transition = match PairingTrustTransition::issue_with_provider(
+            &self.local_credential,
+            reciprocal_transition_id,
+            establishment.transition().pairing_evidence_digest(),
+            authority,
+            issuer,
+        ) {
+            Ok(transition) => transition,
+            Err(error) => {
+                return self.fail(
+                    PairingFlowError::TrustTransition(error).into(),
+                );
             }
-            Err(error) => self.fail(error.into()),
-        }
+        };
+
+        self.state = ProductPairingState::AwaitingPersistence;
+        Ok(ProductPairingInviterCompletion {
+            commit: ProductPairingCommit {
+                peer_credential: credential,
+                peer_transition: establishment.transition(),
+                peer_trust: establishment.trust(),
+            },
+            reciprocal_trust: ProductPairingTrustBundle {
+                credential: self.local_credential,
+                transition: reciprocal_transition,
+            },
+        })
     }
 
     pub fn mark_persisted(&mut self) -> Result<(), ProductPairingError> {
@@ -424,6 +491,49 @@ impl ProductPairingJoiner {
 
     pub const fn accepted_credential(&self) -> Option<DeviceCredential> {
         self.accepted_credential
+    }
+
+    pub fn accept_inviter_trust(
+        &mut self,
+        bundle: ProductPairingTrustBundle,
+        authority: &OwnerAuthorityState,
+    ) -> Result<ProductPairingCommit, ProductPairingError> {
+        if self.state != ProductPairingState::AwaitingPeerTrust {
+            return self.fail(ProductPairingError::InvalidState);
+        }
+
+        let result = self
+            .flow
+            .as_ref()
+            .ok_or(ProductPairingError::InvalidState)?
+            .establish_inviter_trust(&bundle.credential, &bundle.transition, authority);
+        match result {
+            Ok(trust) => {
+                self.state = ProductPairingState::AwaitingPersistence;
+                Ok(ProductPairingCommit {
+                    peer_credential: bundle.credential,
+                    peer_transition: bundle.transition,
+                    peer_trust: trust,
+                })
+            }
+            Err(error) => self.fail(error.into()),
+        }
+    }
+
+    pub fn mark_persisted(&mut self) -> Result<(), ProductPairingError> {
+        if self.state != ProductPairingState::AwaitingPersistence {
+            return self.fail(ProductPairingError::InvalidState);
+        }
+        self.state = ProductPairingState::Complete;
+        Ok(())
+    }
+
+    pub fn persistence_failed(&mut self) -> Result<(), ProductPairingError> {
+        if self.state != ProductPairingState::AwaitingPersistence {
+            return self.fail(ProductPairingError::InvalidState);
+        }
+        self.state = ProductPairingState::Failed;
+        Ok(())
     }
 
     pub fn cancel(&mut self) -> Result<(), ProductPairingError> {
