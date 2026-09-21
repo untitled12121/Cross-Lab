@@ -181,6 +181,10 @@ impl LinuxProductPairingService {
         self.status.clone()
     }
 
+    pub fn status(&self) -> DesktopPairingStage {
+        *self.status.borrow()
+    }
+
     pub fn cancel(&self) -> Result<(), LinuxPairingServiceError> {
         self.command_tx
             .try_send(ServiceCommand::Cancel)
