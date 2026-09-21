@@ -249,4 +249,3 @@ impl ProductPairingInviter {
         Err(error)
     }
 }
-
