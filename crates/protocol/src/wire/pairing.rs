@@ -279,11 +279,11 @@ impl ProductPairingAck {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProductPairingMessage {
     Hello(PairingHello),
     Confirmation(PairingConfirmation),
-    CredentialBundle(ProductPairingCredentialBundle),
+    CredentialBundle(Box<ProductPairingCredentialBundle>),
     CredentialAccepted(PairingCredentialAccepted),
     TrustBundle(ProductPairingTrustBundleMessage),
     Ack(ProductPairingAck),
@@ -576,10 +576,8 @@ impl TryFrom<ProductPairingV1> for ProductPairingMessage {
                     .credential
                     .ok_or(ProtocolWireError::MissingProductPairingCredential)?
                     .try_into()?;
-                Ok(Self::CredentialBundle(ProductPairingCredentialBundle::new(
-                    owner_root,
-                    device_signing,
-                    credential,
+                Ok(Self::CredentialBundle(Box::new(
+                    ProductPairingCredentialBundle::new(owner_root, device_signing, credential),
                 )))
             }
             product_pairing_v1::Body::CredentialAccepted(accepted) => {
