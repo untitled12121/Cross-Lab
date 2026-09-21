@@ -114,10 +114,7 @@ impl ProductPairingInviterExchange {
             _ => return self.fail(ProductPairingNetworkError::UnexpectedMessage),
         };
 
-        let response = match self
-            .pairing
-            .verify_joiner_confirmation(&confirmation, now)
-        {
+        let response = match self.pairing.verify_joiner_confirmation(&confirmation, now) {
             Ok(response) => response,
             Err(error) => return self.fail(error.into()),
         };
@@ -132,10 +129,7 @@ impl ProductPairingInviterExchange {
         now: PairingInstant,
     ) -> Result<ProductPairingMessage, ProductPairingNetworkError> {
         self.require(ProductPairingExchangeState::AwaitingCredential)?;
-        let credential = match self
-            .pairing
-            .issue_joiner_credential(authority, issuer, now)
-        {
+        let credential = match self.pairing.issue_joiner_credential(authority, issuer, now) {
             Ok(credential) => credential,
             Err(error) => return self.fail(error.into()),
         };
@@ -164,8 +158,7 @@ impl ProductPairingInviterExchange {
             }
             _ => return self.fail(ProductPairingNetworkError::UnexpectedMessage),
         };
-        let transition_id =
-            TransitionId::generate().map_err(|_| ProductPairingError::Random)?;
+        let transition_id = TransitionId::generate().map_err(|_| ProductPairingError::Random)?;
         let completion = match self.pairing.verify_credential_acceptance(
             &accepted,
             transition_id,
@@ -182,9 +175,7 @@ impl ProductPairingInviterExchange {
         Ok(commit)
     }
 
-    pub fn local_persisted(
-        &mut self,
-    ) -> Result<ProductPairingMessage, ProductPairingNetworkError> {
+    pub fn local_persisted(&mut self) -> Result<ProductPairingMessage, ProductPairingNetworkError> {
         self.require(ProductPairingExchangeState::AwaitingLocalPersistence)?;
         if let Err(error) = self.pairing.mark_persisted() {
             return self.fail(error.into());
@@ -375,13 +366,14 @@ impl ProductPairingJoinerExchange {
         if let Err(error) = authority.accept_delegation(bundle.device_signing()) {
             return self.fail(ProductPairingError::Identity(error).into());
         }
-        let accepted = match self
-            .pairing
-            .accept_credential(&authority, &bundle.credential(), local_signer)
-        {
-            Ok(accepted) => accepted,
-            Err(error) => return self.fail(error.into()),
-        };
+        let accepted =
+            match self
+                .pairing
+                .accept_credential(&authority, &bundle.credential(), local_signer)
+            {
+                Ok(accepted) => accepted,
+                Err(error) => return self.fail(error.into()),
+            };
         self.authority = Some(authority);
         self.state = ProductPairingExchangeState::AwaitingPeerTrust;
         Ok(ProductPairingMessage::CredentialAccepted(accepted))
@@ -413,9 +405,7 @@ impl ProductPairingJoinerExchange {
         Ok(completion)
     }
 
-    pub fn local_persisted(
-        &mut self,
-    ) -> Result<ProductPairingMessage, ProductPairingNetworkError> {
+    pub fn local_persisted(&mut self) -> Result<ProductPairingMessage, ProductPairingNetworkError> {
         self.require(ProductPairingExchangeState::AwaitingLocalPersistence)?;
         if let Err(error) = self.pairing.mark_persisted() {
             return self.fail(error.into());
