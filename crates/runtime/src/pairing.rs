@@ -476,7 +476,7 @@ mod tests {
             let delegation = AuthorityDelegation::issue(
                 owner_id,
                 AuthorityRole::DeviceSigning,
-                &fixture.issuer,
+                &issuer,
                 0,
                 &root_key,
             );
@@ -490,8 +490,8 @@ mod tests {
                 inviter_device_id,
                 &inviter_key,
                 0,
-                &fixture.authority,
-                &fixture.issuer,
+                &authority,
+                &issuer,
             )
             .unwrap();
             let invitation = PairingInvitation::from_parts(
@@ -630,9 +630,6 @@ mod tests {
     #[test]
     fn persistence_failure_is_terminal() {
         let fixture = Fixture::new();
-        let authority = fixture.authority.clone();
-        let issuer = SigningKey::from_secret_bytes([0x12; 32]);
-        let joiner_key = SigningKey::from_secret_bytes([0x17; 32]);
         let (mut inviter, mut joiner) = fixture.coordinators();
 
         inviter
