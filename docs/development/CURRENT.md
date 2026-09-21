@@ -21,6 +21,7 @@ The production pairing foundation has now advanced through the Add Device / QR s
 - Current `main` after PR #49: `445bbf32178dff94f339fc1ae80447967f5da215`.
 - PR #48 — production identity-store implementation: merged as `6aae001a2911f4752c29dfc16696fabb20695aa5`; exact-head CI `35520246921` fully green on `6f958c98618ae7af44dce6def92efdf8fec487c5`.
 - PR #49 — product Add Device / QR flow: merged as `445bbf32178dff94f339fc1ae80447967f5da215`; exact-head CI `35533414673` fully green on `7d3176ffd4387d3e29982ae5fe641249d6d33445`.
+- PR #50 — shared product pairing coordinator + durable reciprocal trust persistence: merged as `3af825e6f78bef4512168f587f452c1b0267b6a7`; exact-head CI `35567548228` and Fuzz Smoke `35567548208` fully green on `ec59f99f7c09898aa2533d8b40bd4e980fa2b022`.
 - The final PR #49 CI blocker was fixed rather than suppressed: the redacted `MobilePairingBootstrap` debug implementation was moved before the test module to satisfy `clippy::items-after-test-module`.
 - Physical-evidence continuation branch: `m10-task10-real-device-evidence`.
 - M10 evidence protocol: `docs/research/M10-platform-evidence.md`.
@@ -44,12 +45,14 @@ The production pairing foundation has now advanced through the Add Device / QR s
 - Shared Rust bootstrap validation.
 - Scanned pairing secret remains inside an opaque Rust UniFFI object rather than Compose presentation state.
 - QR/bootstrap debug output is redacted.
+- Shared product pairing coordinator reusing ADR-0003 inviter/joiner state machines.
+- Reciprocal peer credential/trust persistence for inviter and joiner.
+- Product identity schema v2 with bounded validated trusted-peer records.
+- Linux and Android atomic pairing persistence through the ADR-0015 identity-store boundary.
+- Replay, forged final proof, persistence, reload, and currentness failure coverage.
 
 ### Not yet implemented
 
-- Shared product pairing coordinator.
-- Atomic durable peer credential + verified trust persistence for both sides of a successful pairing.
-- Product-level failure/replay/persistence/rollback coordinator tests.
 - Bounded LAN discovery profile and its ADR.
 - Provisional Quinn product-pairing channel.
 - Real Linux ↔ Android product pairing over LAN.
@@ -69,44 +72,16 @@ The next implementation must therefore preserve these rules:
 
 ## Exact Next Task
 
-Continue `docs/superpowers/plans/2026-09-20-product-add-device-pairing.md` in this order:
+Continue `docs/superpowers/plans/2026-09-20-product-add-device-pairing.md`:
 
-1. implement the shared product pairing coordinator using the existing ADR-0003 pairing flow rather than a second protocol;
-2. persist peer credential + verified trust as one logical security commit and make restart reconstruction fail closed;
-3. add success, cancellation, replay, malformed bootstrap, proof failure, persistence failure, and rollback/currentness tests;
-4. record the bounded LAN discovery + provisional Quinn pairing profile in an ADR before promotion;
-5. implement Linux ↔ Android real product pairing;
-6. collect physical camera/LAN evidence on actual devices.
+1. record the bounded LAN discovery + provisional Quinn product-pairing channel profile in an ADR before implementation/promotion;
+2. implement bounded local discovery as routing metadata only, with no identity/trust authority;
+3. carry the existing shared product pairing coordinator over the provisional Quinn channel;
+4. connect the Linux invitation UI and Android QR scanner to the real coordinator/channel lifecycle;
+5. add protocol/discovery/reconnect/cancellation/timeout/failure tests;
+6. then leave physical camera/LAN evidence for the owner’s real Linux + Android hardware test.
 
-M10 physical hardware evidence remains a separate track and does not block product implementation. Do not claim physical behavior verified until it is tested on the real Linux + Android pair.
-
-## M10 Physical Evidence Still Pending
-
-The following remain physically unverified:
-
-- Android foreground → background → foreground;
-- local network loss → restoration;
-- Linux/Android disconnect → fresh authenticated reconnect;
-- revocation → reconnect denial on the physical pair;
-- clean explicit shutdown;
-- no duplicate runtime/session after lifecycle churn;
-- bounded idle/reconnect behavior on real devices;
-- Ayu Light rendering/selection on the physical pair;
-- the new Android QR scanner on a physical camera;
-- real LAN product pairing once implemented.
-
-Darkmatter/System-dark remains blocked until an authoritative Darkmatter palette is supplied.
-
-## Development Constraints
-
-- UI code does not own networking, cryptography, persistence internals, or privileged operations.
-- Shared pairing state stays in Rust; UI/FFI receives presentation-safe state/events only.
-- Product pairing reuses the existing pairing transcript/HMAC and credential proof-of-possession semantics.
-- Cross-Lab identity/trust remain independent from IP, hostname, BLE identifiers, TLS certificates, Quinn connection identity, or discovery metadata.
-- Production identity load/commit is fail-closed when provider/currentness state is missing, stale, rolled back, or inconsistent.
-- Development provisioning remains explicit, non-default, private, and separate from production pairing.
-- Do not promote Iroh in M10; preserve ADR-0009.
-- No architectural trust/protocol/transport/persistent-format change is made silently; use an ADR when the Master Architecture requires one.
+M10 physical evidence remains a separate track. Do not claim physical behavior verified until tested on the real pair.
 
 ## Resume Procedure
 
