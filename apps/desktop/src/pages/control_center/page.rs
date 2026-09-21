@@ -127,19 +127,20 @@ impl ControlCenterPage {
         cx.notify();
 
         cx.spawn(async move |this, cx| {
-            let result = DesktopPairingInvitation::create().await;
-            let Ok(invitation) = result else {
-                let error = result.err().expect("failed pairing invitation has an error");
-                let _ = this.update(cx, |page, cx| {
-                    if page.pairing_generation != generation {
-                        return;
-                    }
-                    page.pairing_busy = false;
-                    page.pairing_invitation = None;
-                    page.notice = Some(error.to_string());
-                    cx.notify();
-                });
-                return;
+            let invitation = match DesktopPairingInvitation::create().await {
+                Ok(invitation) => invitation,
+                Err(error) => {
+                    let _ = this.update(cx, |page, cx| {
+                        if page.pairing_generation != generation {
+                            return;
+                        }
+                        page.pairing_busy = false;
+                        page.pairing_invitation = None;
+                        page.notice = Some(error.to_string());
+                        cx.notify();
+                    });
+                    return;
+                }
             };
 
             let mut status = invitation.subscribe_status();
