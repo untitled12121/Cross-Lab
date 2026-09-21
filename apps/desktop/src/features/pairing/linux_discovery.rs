@@ -42,6 +42,7 @@ impl LinuxPairingAdvertisement {
         .await?;
 
         let instance = pairing_dns_sd_instance(pairing_id);
+        let service_type = avahi_service_type()?;
         let txt = advertisement_txt();
         let _: () = group
             .call(
@@ -51,7 +52,7 @@ impl LinuxPairingAdvertisement {
                     AVAHI_PROTO_UNSPEC,
                     AVAHI_FLAGS_NONE,
                     instance.as_str(),
-                    PAIRING_DNS_SD_SERVICE_TYPE,
+                    service_type,
                     "",
                     "",
                     port,
@@ -82,7 +83,13 @@ impl LinuxPairingAdvertisement {
 }
 
 #[derive(Debug)]
-pub struct LinuxPairingDiscoveryError(zbus::Error);
+pub struct LinuxPairingDiscoveryError(LinuxPairingDiscoveryErrorKind);
+
+#[derive(Debug)]
+enum LinuxPairingDiscoveryErrorKind {
+    Dbus(zbus::Error),
+    InvalidServiceType,
+}
 
 impl fmt::Display for LinuxPairingDiscoveryError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -92,14 +99,26 @@ impl fmt::Display for LinuxPairingDiscoveryError {
 
 impl std::error::Error for LinuxPairingDiscoveryError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(&self.0)
+        match &self.0 {
+            LinuxPairingDiscoveryErrorKind::Dbus(error) => Some(error),
+            LinuxPairingDiscoveryErrorKind::InvalidServiceType => None,
+        }
     }
 }
 
 impl From<zbus::Error> for LinuxPairingDiscoveryError {
     fn from(error: zbus::Error) -> Self {
-        Self(error)
+        Self(LinuxPairingDiscoveryErrorKind::Dbus(error))
     }
+}
+
+fn avahi_service_type() -> Result<&'static str, LinuxPairingDiscoveryError> {
+    PAIRING_DNS_SD_SERVICE_TYPE
+        .strip_suffix(".local.")
+        .filter(|value| !value.is_empty())
+        .ok_or(LinuxPairingDiscoveryError(
+            LinuxPairingDiscoveryErrorKind::InvalidServiceType,
+        ))
 }
 
 fn advertisement_txt() -> Vec<Vec<u8>> {
@@ -113,5 +132,10 @@ mod tests {
     #[test]
     fn advertisement_txt_contains_only_profile_version() {
         assert_eq!(advertisement_txt(), vec![b"v=1".to_vec()]);
+    }
+
+    #[test]
+    fn avahi_receives_service_type_without_local_domain() {
+        assert_eq!(avahi_service_type().unwrap(), "_crosslab-pair._udp");
     }
 }

@@ -16,6 +16,7 @@ import dev.crosslab.android.features.identity.AndroidIdentityStore
 import dev.crosslab.android.features.identity.AndroidProductIdentityRepository
 import dev.crosslab.android.features.identity.AndroidSigningSlot
 import dev.crosslab.android.features.devices.RuntimeController
+import dev.crosslab.android.features.pairing.PairingJoinerController
 
 class CrossLabApplication : Application(), DefaultLifecycleObserver {
     lateinit var runtimeController: RuntimeController
@@ -28,6 +29,9 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
         private set
 
     lateinit var identityRepository: AndroidProductIdentityRepository
+        private set
+
+    lateinit var pairingController: PairingJoinerController
         private set
 
     private lateinit var connectivityManager: ConnectivityManager
@@ -56,6 +60,7 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
                     AndroidEd25519Signer(this, AndroidSigningSlot.DEVICE_SIGNING),
                 localDeviceSigner = localDeviceSigner,
             )
+        pairingController = PairingJoinerController(this, identityRepository)
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
 
         connectivityManager = getSystemService(ConnectivityManager::class.java)
@@ -92,6 +97,7 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
     override fun onTerminate() {
         connectivityManager.unregisterNetworkCallback(networkCallback)
         ProcessLifecycleOwner.get().lifecycle.removeObserver(this)
+        pairingController.close()
         runtimeController.shutdown()
         super.onTerminate()
     }

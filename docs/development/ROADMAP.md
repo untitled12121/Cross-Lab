@@ -10,7 +10,7 @@ P0.1-P0.9 are complete. Closeout record: `docs/plans/phase-0/PHASE-0-CLOSEOUT.md
 
 ## Phase 1 — Core Simulator and First Platform Slice
 
-**Status: M1-M9 complete; M10 implementation active**
+**Status: M1-M10 implemented; M10 physical evidence pending**
 
 - M1 — Repository Foundation — **Complete**
 - M2 — Crypto + Identity — **Complete**
@@ -21,13 +21,13 @@ P0.1-P0.9 are complete. Closeout record: `docs/plans/phase-0/PHASE-0-CLOSEOUT.md
 - M7 — Failure and Security Lifecycle — **Complete**
 - M8 — Quinn Transport — **Complete**
 - M9 — Remote Networking Evaluation ADR — **Complete**
-- M10 — First Linux Desktop + Android Vertical Slice — **Active**
+- M10 — First Linux Desktop + Android Vertical Slice — **Implemented; physical evidence pending**
 
-M10's host/runtime/UI foundations are integrated. Normal product pairing is being completed using ADR-0016 bounded DNS-SD discovery and provisional Quinn pairing. Physical Linux + Android evidence remains a separate owner-hardware gate.
+M10's host/runtime/UI foundations and normal product pairing lifecycle are implemented, including ADR-0016 bounded DNS-SD discovery, provisional Quinn pairing, reciprocal durable trust, and native Linux/Android lifecycle UI. Physical Linux + Android evidence remains a separate owner-hardware gate.
 
 ## Phase 2 — Linux + Android MVP
 
-**Status: Next; begin immediately after M10 product pairing completion**
+**Status: Active after M10 implementation**
 
 Target:
 

@@ -25,16 +25,19 @@ fun ControlButton(
     modifier: Modifier = Modifier,
     active: Boolean = false,
     destructive: Boolean = false,
+    enabled: Boolean = true,
 ) {
     val colors = theme.colors
     val background =
         when {
+            !enabled -> colors.muted.toComposeColor()
             destructive -> colors.destructive.toComposeColor()
             active -> colors.accent.toComposeColor()
             else -> colors.secondary.toComposeColor()
         }
     val foreground =
         when {
+            !enabled -> colors.mutedForeground.toComposeColor()
             destructive -> colors.destructiveForeground.toComposeColor()
             active -> colors.accentForeground.toComposeColor()
             else -> colors.secondaryForeground.toComposeColor()
@@ -49,7 +52,7 @@ fun ControlButton(
                     BorderStroke(theme.metrics.borderWidth.toFloat().dp, colors.border.toComposeColor()),
                     RectangleShape,
                 )
-                .clickable(onClick = onClick)
+                .clickable(enabled = enabled, onClick = onClick)
                 .padding(horizontal = theme.spacing.lg.toFloat().dp),
         contentAlignment = Alignment.Center,
     ) {

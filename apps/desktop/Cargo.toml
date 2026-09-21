@@ -13,7 +13,6 @@ workspace = true
 [features]
 default = []
 development-provisioning = [
-    "dep:crosslab-transport-quic",
     "crosslab-transport-quic/development-provisioning",
     "tokio/signal",
 ]
@@ -24,7 +23,7 @@ crosslab-identity = { path = "../../crates/identity" }
 crosslab-policy = { path = "../../crates/policy" }
 crosslab-protocol = { path = "../../crates/protocol" }
 crosslab-runtime = { path = "../../crates/runtime" }
-crosslab-transport-quic = { path = "../../transports/quic", optional = true }
+crosslab-transport-quic = { path = "../../transports/quic" }
 gpui-kit.workspace = true
 qrcode-rs.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }

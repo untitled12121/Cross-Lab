@@ -1,6 +1,6 @@
 use crate::features::{
     appearance::{active_theme, font_weight},
-    pairing::DesktopPairingInvitation,
+    pairing::{DesktopPairingInvitation, DesktopPairingStage},
 };
 use gpui_kit::{
     App, Div, ParentElement as _, Styled as _, component::theme::ActiveTheme as _, div, px, rgb,
@@ -12,6 +12,7 @@ const QUIET_ZONE_MODULES: f32 = 4.;
 pub(crate) fn pairing_invitation_panel(invitation: &DesktopPairingInvitation, cx: &App) -> Div {
     let theme = cx.theme();
     let appearance = active_theme(cx);
+    let status = invitation.status();
     let modules = invitation.modules();
     let width = modules.width();
 
@@ -33,6 +34,64 @@ pub(crate) fn pairing_invitation_panel(invitation: &DesktopPairingInvitation, cx
                     })
             }))
         }));
+
+    let status_panel = div()
+        .flex()
+        .flex_col()
+        .gap(px(appearance.spacing.xs))
+        .child(
+            div()
+                .text_size(px(appearance.typography.scales.label.size))
+                .font_weight(font_weight(appearance.typography.scales.label.weight))
+                .child(status.label()),
+        )
+        .child(
+            div()
+                .text_size(px(appearance.typography.scales.caption.size))
+                .text_color(if status == DesktopPairingStage::Failed {
+                    theme.danger
+                } else {
+                    theme.muted_foreground
+                })
+                .child(status.message()),
+        );
+
+    let details = div()
+        .flex()
+        .flex_col()
+        .gap(px(appearance.spacing.md))
+        .child(status_panel)
+        .child(info("Owner", invitation.owner_id(), cx))
+        .child(info("This device", invitation.local_device_id(), cx))
+        .child(info(
+            "Trust",
+            if status == DesktopPairingStage::Paired {
+                "Saved on both devices"
+            } else {
+                "Not granted until pairing completes"
+            },
+            cx,
+        ))
+        .child(info(
+            "Transport",
+            "Route discovery is separate from identity",
+            cx,
+        ));
+
+    let pairing_body = if status == DesktopPairingStage::Waiting {
+        div()
+            .flex()
+            .items_start()
+            .gap(px(appearance.spacing.xl))
+            .child(qr)
+            .child(details)
+    } else {
+        div()
+            .flex()
+            .items_start()
+            .gap(px(appearance.spacing.xl))
+            .child(details)
+    };
 
     div()
         .flex()
@@ -62,23 +121,7 @@ pub(crate) fn pairing_invitation_panel(invitation: &DesktopPairingInvitation, cx
                         ),
                 ),
         )
-        .child(
-            div()
-                .flex()
-                .items_start()
-                .gap(px(appearance.spacing.xl))
-                .child(qr)
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(px(appearance.spacing.md))
-                        .child(info("Owner", invitation.owner_id(), cx))
-                        .child(info("This device", invitation.local_device_id(), cx))
-                        .child(info("Trust", "Not granted until pairing completes", cx))
-                        .child(info("Transport", "Route discovery is separate from identity", cx)),
-                ),
-        )
+        .child(pairing_body)
         .child(
             div()
                 .text_size(px(appearance.typography.scales.caption.size))

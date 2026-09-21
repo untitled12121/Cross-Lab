@@ -9,12 +9,13 @@ import dev.crosslab.android.features.appearance.ThemeParser
 import dev.crosslab.android.features.appearance.ThemeResolver
 import dev.crosslab.android.features.controlcenter.ControlCenterScreen
 import dev.crosslab.android.features.devices.RuntimeControllerState
-import uniffi.crosslab_mobile_ffi.MobilePairingBootstrap
+import dev.crosslab.android.features.pairing.PairingJoinerState
 
 class MainActivity : ComponentActivity() {
     private val runtimeState = mutableStateOf(RuntimeControllerState.initial())
-    private val pairingBootstrapState = mutableStateOf<MobilePairingBootstrap?>(null)
+    private val pairingState = mutableStateOf(PairingJoinerState.idle())
     private var runtimeSubscription: AutoCloseable? = null
+    private var pairingSubscription: AutoCloseable? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -24,6 +25,11 @@ class MainActivity : ComponentActivity() {
         runtimeSubscription =
             app.runtimeController.observe { state ->
                 runOnUiThread { runtimeState.value = state }
+            }
+        pairingState.value = app.pairingController.state()
+        pairingSubscription =
+            app.pairingController.observe { state ->
+                runOnUiThread { pairingState.value = state }
             }
 
         val theme =
@@ -37,9 +43,9 @@ class MainActivity : ComponentActivity() {
                 runtime = runtimeState.value,
                 onDisconnect = { app.runtimeController.disconnectPeer() },
                 onReconnect = { app.runtimeController.reconnectPeer() },
-                pairingBootstrap = pairingBootstrapState.value,
-                onPairingBootstrapScanned = { pairingBootstrapState.value = it },
-                onCancelPairing = { pairingBootstrapState.value = null },
+                pairing = pairingState.value,
+                onPairingBootstrapScanned = app.pairingController::begin,
+                onCancelPairing = app.pairingController::cancel,
             )
         }
     }
@@ -47,6 +53,8 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         runtimeSubscription?.close()
         runtimeSubscription = null
+        pairingSubscription?.close()
+        pairingSubscription = null
         super.onDestroy()
     }
 }

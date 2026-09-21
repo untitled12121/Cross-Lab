@@ -47,6 +47,13 @@ pub struct ProductPairingTrustBundle {
 }
 
 impl ProductPairingTrustBundle {
+    pub const fn new(credential: DeviceCredential, transition: PairingTrustTransition) -> Self {
+        Self {
+            credential,
+            transition,
+        }
+    }
+
     pub const fn credential(&self) -> DeviceCredential {
         self.credential
     }
@@ -143,9 +150,14 @@ impl From<PairingFlowError> for ProductPairingError {
 
 mod inviter;
 mod joiner;
+mod network;
 
 pub use inviter::ProductPairingInviter;
 pub use joiner::ProductPairingJoiner;
+pub use network::{
+    ProductPairingExchangeState, ProductPairingInviterExchange, ProductPairingJoinerExchange,
+    ProductPairingNetworkError,
+};
 
 #[cfg(test)]
 mod tests;

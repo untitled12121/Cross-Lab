@@ -10,9 +10,15 @@ use qrcode_rs::{Color, EcLevel, QrCode};
 
 #[cfg(target_os = "linux")]
 mod linux_discovery;
+#[cfg(target_os = "linux")]
+mod linux_service;
 
 #[cfg(target_os = "linux")]
 pub use linux_discovery::{LinuxPairingAdvertisement, LinuxPairingDiscoveryError};
+#[cfg(target_os = "linux")]
+pub use linux_service::{
+    DesktopPairingStage, LinuxPairingServiceError, LinuxProductPairingService,
+};
 
 use crate::features::identity_store::{
     LinuxEd25519Signer, LinuxIdentityStore, LinuxIdentityStoreError, LinuxSigningSlot,
@@ -79,7 +85,7 @@ pub async fn persist_product_pairing_commit(
 }
 
 pub struct DesktopPairingInvitation {
-    invitation: PairingInvitation,
+    service: LinuxProductPairingService,
     created_at: Instant,
     modules: QrModules,
     owner_id: String,
@@ -104,12 +110,18 @@ impl DesktopPairingInvitation {
         let modules = QrModules::from_qr(&qr);
         drop(code);
 
+        let owner_id = short_hex(identity.owner_id().as_bytes());
+        let local_device_id = short_hex(identity.local_device_id().as_bytes());
+        let issuer = LinuxEd25519Signer::load_required(LinuxSigningSlot::DeviceSigning).await?;
+        let service =
+            LinuxProductPairingService::start(invitation, &identity, issuer, created_at).await?;
+
         Ok(Self {
-            invitation,
+            service,
             created_at,
             modules,
-            owner_id: short_hex(identity.owner_id().as_bytes()),
-            local_device_id: short_hex(identity.local_device_id().as_bytes()),
+            owner_id,
+            local_device_id,
         })
     }
 
@@ -132,8 +144,16 @@ impl DesktopPairingInvitation {
     }
 
     pub fn cancel(&mut self) -> Result<(), DesktopPairingError> {
-        self.invitation.cancel()?;
+        self.service.cancel()?;
         Ok(())
+    }
+
+    pub fn subscribe_status(&self) -> tokio::sync::watch::Receiver<DesktopPairingStage> {
+        self.service.subscribe_status()
+    }
+
+    pub fn status(&self) -> DesktopPairingStage {
+        self.service.status()
     }
 
     pub fn now(&self) -> PairingInstant {
@@ -188,6 +208,7 @@ pub enum DesktopPairingError {
     ProductIdentity(ProductIdentityError),
     InvitationCreate(PairingInvitationCreateError),
     Invitation(PairingInvitationError),
+    Service(LinuxPairingServiceError),
     Qr,
 }
 
@@ -201,6 +222,7 @@ impl core::fmt::Display for DesktopPairingError {
             Self::ProductIdentity(error) => fmt::Display::fmt(error, formatter),
             Self::InvitationCreate(error) => fmt::Display::fmt(error, formatter),
             Self::Invitation(error) => fmt::Display::fmt(error, formatter),
+            Self::Service(error) => fmt::Display::fmt(error, formatter),
             Self::Qr => formatter.write_str("failed to render the pairing QR"),
         }
     }
@@ -229,6 +251,12 @@ impl From<PairingInvitationCreateError> for DesktopPairingError {
 impl From<PairingInvitationError> for DesktopPairingError {
     fn from(error: PairingInvitationError) -> Self {
         Self::Invitation(error)
+    }
+}
+
+impl From<LinuxPairingServiceError> for DesktopPairingError {
+    fn from(error: LinuxPairingServiceError) -> Self {
+        Self::Service(error)
     }
 }
 

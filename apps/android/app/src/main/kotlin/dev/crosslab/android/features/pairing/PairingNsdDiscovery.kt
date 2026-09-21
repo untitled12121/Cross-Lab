@@ -6,6 +6,7 @@ import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Handler
 import android.os.Looper
+import java.net.Inet6Address
 import java.net.InetAddress
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.atomic.AtomicBoolean
@@ -16,7 +17,13 @@ internal const val DEFAULT_PAIRING_DISCOVERY_TIMEOUT_MS = 12_000L
 internal data class PairingResolvedRoute(
     val host: InetAddress,
     val port: Int,
-)
+) {
+    val addressBytes: ByteArray
+        get() = host.address
+
+    val scopeId: Int
+        get() = (host as? Inet6Address)?.scopeId ?: 0
+}
 
 internal enum class PairingDiscoveryFailure {
     INVALID_INVITATION,
