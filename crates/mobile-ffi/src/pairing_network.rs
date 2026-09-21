@@ -195,8 +195,8 @@ fn socket_addr(
         .ok()
         .filter(|port| *port != 0)
         .ok_or(MobileProductPairingNetworkError::InvalidRoute)?;
-    let scope_id = u32::try_from(scope_id)
-        .map_err(|_| MobileProductPairingNetworkError::InvalidRoute)?;
+    let scope_id =
+        u32::try_from(scope_id).map_err(|_| MobileProductPairingNetworkError::InvalidRoute)?;
 
     match address.as_slice() {
         [a, b, c, d] => Ok(SocketAddr::V4(SocketAddrV4::new(
