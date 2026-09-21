@@ -37,6 +37,17 @@ pub struct MobileProductIdentity {
     pub local_device_id: String,
 }
 
+impl MobileProductIdentity {
+    pub(crate) fn from_state(state: &ProductIdentityState, created: bool) -> Self {
+        Self {
+            created,
+            payload: state.encode(),
+            owner_id: short_hex(state.owner_id().as_bytes()),
+            local_device_id: short_hex(state.local_device_id().as_bytes()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Error)]
 pub enum MobileProductIdentityError {
     SigningProvider,
@@ -91,21 +102,18 @@ pub fn product_identity_load_or_create(
         ),
     };
 
-    Ok(MobileProductIdentity {
-        created,
-        payload: state.encode(),
-        owner_id: short_hex(state.owner_id().as_bytes()),
-        local_device_id: short_hex(state.local_device_id().as_bytes()),
-    })
+    Ok(MobileProductIdentity::from_state(&state, created))
 }
 
-struct ForeignSigningProvider {
+pub(crate) struct ForeignSigningProvider {
     inner: Arc<dyn MobileSigningProvider>,
     verifying_key: VerifyingKey,
 }
 
 impl ForeignSigningProvider {
-    fn new(inner: Arc<dyn MobileSigningProvider>) -> Result<Self, MobileProductIdentityError> {
+    pub(crate) fn new(
+        inner: Arc<dyn MobileSigningProvider>,
+    ) -> Result<Self, MobileProductIdentityError> {
         let bytes = inner
             .public_key()
             .map_err(|_| MobileProductIdentityError::SigningProvider)?;
