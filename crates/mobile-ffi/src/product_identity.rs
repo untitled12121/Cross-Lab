@@ -80,6 +80,17 @@ impl core::fmt::Display for MobileProductIdentityError {
 impl std::error::Error for MobileProductIdentityError {}
 
 #[uniffi::export]
+pub fn product_identity_load(
+    current_payload: Vec<u8>,
+    local_device_signer: Arc<dyn MobileSigningProvider>,
+) -> Result<MobileProductIdentity, MobileProductIdentityError> {
+    let local = ForeignSigningProvider::new(local_device_signer)?;
+    let state = ProductIdentityState::decode(&current_payload)?;
+    state.validate_local_device_provider(&local)?;
+    Ok(MobileProductIdentity::from_state(&state, false))
+}
+
+#[uniffi::export]
 pub fn product_identity_load_or_create(
     current_payload: Option<Vec<u8>>,
     root_signer: Arc<dyn MobileSigningProvider>,
