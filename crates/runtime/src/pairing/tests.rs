@@ -305,7 +305,7 @@ fn scanned_bootstrap_binds_joiner_to_the_inviter_device() {
     let substituted = PairingHello::new(
         PairingRole::Inviter,
         PROTOCOL_MAJOR_V1,
-        joiner.hello().pairing_id(),
+        fixture.invitation.pairing_id().to_bytes(),
         joiner.hello().owner_id(),
         DeviceId::from_bytes([0xee; 32]),
         fixture.inviter_key.verifying_key(),
