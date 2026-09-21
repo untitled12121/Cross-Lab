@@ -122,9 +122,9 @@ fn product_pairing_messages_round_trip() {
         ),
     ));
 
-    fixture.round_trip(ProductPairingMessage::TrustBundle(
+    fixture.round_trip(ProductPairingMessage::TrustBundle(Box::new(
         ProductPairingTrustBundleMessage::new(fixture.joiner_credential, fixture.transition),
-    ));
+    )));
     fixture.round_trip(ProductPairingMessage::Ack(ProductPairingAck::new(
         pairing_id,
         PairingRole::Joiner,
