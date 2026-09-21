@@ -108,6 +108,30 @@ impl ProductIdentityState {
         })
     }
 
+    pub fn join_owner_domain(
+        root: OwnerRootRecord,
+        device_signing: AuthorityDelegation,
+        local_credential: DeviceCredential,
+        local_device_signer: &dyn SigningProvider,
+    ) -> Result<Self, ProductIdentityError> {
+        let mut authority = OwnerAuthorityState::new(root);
+        authority.accept_delegation(device_signing)?;
+        local_credential.verify(&authority, local_credential.credential_epoch())?;
+
+        if local_device_signer.verifying_key() != local_credential.device_public_key() {
+            return Err(ProductIdentityError::ProviderMismatch);
+        }
+
+        Ok(Self {
+            owner_id: root.owner_id(),
+            local_device_id: local_credential.device_id(),
+            root,
+            device_signing,
+            local_credential,
+            trusted_peers: Vec::new(),
+        })
+    }
+
     pub const fn owner_id(&self) -> OwnerId {
         self.owner_id
     }
@@ -180,6 +204,20 @@ impl ProductIdentityState {
         Ok(())
     }
 
+    pub fn validate_local_device_provider(
+        &self,
+        local_device_signer: &dyn SigningProvider,
+    ) -> Result<(), ProductIdentityError> {
+        if local_device_signer.verifying_key() != self.local_credential.device_public_key() {
+            return Err(ProductIdentityError::ProviderMismatch);
+        }
+
+        let authority = self.authority_state()?;
+        self.local_credential
+            .verify(&authority, self.local_credential.credential_epoch())?;
+        self.validate_peers(&authority)
+    }
+
     pub fn validate_providers(
         &self,
         root_signer: &dyn SigningProvider,
@@ -188,15 +226,11 @@ impl ProductIdentityState {
     ) -> Result<(), ProductIdentityError> {
         if root_signer.verifying_key() != self.root.root_public_key()
             || device_signing_signer.verifying_key() != self.device_signing.delegated_public_key()
-            || local_device_signer.verifying_key() != self.local_credential.device_public_key()
         {
             return Err(ProductIdentityError::ProviderMismatch);
         }
 
-        let authority = self.authority_state()?;
-        self.local_credential
-            .verify(&authority, self.local_credential.credential_epoch())?;
-        self.validate_peers(&authority)
+        self.validate_local_device_provider(local_device_signer)
     }
 
     pub fn encode(&self) -> Vec<u8> {
@@ -587,6 +621,69 @@ mod tests {
         assert_eq!(persisted.credential(), peer);
         assert_eq!(trust.state(), TrustState::Trusted);
         assert_eq!(trust.device_id(), peer.device_id());
+    }
+
+    #[test]
+    fn joined_device_reconstructs_owner_domain_without_authority_private_keys() {
+        let (owner, _, issuer, _) = fixture();
+        let authority = owner.authority_state().unwrap();
+        let joiner_signer = SigningKey::from_secret_bytes([0x5a; 32]);
+        let joiner_credential = DeviceCredential::issue(
+            owner.owner_id(),
+            DeviceId::from_bytes([0x5b; 32]),
+            &joiner_signer,
+            0,
+            &authority,
+            &issuer,
+        )
+        .unwrap();
+
+        let joined = ProductIdentityState::join_owner_domain(
+            owner.root(),
+            owner.device_signing(),
+            joiner_credential,
+            &joiner_signer,
+        )
+        .unwrap();
+
+        assert_eq!(joined.owner_id(), owner.owner_id());
+        assert_eq!(joined.local_device_id(), joiner_credential.device_id());
+        assert_eq!(joined.local_credential(), joiner_credential);
+        joined
+            .validate_local_device_provider(&joiner_signer)
+            .unwrap();
+
+        let restored = ProductIdentityState::decode(&joined.encode()).unwrap();
+        restored
+            .validate_local_device_provider(&joiner_signer)
+            .unwrap();
+    }
+
+    #[test]
+    fn joined_device_rejects_wrong_local_signer() {
+        let (owner, _, issuer, _) = fixture();
+        let authority = owner.authority_state().unwrap();
+        let joiner_signer = SigningKey::from_secret_bytes([0x5c; 32]);
+        let wrong_signer = SigningKey::from_secret_bytes([0x5d; 32]);
+        let joiner_credential = DeviceCredential::issue(
+            owner.owner_id(),
+            DeviceId::from_bytes([0x5e; 32]),
+            &joiner_signer,
+            0,
+            &authority,
+            &issuer,
+        )
+        .unwrap();
+
+        assert_eq!(
+            ProductIdentityState::join_owner_domain(
+                owner.root(),
+                owner.device_signing(),
+                joiner_credential,
+                &wrong_signer,
+            ),
+            Err(ProductIdentityError::ProviderMismatch)
+        );
     }
 
     #[test]
