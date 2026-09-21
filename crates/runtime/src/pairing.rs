@@ -294,9 +294,7 @@ impl ProductPairingInviter {
         ) {
             Ok(transition) => transition,
             Err(error) => {
-                return self.fail(
-                    PairingFlowError::TrustTransition(error).into(),
-                );
+                return self.fail(PairingFlowError::TrustTransition(error).into());
             }
         };
 
@@ -709,10 +707,7 @@ mod tests {
             inviter_commit.peer_trust().device_id(),
             credential.device_id()
         );
-        assert_eq!(
-            joiner_commit.peer_credential(),
-            fixture.inviter_credential
-        );
+        assert_eq!(joiner_commit.peer_credential(), fixture.inviter_credential);
         assert_eq!(joiner_commit.peer_trust().state(), TrustState::Trusted);
         assert_eq!(
             joiner_commit.peer_trust().device_id(),
