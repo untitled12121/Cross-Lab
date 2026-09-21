@@ -8,7 +8,9 @@ use crosslab_identity::{
 };
 use crosslab_identity_store::{MemoryIdentityStore, ProductIdentityState};
 use crosslab_policy::{PairingTrustTransition, TransitionId, TrustState};
-use crosslab_protocol::{PairingCredentialAccepted, PairingHello, PairingRole};
+use crosslab_protocol::{
+    PairingCredentialAccepted, PairingHello, PairingRole, ProductPairingMessage,
+};
 
 use super::*;
 
@@ -512,4 +514,107 @@ fn cancellation_drops_uncommitted_pairing_state() {
         inviter.accept_joiner_hello(joiner.hello(), PairingInstant::from_ticks(10)),
         Err(ProductPairingError::InvalidState)
     );
+}
+
+
+#[test]
+fn network_exchange_carries_pairing_to_reciprocal_completion() {
+    let fixture = Fixture::new();
+    let (inviter, joiner) = fixture.coordinators();
+    let mut inviter = ProductPairingInviterExchange::new(inviter);
+    let mut joiner = ProductPairingJoinerExchange::new(joiner);
+
+    let inviter_hello = inviter
+        .accept_joiner_hello(joiner.hello(), PairingInstant::from_ticks(10))
+        .unwrap();
+    let joiner_confirmation = joiner.accept_inviter_hello(inviter_hello).unwrap();
+    let inviter_confirmation = inviter
+        .accept_joiner_confirmation(
+            joiner_confirmation,
+            PairingInstant::from_ticks(20),
+        )
+        .unwrap();
+    joiner
+        .accept_inviter_confirmation(inviter_confirmation)
+        .unwrap();
+
+    let credential_bundle = inviter
+        .issue_credential_bundle(
+            &fixture.authority,
+            &fixture.issuer,
+            PairingInstant::from_ticks(30),
+        )
+        .unwrap();
+    let credential_proof = joiner
+        .accept_credential_bundle(credential_bundle, &fixture.joiner_key)
+        .unwrap();
+    let inviter_commit = inviter
+        .accept_credential_proof(
+            credential_proof,
+            &fixture.authority,
+            &fixture.issuer,
+            PairingInstant::from_ticks(40),
+        )
+        .unwrap();
+
+    assert_eq!(
+        inviter.state(),
+        ProductPairingExchangeState::AwaitingLocalPersistence
+    );
+    assert_eq!(
+        inviter_commit.peer_credential().device_id(),
+        DeviceId::from_bytes([0x19; 32])
+    );
+
+    let trust_bundle = inviter.local_persisted().unwrap();
+    let joiner_completion = joiner.accept_trust_bundle(trust_bundle).unwrap();
+    assert_eq!(
+        joiner.state(),
+        ProductPairingExchangeState::AwaitingLocalPersistence
+    );
+    assert_eq!(
+        joiner_completion.peer_commit().peer_credential(),
+        fixture.inviter_credential
+    );
+
+    let persisted = joiner.local_persisted().unwrap();
+    let complete = inviter.accept_peer_persisted(persisted).unwrap();
+    joiner.accept_complete(complete).unwrap();
+
+    assert_eq!(inviter.state(), ProductPairingExchangeState::Complete);
+    assert_eq!(joiner.state(), ProductPairingExchangeState::Complete);
+}
+
+#[test]
+fn network_exchange_rejects_replayed_out_of_sequence_message() {
+    let fixture = Fixture::new();
+    let (inviter, joiner) = fixture.coordinators();
+    let mut inviter = ProductPairingInviterExchange::new(inviter);
+    let joiner = ProductPairingJoinerExchange::new(joiner);
+
+    inviter
+        .accept_joiner_hello(joiner.hello(), PairingInstant::from_ticks(10))
+        .unwrap();
+
+    assert_eq!(
+        inviter.accept_joiner_hello(joiner.hello(), PairingInstant::from_ticks(11)),
+        Err(ProductPairingNetworkError::UnexpectedMessage)
+    );
+    assert_eq!(inviter.state(), ProductPairingExchangeState::Failed);
+}
+
+#[test]
+fn network_exchange_rejects_wrong_message_type_before_secret_confirmation() {
+    let fixture = Fixture::new();
+    let (inviter, _) = fixture.coordinators();
+    let mut inviter = ProductPairingInviterExchange::new(inviter);
+
+    let wrong = ProductPairingMessage::Cancel {
+        pairing_id: [0xff; 16],
+    };
+    assert_eq!(
+        inviter.accept_joiner_hello(wrong, PairingInstant::from_ticks(10)),
+        Err(ProductPairingNetworkError::UnexpectedMessage)
+    );
+    assert_eq!(inviter.state(), ProductPairingExchangeState::Failed);
 }
