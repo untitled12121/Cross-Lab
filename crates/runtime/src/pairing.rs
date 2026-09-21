@@ -378,7 +378,14 @@ impl ProductPairingInviter {
     }
 
     fn fail<T>(&mut self, error: ProductPairingError) -> Result<T, ProductPairingError> {
-        self.state = ProductPairingState::Failed;
+        if !matches!(
+            self.state,
+            ProductPairingState::Complete
+                | ProductPairingState::Cancelled
+                | ProductPairingState::Failed
+        ) {
+            self.state = ProductPairingState::Failed;
+        }
         Err(error)
     }
 }
@@ -613,7 +620,14 @@ impl ProductPairingJoiner {
     }
 
     fn fail<T>(&mut self, error: ProductPairingError) -> Result<T, ProductPairingError> {
-        self.state = ProductPairingState::Failed;
+        if !matches!(
+            self.state,
+            ProductPairingState::Complete
+                | ProductPairingState::Cancelled
+                | ProductPairingState::Failed
+        ) {
+            self.state = ProductPairingState::Failed;
+        }
         Err(error)
     }
 }
@@ -621,7 +635,7 @@ impl ProductPairingJoiner {
 #[cfg(test)]
 mod tests {
     use crosslab_core::{PairingInvitation, PairingSecret};
-    use crosslab_crypto::SigningKey;
+    use crosslab_crypto::{Signature, SigningKey};
     use crosslab_identity::{AuthorityDelegation, AuthorityRole, OwnerId, OwnerRootRecord};
     use crosslab_identity_store::{MemoryIdentityStore, ProductIdentityState};
     use crosslab_policy::TrustState;
@@ -939,6 +953,78 @@ mod tests {
             Err(ProductPairingError::BootstrapPeerMismatch)
         );
         assert_eq!(joiner.state(), ProductPairingState::Failed);
+    }
+
+    #[test]
+    fn replayed_confirmation_fails_the_in_progress_product_pairing() {
+        let fixture = Fixture::new();
+        let (mut inviter, mut joiner) = fixture.coordinators();
+
+        inviter
+            .accept_joiner_hello(joiner.hello(), PairingInstant::from_ticks(10))
+            .unwrap();
+        let confirmation = joiner.accept_inviter_hello(inviter.hello()).unwrap();
+        inviter
+            .verify_joiner_confirmation(&confirmation, PairingInstant::from_ticks(20))
+            .unwrap();
+
+        assert_eq!(
+            inviter.verify_joiner_confirmation(
+                &confirmation,
+                PairingInstant::from_ticks(21),
+            ),
+            Err(ProductPairingError::InvalidState)
+        );
+        assert_eq!(inviter.state(), ProductPairingState::Failed);
+    }
+
+    #[test]
+    fn forged_final_proof_cannot_reach_persistence() {
+        let fixture = Fixture::new();
+        let (mut inviter, mut joiner) = fixture.coordinators();
+
+        inviter
+            .accept_joiner_hello(joiner.hello(), PairingInstant::from_ticks(10))
+            .unwrap();
+        let joiner_confirmation = joiner.accept_inviter_hello(inviter.hello()).unwrap();
+        let inviter_confirmation = inviter
+            .verify_joiner_confirmation(&joiner_confirmation, PairingInstant::from_ticks(20))
+            .unwrap();
+        joiner
+            .verify_inviter_confirmation(&inviter_confirmation)
+            .unwrap();
+        let credential = inviter
+            .issue_joiner_credential(
+                &fixture.authority,
+                &fixture.issuer,
+                PairingInstant::from_ticks(30),
+            )
+            .unwrap();
+        let accepted = joiner
+            .accept_credential(&fixture.authority, &credential, &fixture.joiner_key)
+            .unwrap();
+        let forged = PairingCredentialAccepted::new(
+            accepted.pairing_id(),
+            accepted.pairing_transcript_digest(),
+            accepted.device_credential_signed_object_digest(),
+            accepted.joiner_device_id(),
+            accepted.joiner_device_key_id(),
+            Signature::from_bytes([0xee; 64]),
+        );
+
+        assert_eq!(
+            inviter.verify_credential_acceptance(
+                &forged,
+                TransitionId::from_bytes([0x1e; 32]),
+                &fixture.authority,
+                &fixture.issuer,
+                PairingInstant::from_ticks(40),
+            ),
+            Err(ProductPairingError::Flow(
+                PairingFlowError::InvalidCredentialAcceptance
+            ))
+        );
+        assert_eq!(inviter.state(), ProductPairingState::Failed);
     }
 
     #[test]
