@@ -115,10 +115,10 @@ impl ControlCenterPage {
             return;
         }
 
-        if let Some(mut invitation) = self.pairing_invitation.take() {
-            if !invitation.status().terminal() {
-                let _ = invitation.cancel();
-            }
+        if let Some(mut invitation) = self.pairing_invitation.take()
+            && !invitation.status().terminal()
+        {
+            let _ = invitation.cancel();
         }
         self.pairing_generation = self.pairing_generation.wrapping_add(1);
         let generation = self.pairing_generation;
