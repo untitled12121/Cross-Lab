@@ -8,6 +8,7 @@ mod connection;
 #[cfg(feature = "development-provisioning")]
 pub mod development;
 mod endpoint;
+mod pairing;
 #[cfg_attr(not(test), allow(dead_code))]
 mod record;
 mod session;
@@ -18,6 +19,11 @@ pub use connection::QuicTransportConnection;
 pub use endpoint::{
     QuicClientEndpoint, QuicClientTlsConfig, QuicEndpointError, QuicServerEndpoint,
     QuicServerTlsConfig,
+};
+pub use pairing::{
+    PRODUCT_PAIRING_ALPN_V1, PRODUCT_PAIRING_SERVER_NAME, ProductPairingQuicChannel,
+    ProductPairingQuicClient, ProductPairingQuicError, ProductPairingQuicServer,
+    ProductPairingQuicTimeouts,
 };
 pub use session::{
     AuthenticatedQuicSession, QuicSessionAuthConfig, QuicSessionError, QuicSessionTimeouts,
