@@ -12,7 +12,10 @@ pub use codec::{ProtocolWireError, decode_data_stream_open, encode_data_stream_o
 pub use envelope::{decode_control_envelope, encode_control_envelope};
 pub use pairing::{
     PAIRING_PROFILE_V1, PairingBootstrapMessage, PairingConfirmation, PairingCredentialAccepted,
-    PairingHello, PairingRole, decode_pairing_bootstrap, encode_pairing_bootstrap,
+    PairingHello, PairingRole, ProductPairingAck, ProductPairingAckKind,
+    ProductPairingCredentialBundle, ProductPairingMessage, ProductPairingTrustBundleMessage,
+    decode_pairing_bootstrap, decode_product_pairing, encode_pairing_bootstrap,
+    encode_product_pairing,
 };
 pub use session_auth::{
     SESSION_AUTH_PROFILE_V1, SessionAuthBootstrapMessage, SessionAuthHello,
