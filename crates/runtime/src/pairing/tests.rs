@@ -1,8 +1,14 @@
-use crosslab_core::{PairingInvitation, PairingSecret};
+use crosslab_core::{
+    PairingBootstrap, PairingFlowError, PairingInstant, PairingInvitation, PairingSecret,
+};
 use crosslab_crypto::{Signature, SigningKey};
-use crosslab_identity::{AuthorityDelegation, AuthorityRole, OwnerId, OwnerRootRecord};
+use crosslab_identity::{
+    AuthorityDelegation, AuthorityRole, DeviceCredential, DeviceId, OwnerAuthorityState, OwnerId,
+    OwnerRootRecord,
+};
 use crosslab_identity_store::{MemoryIdentityStore, ProductIdentityState};
-use crosslab_policy::TrustState;
+use crosslab_policy::{PairingTrustTransition, TransitionId, TrustState};
+use crosslab_protocol::{PairingCredentialAccepted, PairingHello, PairingRole};
 
 use super::*;
 
