@@ -13,8 +13,7 @@ const MAGIC: &[u8; 8] = b"CLPIDV1\0";
 const LEGACY_SCHEMA_VERSION: u16 = 1;
 const SCHEMA_VERSION: u16 = 2;
 const IDENTITY_OBJECT_SCHEMA_V1: u16 = 1;
-const BASE_ENCODED_LEN: usize =
-    MAGIC.len() + 2 + 32 + 32 + 8 + 32 + 8 + 32 + 64 + 8 + 32 + 64;
+const BASE_ENCODED_LEN: usize = MAGIC.len() + 2 + 32 + 32 + 8 + 32 + 8 + 32 + 64 + 8 + 32 + 64;
 const CREDENTIAL_ENCODED_LEN: usize = 2 + 32 + 32 + 32 + 32 + 8 + 32 + 64;
 const TRANSITION_ENCODED_LEN: usize = 2 + 32 + 32 + 8 + 32 + 32 + 32 + 32 + 64;
 const PEER_ENCODED_LEN: usize = CREDENTIAL_ENCODED_LEN + TRANSITION_ENCODED_LEN;
@@ -191,9 +190,8 @@ impl ProductIdentityState {
     }
 
     pub fn encode(&self) -> Vec<u8> {
-        let mut output = Vec::with_capacity(
-            BASE_ENCODED_LEN + 4 + self.trusted_peers.len() * PEER_ENCODED_LEN,
-        );
+        let mut output =
+            Vec::with_capacity(BASE_ENCODED_LEN + 4 + self.trusted_peers.len() * PEER_ENCODED_LEN);
         output.extend_from_slice(MAGIC);
         output.extend_from_slice(&SCHEMA_VERSION.to_be_bytes());
         output.extend_from_slice(self.owner_id.as_bytes());
@@ -290,10 +288,7 @@ impl ProductIdentityState {
         Ok(state)
     }
 
-    fn validate_peers(
-        &self,
-        authority: &OwnerAuthorityState,
-    ) -> Result<(), ProductIdentityError> {
+    fn validate_peers(&self, authority: &OwnerAuthorityState) -> Result<(), ProductIdentityError> {
         if self.trusted_peers.len() > MAX_PRODUCT_TRUSTED_PEERS {
             return Err(ProductIdentityError::PeerLimit);
         }
@@ -336,7 +331,9 @@ impl fmt::Display for ProductIdentityError {
             Self::ProviderMismatch => {
                 formatter.write_str("protected signing provider does not match persisted identity")
             }
-            Self::PeerLimit => formatter.write_str("product identity trusted-peer limit is exceeded"),
+            Self::PeerLimit => {
+                formatter.write_str("product identity trusted-peer limit is exceeded")
+            }
             Self::PeerOwnerMismatch => {
                 formatter.write_str("persisted trusted peer belongs to a different owner")
             }
@@ -393,8 +390,8 @@ fn decode_peers(
     encoded: &[u8],
     offset: &mut usize,
 ) -> Result<Vec<ProductTrustedPeer>, ProductIdentityError> {
-    let count = usize::try_from(read_u32(encoded, offset)?)
-        .map_err(|_| ProductIdentityError::Malformed)?;
+    let count =
+        usize::try_from(read_u32(encoded, offset)?).map_err(|_| ProductIdentityError::Malformed)?;
     if count > MAX_PRODUCT_TRUSTED_PEERS {
         return Err(ProductIdentityError::PeerLimit);
     }
@@ -506,12 +503,7 @@ mod tests {
 
     use super::*;
 
-    fn fixture() -> (
-        ProductIdentityState,
-        SigningKey,
-        SigningKey,
-        SigningKey,
-    ) {
+    fn fixture() -> (ProductIdentityState, SigningKey, SigningKey, SigningKey) {
         let root = SigningKey::generate().unwrap();
         let issuer = SigningKey::generate().unwrap();
         let device = SigningKey::generate().unwrap();
@@ -562,8 +554,7 @@ mod tests {
     fn legacy_product_identity_decodes_without_trusted_peers() {
         let (state, root, issuer, device) = fixture();
         let mut legacy = state.encode();
-        legacy[MAGIC.len()..MAGIC.len() + 2]
-            .copy_from_slice(&LEGACY_SCHEMA_VERSION.to_be_bytes());
+        legacy[MAGIC.len()..MAGIC.len() + 2].copy_from_slice(&LEGACY_SCHEMA_VERSION.to_be_bytes());
         legacy.truncate(BASE_ENCODED_LEN);
 
         let decoded = ProductIdentityState::decode(&legacy).unwrap();
@@ -579,7 +570,9 @@ mod tests {
         let decoded = ProductIdentityState::decode(&state.encode()).unwrap();
         decoded.validate_providers(&root, &issuer, &device).unwrap();
         let persisted = decoded.trusted_peer(peer.device_id()).unwrap();
-        let trust = persisted.trust(&decoded.authority_state().unwrap()).unwrap();
+        let trust = persisted
+            .trust(&decoded.authority_state().unwrap())
+            .unwrap();
 
         assert_eq!(persisted.credential(), peer);
         assert_eq!(trust.state(), TrustState::Trusted);
