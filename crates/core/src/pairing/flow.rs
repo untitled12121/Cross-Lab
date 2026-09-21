@@ -41,6 +41,22 @@ pub enum PairingJoinerState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PairingTrustEstablishment {
+    transition: PairingTrustTransition,
+    trust: TrustRecord,
+}
+
+impl PairingTrustEstablishment {
+    pub const fn transition(&self) -> PairingTrustTransition {
+        self.transition
+    }
+
+    pub const fn trust(&self) -> TrustRecord {
+        self.trust
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PairingFlowError {
     InvitationNotPending,
     InvitationExpired,
@@ -274,6 +290,41 @@ impl PairingInviterFlow {
         issuer_key: &dyn SigningProvider,
         now: PairingInstant,
     ) -> Result<TrustRecord, PairingFlowError> {
+        self.commit_trust_with_evidence_with_provider(
+            accepted,
+            transition_id,
+            authority,
+            issuer_key,
+            now,
+        )
+        .map(|establishment| establishment.trust())
+    }
+
+    pub fn commit_trust_with_evidence(
+        &mut self,
+        accepted: &PairingCredentialAccepted,
+        transition_id: TransitionId,
+        authority: &OwnerAuthorityState,
+        issuer_key: &SigningKey,
+        now: PairingInstant,
+    ) -> Result<PairingTrustEstablishment, PairingFlowError> {
+        self.commit_trust_with_evidence_with_provider(
+            accepted,
+            transition_id,
+            authority,
+            issuer_key,
+            now,
+        )
+    }
+
+    pub fn commit_trust_with_evidence_with_provider(
+        &mut self,
+        accepted: &PairingCredentialAccepted,
+        transition_id: TransitionId,
+        authority: &OwnerAuthorityState,
+        issuer_key: &dyn SigningProvider,
+        now: PairingInstant,
+    ) -> Result<PairingTrustEstablishment, PairingFlowError> {
         if self.state != PairingInviterState::AwaitingCredentialAcceptance {
             return self.fail(PairingFlowError::UnexpectedState);
         }
@@ -337,7 +388,7 @@ impl PairingInviterFlow {
         }
 
         self.state = PairingInviterState::Trusted;
-        Ok(trust)
+        Ok(PairingTrustEstablishment { transition, trust })
     }
 
     fn ensure_current(&mut self, now: PairingInstant) -> Result<(), PairingFlowError> {
