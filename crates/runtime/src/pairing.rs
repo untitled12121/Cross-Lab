@@ -476,7 +476,7 @@ mod tests {
             let delegation = AuthorityDelegation::issue(
                 owner_id,
                 AuthorityRole::DeviceSigning,
-                &issuer,
+                &fixture.issuer,
                 0,
                 &root_key,
             );
@@ -490,8 +490,8 @@ mod tests {
                 inviter_device_id,
                 &inviter_key,
                 0,
-                &authority,
-                &issuer,
+                &fixture.authority,
+                &fixture.issuer,
             )
             .unwrap();
             let invitation = PairingInvitation::from_parts(
@@ -514,9 +514,9 @@ mod tests {
             }
         }
 
-        fn coordinators(self) -> (ProductPairingInviter, ProductPairingJoiner) {
+        fn coordinators(&self) -> (ProductPairingInviter, ProductPairingJoiner) {
             let code = {
-                let mut invitation = self.invitation;
+                let mut invitation = self.invitation_for_test();
                 invitation
                     .bootstrap_code_at(PairingInstant::from_ticks(0))
                     .unwrap()
@@ -555,9 +555,6 @@ mod tests {
     #[test]
     fn inviter_requires_persistence_before_product_completion() {
         let fixture = Fixture::new();
-        let authority = fixture.authority.clone();
-        let issuer = SigningKey::from_secret_bytes([0x12; 32]);
-        let joiner_key = SigningKey::from_secret_bytes([0x17; 32]);
         let (mut inviter, mut joiner) = fixture.coordinators();
 
         inviter
@@ -571,17 +568,17 @@ mod tests {
             .verify_inviter_confirmation(&inviter_confirmation)
             .unwrap();
         let credential = inviter
-            .issue_joiner_credential(&authority, &issuer, PairingInstant::from_ticks(30))
+            .issue_joiner_credential(&fixture.authority, &fixture.issuer, PairingInstant::from_ticks(30))
             .unwrap();
         let accepted = joiner
-            .accept_credential(&authority, &credential, &joiner_key)
+            .accept_credential(&fixture.authority, &credential, &fixture.joiner_key)
             .unwrap();
         let commit = inviter
             .verify_credential_acceptance(
                 &accepted,
                 TransitionId::from_bytes([0x1b; 32]),
-                &authority,
-                &issuer,
+                &fixture.authority,
+                &fixture.issuer,
                 PairingInstant::from_ticks(40),
             )
             .unwrap();
@@ -649,17 +646,17 @@ mod tests {
             .verify_inviter_confirmation(&inviter_confirmation)
             .unwrap();
         let credential = inviter
-            .issue_joiner_credential(&authority, &issuer, PairingInstant::from_ticks(30))
+            .issue_joiner_credential(&fixture.authority, &fixture.issuer, PairingInstant::from_ticks(30))
             .unwrap();
         let accepted = joiner
-            .accept_credential(&authority, &credential, &joiner_key)
+            .accept_credential(&fixture.authority, &credential, &fixture.joiner_key)
             .unwrap();
         inviter
             .verify_credential_acceptance(
                 &accepted,
                 TransitionId::from_bytes([0x1b; 32]),
-                &authority,
-                &issuer,
+                &fixture.authority,
+                &fixture.issuer,
                 PairingInstant::from_ticks(40),
             )
             .unwrap();
