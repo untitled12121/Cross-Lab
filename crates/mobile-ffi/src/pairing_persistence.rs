@@ -77,7 +77,7 @@ pub fn product_identity_from_joiner_completion(
 #[cfg(test)]
 mod tests {
     use crosslab_core::{PairingBootstrap, PairingInstant, PairingInvitation};
-    use crosslab_crypto::{SigningKey, SigningProvider};
+    use crosslab_crypto::SigningKey;
     use crosslab_identity::DeviceId;
     use crosslab_policy::TransitionId;
     use crosslab_runtime::{ProductPairingInviter, ProductPairingJoiner};
