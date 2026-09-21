@@ -4,12 +4,17 @@ use crosslab_crypto::{RandomError, random_bytes};
 use zeroize::Zeroize;
 
 mod bootstrap;
+mod discovery;
 mod flow;
 mod invitation;
 mod transcript;
 
 pub use bootstrap::{
     PAIRING_BOOTSTRAP_PROFILE_V1, PairingBootstrap, PairingBootstrapCode, PairingBootstrapError,
+};
+pub use discovery::{
+    PAIRING_DNS_SD_SERVICE_TYPE, PAIRING_DNS_SD_TXT_VERSION_KEY, PAIRING_DNS_SD_TXT_VERSION_V1,
+    pairing_dns_sd_instance,
 };
 pub use flow::{
     PairingFlowError, PairingInviterFlow, PairingInviterState, PairingJoinerFlow,

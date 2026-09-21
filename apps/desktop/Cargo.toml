@@ -35,3 +35,4 @@ serde_json.workspace = true
 crosslab-crypto = { path = "../../crates/crypto" }
 crosslab-identity-store = { path = "../../crates/identity-store" }
 oo7.workspace = true
+zbus.workspace = true

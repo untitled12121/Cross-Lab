@@ -1,12 +1,16 @@
 use std::sync::{Arc, Mutex};
 
-use crosslab_core::{PairingBootstrap, PairingBootstrapError};
+use crosslab_core::{
+    PAIRING_DNS_SD_SERVICE_TYPE, PairingBootstrap, PairingBootstrapError, pairing_dns_sd_instance,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct MobilePairingBootstrapSummary {
     pub pairing_id: String,
     pub owner_id: String,
     pub inviter_device_id: String,
+    pub discovery_instance: String,
+    pub discovery_service_type: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Error)]
@@ -52,6 +56,8 @@ impl MobilePairingBootstrap {
             pairing_id: hex(bootstrap.pairing_id().as_bytes()),
             owner_id: short_hex(bootstrap.owner_id().as_bytes()),
             inviter_device_id: short_hex(bootstrap.inviter_device_id().as_bytes()),
+            discovery_instance: pairing_dns_sd_instance(bootstrap.pairing_id()),
+            discovery_service_type: PAIRING_DNS_SD_SERVICE_TYPE.to_owned(),
         })
     }
 }
@@ -123,6 +129,8 @@ mod tests {
         assert_eq!(summary.owner_id, "1111111111111111");
         assert_eq!(summary.inviter_device_id, "2222222222222222");
         assert_eq!(summary.pairing_id.len(), 32);
+        assert!(summary.discovery_instance.starts_with("p-"));
+        assert_eq!(summary.discovery_service_type, "_crosslab-pair._udp.local.");
 
         let debug = format!("{scanned:?}");
         assert!(!debug.contains(code.as_str()));
