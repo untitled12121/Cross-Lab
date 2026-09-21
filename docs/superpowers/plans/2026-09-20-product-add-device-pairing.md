@@ -24,7 +24,7 @@ Make normal local-first device enrollment usable from the Linux desktop and Andr
 - Send the scanned payload directly into shared Rust validation; do not persist the raw QR text in Compose state after validation.
 - Stop camera analysis after one valid Cross-Lab bootstrap is accepted.
 
-## Task 3 — Product pairing coordinator
+## Task 3 — Product pairing coordinator — implemented and merged
 
 - Keep pairing state in shared Rust; UI receives presentation-safe state/events only.
 - Use the existing ADR-0003 transcript/HMAC flow and existing credential proof-of-possession.
@@ -32,12 +32,12 @@ Make normal local-first device enrollment usable from the Linux desktop and Andr
 - Persist successful authority/credential/trust state through the ADR-0015 platform identity store as one logical security commit.
 - Pairing failures/cancellation consume the invitation according to the existing specification.
 
-## Task 4 — Local pairing discovery/transport
+## Task 4 — Local pairing discovery/transport — active
 
 - Use an explicit, bounded LAN discovery path compatible with Master Architecture section 17.
 - Discovery/address information is routing metadata only and never identity/trust authority.
 - Reuse Quinn for the provisional IP pairing channel where practical.
-- Record any selected discovery/transport profile in an ADR before promotion.
+- ADR-0016 selects bounded DNS-SD discovery and a provisional Quinn/TLS pairing channel; discovery/TLS metadata remains routing/channel data only.
 
 ## Verification
 
