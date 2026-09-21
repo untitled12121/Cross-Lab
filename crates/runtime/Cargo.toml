@@ -18,3 +18,6 @@ crosslab-policy = { path = "../policy" }
 crosslab-protocol = { path = "../protocol" }
 tokio = { workspace = true, features = ["rt", "sync", "time"] }
 
+
+[dev-dependencies]
+crosslab-identity-store = { path = "../identity-store" }
