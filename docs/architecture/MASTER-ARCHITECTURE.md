@@ -1,8 +1,8 @@
 # Cross-Lab Master Architecture & Development Plan
 
 **Document status:** Architecture Baseline — Source of Truth  
-**Revision:** 2.7  
-**Date:** 2026-09-21  
+**Revision:** 2.8  
+**Date:** 2026-09-22  
 **Project:** Cross-Lab  
 **Scope:** Architecture, security boundaries, repository structure, protocol foundations, platform strategy, development phases, and technology evaluation rules
 
@@ -26,7 +26,7 @@ The following rules apply:
 - License compatibility, security implications, platform support, maintenance status, and performance impact must be reviewed before code is reused or adapted.
 - The smallest architecture that cleanly satisfies the current milestone is preferred over speculative extensibility.
 
-Revision 2.7 incorporates accepted ADR-0016 bounded LAN discovery and provisional QUIC product-pairing profile in addition to the accepted production identity-store, pairing-bootstrap, and signing-provider boundaries. Product pairing discovery is short-lived DNS-SD keyed only by PairingId; route/TLS metadata remains non-authoritative, and the existing ADR-0003 high-entropy-secret pairing protocol remains the trust mechanism. Detailed protocol/security mechanics live in focused specifications; this document records the governing architecture and dependency boundaries.
+Revision 2.8 incorporates accepted ADR-0017 privacy-conscious LAN trusted-session discovery in addition to ADR-0016 product pairing and the accepted production identity-store, pairing-bootstrap, and signing-provider boundaries. Product pairing discovery remains short-lived and keyed only by PairingId. Normal trusted-session discovery uses ephemeral random DNS-SD instances with no stable owner/device identifier; route/TLS/discovery metadata remains non-authoritative, and every normal reconnect performs fresh Cross-Lab credential/trust/currentness/channel-binding authentication with a fresh SessionId. Detailed protocol/security mechanics live in focused specifications; this document records the governing architecture and dependency boundaries.
 
 ---
 
@@ -763,6 +763,10 @@ Active network scanning is not the default Cross-Lab discovery strategy.
 ADR-0016 selects the first product LAN pairing discovery profile: while a single-use invitation is pending, the inviter advertises a bounded DNS-SD `_crosslab-pair._udp.local.` service whose instance is derived only from the random PairingId. The joiner browses only after scanning a valid bootstrap and resolves only that expected instance. Owner/device identifiers, device names, secrets, trust, and capability data are not advertised.
 
 The associated provisional pairing channel uses Quinn/QUIC with TLS 1.3 and ALPN `crosslab-pairing-v1`. Its per-invitation TLS certificate protects the provisional route but is not Cross-Lab identity authority; ADR-0003 transcript confirmation, credential authorization, proof-of-possession, and ADR-0015 persistence remain mandatory before normal authenticated sessions are possible.
+
+ADR-0017 selects the normal trusted-session LAN discovery profile. While the normal runtime is active and durable trusted peers exist, a device may advertise `_crosslab-session._udp.local.` using a fresh random 128-bit instance identifier and exact `v=1` metadata. OwnerId, DeviceId, names, trust state, credentials, capabilities, and session identifiers are not advertised. Candidate state and retry/backoff are bounded, and deterministic ordering of the ephemeral instances decides only which side dials.
+
+Normal LAN session TLS/QUIC protects the selected channel but does not establish Cross-Lab identity. A peer is considered online only after the ordinary session authenticator validates current owner authority, the presented device credential, durable non-revoked peer trust, fresh nonces, ADR-0008 channel binding, device proof-of-possession, and a fresh SessionId. Reconnect continuity never reuses prior session authority.
 
 ---
 
