@@ -61,8 +61,7 @@ impl TrustedSessionQuicServer {
         tls.alpn_protocols = vec![TRUSTED_SESSION_ALPN_V1.to_vec()];
         tls.max_early_data_size = 0;
 
-        let crypto =
-            QuicServerConfig::try_from(tls).map_err(|_| TrustedSessionQuicError::Tls)?;
+        let crypto = QuicServerConfig::try_from(tls).map_err(|_| TrustedSessionQuicError::Tls)?;
         let mut config = ServerConfig::with_crypto(Arc::new(crypto));
         config.transport =
             build_transport_config(transport_config).map_err(|_| TrustedSessionQuicError::Tls)?;
@@ -90,7 +89,8 @@ impl TrustedSessionQuicServer {
     }
 
     pub fn close(&self) {
-        self.endpoint.close(0_u32.into(), b"trusted-session listener closed");
+        self.endpoint
+            .close(0_u32.into(), b"trusted-session listener closed");
     }
 }
 
@@ -118,8 +118,7 @@ impl TrustedSessionQuicClient {
         tls.alpn_protocols = vec![TRUSTED_SESSION_ALPN_V1.to_vec()];
         tls.enable_early_data = false;
 
-        let crypto =
-            QuicClientConfig::try_from(tls).map_err(|_| TrustedSessionQuicError::Tls)?;
+        let crypto = QuicClientConfig::try_from(tls).map_err(|_| TrustedSessionQuicError::Tls)?;
         let mut config = ClientConfig::new(Arc::new(crypto));
         config.transport_config(
             build_transport_config(transport_config).map_err(|_| TrustedSessionQuicError::Tls)?,
@@ -158,7 +157,8 @@ impl TrustedSessionQuicClient {
     }
 
     pub fn close(&self) {
-        self.endpoint.close(0_u32.into(), b"trusted-session client closed");
+        self.endpoint
+            .close(0_u32.into(), b"trusted-session client closed");
     }
 }
 
