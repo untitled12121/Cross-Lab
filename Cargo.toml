@@ -2,6 +2,7 @@
 members = [
     "apps/desktop",
     "apps/sim",
+    "crates/agent",
     "crates/core",
     "crates/crypto",
     "crates/identity",
