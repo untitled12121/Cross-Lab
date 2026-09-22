@@ -238,8 +238,8 @@ async fn run_browser(
                     let _ = events_tx.send(LinuxTrustedSessionDiscoveryEvent::Failed).await;
                     return;
                 };
-                let member = message
-                    .header()
+                let header = message.header();
+                let member = header
                     .member()
                     .map(|member| member.as_str())
                     .unwrap_or_default();
