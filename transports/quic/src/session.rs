@@ -426,9 +426,9 @@ fn authenticate_session(
         CoreSessionAuthRole::Initiator => responder_credential.device_id(),
         CoreSessionAuthRole::Responder => initiator_credential.device_id(),
     };
-    let peer_trust = auth.peer_trust(peer_device_id).ok_or_else(|| {
-        QuicSessionError::Session(SessionError::PeerNotTrusted)
-    })?;
+    let peer_trust = auth
+        .peer_trust(peer_device_id)
+        .ok_or_else(|| QuicSessionError::Session(SessionError::PeerNotTrusted))?;
     let mut session = LogicalSession::new();
     session.authenticate(SessionActivation::new(
         auth.authority,
