@@ -1,0 +1,22 @@
+[package]
+name = "crosslab-agent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+crosslab-core = { path = "../core" }
+crosslab-crypto = { path = "../crypto" }
+crosslab-identity = { path = "../identity" }
+crosslab-identity-store = { path = "../identity-store" }
+crosslab-policy = { path = "../policy" }
+crosslab-protocol = { path = "../protocol" }
+crosslab-runtime = { path = "../runtime" }
+crosslab-transport-quic = { path = "../../transports/quic" }
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
