@@ -24,6 +24,7 @@ crosslab-policy = { path = "../../crates/policy" }
 crosslab-protocol = { path = "../../crates/protocol" }
 crosslab-runtime = { path = "../../crates/runtime" }
 crosslab-transport-quic = { path = "../../transports/quic" }
+futures-util.workspace = true
 gpui-kit.workspace = true
 qrcode-rs.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
