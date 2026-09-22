@@ -632,6 +632,18 @@ mod tests {
     }
 
     #[test]
+    fn trusted_peer_records_reconstruct_verified_trust() {
+        let (mut state, _, issuer, _) = fixture();
+        let peer = add_peer(&mut state, &issuer, 0x41);
+
+        let records = state.trusted_peer_records().unwrap();
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].device_id(), peer.device_id());
+        assert_eq!(records[0].state(), TrustState::Trusted);
+    }
+
+    #[test]
     fn joined_device_reconstructs_owner_domain_without_authority_private_keys() {
         let (owner, _, issuer, _) = fixture();
         let authority = owner.authority_state().unwrap();
