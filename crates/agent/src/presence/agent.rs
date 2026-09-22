@@ -78,13 +78,17 @@ impl TrustedPresenceAgent {
                     status_tx.send_replace(PresenceSnapshot::new(PresencePhase::Failed, None));
                     return;
                 };
-                runtime.block_on(run_agent(
-                    server,
-                    security,
-                    runner_instance,
-                    command_rx,
-                    status_tx,
-                ));
+                let local = tokio::task::LocalSet::new();
+                local.block_on(
+                    &runtime,
+                    run_agent(
+                        server,
+                        security,
+                        runner_instance,
+                        command_rx,
+                        status_tx,
+                    ),
+                );
             })
             .map_err(|_| PresenceAgentError::Thread)?;
 
