@@ -13,6 +13,8 @@ mod pairing;
 mod record;
 mod session;
 mod stream;
+mod tls;
+mod trusted_session;
 
 pub use config::QuicTransportConfig;
 pub use connection::QuicTransportConnection;
@@ -27,6 +29,10 @@ pub use pairing::{
 };
 pub use session::{
     AuthenticatedQuicSession, QuicSessionAuthConfig, QuicSessionError, QuicSessionTimeouts,
+};
+pub use trusted_session::{
+    TRUSTED_SESSION_ALPN_V1, TRUSTED_SESSION_SERVER_NAME, TrustedSessionQuicClient,
+    TrustedSessionQuicError, TrustedSessionQuicServer,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
