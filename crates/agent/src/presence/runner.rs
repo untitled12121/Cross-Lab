@@ -147,13 +147,7 @@ pub(super) async fn run_agent(
                             ConnectedEvent::TransportClosed
                         }
                     }
-                    changed = connection.closed.changed() => {
-                        if changed.is_ok() {
-                            ConnectedEvent::TransportClosed
-                        } else {
-                            ConnectedEvent::TransportClosed
-                        }
-                    }
+                    _ = connection.closed.changed() => ConnectedEvent::TransportClosed
                 }
             };
 
