@@ -10,7 +10,7 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 
 ## Canonical Baseline
 
-- Current `main` after PR #53: `9453b0e7f3e67578c79615acb1034c849a82603d`.
+- Current `main` after PR #54: `69759d8887a98392519dd72151404399adb9c5dc`.
 - PR #49 — Linux Add Device QR invitation UI + Android CameraX/ML Kit scanner: merged as `445bbf32178dff94f339fc1ae80447967f5da215`; exact-head CI `35533414673` green on `7d3176ffd4387d3e29982ae5fe641249d6d33445`.
 - PR #50 — shared product pairing coordinator + durable reciprocal trust persistence: merged as `3af825e6f78bef4512168f587f452c1b0267b6a7`; exact-head CI `35567548228` and Fuzz Smoke `35567548208` green on `ec59f99f7c09898aa2533d8b40bd4e980fa2b022`.
 - PR #51 — ADR-0016 LAN discovery profile + versioned product-pairing wire + provisional Quinn pairing channel: merged as `cf2add350ffa60056d74ac57b0a187a0297d8777`; exact-head CI `35593397861` and Fuzz Smoke `35593397844` green on `2702cc0c926cf044c65aef0376f573aaedae8c6f`.
@@ -60,14 +60,13 @@ Trusted-session foundation is implemented on PR #54:
 - ADR-0017 defines privacy-conscious normal-session DNS-SD with ephemeral random instances and bounded candidate/retry behavior;
 - production trusted-session Quinn endpoints use TLS 1.3, no 0-RTT, non-authoritative ephemeral TLS identity, ADR-0008 channel binding, and fresh SessionId per connection;
 - provider-backed endpoint/reconnect tests verify fresh session authority and unknown-peer rejection;
-- exact implementation head `feb0fe427045f1f067d2b4b42af4cf4618308b96` passed full Rust + Android CI `35685303240`.
+- PR #54 merged as `69759d8887a98392519dd72151404399adb9c5dc`; implementation head `feb0fe427045f1f067d2b4b42af4cf4618308b96` passed CI `35685303240`, and documentation head `7178e9b8d4a29a16527b3ecff96018d4a7388d80` passed CI `35686509887`.
 
 Continue in small verified vertical slices:
 
 - Linux Avahi + Android NsdManager normal-session discovery adapters;
 - automatic trusted-device connection/reconnect orchestration;
 - device status/presence UI;
-- per-device permissions and capability controls;
 - per-device permissions and capability controls;
 - clipboard;
 - resumable file transfer;
@@ -89,18 +88,17 @@ Phase 3 adaptive networking does not begin until Phase 2 is complete.
 
 ## Exact Next Task
 
-1. merge PR #54 after this documentation checkpoint remains green;
-2. implement ADR-0017 Linux Avahi + Android NsdManager discovery adapters with bounded candidates/retry;
-3. wire durable ProductIdentityState + platform SigningProvider into automatic trusted-session connect/accept/reconnect;
-4. expose authenticated presence/reconnect state cleanly in Linux GPUI and Android Compose;
-5. then continue through permissions, clipboard, resumable file transfer, notifications, audit/history, and revocation/device removal;
-6. keep M10 physical evidence separately pending until owner hardware is available;
-7. stop before Phase 3.
+1. implement ADR-0017 Linux Avahi + Android NsdManager discovery adapters with bounded candidates/retry;
+2. wire durable ProductIdentityState + platform SigningProvider into automatic trusted-session connect/accept/reconnect;
+3. expose authenticated presence/reconnect state cleanly in Linux GPUI and Android Compose;
+4. then continue through permissions, clipboard, resumable file transfer, notifications, audit/history, and revocation/device removal;
+5. keep M10 physical evidence separately pending until owner hardware is available;
+6. stop before Phase 3.
 
 ## Resume Procedure
 
 1. verify `main`, active feature/evidence branches, open PRs, exact-head CI, and recent commits;
-2. read Master Architecture revision 2.7, this file, active plans, and relevant ADRs/specifications;
+2. read Master Architecture revision 2.8, this file, active plans, and relevant ADRs/specifications;
 3. inspect existing code and relevant uploaded research before adding adapters/dependencies;
 4. reuse existing pairing/session/policy/currentness boundaries rather than duplicating security semantics;
 5. work in small verifiable milestones, run full relevant gates, commit/push, and update this file;
