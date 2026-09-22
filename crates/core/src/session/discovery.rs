@@ -28,7 +28,9 @@ pub fn is_session_dns_sd_instance(value: &str) -> bool {
         return false;
     };
     hex.len() == SESSION_DNS_SD_INSTANCE_NONCE_LEN * 2
-        && hex.bytes().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        && hex
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
 #[cfg(test)]
