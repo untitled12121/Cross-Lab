@@ -24,6 +24,7 @@ Cross-Lab has accepted the following ADRs:
 | ADR-0014 | Product pairing bootstrap envelope v1 | Accepted |
 | ADR-0015 | Platform identity-store boundary | Accepted |
 | ADR-0016 | Bounded LAN discovery and provisional QUIC pairing channel v1 | Accepted |
+| ADR-0017 | Privacy-conscious LAN trusted-session discovery v1 | Accepted |
 
 The governing architecture is `docs/architecture/MASTER-ARCHITECTURE.md`.
 
