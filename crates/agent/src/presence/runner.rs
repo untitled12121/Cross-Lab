@@ -305,8 +305,8 @@ async fn connect_outbound(
         IpAddr::V4(_) => SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
         IpAddr::V6(_) => SocketAddr::from((Ipv6Addr::UNSPECIFIED, 0)),
     };
-    let client = TrustedSessionQuicClient::bind(bind, QuicTransportConfig::default())
-        .map_err(|_| ())?;
+    let client =
+        TrustedSessionQuicClient::bind(bind, QuicTransportConfig::default()).map_err(|_| ())?;
     let auth = security.auth_config();
     let session = client
         .connect_authenticated(remote, &auth, client_timeouts())
@@ -363,7 +363,12 @@ async fn handle_connect_result(
         }
         Err(()) => {
             mark_candidate_failure(candidates, &result.instance);
-            publish_waiting(status_tx, connected.as_ref(), network_available, auto_connect);
+            publish_waiting(
+                status_tx,
+                connected.as_ref(),
+                network_available,
+                auto_connect,
+            );
         }
     }
 }
@@ -533,10 +538,7 @@ fn publish_runtime(
     ));
 }
 
-fn mark_candidate_failure(
-    candidates: &mut BTreeMap<String, CandidateState>,
-    instance: &str,
-) {
+fn mark_candidate_failure(candidates: &mut BTreeMap<String, CandidateState>, instance: &str) {
     let Some(candidate) = candidates.get_mut(instance) else {
         return;
     };
