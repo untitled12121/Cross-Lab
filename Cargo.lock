@@ -1699,6 +1699,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
 
 [[package]]
+name = "crosslab-agent"
+version = "0.1.0"
+dependencies = [
+ "crosslab-core",
+ "crosslab-crypto",
+ "crosslab-identity",
+ "crosslab-identity-store",
+ "crosslab-policy",
+ "crosslab-protocol",
+ "crosslab-runtime",
+ "crosslab-transport-quic",
+ "tokio",
+]
+
+[[package]]
 name = "crosslab-core"
 version = "0.1.0"
 dependencies = [
