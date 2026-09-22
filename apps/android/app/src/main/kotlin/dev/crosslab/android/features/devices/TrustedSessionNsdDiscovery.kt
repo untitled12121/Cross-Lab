@@ -10,6 +10,7 @@ import java.net.Inet6Address
 import java.net.InetAddress
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.atomic.AtomicBoolean
+import dev.crosslab.android.features.networking.androidNsdServiceType
 import uniffi.crosslab_mobile_ffi.MobileTrustedSessionDiscoveryProfile
 import uniffi.crosslab_mobile_ffi.trustedSessionDiscoveryInstanceValid
 
