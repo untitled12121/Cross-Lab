@@ -17,9 +17,12 @@ pub use pairing::{
     pairing_dns_sd_instance,
 };
 pub use session::{
-    LogicalSession, NegotiatedCapability, SessionActivation, SessionAuthError, SessionAuthProof,
-    SessionAuthRole, SessionAuthTranscriptV1, SessionContext, SessionError, SessionHandshakeSide,
-    SessionState,
+    MAX_SESSION_DISCOVERY_CANDIDATES, SESSION_DNS_SD_INSTANCE_NONCE_LEN,
+    SESSION_DNS_SD_INSTANCE_PREFIX, SESSION_DNS_SD_SERVICE_TYPE, SESSION_DNS_SD_TXT_VERSION_KEY,
+    SESSION_DNS_SD_TXT_VERSION_V1, LogicalSession, NegotiatedCapability, SessionActivation,
+    SessionAuthError, SessionAuthProof, SessionAuthRole, SessionAuthTranscriptV1, SessionContext,
+    SessionError, SessionHandshakeSide, SessionState, is_session_dns_sd_instance,
+    session_dns_sd_instance, should_initiate_session,
 };
 pub use stream::{AdmittedStream, StreamAdmission, StreamAdmissionError};
 pub use transport::{
