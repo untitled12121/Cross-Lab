@@ -1733,6 +1733,7 @@ dependencies = [
  "crosslab-protocol",
  "crosslab-runtime",
  "crosslab-transport-quic",
+ "futures-util",
  "gpui-kit",
  "oo7",
  "qrcode-rs",
