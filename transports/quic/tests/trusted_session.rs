@@ -31,7 +31,6 @@ impl SigningProvider for ProviderSigner<'_> {
 
 struct Fixture {
     authority: OwnerAuthorityState,
-    issuer: SigningKey,
     client_key: SigningKey,
     server_key: SigningKey,
     client_credential: DeviceCredential,
@@ -81,7 +80,6 @@ impl Fixture {
 
         Self {
             authority,
-            issuer,
             client_key,
             server_key,
             client_credential,
