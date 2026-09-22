@@ -16,7 +16,7 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 - PR #51 — ADR-0016 LAN discovery profile + versioned product-pairing wire + provisional Quinn pairing channel: merged as `cf2add350ffa60056d74ac57b0a187a0297d8777`; exact-head CI `35593397861` and Fuzz Smoke `35593397844` green on `2702cc0c926cf044c65aef0376f573aaedae8c6f`.
 - PR #52 — bounded DNS-SD discovery adapters: merged as `2881a8cb042207bf55a1ede9f2dc61f30ccd4eb9`; exact-head CI `35598750651` green on `2ef9ab362fb9fa59d7693662ec8de2f65e5031af`.
 - PR #53 — product pairing network/platform lifecycle: merged as `9453b0e7f3e67578c79615acb1034c849a82603d`; implementation head `cc099fd7bf3335f51f54d4e09f2d002ab136e4e0` and documentation head `c5570add764ac1e223b08bdb63737abd3b182a25` both passed the full Rust + Android gate (`35641211049` / `35643137494`).
-- Master Architecture revision 2.7 and ADR-0016 govern local product pairing.
+- Master Architecture revision 2.8, ADR-0016, and ADR-0017 govern local product pairing and trusted-session LAN discovery.
 - Physical-evidence continuation branch: `m10-task10-real-device-evidence`.
 - M10 evidence protocol: `docs/research/M10-platform-evidence.md`.
 - Product pairing implementation plan: `docs/superpowers/plans/2026-09-20-product-add-device-pairing.md`.
@@ -50,12 +50,24 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 
 These are owner-hardware evidence tasks, not missing implementation tasks.
 
-## Phase 2 Linux + Android MVP — Active Next
+## Phase 2 Linux + Android MVP — Active
 
-Implement in small verified vertical slices:
+Trusted-session foundation is implemented on PR #54:
 
-- automatic trusted-device connection and reconnect;
-- device status/presence;
+- ordinary session proofs use the production SigningProvider boundary;
+- authenticated Quinn can resolve the presented peer against bounded durable trusted-peer records;
+- ProductIdentityState projects persisted peer evidence into verified TrustRecord values;
+- ADR-0017 defines privacy-conscious normal-session DNS-SD with ephemeral random instances and bounded candidate/retry behavior;
+- production trusted-session Quinn endpoints use TLS 1.3, no 0-RTT, non-authoritative ephemeral TLS identity, ADR-0008 channel binding, and fresh SessionId per connection;
+- provider-backed endpoint/reconnect tests verify fresh session authority and unknown-peer rejection;
+- exact implementation head `feb0fe427045f1f067d2b4b42af4cf4618308b96` passed full Rust + Android CI `35685303240`.
+
+Continue in small verified vertical slices:
+
+- Linux Avahi + Android NsdManager normal-session discovery adapters;
+- automatic trusted-device connection/reconnect orchestration;
+- device status/presence UI;
+- per-device permissions and capability controls;
 - per-device permissions and capability controls;
 - clipboard;
 - resumable file transfer;
@@ -77,11 +89,13 @@ Phase 3 adaptive networking does not begin until Phase 2 is complete.
 
 ## Exact Next Task
 
-1. implement Phase 2 automatic trusted-device connection/reconnect and device presence/status as one coherent vertical slice;
-2. expose that state cleanly in Linux GPUI and Android Compose;
-3. then continue through permissions, clipboard, resumable file transfer, notifications, audit/history, and revocation/device removal;
-4. keep M10 physical evidence separately pending until owner hardware is available;
-5. stop before Phase 3.
+1. merge PR #54 after this documentation checkpoint remains green;
+2. implement ADR-0017 Linux Avahi + Android NsdManager discovery adapters with bounded candidates/retry;
+3. wire durable ProductIdentityState + platform SigningProvider into automatic trusted-session connect/accept/reconnect;
+4. expose authenticated presence/reconnect state cleanly in Linux GPUI and Android Compose;
+5. then continue through permissions, clipboard, resumable file transfer, notifications, audit/history, and revocation/device removal;
+6. keep M10 physical evidence separately pending until owner hardware is available;
+7. stop before Phase 3.
 
 ## Resume Procedure
 

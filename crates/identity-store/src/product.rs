@@ -162,6 +162,14 @@ impl ProductIdentityState {
             .find(|peer| peer.credential.device_id() == device_id)
     }
 
+    pub fn trusted_peer_records(&self) -> Result<Vec<TrustRecord>, ProductIdentityError> {
+        let authority = self.authority_state()?;
+        self.trusted_peers
+            .iter()
+            .map(|peer| peer.trust(&authority))
+            .collect()
+    }
+
     pub fn authority_state(&self) -> Result<OwnerAuthorityState, ProductIdentityError> {
         let mut authority = OwnerAuthorityState::new(self.root);
         authority.accept_delegation(self.device_signing)?;
@@ -621,6 +629,18 @@ mod tests {
         assert_eq!(persisted.credential(), peer);
         assert_eq!(trust.state(), TrustState::Trusted);
         assert_eq!(trust.device_id(), peer.device_id());
+    }
+
+    #[test]
+    fn trusted_peer_records_reconstruct_verified_trust() {
+        let (mut state, _, issuer, _) = fixture();
+        let peer = add_peer(&mut state, &issuer, 0x41);
+
+        let records = state.trusted_peer_records().unwrap();
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].device_id(), peer.device_id());
+        assert_eq!(records[0].state(), TrustState::Trusted);
     }
 
     #[test]

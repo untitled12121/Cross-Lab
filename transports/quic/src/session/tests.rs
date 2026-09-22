@@ -117,6 +117,20 @@ impl AuthFixture {
         )
     }
 
+    fn unrelated_peer_trust(&self) -> TrustRecord {
+        let key = SigningKey::from_secret_bytes([0x2a; 32]);
+        let credential = DeviceCredential::issue(
+            self.authority.root().owner_id(),
+            DeviceId::from_bytes([0x2b; 32]),
+            &key,
+            0,
+            &self.authority,
+            &self.issuer_key,
+        )
+        .unwrap();
+        establish_trust(&credential, &self.authority, &self.issuer_key, [0x2c; 32])
+    }
+
     fn revoked_responder_trust(&self) -> TrustRecord {
         let mut trust = self.responder_trust;
         let revocation = TrustTransition::issue_delegated_revocation(
@@ -216,6 +230,76 @@ async fn revoked_peer_is_rejected_before_transport_is_returned() {
     )
     .await;
     shutdown_if_authenticated(server_result).await;
+}
+
+#[tokio::test]
+async fn trusted_peer_set_resolves_the_presented_device() {
+    let fixture = AuthFixture::new();
+    let (client, server, _) = explicit_tls_endpoints();
+    let server_addr = server.local_addr().unwrap();
+    let unrelated = fixture.unrelated_peer_trust();
+    let server_trusts = [unrelated, fixture.initiator_trust];
+    let initiator_auth = fixture.initiator_auth();
+    let responder_auth = QuicSessionAuthConfig::new_with_peer_trusts(
+        &fixture.authority,
+        fixture.responder_credential,
+        &fixture.responder_key,
+        &server_trusts,
+        responder_ranges(),
+        responder_features(),
+    );
+
+    let (client_result, server_result) = tokio::join!(
+        client.connect_authenticated(
+            server_addr,
+            "localhost",
+            &initiator_auth,
+            session_timeouts(),
+        ),
+        server.accept_authenticated(&responder_auth, session_timeouts()),
+    );
+
+    let client_session = client_result.expect("trusted client should authenticate");
+    let server_session = server_result.expect("trusted peer set should resolve the client");
+    assert_eq!(
+        server_session.session().context().unwrap().peer_device_id(),
+        fixture.initiator_credential.device_id()
+    );
+    shutdown_authenticated(client_session, server_session).await;
+}
+
+#[tokio::test]
+async fn trusted_peer_set_rejects_an_unlisted_device() {
+    let fixture = AuthFixture::new();
+    let (client, server, _) = explicit_tls_endpoints();
+    let server_addr = server.local_addr().unwrap();
+    let server_trusts = [fixture.unrelated_peer_trust()];
+    let initiator_auth = fixture.initiator_auth();
+    let responder_auth = QuicSessionAuthConfig::new_with_peer_trusts(
+        &fixture.authority,
+        fixture.responder_credential,
+        &fixture.responder_key,
+        &server_trusts,
+        responder_ranges(),
+        responder_features(),
+    );
+
+    let (client_result, server_result) = tokio::join!(
+        client.connect_authenticated(
+            server_addr,
+            "localhost",
+            &initiator_auth,
+            session_timeouts(),
+        ),
+        server.accept_authenticated(&responder_auth, session_timeouts()),
+    );
+
+    assert_rejected(
+        server_result,
+        QuicSessionError::Session(SessionError::PeerNotTrusted),
+    )
+    .await;
+    shutdown_if_authenticated(client_result).await;
 }
 
 #[tokio::test]
