@@ -105,10 +105,7 @@ async fn trusted_session_endpoint_uses_provider_signers_and_fresh_session_ids() 
 
     let first = connect_pair(&fixture, &client, &server, server_addr).await;
     let first_id = first.0.session().context().unwrap().session_id();
-    assert_eq!(
-        first_id,
-        first.1.session().context().unwrap().session_id()
-    );
+    assert_eq!(first_id, first.1.session().context().unwrap().session_id());
     first.0.transport().shutdown().await;
     first.1.transport().shutdown().await;
 
