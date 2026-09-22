@@ -81,13 +81,7 @@ impl TrustedPresenceAgent {
                 let local = tokio::task::LocalSet::new();
                 local.block_on(
                     &runtime,
-                    run_agent(
-                        server,
-                        security,
-                        runner_instance,
-                        command_rx,
-                        status_tx,
-                    ),
+                    run_agent(server, security, runner_instance, command_rx, status_tx),
                 );
             })
             .map_err(|_| PresenceAgentError::Thread)?;
