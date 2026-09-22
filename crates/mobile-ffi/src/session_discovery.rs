@@ -1,8 +1,7 @@
 use crosslab_core::{
     MAX_SESSION_DISCOVERY_CANDIDATES, SESSION_DNS_SD_INSTANCE_NONCE_LEN,
     SESSION_DNS_SD_SERVICE_TYPE, SESSION_DNS_SD_TXT_VERSION_KEY, SESSION_DNS_SD_TXT_VERSION_V1,
-    is_session_dns_sd_instance, session_dns_sd_instance,
-    should_initiate_session,
+    is_session_dns_sd_instance, session_dns_sd_instance, should_initiate_session,
 };
 use crosslab_crypto::random_bytes;
 
@@ -29,8 +28,8 @@ impl core::fmt::Display for MobileTrustedSessionDiscoveryError {
 impl std::error::Error for MobileTrustedSessionDiscoveryError {}
 
 #[uniffi::export]
-pub fn new_trusted_session_discovery_profile(
-) -> Result<MobileTrustedSessionDiscoveryProfile, MobileTrustedSessionDiscoveryError> {
+pub fn new_trusted_session_discovery_profile()
+-> Result<MobileTrustedSessionDiscoveryProfile, MobileTrustedSessionDiscoveryError> {
     let nonce = random_bytes::<SESSION_DNS_SD_INSTANCE_NONCE_LEN>()
         .map_err(|_| MobileTrustedSessionDiscoveryError::Random)?;
     Ok(MobileTrustedSessionDiscoveryProfile {
