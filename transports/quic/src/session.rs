@@ -428,7 +428,7 @@ fn authenticate_session(
     };
     let peer_trust = auth
         .peer_trust(peer_device_id)
-        .ok_or_else(|| QuicSessionError::Session(SessionError::PeerNotTrusted))?;
+        .ok_or(QuicSessionError::Session(SessionError::PeerNotTrusted))?;
     let mut session = LogicalSession::new();
     session.authenticate(SessionActivation::new(
         auth.authority,
