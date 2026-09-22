@@ -1,6 +1,7 @@
 use crosslab_core::{
-    SESSION_DNS_SD_INSTANCE_NONCE_LEN, SESSION_DNS_SD_SERVICE_TYPE, SESSION_DNS_SD_TXT_VERSION_KEY,
-    SESSION_DNS_SD_TXT_VERSION_V1, is_session_dns_sd_instance, session_dns_sd_instance,
+    MAX_SESSION_DISCOVERY_CANDIDATES, SESSION_DNS_SD_INSTANCE_NONCE_LEN,
+    SESSION_DNS_SD_SERVICE_TYPE, SESSION_DNS_SD_TXT_VERSION_KEY, SESSION_DNS_SD_TXT_VERSION_V1,
+    is_session_dns_sd_instance, session_dns_sd_instance,
     should_initiate_session,
 };
 use crosslab_crypto::random_bytes;
@@ -11,6 +12,7 @@ pub struct MobileTrustedSessionDiscoveryProfile {
     pub service_type: String,
     pub txt_version_key: String,
     pub txt_version: String,
+    pub max_candidates: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Error)]
@@ -36,6 +38,7 @@ pub fn new_trusted_session_discovery_profile(
         service_type: SESSION_DNS_SD_SERVICE_TYPE.to_owned(),
         txt_version_key: SESSION_DNS_SD_TXT_VERSION_KEY.to_owned(),
         txt_version: SESSION_DNS_SD_TXT_VERSION_V1.to_owned(),
+        max_candidates: MAX_SESSION_DISCOVERY_CANDIDATES as u32,
     })
 }
 
@@ -62,5 +65,6 @@ mod tests {
         assert_eq!(profile.txt_version_key, "v");
         assert_eq!(profile.txt_version, "1");
         assert_eq!(profile.instance.len(), 34);
+        assert_eq!(profile.max_candidates, 32);
     }
 }
