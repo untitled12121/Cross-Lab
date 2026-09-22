@@ -149,7 +149,7 @@ impl QuicServerEndpoint {
     }
 }
 
-fn build_transport_config(
+pub(crate) fn build_transport_config(
     config: QuicTransportConfig,
 ) -> Result<Arc<TransportConfig>, QuicEndpointError> {
     let stream_receive_window = VarInt::from_u64(config.stream_receive_window())
