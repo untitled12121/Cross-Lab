@@ -131,10 +131,12 @@ impl TrustedPresenceAgent {
     }
 
     fn send(&self, command: AgentCommand) -> Result<(), PresenceAgentError> {
-        self.command_tx.try_send(command).map_err(|error| match error {
-            mpsc::error::TrySendError::Full(_) => PresenceAgentError::CommandQueueFull,
-            mpsc::error::TrySendError::Closed(_) => PresenceAgentError::Closed,
-        })
+        self.command_tx
+            .try_send(command)
+            .map_err(|error| match error {
+                mpsc::error::TrySendError::Full(_) => PresenceAgentError::CommandQueueFull,
+                mpsc::error::TrySendError::Closed(_) => PresenceAgentError::Closed,
+            })
     }
 }
 
