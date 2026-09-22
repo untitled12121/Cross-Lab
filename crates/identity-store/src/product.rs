@@ -162,6 +162,14 @@ impl ProductIdentityState {
             .find(|peer| peer.credential.device_id() == device_id)
     }
 
+    pub fn trusted_peer_records(&self) -> Result<Vec<TrustRecord>, ProductIdentityError> {
+        let authority = self.authority_state()?;
+        self.trusted_peers
+            .iter()
+            .map(|peer| peer.trust(&authority))
+            .collect()
+    }
+
     pub fn authority_state(&self) -> Result<OwnerAuthorityState, ProductIdentityError> {
         let mut authority = OwnerAuthorityState::new(self.root);
         authority.accept_delegation(self.device_signing)?;
