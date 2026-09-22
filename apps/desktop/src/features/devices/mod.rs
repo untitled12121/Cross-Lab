@@ -6,8 +6,15 @@ use crosslab_policy::{NetworkClass, TrustState};
 use crosslab_protocol::ProtocolVersion;
 use crosslab_runtime::{ConnectivityState, RuntimeStatus};
 
+#[cfg(target_os = "linux")]
+mod linux_discovery;
 mod runtime;
 
+#[cfg(target_os = "linux")]
+pub use linux_discovery::{
+    LinuxTrustedSessionDiscovery, LinuxTrustedSessionDiscoveryError,
+    LinuxTrustedSessionDiscoveryEvent, LinuxTrustedSessionRoute,
+};
 pub use runtime::{DesktopRuntimeControlError, DesktopRuntimeController};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
