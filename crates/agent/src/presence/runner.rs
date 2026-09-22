@@ -291,7 +291,7 @@ fn maybe_start_connect(
 
     let security = Arc::clone(security);
     let connect_tx = connect_tx.clone();
-    tokio::spawn(async move {
+    tokio::task::spawn_local(async move {
         let result = connect_outbound(&security, route.address()).await;
         let _ = connect_tx.send(ConnectResult { instance, result }).await;
     });
