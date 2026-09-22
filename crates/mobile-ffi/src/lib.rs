@@ -12,6 +12,7 @@ mod pairing_network;
 mod pairing_persistence;
 mod product_identity;
 mod runtime;
+mod session_discovery;
 
 pub use dto::{
     MobileConnectivityState, MobileLifecycleState, MobileNetworkClass, MobileProtocolVersion,
@@ -29,6 +30,9 @@ pub use product_identity::{
     MobileSigningProvider,
 };
 pub use runtime::{MobileRuntime, MobileRuntimeEvent};
+pub use session_discovery::{
+    MobileTrustedSessionDiscoveryError, MobileTrustedSessionDiscoveryProfile,
+};
 
 uniffi::setup_scaffolding!();
 
