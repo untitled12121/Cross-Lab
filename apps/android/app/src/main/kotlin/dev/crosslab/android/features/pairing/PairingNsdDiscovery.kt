@@ -10,6 +10,7 @@ import java.net.Inet6Address
 import java.net.InetAddress
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.atomic.AtomicBoolean
+import dev.crosslab.android.features.networking.androidNsdServiceType
 import uniffi.crosslab_mobile_ffi.MobilePairingBootstrap
 
 internal const val DEFAULT_PAIRING_DISCOVERY_TIMEOUT_MS = 12_000L
@@ -211,12 +212,6 @@ private class DiscoverySession(
             multicastLock.release()
         }
     }
-}
-
-internal fun androidNsdServiceType(fullType: String): String? {
-    val suffix = "local."
-    if (!fullType.endsWith(suffix) || fullType.length <= suffix.length) return null
-    return fullType.removeSuffix(suffix)
 }
 
 internal fun hasExactPairingTxtProfile(attributes: Map<String, ByteArray>): Boolean {
