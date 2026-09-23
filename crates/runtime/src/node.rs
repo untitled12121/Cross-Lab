@@ -24,6 +24,7 @@ pub enum NodeError {
     Dispatch(ControlDispatchError),
     Send(ControlSendError),
     Receive(ControlReceiveError),
+    PolicyRevisionRollback,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,13 +109,16 @@ impl<'a> RuntimeNode<'a> {
         self.policy.revision()
     }
 
-    pub fn replace_policy(&mut self, policy: PolicyState) -> bool {
+    pub fn replace_policy(&mut self, policy: PolicyState) -> Result<bool, NodeError> {
         if self.policy == policy {
-            return false;
+            return Ok(false);
+        }
+        if policy.revision() <= self.policy.revision() {
+            return Err(NodeError::PolicyRevisionRollback);
         }
         self.dispatcher.cancel_session_state();
         self.policy = policy;
-        true
+        Ok(true)
     }
 
     pub fn subscribe_event(&mut self, subscription: EventSubscription) -> Result<bool, NodeError> {
