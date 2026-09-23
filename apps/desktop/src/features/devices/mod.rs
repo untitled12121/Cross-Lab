@@ -8,6 +8,8 @@ use crosslab_runtime::{ConnectivityState, RuntimeStatus};
 
 #[cfg(target_os = "linux")]
 mod linux_discovery;
+#[cfg(target_os = "linux")]
+mod product_presence;
 mod runtime;
 
 #[cfg(target_os = "linux")]
@@ -15,6 +17,8 @@ pub use linux_discovery::{
     LinuxTrustedSessionDiscovery, LinuxTrustedSessionDiscoveryError,
     LinuxTrustedSessionDiscoveryEvent, LinuxTrustedSessionRoute,
 };
+#[cfg(target_os = "linux")]
+pub use product_presence::{DesktopPresenceError, DesktopProductPresenceController};
 pub use runtime::{DesktopRuntimeControlError, DesktopRuntimeController};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
