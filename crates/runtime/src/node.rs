@@ -104,6 +104,19 @@ impl<'a> RuntimeNode<'a> {
         )
     }
 
+    pub const fn policy_revision(&self) -> u64 {
+        self.policy.revision()
+    }
+
+    pub fn replace_policy(&mut self, policy: PolicyState) -> bool {
+        if self.policy == policy {
+            return false;
+        }
+        self.dispatcher.cancel_session_state();
+        self.policy = policy;
+        true
+    }
+
     pub fn subscribe_event(&mut self, subscription: EventSubscription) -> Result<bool, NodeError> {
         if self.session.state() != SessionState::Active {
             return Err(NodeError::Session(SessionError::InvalidState));
