@@ -1,9 +1,11 @@
 #[cfg(feature = "development-provisioning")]
 use crate::features::devices::TrustDisplay;
+#[cfg(target_os = "linux")]
+use crate::features::devices::DesktopProductPresenceController;
 use crate::{
     features::{
         appearance::{active_theme, font_weight},
-        devices::{DesktopRuntimeController, DevicesFeatureState},
+        devices::{DesktopRuntimeController, DevicesFeatureState, PresenceDisplay},
         owner::OwnerFeatureState,
         pairing::{DesktopPairingInvitation, DesktopPairingStage, load_existing_product_identity},
     },
@@ -29,6 +31,10 @@ pub struct ControlCenterPage {
     devices: DevicesFeatureState,
     owner: OwnerFeatureState,
     runtime: DesktopRuntimeController,
+    #[cfg(target_os = "linux")]
+    product_presence: Option<DesktopProductPresenceController>,
+    #[cfg(target_os = "linux")]
+    presence_starting: bool,
     pairing_invitation: Option<DesktopPairingInvitation>,
     pairing_generation: u64,
     pairing_busy: bool,
@@ -92,16 +98,91 @@ impl ControlCenterPage {
         })
         .detach();
 
-        Self {
+        let mut page = Self {
             section: Section::Devices,
             devices,
             owner,
             runtime,
+            #[cfg(target_os = "linux")]
+            product_presence: None,
+            #[cfg(target_os = "linux")]
+            presence_starting: false,
             pairing_invitation: None,
             pairing_generation: 0,
             pairing_busy: false,
             notice: None,
+        };
+        #[cfg(target_os = "linux")]
+        page.start_product_presence(cx);
+        page
+    }
+
+    #[cfg(target_os = "linux")]
+    fn start_product_presence(&mut self, cx: &mut Context<Self>) {
+        if self.runtime.uses_development_provisioning()
+            || self.product_presence.is_some()
+            || self.presence_starting
+        {
+            return;
         }
+
+        self.presence_starting = true;
+        cx.spawn(async move |this, cx| {
+            let result = DesktopProductPresenceController::start().await;
+            let controller = match result {
+                Ok(Some(controller)) => controller,
+                Ok(None) => {
+                    let _ = this.update(cx, |page, cx| {
+                        page.presence_starting = false;
+                        cx.notify();
+                    });
+                    return;
+                }
+                Err(error) => {
+                    let _ = this.update(cx, |page, cx| {
+                        page.presence_starting = false;
+                        page.notice = Some(error.to_string());
+                        cx.notify();
+                    });
+                    return;
+                }
+            };
+
+            let mut status = controller.subscribe_status();
+            let initial = status.borrow().clone();
+            if this
+                .update(cx, |page, cx| {
+                    page.presence_starting = false;
+                    page.devices.update_presence(&initial);
+                    if let Some(runtime) = initial.runtime() {
+                        page.owner.update_runtime(runtime);
+                    }
+                    page.product_presence = Some(controller);
+                    page.notice = None;
+                    cx.notify();
+                })
+                .is_err()
+            {
+                return;
+            }
+
+            while status.changed().await.is_ok() {
+                let snapshot = status.borrow_and_update().clone();
+                if this
+                    .update(cx, |page, cx| {
+                        page.devices.update_presence(&snapshot);
+                        if let Some(runtime) = snapshot.runtime() {
+                            page.owner.update_runtime(runtime);
+                        }
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        })
+        .detach();
     }
 
     fn set_section(&mut self, section: Section, cx: &mut Context<Self>) {
@@ -172,6 +253,8 @@ impl ControlCenterPage {
                         }
                         page.notice = match stage {
                             DesktopPairingStage::Paired => {
+                                #[cfg(target_os = "linux")]
+                                page.start_product_presence(cx);
                                 Some("Device paired and trust saved on both devices.".to_owned())
                             }
                             DesktopPairingStage::Failed => Some(
@@ -220,8 +303,31 @@ impl ControlCenterPage {
     }
 
     fn disconnect_peer(&mut self, cx: &mut Context<Self>) {
+        #[cfg(target_os = "linux")]
+        if let Some(presence) = self.product_presence.as_ref() {
+            self.notice = Some(match presence.disconnect() {
+                Ok(()) => "Automatic trusted-device connection paused.".to_owned(),
+                Err(error) => error.to_string(),
+            });
+            cx.notify();
+            return;
+        }
+
         self.notice = Some(match self.runtime.disconnect_current_peer() {
             Ok(()) => "Disconnect requested.".to_owned(),
+            Err(error) => error.to_string(),
+        });
+        cx.notify();
+    }
+
+    #[cfg(target_os = "linux")]
+    fn reconnect_peer(&mut self, cx: &mut Context<Self>) {
+        let Some(presence) = self.product_presence.as_ref() else {
+            self.start_product_presence(cx);
+            return;
+        };
+        self.notice = Some(match presence.reconnect() {
+            Ok(()) => "Trusted-device reconnect requested.".to_owned(),
             Err(error) => error.to_string(),
         });
         cx.notify();
@@ -363,6 +469,34 @@ impl Render for ControlCenterPage {
                     .text_color(theme.secondary_foreground)
                     .focus_visible(|style| style.border_color(theme.ring))
                     .child(if terminal { "Dismiss" } else { "Cancel" }),
+            );
+        }
+
+        #[cfg(target_os = "linux")]
+        if self.product_presence.is_some() {
+            let paused = self.devices.presence() == PresenceDisplay::Paused;
+            actions = actions.child(
+                Button::new("presence-control")
+                    .accessibility_label(if paused {
+                        "Reconnect trusted devices"
+                    } else {
+                        "Pause automatic trusted-device connection"
+                    })
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        if paused {
+                            this.reconnect_peer(cx);
+                        } else {
+                            this.disconnect_peer(cx);
+                        }
+                    }))
+                    .h(px(appearance.metrics.control_height_default))
+                    .px(px(appearance.spacing.lg))
+                    .border_1()
+                    .border_color(theme.border)
+                    .bg(theme.secondary)
+                    .text_color(theme.secondary_foreground)
+                    .focus_visible(|style| style.border_color(theme.ring))
+                    .child(if paused { "Reconnect" } else { "Disconnect" }),
             );
         }
 
