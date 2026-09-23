@@ -146,6 +146,7 @@ pub enum PresenceAgentError {
     Bind,
     Thread,
     InvalidRoute,
+    StalePolicy,
     CommandQueueFull,
     Closed,
 }
@@ -159,6 +160,7 @@ impl fmt::Display for PresenceAgentError {
             Self::Bind => "trusted presence listener could not start",
             Self::Thread => "trusted presence agent could not start",
             Self::InvalidRoute => "trusted presence route is invalid",
+            Self::StalePolicy => "trusted presence policy revision is stale",
             Self::CommandQueueFull => "trusted presence command queue is full",
             Self::Closed => "trusted presence agent is closed",
         })
