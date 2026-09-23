@@ -11,6 +11,7 @@ mod network;
 mod pairing;
 mod pairing_network;
 mod pairing_persistence;
+mod presence;
 mod product_identity;
 mod runtime;
 mod session_discovery;
@@ -26,6 +27,10 @@ pub use pairing::{
 };
 pub use pairing_network::{MobileProductPairingJoinerSession, MobileProductPairingNetworkError};
 pub use pairing_persistence::{MobileProductPairingCommit, MobileProductPairingJoinerCompletion};
+pub use presence::{
+    MobilePresenceDiscovery, MobilePresenceError, MobilePresencePhase, MobilePresenceSnapshot,
+    MobileTrustedPresenceAgent,
+};
 pub use product_identity::{
     MobileProductIdentity, MobileProductIdentityError, MobileSigningCallbackError,
     MobileSigningProvider,
