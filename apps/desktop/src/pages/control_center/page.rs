@@ -1,7 +1,7 @@
-#[cfg(feature = "development-provisioning")]
-use crate::features::devices::TrustDisplay;
 #[cfg(target_os = "linux")]
 use crate::features::devices::DesktopProductPresenceController;
+#[cfg(feature = "development-provisioning")]
+use crate::features::devices::TrustDisplay;
 use crate::{
     features::{
         appearance::{active_theme, font_weight},
