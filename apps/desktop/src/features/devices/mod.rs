@@ -34,7 +34,6 @@ pub enum PresenceDisplay {
     Failed,
 }
 
-
 impl PresenceDisplay {
     pub const fn label(self) -> &'static str {
         match self {
