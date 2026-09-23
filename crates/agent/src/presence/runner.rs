@@ -3,7 +3,7 @@ use std::{
     future::pending,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     num::NonZeroUsize,
-    sync::Arc,
+    sync::{Arc, RwLock},
     time::Duration,
 };
 
@@ -108,7 +108,7 @@ enum ConnectedEvent {
 pub(super) async fn run_agent(
     server: TrustedSessionQuicServer,
     security: Arc<AgentSecurity>,
-    local_instance: String,
+    discovery_instance: Arc<RwLock<String>>,
     mut command_rx: mpsc::Receiver<AgentCommand>,
     status_tx: watch::Sender<PresenceSnapshot>,
 ) {
@@ -120,6 +120,7 @@ pub(super) async fn run_agent(
     let mut auto_connect = true;
 
     loop {
+        let local_instance = current_instance(&discovery_instance);
         maybe_start_connect(
             &security,
             &local_instance,
@@ -470,6 +471,7 @@ async fn handle_command(
         }
         Some(AgentCommand::Disconnect) => {
             *auto_connect = false;
+            candidates.clear();
             stop_connected(connected.take()).await;
             status_tx.send_replace(PresenceSnapshot::new(PresencePhase::Paused, None));
             false
@@ -484,6 +486,13 @@ async fn handle_command(
             true
         }
     }
+}
+
+fn current_instance(discovery_instance: &RwLock<String>) -> String {
+    discovery_instance
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
 }
 
 fn upsert_candidate(
