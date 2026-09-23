@@ -145,8 +145,8 @@ pub fn start_product_pairing_joiner(
     let joiner_id = DeviceId::generate().map_err(|_| MobileProductPairingNetworkError::Random)?;
     let pairing = ProductPairingJoiner::new(bootstrap, joiner_id, &signer)?;
     let exchange = ProductPairingJoinerExchange::new(pairing);
-    let remote =
-        socket_addr(address, port, scope_id).ok_or(MobileProductPairingNetworkError::InvalidRoute)?;
+    let remote = socket_addr(address, port, scope_id)
+        .ok_or(MobileProductPairingNetworkError::InvalidRoute)?;
     let bind = unspecified_bind(remote);
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
