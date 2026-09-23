@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use crosslab_core::should_initiate_session;
+use crosslab_core::{MAX_SESSION_DISCOVERY_CANDIDATES, should_initiate_session};
 use crosslab_crypto::SigningProvider;
 use crosslab_identity::{DeviceCredential, DeviceId, OwnerAuthorityState};
 use crosslab_policy::{NetworkClass, PolicyState, TrustRecord};
@@ -155,6 +155,7 @@ pub(super) async fn run_agent(
                 ConnectedEvent::Command(command) => {
                     if handle_command(
                         command,
+                        &local_instance,
                         &mut candidates,
                         &mut connected,
                         &mut network_available,
@@ -192,6 +193,7 @@ pub(super) async fn run_agent(
             command = command_rx.recv() => {
                 if handle_command(
                     command,
+                    &local_instance,
                     &mut candidates,
                     &mut connected,
                     &mut network_available,
@@ -438,6 +440,7 @@ async fn mark_transport_lost(
 
 async fn handle_command(
     command: Option<AgentCommand>,
+    local_instance: &str,
     candidates: &mut BTreeMap<String, CandidateState>,
     connected: &mut Option<ConnectedRuntime>,
     network_available: &mut bool,
@@ -446,21 +449,7 @@ async fn handle_command(
 ) -> bool {
     match command {
         Some(AgentCommand::CandidateAvailable(route)) => {
-            let instance = route.instance().to_owned();
-            candidates
-                .entry(instance)
-                .and_modify(|candidate| {
-                    if candidate.route.address() != route.address() {
-                        candidate.route = route.clone();
-                        candidate.failures = 0;
-                        candidate.retry_at = Instant::now();
-                    }
-                })
-                .or_insert(CandidateState {
-                    route,
-                    failures: 0,
-                    retry_at: Instant::now(),
-                });
+            upsert_candidate(local_instance, candidates, route);
             false
         }
         Some(AgentCommand::CandidateLost(instance)) => {
@@ -469,6 +458,7 @@ async fn handle_command(
         }
         Some(AgentCommand::NetworkLost) => {
             *network_available = false;
+            candidates.clear();
             mark_transport_lost(connected, status_tx).await;
             publish_waiting(status_tx, connected.as_ref(), false, *auto_connect);
             false
@@ -494,6 +484,39 @@ async fn handle_command(
             true
         }
     }
+}
+
+fn upsert_candidate(
+    local_instance: &str,
+    candidates: &mut BTreeMap<String, CandidateState>,
+    route: TrustedSessionRoute,
+) {
+    if route.instance() == local_instance {
+        return;
+    }
+
+    let instance = route.instance().to_owned();
+    if let Some(candidate) = candidates.get_mut(&instance) {
+        if candidate.route.address() != route.address() {
+            candidate.route = route;
+            candidate.failures = 0;
+            candidate.retry_at = Instant::now();
+        }
+        return;
+    }
+
+    if candidates.len() >= MAX_SESSION_DISCOVERY_CANDIDATES {
+        return;
+    }
+
+    candidates.insert(
+        instance,
+        CandidateState {
+            route,
+            failures: 0,
+            retry_at: Instant::now(),
+        },
+    );
 }
 
 fn publish_waiting(
@@ -616,6 +639,32 @@ fn server_timeouts() -> QuicSessionTimeouts {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn candidate_set_rejects_self_and_stays_bounded() {
+        let local = "s-00000000000000000000000000000000";
+        let mut candidates = BTreeMap::new();
+
+        let self_route = TrustedSessionRoute::new(
+            local.to_owned(),
+            SocketAddr::from(([127, 0, 0, 1], 4100)),
+        )
+        .unwrap();
+        upsert_candidate(local, &mut candidates, self_route);
+        assert!(candidates.is_empty());
+
+        for index in 1..=(MAX_SESSION_DISCOVERY_CANDIDATES + 4) {
+            let instance = format!("s-{index:032x}");
+            let route = TrustedSessionRoute::new(
+                instance,
+                SocketAddr::from(([127, 0, 0, 1], 4100 + index as u16)),
+            )
+            .unwrap();
+            upsert_candidate(local, &mut candidates, route);
+        }
+
+        assert_eq!(candidates.len(), MAX_SESSION_DISCOVERY_CANDIDATES);
+    }
 
     #[test]
     fn reconnect_backoff_caps_at_fifteen_seconds() {
