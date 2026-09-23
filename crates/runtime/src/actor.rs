@@ -173,10 +173,7 @@ impl RuntimeActor {
         reply_rx.await.map_err(|_| RuntimeActorError::ActorClosed)?
     }
 
-    pub async fn replace_policy(
-        &self,
-        policy: PolicyState,
-    ) -> Result<bool, RuntimeActorError> {
+    pub async fn replace_policy(&self, policy: PolicyState) -> Result<bool, RuntimeActorError> {
         let command_tx = self
             .command_tx
             .as_ref()
