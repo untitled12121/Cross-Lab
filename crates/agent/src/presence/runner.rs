@@ -499,19 +499,18 @@ async fn handle_command(
             if *policy == next || next.revision() <= policy.revision() {
                 return false;
             }
-            *policy = next;
-            permissions_tx.send_replace(PermissionSnapshot::from_policy(policy));
 
             let apply_failed = match connected.as_ref() {
-                Some(connection) => connection
-                    .actor
-                    .replace_policy(policy.clone())
-                    .await
-                    .is_err(),
+                Some(connection) => connection.actor.replace_policy(next.clone()).await.is_err(),
                 None => false,
             };
             if apply_failed {
                 stop_connected(connected.take()).await;
+            }
+
+            *policy = next;
+            permissions_tx.send_replace(PermissionSnapshot::from_policy(policy));
+            if apply_failed {
                 publish_failure(status_tx, None);
             }
             false
