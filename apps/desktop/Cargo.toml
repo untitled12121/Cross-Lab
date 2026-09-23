@@ -18,6 +18,7 @@ development-provisioning = [
 ]
 
 [dependencies]
+crosslab-agent = { path = "../../crates/agent" }
 crosslab-core = { path = "../../crates/core" }
 crosslab-identity = { path = "../../crates/identity" }
 crosslab-policy = { path = "../../crates/policy" }
