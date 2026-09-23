@@ -22,8 +22,9 @@ pub use linux_discovery::{
 pub use product_presence::{DesktopPresenceError, DesktopProductPresenceController};
 pub use runtime::{DesktopRuntimeControlError, DesktopRuntimeController};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum PresenceDisplay {
+    #[default]
     Unavailable,
     Discovering,
     Connecting,
@@ -33,11 +34,6 @@ pub enum PresenceDisplay {
     Failed,
 }
 
-impl Default for PresenceDisplay {
-    fn default() -> Self {
-        Self::Unavailable
-    }
-}
 
 impl PresenceDisplay {
     pub const fn label(self) -> &'static str {
