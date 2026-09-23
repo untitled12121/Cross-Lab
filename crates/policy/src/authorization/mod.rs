@@ -218,11 +218,40 @@ impl PolicyRule {
         }
         self
     }
+
+    pub const fn rule_id(&self) -> RuleId {
+        self.rule_id
+    }
+
+    pub const fn source_device_id(&self) -> DeviceId {
+        self.source_device_id
+    }
+
+    pub const fn capability_id(&self) -> &CapabilityId {
+        &self.capability_id
+    }
+
+    pub const fn operation(&self) -> &OperationName {
+        &self.operation
+    }
+
+    pub const fn effect(&self) -> RuleEffect {
+        self.effect
+    }
+
+    pub fn constraints(&self) -> &[Constraint] {
+        &self.constraints
+    }
+
+    pub fn obligations(&self) -> &[Obligation] {
+        &self.obligations
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PolicyError {
     DuplicateRule,
+    IdGeneration,
     RevisionOverflow,
 }
 
@@ -247,7 +276,7 @@ impl PolicyKey {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PolicyState {
     revision: u64,
     rules: BTreeMap<PolicyKey, PolicyRule>,
@@ -278,6 +307,90 @@ impl PolicyState {
 
     pub const fn revision(&self) -> u64 {
         self.revision
+    }
+
+    pub fn rules(&self) -> impl Iterator<Item = &PolicyRule> {
+        self.rules.values()
+    }
+
+    pub fn rule_effect(
+        &self,
+        source_device_id: DeviceId,
+        capability_id: &CapabilityId,
+        operation: &OperationName,
+    ) -> Option<RuleEffect> {
+        let key = PolicyKey::new(
+            source_device_id,
+            capability_id.clone(),
+            operation.clone(),
+        );
+        self.rules.get(&key).map(PolicyRule::effect)
+    }
+
+    pub fn set_rule_effect(
+        &mut self,
+        source_device_id: DeviceId,
+        capability_id: CapabilityId,
+        operation: OperationName,
+        effect: RuleEffect,
+    ) -> Result<bool, PolicyError> {
+        let key = PolicyKey::new(
+            source_device_id,
+            capability_id.clone(),
+            operation.clone(),
+        );
+        if self
+            .rules
+            .get(&key)
+            .is_some_and(|rule| rule.effect == effect)
+        {
+            return Ok(false);
+        }
+
+        let next_revision = self
+            .revision
+            .checked_add(1)
+            .ok_or(PolicyError::RevisionOverflow)?;
+        if let Some(rule) = self.rules.get_mut(&key) {
+            rule.effect = effect;
+        } else {
+            let rule_id = RuleId::generate().map_err(|_| PolicyError::IdGeneration)?;
+            self.rules.insert(
+                key,
+                PolicyRule::new(
+                    rule_id,
+                    source_device_id,
+                    capability_id,
+                    operation,
+                    effect,
+                ),
+            );
+        }
+        self.revision = next_revision;
+        Ok(true)
+    }
+
+    pub fn remove_rule(
+        &mut self,
+        source_device_id: DeviceId,
+        capability_id: &CapabilityId,
+        operation: &OperationName,
+    ) -> Result<bool, PolicyError> {
+        let key = PolicyKey::new(
+            source_device_id,
+            capability_id.clone(),
+            operation.clone(),
+        );
+        if !self.rules.contains_key(&key) {
+            return Ok(false);
+        }
+        let next_revision = self
+            .revision
+            .checked_add(1)
+            .ok_or(PolicyError::RevisionOverflow)?;
+        self.rules.remove(&key);
+        self.revision = next_revision;
+        Ok(true)
     }
 
     pub fn evaluate(&self, context: &AuthorizationContext) -> PolicyDecision {
