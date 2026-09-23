@@ -365,7 +365,11 @@ impl DevicesFeatureState {
     }
 
     pub fn current_permissions(&self) -> Vec<PermissionPresentation> {
-        let Some(peer_id) = self.current.as_ref().and_then(DevicePresentation::peer_device_id) else {
+        let Some(peer_id) = self
+            .current
+            .as_ref()
+            .and_then(DevicePresentation::peer_device_id)
+        else {
             return Vec::new();
         };
 
