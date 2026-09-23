@@ -4,10 +4,12 @@ use std::{
 };
 
 use crosslab_agent::{
-    PresenceAgentError, PresencePhase, TrustedPresenceAgent, TrustedSessionRoute,
+    PermissionSnapshot, PresenceAgentError, PresencePhase, TrustedPresenceAgent,
+    TrustedSessionRoute,
 };
 use crosslab_crypto::SigningProvider;
 use crosslab_identity_store::ProductIdentityState;
+use crosslab_policy::RuleEffect;
 use tokio::runtime::Runtime;
 
 use crate::{
@@ -31,6 +33,27 @@ pub enum MobilePresencePhase {
 pub struct MobilePresenceSnapshot {
     pub phase: MobilePresencePhase,
     pub runtime: Option<MobileRuntimeSnapshot>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum MobilePermissionEffect {
+    Allow,
+    Deny,
+    Ask,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct MobilePermissionRule {
+    pub source_device_id: String,
+    pub capability_id: String,
+    pub operation: String,
+    pub effect: MobilePermissionEffect,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct MobilePermissionSnapshot {
+    pub policy_revision: u64,
+    pub rules: Vec<MobilePermissionRule>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -167,6 +190,10 @@ impl MobileTrustedPresenceAgent {
         })
     }
 
+    pub fn permission_snapshot(&self) -> Result<MobilePermissionSnapshot, MobilePresenceError> {
+        self.with_agent(|agent| Ok(to_mobile_permission_snapshot(&agent.permission_snapshot())))
+    }
+
     pub fn snapshot(&self) -> Result<MobilePresenceSnapshot, MobilePresenceError> {
         let status = self
             .status
@@ -228,6 +255,36 @@ fn to_mobile_discovery(
         profile: profile_for_instance(discovery.instance().to_owned()),
         listen_port: discovery.listen_port(),
     }
+}
+
+fn to_mobile_permission_snapshot(snapshot: &PermissionSnapshot) -> MobilePermissionSnapshot {
+    MobilePermissionSnapshot {
+        policy_revision: snapshot.policy_revision(),
+        rules: snapshot
+            .rules()
+            .iter()
+            .map(|rule| MobilePermissionRule {
+                source_device_id: hex(rule.source_device_id().as_bytes()),
+                capability_id: rule.capability_id().as_str().to_owned(),
+                operation: rule.operation().as_str().to_owned(),
+                effect: match rule.effect() {
+                    RuleEffect::Allow => MobilePermissionEffect::Allow,
+                    RuleEffect::Deny => MobilePermissionEffect::Deny,
+                    RuleEffect::Ask => MobilePermissionEffect::Ask,
+                },
+            })
+            .collect(),
+    }
+}
+
+fn hex(bytes: &[u8]) -> String {
+    use core::fmt::Write as _;
+
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        write!(&mut output, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    output
 }
 
 fn to_mobile_snapshot(snapshot: &crosslab_agent::PresenceSnapshot) -> MobilePresenceSnapshot {
