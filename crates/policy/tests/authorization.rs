@@ -247,7 +247,10 @@ fn removing_exact_rule_restores_default_deny() {
             )
             .unwrap()
     );
-    assert_eq!(policy.evaluate(&fixture.context()).effect(), DecisionEffect::Allow);
+    assert_eq!(
+        policy.evaluate(&fixture.context()).effect(),
+        DecisionEffect::Allow
+    );
 
     assert!(
         policy
