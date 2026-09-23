@@ -68,6 +68,7 @@ impl TrustedPresenceAgent {
         let (command_tx, command_rx) = mpsc::channel(COMMAND_CAPACITY);
         let (status_tx, status) =
             watch::channel(PresenceSnapshot::new(PresencePhase::Discovering, None));
+        let runner_discovery_instance = Arc::clone(&discovery_instance);
         thread::Builder::new()
             .name("crosslab-presence-agent".into())
             .spawn(move || {
@@ -81,7 +82,13 @@ impl TrustedPresenceAgent {
                 let local = tokio::task::LocalSet::new();
                 local.block_on(
                     &runtime,
-                    run_agent(server, security, runner_instance, command_rx, status_tx),
+                    run_agent(
+                        server,
+                        security,
+                        runner_discovery_instance,
+                        command_rx,
+                        status_tx,
+                    ),
                 );
             })
             .map_err(|_| PresenceAgentError::Thread)?;
