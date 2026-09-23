@@ -16,8 +16,8 @@ use crosslab_identity::{
     OwnerRootRecord, RootSuccessor,
 };
 use crosslab_policy::{
-    CapabilityId, NetworkClass, OperationName, PairingTrustTransition, PolicyState, TransitionId,
-    TrustRecord, TrustState, TrustTransition,
+    CapabilityId, NetworkClass, OperationName, PairingTrustTransition, PolicyState, RuleEffect,
+    TransitionId, TrustRecord, TrustState, TrustTransition,
 };
 use crosslab_protocol::{
     ControlRequest, EventType, FeatureSet, ProtocolRange, ProtocolVersion, RequestId, RetryClass,
@@ -341,6 +341,44 @@ fn dispatcher_event_subscriptions_remain_bounded() {
             crosslab_core::ControlDispatchError::ResourceLimit
         ))
     ));
+}
+
+#[test]
+fn policy_replacement_cancels_request_and_subscription_state() {
+    let fixture = Fixture::new();
+    let transport = TestTransport::new([0x6f; 32]);
+    let session = fixture.active_session(&transport);
+    let mut runtime = RuntimeNode::new(
+        session,
+        &transport,
+        PolicyState::new(),
+        Vec::new(),
+        NetworkClass::Local,
+        NonZeroUsize::new(4).unwrap(),
+    )
+    .unwrap();
+    let event_subscription = subscription("files.progress");
+
+    runtime.send_request(request(0x70)).unwrap();
+    assert!(runtime.subscribe_event(event_subscription.clone()).unwrap());
+    assert_eq!(runtime.pending_request_count(), 1);
+    assert_eq!(runtime.policy_revision(), 0);
+
+    let mut policy = PolicyState::new();
+    policy
+        .set_rule_effect(
+            fixture.peer_trust.device_id(),
+            CapabilityId::parse("files.transfer").unwrap(),
+            OperationName::parse("send").unwrap(),
+            RuleEffect::Allow,
+        )
+        .unwrap();
+
+    assert!(runtime.replace_policy(policy.clone()));
+    assert_eq!(runtime.policy_revision(), 1);
+    assert_eq!(runtime.pending_request_count(), 0);
+    assert!(!runtime.unsubscribe_event(&event_subscription).unwrap());
+    assert!(!runtime.replace_policy(policy));
 }
 
 #[test]
