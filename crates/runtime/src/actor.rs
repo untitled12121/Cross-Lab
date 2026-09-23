@@ -93,8 +93,10 @@ impl RuntimeActorSession {
         Ok(())
     }
 
-    fn replace_policy(&mut self, policy: PolicyState) -> bool {
-        self.node.replace_policy(policy)
+    fn replace_policy(&mut self, policy: PolicyState) -> Result<bool, RuntimeActorError> {
+        self.node
+            .replace_policy(policy)
+            .map_err(|_| RuntimeActorError::PolicyRejected)
     }
 
     fn shutdown(&mut self) {
@@ -186,7 +188,9 @@ impl RuntimeActor {
             })
             .await
             .map_err(|_| RuntimeActorError::ActorClosed)?;
-        reply_rx.await.map_err(|_| RuntimeActorError::ActorClosed)
+        reply_rx
+            .await
+            .map_err(|_| RuntimeActorError::ActorClosed)?
     }
 
     pub async fn reconnect(&self, session: RuntimeActorSession) -> Result<(), RuntimeActorError> {
