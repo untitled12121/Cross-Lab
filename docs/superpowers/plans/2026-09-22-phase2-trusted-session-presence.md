@@ -1,6 +1,6 @@
 # Phase 2 Trusted Session / Presence Foundation
 
-**Status:** Foundation implemented; platform lifecycle active  
+**Status:** Trusted-session presence platform lifecycle implemented; physical LAN evidence pending  
 **Date:** 2026-09-22  
 **Base:** M10 product pairing merged in PR #53
 
@@ -15,7 +15,7 @@ Turn durable reciprocal pairing trust into the normal Linux ↔ Android authenti
 - Resolve the peer trust record only after the protected session hello identifies the presented device credential.
 - Preserve fresh channel binding, nonce/proof, authority-currentness, trust/current credential checks, and fresh `SessionId` on every reconnect.
 
-## Task 2 — Privacy-conscious local session discovery — profile implemented
+## Task 2 — Privacy-conscious local session discovery — implemented
 
 - Add a normal-session LAN profile separate from the one-time pairing discovery profile.
 - Keep discovery metadata non-authoritative and free of OwnerId/DeviceId/trust/capability data.
@@ -29,7 +29,7 @@ Turn durable reciprocal pairing trust into the normal Linux ↔ Android authenti
 - Use protected TLS/QUIC only as the channel; Cross-Lab credential/trust authentication remains authoritative.
 - Support clean disconnect and fresh-auth reconnect.
 
-## Task 4 — Platform lifecycle and UI — next
+## Task 4 — Platform lifecycle and UI — implemented
 
 - Linux and Android load durable ProductIdentityState and local signing providers.
 - Automatically connect trusted peers while the app/runtime is active.
@@ -48,4 +48,8 @@ Turn durable reciprocal pairing trust into the normal Linux ↔ Android authenti
 
 ## Foundation checkpoint
 
-PR #54 establishes the security/transport foundation: platform SigningProvider-backed proofs, bounded multi-peer durable trust resolution, ADR-0017 discovery compatibility constants/role selection, production TLS 1.3 Quinn trusted-session endpoints, shared channel-only TLS verification, verified trusted-peer projection from ProductIdentityState, and reconnect coverage proving a fresh SessionId. Platform DNS-SD adapters and runtime/UI orchestration intentionally follow as a separate vertical slice.
+PR #54 establishes the security/transport foundation: platform SigningProvider-backed proofs, bounded multi-peer durable trust resolution, ADR-0017 discovery compatibility constants/role selection, production TLS 1.3 Quinn trusted-session endpoints, shared channel-only TLS verification, verified trusted-peer projection from ProductIdentityState, and reconnect coverage proving a fresh SessionId.
+
+## Platform lifecycle checkpoint
+
+PR #55 implements the next vertical slice: Linux Avahi and Android NsdManager normal-session discovery, the narrow `crosslab-agent` trusted-presence coordinator, durable `ProductIdentityState` + platform `SigningProvider` session startup, bounded candidate/retry handling, automatic authenticated Quinn connect/accept/reconnect, explicit Disconnect/Reconnect, and GPUI/Compose presence state. DNS-SD and transport metadata remain routing/channel state only; authenticated Cross-Lab identity and current durable trust remain authoritative. Physical Linux/Android LAN evidence remains separate from CI.
