@@ -190,9 +190,7 @@ impl RuntimeActor {
             })
             .await
             .map_err(|_| RuntimeActorError::ActorClosed)?;
-        reply_rx
-            .await
-            .map_err(|_| RuntimeActorError::ActorClosed)?
+        reply_rx.await.map_err(|_| RuntimeActorError::ActorClosed)?
     }
 
     pub async fn reconnect(&self, session: RuntimeActorSession) -> Result<(), RuntimeActorError> {
