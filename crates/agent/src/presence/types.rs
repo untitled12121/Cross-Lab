@@ -1,6 +1,8 @@
 use core::fmt;
 use std::net::SocketAddr;
 
+use crosslab_identity::DeviceId;
+use crosslab_policy::{CapabilityId, OperationName, PolicyState, RuleEffect};
 use crosslab_runtime::RuntimeStatus;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,6 +78,63 @@ impl PresenceSnapshot {
 
     pub const fn runtime(&self) -> Option<&RuntimeStatus> {
         self.runtime.as_ref()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PermissionRule {
+    source_device_id: DeviceId,
+    capability_id: CapabilityId,
+    operation: OperationName,
+    effect: RuleEffect,
+}
+
+impl PermissionRule {
+    pub const fn source_device_id(&self) -> DeviceId {
+        self.source_device_id
+    }
+
+    pub const fn capability_id(&self) -> &CapabilityId {
+        &self.capability_id
+    }
+
+    pub const fn operation(&self) -> &OperationName {
+        &self.operation
+    }
+
+    pub const fn effect(&self) -> RuleEffect {
+        self.effect
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PermissionSnapshot {
+    policy_revision: u64,
+    rules: Vec<PermissionRule>,
+}
+
+impl PermissionSnapshot {
+    pub(crate) fn from_policy(policy: &PolicyState) -> Self {
+        Self {
+            policy_revision: policy.revision(),
+            rules: policy
+                .rules()
+                .map(|rule| PermissionRule {
+                    source_device_id: rule.source_device_id(),
+                    capability_id: rule.capability_id().clone(),
+                    operation: rule.operation().clone(),
+                    effect: rule.effect(),
+                })
+                .collect(),
+        }
+    }
+
+    pub const fn policy_revision(&self) -> u64 {
+        self.policy_revision
+    }
+
+    pub fn rules(&self) -> &[PermissionRule] {
+        &self.rules
     }
 }
 
