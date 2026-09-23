@@ -247,7 +247,7 @@ fn permission_panel(
     let mut content = div()
         .flex()
         .flex_col()
-        .border_t_1()
+        .border_1()
         .border_color(theme.border)
         .p(px(appearance.spacing.xl))
         .gap(px(appearance.spacing.md))
