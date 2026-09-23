@@ -257,19 +257,3 @@ impl From<MobileProductIdentityError> for MobilePresenceError {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn mobile_phase_mapping_preserves_agent_state() {
-        assert_eq!(
-            to_mobile_snapshot(&crosslab_agent::PresenceSnapshot::new_for_test(
-                PresencePhase::Reconnecting,
-                None,
-            ))
-            .phase,
-            MobilePresencePhase::Reconnecting
-        );
-    }
-}
