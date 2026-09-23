@@ -109,12 +109,11 @@ impl MobileTrustedPresenceAgent {
     }
 
     pub fn discovery(&self) -> Result<MobilePresenceDiscovery, MobilePresenceError> {
-        self.with_agent(|agent| {
-            Ok(MobilePresenceDiscovery {
-                profile: profile_for_instance(agent.discovery().instance().to_owned()),
-                listen_port: agent.discovery().listen_port(),
-            })
-        })
+        self.with_agent(|agent| Ok(to_mobile_discovery(agent.discovery())))
+    }
+
+    pub fn rotate_discovery(&self) -> Result<MobilePresenceDiscovery, MobilePresenceError> {
+        self.with_agent(|agent| Ok(to_mobile_discovery(agent.rotate_discovery()?)))
     }
 
     pub fn candidate_available(
@@ -219,6 +218,15 @@ impl MobileTrustedPresenceAgent {
             .lock()
             .map_err(|_| MobilePresenceError::StateUnavailable)?;
         operation(agent.as_ref().ok_or(MobilePresenceError::Closed)?)
+    }
+}
+
+fn to_mobile_discovery(
+    discovery: crosslab_agent::PresenceDiscoveryInfo,
+) -> MobilePresenceDiscovery {
+    MobilePresenceDiscovery {
+        profile: profile_for_instance(discovery.instance().to_owned()),
+        listen_port: discovery.listen_port(),
     }
 }
 
