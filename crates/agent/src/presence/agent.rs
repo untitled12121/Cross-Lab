@@ -1,5 +1,5 @@
 use std::{
-    net::{Ipv4Addr, SocketAddr},
+    net::{Ipv6Addr, SocketAddr},
     sync::{Arc, RwLock},
     thread,
 };
@@ -50,7 +50,7 @@ impl TrustedPresenceAgent {
         let instance = session_dns_sd_instance(nonce);
         let discovery_instance = Arc::new(RwLock::new(instance.clone()));
         let server = TrustedSessionQuicServer::bind(
-            SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
+            SocketAddr::from((Ipv6Addr::UNSPECIFIED, 0)),
             QuicTransportConfig::default(),
         )
         .map_err(|_| PresenceAgentError::Bind)?;
