@@ -13,6 +13,20 @@ use super::{PresencePhase, PresenceSnapshot, TrustedPresenceAgent, TrustedSessio
 
 const WAIT: Duration = Duration::from_secs(8);
 
+#[test]
+fn discovery_rotation_changes_instance_without_changing_listener_port() {
+    let (state, _) = reciprocal_identities();
+    let signer = Arc::new(SigningKey::from_secret_bytes([0x74; 32]));
+    let agent = TrustedPresenceAgent::spawn(state, signer).unwrap();
+
+    let before = agent.discovery();
+    let after = agent.rotate_discovery().unwrap();
+
+    assert_ne!(before.instance(), after.instance());
+    assert_eq!(before.listen_port(), after.listen_port());
+    assert!(crosslab_core::is_session_dns_sd_instance(after.instance()));
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn trusted_agents_connect_and_reconnect_with_fresh_session_authority() {
     let (left_state, right_state) = reciprocal_identities();
