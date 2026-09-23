@@ -15,6 +15,7 @@ bindgen = ["uniffi/cli", "uniffi/cargo-metadata"]
 development-provisioning = ["crosslab-transport-quic/development-provisioning"]
 
 [dependencies]
+crosslab-agent = { path = "../agent" }
 crosslab-core = { path = "../core" }
 crosslab-crypto = { path = "../crypto" }
 crosslab-identity = { path = "../identity" }
