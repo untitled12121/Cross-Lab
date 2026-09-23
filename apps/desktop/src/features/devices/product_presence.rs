@@ -274,9 +274,7 @@ enum RetryOutcome {
     Stop,
 }
 
-async fn wait_retry_or_control(
-    control_rx: &mut mpsc::Receiver<DiscoveryControl>,
-) -> RetryOutcome {
+async fn wait_retry_or_control(control_rx: &mut mpsc::Receiver<DiscoveryControl>) -> RetryOutcome {
     tokio::select! {
         control = control_rx.recv() => {
             match control {
