@@ -168,6 +168,9 @@ impl TrustedPresenceAgent {
     }
 
     pub fn replace_policy(&self, policy: PolicyState) -> Result<(), PresenceAgentError> {
+        if policy.revision() <= self.permissions.borrow().policy_revision() {
+            return Err(PresenceAgentError::StalePolicy);
+        }
         self.send(AgentCommand::ReplacePolicy(policy))
     }
 
