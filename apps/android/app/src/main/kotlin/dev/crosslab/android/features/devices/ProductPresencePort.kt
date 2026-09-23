@@ -139,7 +139,7 @@ class ProductPresencePort(
         val info =
             runCatching { active.discovery() }
                 .getOrElse {
-                    runCatching { active.close() }
+                    runCatching { active.shutdown() }
                     publishLocked(
                         RuntimeSnapshot.disconnected().copy(presence = RuntimePresence.FAILED),
                     )
@@ -163,7 +163,7 @@ class ProductPresencePort(
         val active = agent
         agent = null
         if (active != null) {
-            runCatching { active.close() }
+            runCatching { active.shutdown() }
         }
     }
 
