@@ -330,7 +330,7 @@ pub struct DevicesFeatureState {
 }
 
 impl DevicesFeatureState {
-    pub const fn empty() -> Self {
+    pub fn empty() -> Self {
         Self {
             current: None,
             presence: PresenceDisplay::Unavailable,
