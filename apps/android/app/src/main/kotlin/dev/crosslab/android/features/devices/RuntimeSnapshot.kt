@@ -2,6 +2,8 @@ package dev.crosslab.android.features.devices
 
 import uniffi.crosslab_mobile_ffi.MobileConnectivityState
 import uniffi.crosslab_mobile_ffi.MobileNetworkClass
+import uniffi.crosslab_mobile_ffi.MobilePermissionEffect
+import uniffi.crosslab_mobile_ffi.MobilePermissionSnapshot
 import uniffi.crosslab_mobile_ffi.MobileRuntimeSnapshot
 import uniffi.crosslab_mobile_ffi.MobileSessionState
 import uniffi.crosslab_mobile_ffi.MobileTransportSecurity
@@ -52,6 +54,20 @@ enum class RuntimeSecurity {
     AUTHENTICATED,
 }
 
+enum class RuntimePermissionEffect {
+    ALLOW,
+    DENY,
+    ASK,
+}
+
+data class RuntimePermissionRule(
+    val sourceDeviceId: String,
+    val capabilityId: String,
+    val operation: String,
+    val effect: RuntimePermissionEffect,
+)
+
+
 data class RuntimeProtocolVersion(
     val major: Int,
     val minor: Int,
@@ -69,7 +85,10 @@ data class RuntimeSnapshot(
     val network: RuntimeNetwork,
     val security: RuntimeSecurity,
     val metered: Boolean?,
+    val capabilityIds: List<String>,
     val capabilityCount: Int,
+    val policyRevision: ULong,
+    val permissionRules: List<RuntimePermissionRule>,
 ) {
     companion object {
         fun disconnected(): RuntimeSnapshot =
@@ -85,13 +104,17 @@ data class RuntimeSnapshot(
                 network = RuntimeNetwork.UNAVAILABLE,
                 security = RuntimeSecurity.UNAVAILABLE,
                 metered = null,
+                capabilityIds = emptyList(),
                 capabilityCount = 0,
+                policyRevision = 0uL,
+                permissionRules = emptyList(),
             )
     }
 }
 
 internal fun MobileRuntimeSnapshot.toRuntimeSnapshot(
     presence: RuntimePresence = RuntimePresence.UNAVAILABLE,
+    permissions: MobilePermissionSnapshot? = null,
 ): RuntimeSnapshot =
     RuntimeSnapshot(
         presence = presence,
@@ -141,5 +164,21 @@ internal fun MobileRuntimeSnapshot.toRuntimeSnapshot(
                 MobileTransportSecurity.AUTHENTICATED -> RuntimeSecurity.AUTHENTICATED
             },
         metered = metered,
+        capabilityIds = capabilityIds,
         capabilityCount = capabilityCount.coerceAtMost(Int.MAX_VALUE.toULong()).toInt(),
+        policyRevision = permissions?.policyRevision ?: 0uL,
+        permissionRules =
+            permissions?.rules.orEmpty().map { rule ->
+                RuntimePermissionRule(
+                    sourceDeviceId = rule.sourceDeviceId,
+                    capabilityId = rule.capabilityId,
+                    operation = rule.operation,
+                    effect =
+                        when (rule.effect) {
+                            MobilePermissionEffect.ALLOW -> RuntimePermissionEffect.ALLOW
+                            MobilePermissionEffect.DENY -> RuntimePermissionEffect.DENY
+                            MobilePermissionEffect.ASK -> RuntimePermissionEffect.ASK
+                        },
+                )
+            },
     )
