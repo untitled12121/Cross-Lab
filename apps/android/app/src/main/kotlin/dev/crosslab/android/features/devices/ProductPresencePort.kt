@@ -1,6 +1,8 @@
 package dev.crosslab.android.features.devices
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -9,6 +11,8 @@ import uniffi.crosslab_mobile_ffi.MobilePresenceDiscovery
 import uniffi.crosslab_mobile_ffi.MobilePresencePhase
 import uniffi.crosslab_mobile_ffi.MobilePresenceSnapshot
 import uniffi.crosslab_mobile_ffi.MobileTrustedPresenceAgent
+
+private const val DISCOVERY_RETRY_MS = 2_000L
 
 class ProductPresencePort(
     context: Context,
@@ -24,6 +28,7 @@ class ProductPresencePort(
         }
     private val closed = AtomicBoolean(false)
     private val lock = Any()
+    private val handler = Handler(Looper.getMainLooper())
 
     @Volatile
     private var current = RuntimeSnapshot.disconnected()
@@ -31,6 +36,7 @@ class ProductPresencePort(
     private var agent: MobileTrustedPresenceAgent? = null
     private var discoveryInfo: MobilePresenceDiscovery? = null
     private var discoveryHandle: AutoCloseable? = null
+    private var discoveryRetry: Runnable? = null
     private var generation: Long = 0
 
     override fun start() {
@@ -49,6 +55,7 @@ class ProductPresencePort(
 
     override fun networkLost() {
         synchronized(lock) {
+            cancelDiscoveryRetryLocked()
             discoveryHandle?.close()
             discoveryHandle = null
             agent?.networkLost()
@@ -58,11 +65,13 @@ class ProductPresencePort(
 
     override fun networkAvailable() {
         synchronized(lock) {
+            cancelDiscoveryRetryLocked()
             val active = agent
             if (active == null) {
                 startAgentLocked()
                 return
             }
+            if (discoveryHandle == null && !rotateDiscoveryLocked(active)) return
             active.networkAvailable()
             ensureDiscoveryLocked(active)
             publishAgentSnapshotLocked()
@@ -71,6 +80,7 @@ class ProductPresencePort(
 
     override fun disconnectPeer() {
         synchronized(lock) {
+            cancelDiscoveryRetryLocked()
             val active = agent ?: return
             discoveryHandle?.close()
             discoveryHandle = null
@@ -81,11 +91,13 @@ class ProductPresencePort(
 
     override fun reconnectPeer() {
         synchronized(lock) {
+            cancelDiscoveryRetryLocked()
             val active = agent
             if (active == null) {
                 startAgentLocked()
                 return
             }
+            if (!rotateDiscoveryLocked(active)) return
             active.reconnect()
             ensureDiscoveryLocked(active)
             publishAgentSnapshotLocked()
@@ -106,6 +118,7 @@ class ProductPresencePort(
             stopAgentLocked()
             publishLocked(RuntimeSnapshot.disconnected())
         }
+        handler.removeCallbacksAndMessages(null)
         events.shutdownNow()
         listeners.clear()
     }
@@ -157,6 +170,7 @@ class ProductPresencePort(
 
     private fun stopAgentLocked() {
         generation += 1
+        cancelDiscoveryRetryLocked()
         discoveryHandle?.close()
         discoveryHandle = null
         discoveryInfo = null
@@ -198,12 +212,49 @@ class ProductPresencePort(
                     synchronized(lock) {
                         if (agent !== active) return@start
                         discoveryHandle = null
-                        publishLocked(
-                            current.copy(presence = RuntimePresence.FAILED),
-                        )
+                        runCatching { active.networkLost() }
+                        publishAgentSnapshotLocked()
+                        scheduleDiscoveryRetryLocked(active)
                     }
                 },
             )
+    }
+
+    private fun rotateDiscoveryLocked(active: MobileTrustedPresenceAgent): Boolean {
+        val info =
+            runCatching { active.rotateDiscovery() }
+                .getOrElse {
+                    publishLocked(
+                        RuntimeSnapshot.disconnected().copy(presence = RuntimePresence.FAILED),
+                    )
+                    return false
+                }
+        discoveryInfo = info
+        return true
+    }
+
+    private fun scheduleDiscoveryRetryLocked(active: MobileTrustedPresenceAgent) {
+        cancelDiscoveryRetryLocked()
+        val retry =
+            Runnable {
+                synchronized(lock) {
+                    discoveryRetry = null
+                    if (closed.get() || agent !== active || discoveryHandle != null) {
+                        return@synchronized
+                    }
+                    if (!rotateDiscoveryLocked(active)) return@synchronized
+                    runCatching { active.networkAvailable() }
+                    ensureDiscoveryLocked(active)
+                    publishAgentSnapshotLocked()
+                }
+            }
+        discoveryRetry = retry
+        handler.postDelayed(retry, DISCOVERY_RETRY_MS)
+    }
+
+    private fun cancelDiscoveryRetryLocked() {
+        discoveryRetry?.let(handler::removeCallbacks)
+        discoveryRetry = null
     }
 
     private fun eventLoop(
