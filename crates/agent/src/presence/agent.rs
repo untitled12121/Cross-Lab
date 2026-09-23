@@ -1,9 +1,9 @@
+use std::sync::mpsc as std_mpsc;
 use std::{
     net::{Ipv6Addr, SocketAddr},
     sync::{Arc, RwLock},
     thread,
 };
-use std::sync::mpsc as std_mpsc;
 
 use crosslab_core::{SESSION_DNS_SD_INSTANCE_NONCE_LEN, session_dns_sd_instance};
 use crosslab_crypto::{SigningProvider, random_bytes};
@@ -81,10 +81,8 @@ impl TrustedPresenceAgent {
                         Ok(server) => server,
                         Err(_) => {
                             let _ = startup_tx.send(Err(PresenceAgentError::Bind));
-                            status_tx.send_replace(PresenceSnapshot::new(
-                                PresencePhase::Failed,
-                                None,
-                            ));
+                            status_tx
+                                .send_replace(PresenceSnapshot::new(PresencePhase::Failed, None));
                             return;
                         }
                     };
@@ -92,10 +90,8 @@ impl TrustedPresenceAgent {
                         Ok(address) => address.port(),
                         Err(_) => {
                             let _ = startup_tx.send(Err(PresenceAgentError::Bind));
-                            status_tx.send_replace(PresenceSnapshot::new(
-                                PresencePhase::Failed,
-                                None,
-                            ));
+                            status_tx
+                                .send_replace(PresenceSnapshot::new(PresencePhase::Failed, None));
                             return;
                         }
                     };
