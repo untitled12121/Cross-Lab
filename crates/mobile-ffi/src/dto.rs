@@ -73,6 +73,7 @@ pub struct MobileRuntimeSnapshot {
     pub network: MobileNetworkClass,
     pub transport_security: MobileTransportSecurity,
     pub metered: Option<bool>,
+    pub capability_ids: Vec<String>,
     pub capability_count: u64,
 }
 
@@ -82,6 +83,11 @@ impl MobileRuntimeSnapshot {
         lifecycle: MobileLifecycleState,
         revision: u64,
     ) -> Self {
+        let capability_ids = status
+            .negotiated_capability_ids()
+            .iter()
+            .map(|capability| capability.as_str().to_owned())
+            .collect();
         Self::from_fields(
             lifecycle,
             revision,
@@ -99,6 +105,7 @@ impl MobileRuntimeSnapshot {
                 metered: status.transport().metered(),
                 capability_count: status.negotiated_capability_ids().len(),
             },
+            capability_ids,
         )
     }
 
@@ -117,6 +124,7 @@ impl MobileRuntimeSnapshot {
             network: MobileNetworkClass::Unavailable,
             transport_security: MobileTransportSecurity::Unavailable,
             metered: None,
+            capability_ids: Vec::new(),
             capability_count: 0,
         }
     }
@@ -125,6 +133,7 @@ impl MobileRuntimeSnapshot {
         lifecycle: MobileLifecycleState,
         revision: u64,
         fields: RuntimeStatusFields,
+        capability_ids: Vec<String>,
     ) -> Self {
         let session_id = if fields.session_state == SessionState::Active {
             fields.session_id.map(|id| hex_id(&id.to_bytes()))
@@ -178,6 +187,7 @@ impl MobileRuntimeSnapshot {
                 }
             },
             metered: fields.metered,
+            capability_ids,
             capability_count: fields.capability_count as u64,
         }
     }
@@ -188,7 +198,7 @@ impl MobileRuntimeSnapshot {
         revision: u64,
         fields: RuntimeStatusFields,
     ) -> Self {
-        Self::from_fields(lifecycle, revision, fields)
+        Self::from_fields(lifecycle, revision, fields, Vec::new())
     }
 }
 
