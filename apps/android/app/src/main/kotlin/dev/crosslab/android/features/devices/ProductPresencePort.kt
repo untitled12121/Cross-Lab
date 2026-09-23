@@ -7,6 +7,7 @@ import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import dev.crosslab.android.features.identity.AndroidProductIdentityRepository
+import uniffi.crosslab_mobile_ffi.MobilePermissionSnapshot
 import uniffi.crosslab_mobile_ffi.MobilePresenceDiscovery
 import uniffi.crosslab_mobile_ffi.MobilePresencePhase
 import uniffi.crosslab_mobile_ffi.MobilePresenceSnapshot
@@ -164,7 +165,11 @@ class ProductPresencePort(
         agent = active
         discoveryInfo = info
         ensureDiscoveryLocked(active)
-        publishLocked(active.snapshot().toRuntimeSnapshot())
+        publishLocked(
+            active.snapshot().toRuntimeSnapshot(
+                permissions = active.permissionSnapshot(),
+            ),
+        )
         events.execute { eventLoop(active, token) }
     }
 
@@ -271,15 +276,22 @@ class ProductPresencePort(
 
             synchronized(lock) {
                 if (generation != token || agent !== active) return
-                publishLocked(event.toRuntimeSnapshot())
+                publishLocked(
+                    event.toRuntimeSnapshot(
+                        permissions = runCatching { active.permissionSnapshot() }.getOrNull(),
+                    ),
+                )
             }
         }
     }
 
     private fun publishAgentSnapshotLocked() {
         val active = agent ?: return
-        runCatching { active.snapshot() }
-            .onSuccess { publishLocked(it.toRuntimeSnapshot()) }
+        runCatching {
+            active.snapshot() to active.permissionSnapshot()
+        }.onSuccess { (snapshot, permissions) ->
+            publishLocked(snapshot.toRuntimeSnapshot(permissions))
+        }
     }
 
     private fun publishLocked(snapshot: RuntimeSnapshot) {
@@ -288,7 +300,9 @@ class ProductPresencePort(
     }
 }
 
-private fun MobilePresenceSnapshot.toRuntimeSnapshot(): RuntimeSnapshot {
+private fun MobilePresenceSnapshot.toRuntimeSnapshot(
+    permissions: MobilePermissionSnapshot? = null,
+): RuntimeSnapshot {
     val presence =
         when (phase) {
             MobilePresencePhase.DISCOVERING -> RuntimePresence.DISCOVERING
@@ -298,6 +312,26 @@ private fun MobilePresenceSnapshot.toRuntimeSnapshot(): RuntimeSnapshot {
             MobilePresencePhase.PAUSED -> RuntimePresence.PAUSED
             MobilePresencePhase.FAILED -> RuntimePresence.FAILED
         }
-    return runtime?.toRuntimeSnapshot(presence)
-        ?: RuntimeSnapshot.disconnected().copy(presence = presence)
+    return runtime?.toRuntimeSnapshot(presence, permissions)
+        ?: RuntimeSnapshot.disconnected().copy(
+            presence = presence,
+            policyRevision = permissions?.policyRevision ?: 0uL,
+            permissionRules =
+                permissions?.rules.orEmpty().map { rule ->
+                    RuntimePermissionRule(
+                        sourceDeviceId = rule.sourceDeviceId,
+                        capabilityId = rule.capabilityId,
+                        operation = rule.operation,
+                        effect =
+                            when (rule.effect) {
+                                uniffi.crosslab_mobile_ffi.MobilePermissionEffect.ALLOW ->
+                                    RuntimePermissionEffect.ALLOW
+                                uniffi.crosslab_mobile_ffi.MobilePermissionEffect.DENY ->
+                                    RuntimePermissionEffect.DENY
+                                uniffi.crosslab_mobile_ffi.MobilePermissionEffect.ASK ->
+                                    RuntimePermissionEffect.ASK
+                            },
+                    )
+                },
+        )
 }
