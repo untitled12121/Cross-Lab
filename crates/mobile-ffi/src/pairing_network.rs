@@ -234,9 +234,3 @@ impl From<ProductPairingQuicError> for MobileProductPairingNetworkError {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-}
