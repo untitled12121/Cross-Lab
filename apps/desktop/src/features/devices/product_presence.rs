@@ -8,10 +8,8 @@ use crosslab_agent::{
 use crosslab_identity_store::{ProductIdentityError, ProductIdentityState};
 use tokio::sync::{mpsc, watch};
 
-use crate::features::{
-    identity_store::{
-        LinuxEd25519Signer, LinuxIdentityStore, LinuxIdentityStoreError, LinuxSigningSlot,
-    },
+use crate::features::identity_store::{
+    LinuxEd25519Signer, LinuxIdentityStore, LinuxIdentityStoreError, LinuxSigningSlot,
 };
 
 use super::{
@@ -40,8 +38,7 @@ impl DesktopProductPresenceController {
             return Ok(None);
         }
 
-        let signer =
-            LinuxEd25519Signer::load_required(LinuxSigningSlot::LocalDevice).await?;
+        let signer = LinuxEd25519Signer::load_required(LinuxSigningSlot::LocalDevice).await?;
         let agent = Arc::new(TrustedPresenceAgent::spawn(identity, Arc::new(signer))?);
         let status = agent.subscribe_status();
         let instance = agent.discovery().instance().to_owned();
@@ -59,12 +56,7 @@ impl DesktopProductPresenceController {
                     let _ = discovery_agent.network_lost();
                     return;
                 };
-                runtime.block_on(run_discovery(
-                    discovery_agent,
-                    instance,
-                    port,
-                    stop_rx,
-                ));
+                runtime.block_on(run_discovery(discovery_agent, instance, port, stop_rx));
             })
             .map_err(|_| DesktopPresenceError::Thread)?;
 
