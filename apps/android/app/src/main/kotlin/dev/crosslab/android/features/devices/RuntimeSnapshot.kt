@@ -58,7 +58,7 @@ data class RuntimeProtocolVersion(
 )
 
 data class RuntimeSnapshot(
-    val presence: RuntimePresence,
+    val presence: RuntimePresence = RuntimePresence.UNAVAILABLE,
     val ownerId: String?,
     val localDeviceId: String?,
     val peerDeviceId: String?,
@@ -89,7 +89,6 @@ data class RuntimeSnapshot(
             )
     }
 }
-
 
 internal fun MobileRuntimeSnapshot.toRuntimeSnapshot(
     presence: RuntimePresence = RuntimePresence.UNAVAILABLE,
