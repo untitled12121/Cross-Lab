@@ -496,7 +496,7 @@ async fn handle_command(
             false
         }
         Some(AgentCommand::ReplacePolicy(next)) => {
-            if *policy == next {
+            if *policy == next || next.revision() <= policy.revision() {
                 return false;
             }
             *policy = next;
