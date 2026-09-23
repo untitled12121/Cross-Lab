@@ -1799,6 +1799,7 @@ dependencies = [
 name = "crosslab-mobile-ffi"
 version = "0.1.0"
 dependencies = [
+ "crosslab-agent",
  "crosslab-core",
  "crosslab-crypto",
  "crosslab-identity",
