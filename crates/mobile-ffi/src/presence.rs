@@ -90,8 +90,8 @@ impl MobileTrustedPresenceAgent {
         identity_payload: Vec<u8>,
         local_device_signer: Arc<dyn MobileSigningProvider>,
     ) -> Result<Self, MobilePresenceError> {
-        let identity =
-            ProductIdentityState::decode(&identity_payload).map_err(|_| MobilePresenceError::Identity)?;
+        let identity = ProductIdentityState::decode(&identity_payload)
+            .map_err(|_| MobilePresenceError::Identity)?;
         let signer = ForeignSigningProvider::new(local_device_signer)?;
         let signer: Arc<dyn SigningProvider + Send + Sync> = Arc::new(signer);
         let agent = TrustedPresenceAgent::spawn(identity, signer)?;
@@ -207,7 +207,9 @@ impl MobileTrustedPresenceAgent {
         agent.take();
         Ok(())
     }
+}
 
+impl MobileTrustedPresenceAgent {
     fn with_agent<T>(
         &self,
         operation: impl FnOnce(&TrustedPresenceAgent) -> Result<T, MobilePresenceError>,
@@ -230,9 +232,9 @@ fn to_mobile_snapshot(snapshot: &crosslab_agent::PresenceSnapshot) -> MobilePres
             PresencePhase::Paused => MobilePresencePhase::Paused,
             PresencePhase::Failed => MobilePresencePhase::Failed,
         },
-        runtime: snapshot
-            .runtime()
-            .map(|status| MobileRuntimeSnapshot::from_runtime(status, MobileLifecycleState::Running, 0)),
+        runtime: snapshot.runtime().map(|status| {
+            MobileRuntimeSnapshot::from_runtime(status, MobileLifecycleState::Running, 0)
+        }),
     }
 }
 
@@ -256,4 +258,3 @@ impl From<MobileProductIdentityError> for MobilePresenceError {
         Self::Identity
     }
 }
-
