@@ -645,11 +645,9 @@ mod tests {
         let local = "s-00000000000000000000000000000000";
         let mut candidates = BTreeMap::new();
 
-        let self_route = TrustedSessionRoute::new(
-            local.to_owned(),
-            SocketAddr::from(([127, 0, 0, 1], 4100)),
-        )
-        .unwrap();
+        let self_route =
+            TrustedSessionRoute::new(local.to_owned(), SocketAddr::from(([127, 0, 0, 1], 4100)))
+                .unwrap();
         upsert_candidate(local, &mut candidates, self_route);
         assert!(candidates.is_empty());
 
