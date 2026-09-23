@@ -374,11 +374,16 @@ fn policy_replacement_cancels_request_and_subscription_state() {
         )
         .unwrap();
 
-    assert!(runtime.replace_policy(policy.clone()));
+    assert!(runtime.replace_policy(policy.clone()).unwrap());
     assert_eq!(runtime.policy_revision(), 1);
     assert_eq!(runtime.pending_request_count(), 0);
     assert!(!runtime.unsubscribe_event(&event_subscription).unwrap());
-    assert!(!runtime.replace_policy(policy));
+    assert!(!runtime.replace_policy(policy).unwrap());
+    assert!(matches!(
+        runtime.replace_policy(PolicyState::new()),
+        Err(NodeError::PolicyRevisionRollback)
+    ));
+    assert_eq!(runtime.policy_revision(), 1);
 }
 
 #[test]
