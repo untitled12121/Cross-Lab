@@ -55,7 +55,9 @@ async fn trusted_agents_connect_and_reconnect_with_fresh_session_authority() {
     assert_ne!(first_session, second_session);
     assert_eq!(
         Some(second_session),
-        second_right.runtime().and_then(|status| status.session_id())
+        second_right
+            .runtime()
+            .and_then(|status| status.session_id())
     );
 }
 
