@@ -11,7 +11,9 @@ use crosslab_policy::{
 };
 use tokio::sync::watch;
 
-use super::{PresencePhase, PresenceSnapshot, TrustedPresenceAgent, TrustedSessionRoute};
+use super::{
+    PresenceAgentError, PresencePhase, PresenceSnapshot, TrustedPresenceAgent, TrustedSessionRoute,
+};
 
 const WAIT: Duration = Duration::from_secs(8);
 
@@ -83,6 +85,10 @@ async fn trusted_agents_connect_and_reconnect_with_fresh_session_authority() {
         .expect("permission channel should remain open");
     assert_eq!(permissions.borrow().policy_revision(), 2);
     assert_eq!(permissions.borrow().rules()[0].effect(), RuleEffect::Deny);
+    assert_eq!(
+        left.replace_policy(PolicyState::new()),
+        Err(PresenceAgentError::StalePolicy)
+    );
 
     left.disconnect().unwrap();
     wait_phase(&mut left_status, PresencePhase::Paused).await;
