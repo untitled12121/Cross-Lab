@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, RwLock},
     thread,
 };
+use std::sync::mpsc as std_mpsc;
 
 use crosslab_core::{SESSION_DNS_SD_INSTANCE_NONCE_LEN, session_dns_sd_instance};
 use crosslab_crypto::{SigningProvider, random_bytes};
@@ -49,16 +50,6 @@ impl TrustedPresenceAgent {
             .map_err(|_| PresenceAgentError::Random)?;
         let instance = session_dns_sd_instance(nonce);
         let discovery_instance = Arc::new(RwLock::new(instance.clone()));
-        let server = TrustedSessionQuicServer::bind(
-            SocketAddr::from((Ipv6Addr::UNSPECIFIED, 0)),
-            QuicTransportConfig::default(),
-        )
-        .map_err(|_| PresenceAgentError::Bind)?;
-        let listen_port = server
-            .local_addr()
-            .map_err(|_| PresenceAgentError::Bind)?
-            .port();
-
         let security = Arc::new(AgentSecurity {
             authority,
             local_credential: identity.local_credential(),
@@ -68,6 +59,7 @@ impl TrustedPresenceAgent {
         let (command_tx, command_rx) = mpsc::channel(COMMAND_CAPACITY);
         let (status_tx, status) =
             watch::channel(PresenceSnapshot::new(PresencePhase::Discovering, None));
+        let (startup_tx, startup_rx) = std_mpsc::sync_channel(1);
         let runner_discovery_instance = Arc::clone(&discovery_instance);
         thread::Builder::new()
             .name("crosslab-presence-agent".into())
@@ -76,22 +68,55 @@ impl TrustedPresenceAgent {
                     .enable_all()
                     .build()
                 else {
+                    let _ = startup_tx.send(Err(PresenceAgentError::Thread));
                     status_tx.send_replace(PresenceSnapshot::new(PresencePhase::Failed, None));
                     return;
                 };
                 let local = tokio::task::LocalSet::new();
-                local.block_on(
-                    &runtime,
+                local.block_on(&runtime, async move {
+                    let server = match TrustedSessionQuicServer::bind(
+                        SocketAddr::from((Ipv6Addr::UNSPECIFIED, 0)),
+                        QuicTransportConfig::default(),
+                    ) {
+                        Ok(server) => server,
+                        Err(_) => {
+                            let _ = startup_tx.send(Err(PresenceAgentError::Bind));
+                            status_tx.send_replace(PresenceSnapshot::new(
+                                PresencePhase::Failed,
+                                None,
+                            ));
+                            return;
+                        }
+                    };
+                    let listen_port = match server.local_addr() {
+                        Ok(address) => address.port(),
+                        Err(_) => {
+                            let _ = startup_tx.send(Err(PresenceAgentError::Bind));
+                            status_tx.send_replace(PresenceSnapshot::new(
+                                PresencePhase::Failed,
+                                None,
+                            ));
+                            return;
+                        }
+                    };
+                    if startup_tx.send(Ok(listen_port)).is_err() {
+                        server.close();
+                        return;
+                    }
                     run_agent(
                         server,
                         security,
                         runner_discovery_instance,
                         command_rx,
                         status_tx,
-                    ),
-                );
+                    )
+                    .await;
+                });
             })
             .map_err(|_| PresenceAgentError::Thread)?;
+        let listen_port = startup_rx
+            .recv()
+            .map_err(|_| PresenceAgentError::Thread)??;
 
         Ok(Self {
             discovery_instance,
