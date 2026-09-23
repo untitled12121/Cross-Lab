@@ -40,8 +40,6 @@ impl DesktopProductPresenceController {
         let signer = LinuxEd25519Signer::load_required(LinuxSigningSlot::LocalDevice).await?;
         let agent = Arc::new(TrustedPresenceAgent::spawn(identity, Arc::new(signer))?);
         let status = agent.subscribe_status();
-        let instance = agent.discovery().instance().to_owned();
-        let port = agent.discovery().listen_port();
         let discovery_agent = Arc::clone(&agent);
         let (discovery_enabled, enabled_rx) = watch::channel(true);
 
