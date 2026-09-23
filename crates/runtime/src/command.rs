@@ -11,7 +11,7 @@ pub(crate) enum RuntimeCommand {
     },
     ReplacePolicy {
         policy: PolicyState,
-        reply: oneshot::Sender<bool>,
+        reply: oneshot::Sender<Result<bool, RuntimeActorError>>,
     },
     Reconnect {
         session: Box<RuntimeActorSession>,
