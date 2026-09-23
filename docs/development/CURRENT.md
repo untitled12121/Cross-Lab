@@ -10,7 +10,7 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 
 ## Canonical Baseline
 
-- Current `main` after PR #54: `69759d8887a98392519dd72151404399adb9c5dc`.
+- Current `main` before PR #55: `90e936d3550dad8672e51434d379b86edae849a5` (PR #54 plus the durable resume checkpoint).
 - PR #49 — Linux Add Device QR invitation UI + Android CameraX/ML Kit scanner: merged as `445bbf32178dff94f339fc1ae80447967f5da215`; exact-head CI `35533414673` green on `7d3176ffd4387d3e29982ae5fe641249d6d33445`.
 - PR #50 — shared product pairing coordinator + durable reciprocal trust persistence: merged as `3af825e6f78bef4512168f587f452c1b0267b6a7`; exact-head CI `35567548228` and Fuzz Smoke `35567548208` green on `ec59f99f7c09898aa2533d8b40bd4e980fa2b022`.
 - PR #51 — ADR-0016 LAN discovery profile + versioned product-pairing wire + provisional Quinn pairing channel: merged as `cf2add350ffa60056d74ac57b0a187a0297d8777`; exact-head CI `35593397861` and Fuzz Smoke `35593397844` green on `2702cc0c926cf044c65aef0376f573aaedae8c6f`.
@@ -20,6 +20,7 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 - Physical-evidence continuation branch: `m10-task10-real-device-evidence`.
 - M10 evidence protocol: `docs/research/M10-platform-evidence.md`.
 - Product pairing implementation plan: `docs/superpowers/plans/2026-09-20-product-add-device-pairing.md`.
+- Active Phase 2 presence PR: #55 on `phase2-presence-lifecycle`; exact-head Rust + Android CI must be green before merge.
 
 ## Implemented M10 Product Path
 
@@ -62,11 +63,17 @@ Trusted-session foundation is implemented on PR #54:
 - provider-backed endpoint/reconnect tests verify fresh session authority and unknown-peer rejection;
 - PR #54 merged as `69759d8887a98392519dd72151404399adb9c5dc`; implementation head `feb0fe427045f1f067d2b4b42af4cf4618308b96` passed CI `35685303240`, and documentation head `7178e9b8d4a29a16527b3ecff96018d4a7388d80` passed CI `35686509887`.
 
+PR #55 implements the trusted-session platform lifecycle:
+
+- Linux Avahi and Android NsdManager advertise/browse the ADR-0017 normal-session profile using ephemeral routing-only instances, exact TXT validation, self filtering, and the shared bounded candidate limit;
+- the narrow Rust `crosslab-agent` presence coordinator loads durable `ProductIdentityState`, consumes the platform `SigningProvider`, and owns automatic trusted-session connect/accept/reconnect lifecycle above Quinn;
+- deterministic dial-role handling and bounded 1/2/4/8/15-second reconnect backoff avoid duplicate connection races and unbounded retry churn;
+- network loss, discovery failure, explicit Disconnect/Reconnect, and discovery-instance rotation are wired on Linux and Android;
+- authenticated presence is surfaced in Linux GPUI and Android Compose as discovering, connecting, online, reconnecting, paused, or failed without treating discovery/TLS metadata as identity authority;
+- physical Linux/Android LAN evidence remains separately pending; PR #55 requires exact-head Rust + Android CI before merge.
+
 Continue in small verified vertical slices:
 
-- Linux Avahi + Android NsdManager normal-session discovery adapters;
-- automatic trusted-device connection/reconnect orchestration;
-- device status/presence UI;
 - per-device permissions and capability controls;
 - clipboard;
 - resumable file transfer;
@@ -88,12 +95,11 @@ Phase 3 adaptive networking does not begin until Phase 2 is complete.
 
 ## Exact Next Task
 
-1. implement ADR-0017 Linux Avahi + Android NsdManager discovery adapters with bounded candidates/retry;
-2. wire durable ProductIdentityState + platform SigningProvider into automatic trusted-session connect/accept/reconnect;
-3. expose authenticated presence/reconnect state cleanly in Linux GPUI and Android Compose;
-4. then continue through permissions, clipboard, resumable file transfer, notifications, audit/history, and revocation/device removal;
-5. keep M10 physical evidence separately pending until owner hardware is available;
-6. stop before Phase 3.
+1. finish PR #55 only after exact-head Rust + Android CI is green and record the merge checkpoint;
+2. implement the Phase 2 per-device permissions/capability-control vertical slice on the existing authenticated session/policy boundaries;
+3. then continue through clipboard, resumable file transfer, notifications, audit/history, and revocation/device removal;
+4. keep M10 physical evidence separately pending until owner hardware is available;
+5. stop before Phase 3.
 
 ## Resume Procedure
 
