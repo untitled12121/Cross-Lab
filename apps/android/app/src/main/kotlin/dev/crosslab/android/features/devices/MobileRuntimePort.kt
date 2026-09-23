@@ -3,13 +3,7 @@ package dev.crosslab.android.features.devices
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
-import uniffi.crosslab_mobile_ffi.MobileConnectivityState
-import uniffi.crosslab_mobile_ffi.MobileNetworkClass
 import uniffi.crosslab_mobile_ffi.MobileRuntime
-import uniffi.crosslab_mobile_ffi.MobileRuntimeSnapshot
-import uniffi.crosslab_mobile_ffi.MobileSessionState
-import uniffi.crosslab_mobile_ffi.MobileTransportSecurity
-import uniffi.crosslab_mobile_ffi.MobileTrustState
 
 class MobileRuntimePort(
     private val developmentProvisioningPath: String? = null,
@@ -95,53 +89,3 @@ class MobileRuntimePort(
     }
 }
 
-private fun MobileRuntimeSnapshot.toRuntimeSnapshot(): RuntimeSnapshot =
-    RuntimeSnapshot(
-        ownerId = ownerId,
-        localDeviceId = localDeviceId,
-        peerDeviceId = peerDeviceId,
-        trust =
-            when (trust) {
-                MobileTrustState.UNAVAILABLE -> RuntimeTrust.UNAVAILABLE
-                MobileTrustState.PENDING -> RuntimeTrust.PENDING
-                MobileTrustState.TRUSTED -> RuntimeTrust.TRUSTED
-                MobileTrustState.REVOKED -> RuntimeTrust.REVOKED
-            },
-        connectivity =
-            when (connectivity) {
-                MobileConnectivityState.CONNECTED -> RuntimeConnectivity.CONNECTED
-                MobileConnectivityState.DISCONNECTED -> RuntimeConnectivity.DISCONNECTED
-            },
-        session =
-            when (session) {
-                MobileSessionState.UNAVAILABLE -> RuntimeSession.UNAVAILABLE
-                MobileSessionState.CREATED -> RuntimeSession.CREATED
-                MobileSessionState.AUTHENTICATING -> RuntimeSession.AUTHENTICATING
-                MobileSessionState.ACTIVE -> RuntimeSession.ACTIVE
-                MobileSessionState.CLOSING -> RuntimeSession.CLOSING
-                MobileSessionState.CLOSED -> RuntimeSession.CLOSED
-                MobileSessionState.REVOKED -> RuntimeSession.REVOKED
-            },
-        protocol =
-            protocol?.let {
-                RuntimeProtocolVersion(
-                    major = it.major.toInt(),
-                    minor = it.minor.toInt(),
-                )
-            },
-        network =
-            when (network) {
-                MobileNetworkClass.UNAVAILABLE -> RuntimeNetwork.UNAVAILABLE
-                MobileNetworkClass.LOCAL -> RuntimeNetwork.LOCAL
-                MobileNetworkClass.TRUSTED -> RuntimeNetwork.TRUSTED
-                MobileNetworkClass.REMOTE -> RuntimeNetwork.REMOTE
-            },
-        security =
-            when (transportSecurity) {
-                MobileTransportSecurity.UNAVAILABLE -> RuntimeSecurity.UNAVAILABLE
-                MobileTransportSecurity.TEST_ONLY -> RuntimeSecurity.TEST_ONLY
-                MobileTransportSecurity.AUTHENTICATED -> RuntimeSecurity.AUTHENTICATED
-            },
-        metered = metered,
-        capabilityCount = capabilityCount.coerceAtMost(Int.MAX_VALUE.toULong()).toInt(),
-    )
