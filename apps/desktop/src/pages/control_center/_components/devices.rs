@@ -181,11 +181,7 @@ fn device_panel(device: &DevicePresentation, presence: PresenceDisplay, cx: &App
                         .flex()
                         .items_center()
                         .gap(px(appearance.spacing.sm))
-                        .child(status_badge(
-                            presence.label(),
-                            presence_tone(presence),
-                            cx,
-                        ))
+                        .child(status_badge(presence.label(), presence_tone(presence), cx))
                         .child(status_badge(
                             device.connectivity().label(),
                             connectivity_tone,
@@ -232,7 +228,6 @@ fn device_panel(device: &DevicePresentation, presence: PresenceDisplay, cx: &App
             cx,
         ))
 }
-
 
 fn presence_tone(presence: PresenceDisplay) -> StatusTone {
     match presence {
