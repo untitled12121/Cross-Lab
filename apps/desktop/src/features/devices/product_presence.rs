@@ -6,7 +6,7 @@ use crosslab_agent::{
     TrustedSessionRoute as AgentTrustedSessionRoute,
 };
 use crosslab_identity_store::{ProductIdentityError, ProductIdentityState};
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 
 use crate::features::identity_store::{
     LinuxEd25519Signer, LinuxIdentityStore, LinuxIdentityStoreError, LinuxSigningSlot,
@@ -18,11 +18,12 @@ use super::{
 };
 
 const DISCOVERY_RETRY: Duration = Duration::from_secs(2);
+const CONTROL_CAPACITY: usize = 8;
 
 pub struct DesktopProductPresenceController {
     agent: Arc<TrustedPresenceAgent>,
     status: watch::Receiver<PresenceSnapshot>,
-    discovery_enabled: watch::Sender<bool>,
+    control_tx: mpsc::Sender<DiscoveryControl>,
 }
 
 impl DesktopProductPresenceController {
@@ -41,7 +42,7 @@ impl DesktopProductPresenceController {
         let agent = Arc::new(TrustedPresenceAgent::spawn(identity, Arc::new(signer))?);
         let status = agent.subscribe_status();
         let discovery_agent = Arc::clone(&agent);
-        let (discovery_enabled, enabled_rx) = watch::channel(true);
+        let (control_tx, control_rx) = mpsc::channel(CONTROL_CAPACITY);
 
         thread::Builder::new()
             .name("crosslab-desktop-presence".into())
@@ -53,14 +54,14 @@ impl DesktopProductPresenceController {
                     let _ = discovery_agent.network_lost();
                     return;
                 };
-                runtime.block_on(run_discovery(discovery_agent, enabled_rx));
+                runtime.block_on(run_discovery(discovery_agent, control_rx));
             })
             .map_err(|_| DesktopPresenceError::Thread)?;
 
         Ok(Some(Self {
             agent,
             status,
-            discovery_enabled,
+            control_tx,
         }))
     }
 
@@ -69,22 +70,26 @@ impl DesktopProductPresenceController {
     }
 
     pub fn disconnect(&self) -> Result<(), DesktopPresenceError> {
-        self.discovery_enabled.send_replace(false);
         self.agent.disconnect()?;
-        Ok(())
+        self.send_control(DiscoveryControl::Pause)
     }
 
     pub fn reconnect(&self) -> Result<(), DesktopPresenceError> {
         self.agent.rotate_discovery()?;
         self.agent.reconnect()?;
-        self.discovery_enabled.send_replace(true);
-        Ok(())
+        self.send_control(DiscoveryControl::Resume)
+    }
+
+    fn send_control(&self, control: DiscoveryControl) -> Result<(), DesktopPresenceError> {
+        self.control_tx
+            .try_send(control)
+            .map_err(|_| DesktopPresenceError::Control)
     }
 }
 
 impl Drop for DesktopProductPresenceController {
     fn drop(&mut self) {
-        self.discovery_enabled.send_replace(false);
+        let _ = self.control_tx.try_send(DiscoveryControl::Stop);
     }
 }
 
@@ -94,6 +99,7 @@ pub enum DesktopPresenceError {
     ProductIdentity(ProductIdentityError),
     Agent(PresenceAgentError),
     Discovery(LinuxTrustedSessionDiscoveryError),
+    Control,
     Thread,
 }
 
@@ -104,6 +110,7 @@ impl fmt::Display for DesktopPresenceError {
             Self::ProductIdentity(error) => fmt::Display::fmt(error, formatter),
             Self::Agent(error) => fmt::Display::fmt(error, formatter),
             Self::Discovery(error) => fmt::Display::fmt(error, formatter),
+            Self::Control => formatter.write_str("desktop presence control queue is unavailable"),
             Self::Thread => formatter.write_str("desktop presence supervisor could not start"),
         }
     }
@@ -136,6 +143,13 @@ impl From<LinuxTrustedSessionDiscoveryError> for DesktopPresenceError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DiscoveryControl {
+    Pause,
+    Resume,
+    Stop,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DiscoveryLoopExit {
     Paused,
     Failed,
@@ -144,23 +158,31 @@ enum DiscoveryLoopExit {
 
 async fn run_discovery(
     agent: Arc<TrustedPresenceAgent>,
-    mut enabled_rx: watch::Receiver<bool>,
+    mut control_rx: mpsc::Receiver<DiscoveryControl>,
 ) {
+    let mut enabled = true;
+
     loop {
-        if !*enabled_rx.borrow() {
-            if enabled_rx.changed().await.is_err() {
-                return;
+        if !enabled {
+            match control_rx.recv().await {
+                Some(DiscoveryControl::Resume) => enabled = true,
+                Some(DiscoveryControl::Pause) => {}
+                Some(DiscoveryControl::Stop) | None => return,
             }
             continue;
         }
 
         let discovery_info = agent.discovery();
         let discovery = tokio::select! {
-            changed = enabled_rx.changed() => {
-                if changed.is_err() {
-                    return;
+            control = control_rx.recv() => {
+                match control {
+                    Some(DiscoveryControl::Pause) => {
+                        enabled = false;
+                        continue;
+                    }
+                    Some(DiscoveryControl::Resume) => continue,
+                    Some(DiscoveryControl::Stop) | None => return,
                 }
-                continue;
             }
             result = LinuxTrustedSessionDiscovery::start(
                 discovery_info.instance().to_owned(),
@@ -171,8 +193,10 @@ async fn run_discovery(
                     Err(_) => {
                         let _ = agent.network_lost();
                         let _ = agent.rotate_discovery();
-                        if wait_retry_or_state_change(&mut enabled_rx).await {
-                            return;
+                        match wait_retry_or_control(&mut control_rx).await {
+                            RetryOutcome::Retry => {}
+                            RetryOutcome::Paused => enabled = false,
+                            RetryOutcome::Stop => return,
                         }
                         continue;
                     }
@@ -187,12 +211,15 @@ async fn run_discovery(
                 .as_mut()
                 .expect("discovery exists until the loop exits");
             tokio::select! {
-                changed = enabled_rx.changed() => {
-                    if changed.is_err() {
-                        break DiscoveryLoopExit::Stop;
-                    }
-                    if !*enabled_rx.borrow() {
-                        break DiscoveryLoopExit::Paused;
+                control = control_rx.recv() => {
+                    match control {
+                        Some(DiscoveryControl::Pause) => {
+                            break DiscoveryLoopExit::Paused;
+                        }
+                        Some(DiscoveryControl::Resume) => {}
+                        Some(DiscoveryControl::Stop) | None => {
+                            break DiscoveryLoopExit::Stop;
+                        }
                     }
                 }
                 event = active.next_event() => {
@@ -224,21 +251,40 @@ async fn run_discovery(
 
         match exit {
             DiscoveryLoopExit::Stop => return,
-            DiscoveryLoopExit::Paused => continue,
+            DiscoveryLoopExit::Paused => {
+                enabled = false;
+            }
             DiscoveryLoopExit::Failed => {
                 let _ = agent.network_lost();
                 let _ = agent.rotate_discovery();
-                if wait_retry_or_state_change(&mut enabled_rx).await {
-                    return;
+                match wait_retry_or_control(&mut control_rx).await {
+                    RetryOutcome::Retry => {}
+                    RetryOutcome::Paused => enabled = false,
+                    RetryOutcome::Stop => return,
                 }
             }
         }
     }
 }
 
-async fn wait_retry_or_state_change(enabled_rx: &mut watch::Receiver<bool>) -> bool {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RetryOutcome {
+    Retry,
+    Paused,
+    Stop,
+}
+
+async fn wait_retry_or_control(
+    control_rx: &mut mpsc::Receiver<DiscoveryControl>,
+) -> RetryOutcome {
     tokio::select! {
-        changed = enabled_rx.changed() => changed.is_err(),
-        _ = tokio::time::sleep(DISCOVERY_RETRY) => false,
+        control = control_rx.recv() => {
+            match control {
+                Some(DiscoveryControl::Pause) => RetryOutcome::Paused,
+                Some(DiscoveryControl::Resume) => RetryOutcome::Retry,
+                Some(DiscoveryControl::Stop) | None => RetryOutcome::Stop,
+            }
+        }
+        _ = tokio::time::sleep(DISCOVERY_RETRY) => RetryOutcome::Retry,
     }
 }
