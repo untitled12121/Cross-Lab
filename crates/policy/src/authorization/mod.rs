@@ -319,11 +319,7 @@ impl PolicyState {
         capability_id: &CapabilityId,
         operation: &OperationName,
     ) -> Option<RuleEffect> {
-        let key = PolicyKey::new(
-            source_device_id,
-            capability_id.clone(),
-            operation.clone(),
-        );
+        let key = PolicyKey::new(source_device_id, capability_id.clone(), operation.clone());
         self.rules.get(&key).map(PolicyRule::effect)
     }
 
@@ -334,11 +330,7 @@ impl PolicyState {
         operation: OperationName,
         effect: RuleEffect,
     ) -> Result<bool, PolicyError> {
-        let key = PolicyKey::new(
-            source_device_id,
-            capability_id.clone(),
-            operation.clone(),
-        );
+        let key = PolicyKey::new(source_device_id, capability_id.clone(), operation.clone());
         if self
             .rules
             .get(&key)
@@ -357,13 +349,7 @@ impl PolicyState {
             let rule_id = RuleId::generate().map_err(|_| PolicyError::IdGeneration)?;
             self.rules.insert(
                 key,
-                PolicyRule::new(
-                    rule_id,
-                    source_device_id,
-                    capability_id,
-                    operation,
-                    effect,
-                ),
+                PolicyRule::new(rule_id, source_device_id, capability_id, operation, effect),
             );
         }
         self.revision = next_revision;
@@ -376,11 +362,7 @@ impl PolicyState {
         capability_id: &CapabilityId,
         operation: &OperationName,
     ) -> Result<bool, PolicyError> {
-        let key = PolicyKey::new(
-            source_device_id,
-            capability_id.clone(),
-            operation.clone(),
-        );
+        let key = PolicyKey::new(source_device_id, capability_id.clone(), operation.clone());
         if !self.rules.contains_key(&key) {
             return Ok(false);
         }
