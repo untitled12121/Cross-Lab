@@ -85,10 +85,10 @@ data class RuntimeSnapshot(
     val network: RuntimeNetwork,
     val security: RuntimeSecurity,
     val metered: Boolean?,
-    val capabilityIds: List<String>,
+    val capabilityIds: List<String> = emptyList(),
     val capabilityCount: Int,
-    val policyRevision: ULong,
-    val permissionRules: List<RuntimePermissionRule>,
+    val policyRevision: ULong = 0uL,
+    val permissionRules: List<RuntimePermissionRule> = emptyList(),
 ) {
     companion object {
         fun disconnected(): RuntimeSnapshot =
