@@ -74,12 +74,7 @@ async fn trusted_agents_connect_and_reconnect_with_fresh_session_authority() {
 
     let mut permissions = left.subscribe_permissions();
     policy
-        .set_rule_effect(
-            right_device_id,
-            capability,
-            operation,
-            RuleEffect::Deny,
-        )
+        .set_rule_effect(right_device_id, capability, operation, RuleEffect::Deny)
         .unwrap();
     left.replace_policy(policy).unwrap();
     tokio::time::timeout(WAIT, permissions.changed())
