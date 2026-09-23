@@ -1,6 +1,6 @@
 use std::{
     net::{Ipv4Addr, SocketAddr},
-    sync::Arc,
+    sync::{Arc, RwLock},
     thread,
 };
 
@@ -21,7 +21,8 @@ use super::{
 const COMMAND_CAPACITY: usize = 64;
 
 pub struct TrustedPresenceAgent {
-    discovery: PresenceDiscoveryInfo,
+    discovery_instance: Arc<RwLock<String>>,
+    listen_port: u16,
     command_tx: mpsc::Sender<AgentCommand>,
     status: watch::Receiver<PresenceSnapshot>,
 }
@@ -47,6 +48,7 @@ impl TrustedPresenceAgent {
         let nonce = random_bytes::<SESSION_DNS_SD_INSTANCE_NONCE_LEN>()
             .map_err(|_| PresenceAgentError::Random)?;
         let instance = session_dns_sd_instance(nonce);
+        let discovery_instance = Arc::new(RwLock::new(instance.clone()));
         let server = TrustedSessionQuicServer::bind(
             SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
             QuicTransportConfig::default(),
@@ -66,8 +68,6 @@ impl TrustedPresenceAgent {
         let (command_tx, command_rx) = mpsc::channel(COMMAND_CAPACITY);
         let (status_tx, status) =
             watch::channel(PresenceSnapshot::new(PresencePhase::Discovering, None));
-        let runner_instance = instance.clone();
-
         thread::Builder::new()
             .name("crosslab-presence-agent".into())
             .spawn(move || {
@@ -87,14 +87,29 @@ impl TrustedPresenceAgent {
             .map_err(|_| PresenceAgentError::Thread)?;
 
         Ok(Self {
-            discovery: PresenceDiscoveryInfo::new(instance, listen_port),
+            discovery_instance,
+            listen_port,
             command_tx,
             status,
         })
     }
 
-    pub const fn discovery(&self) -> &PresenceDiscoveryInfo {
-        &self.discovery
+    pub fn discovery(&self) -> PresenceDiscoveryInfo {
+        PresenceDiscoveryInfo::new(self.discovery_instance(), self.listen_port)
+    }
+
+    pub fn rotate_discovery(&self) -> Result<PresenceDiscoveryInfo, PresenceAgentError> {
+        let nonce = random_bytes::<SESSION_DNS_SD_INSTANCE_NONCE_LEN>()
+            .map_err(|_| PresenceAgentError::Random)?;
+        let instance = session_dns_sd_instance(nonce);
+        {
+            let mut current = self
+                .discovery_instance
+                .write()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            *current = instance.clone();
+        }
+        Ok(PresenceDiscoveryInfo::new(instance, self.listen_port))
     }
 
     pub fn subscribe_status(&self) -> watch::Receiver<PresenceSnapshot> {
@@ -126,6 +141,13 @@ impl TrustedPresenceAgent {
 
     pub fn reconnect(&self) -> Result<(), PresenceAgentError> {
         self.send(AgentCommand::Reconnect)
+    }
+
+    fn discovery_instance(&self) -> String {
+        self.discovery_instance
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
     }
 
     fn send(&self, command: AgentCommand) -> Result<(), PresenceAgentError> {
