@@ -1,6 +1,6 @@
 use std::{fmt, num::NonZeroUsize};
 
-use crosslab_policy::{SessionId, TrustRecord};
+use crosslab_policy::{PolicyState, SessionId, TrustRecord};
 use tokio::{
     runtime::Handle,
     sync::{mpsc, oneshot, watch},
@@ -93,6 +93,10 @@ impl RuntimeActorSession {
         Ok(())
     }
 
+    fn replace_policy(&mut self, policy: PolicyState) -> bool {
+        self.node.replace_policy(policy)
+    }
+
     fn shutdown(&mut self) {
         self.node.shutdown();
     }
@@ -169,6 +173,25 @@ impl RuntimeActor {
         reply_rx.await.map_err(|_| RuntimeActorError::ActorClosed)?
     }
 
+    pub async fn replace_policy(
+        &self,
+        policy: PolicyState,
+    ) -> Result<bool, RuntimeActorError> {
+        let command_tx = self
+            .command_tx
+            .as_ref()
+            .ok_or(RuntimeActorError::NotRunning)?;
+        let (reply_tx, reply_rx) = oneshot::channel();
+        command_tx
+            .send(RuntimeCommand::ReplacePolicy {
+                policy,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| RuntimeActorError::ActorClosed)?;
+        reply_rx.await.map_err(|_| RuntimeActorError::ActorClosed)
+    }
+
     pub async fn reconnect(&self, session: RuntimeActorSession) -> Result<(), RuntimeActorError> {
         let command_tx = self
             .command_tx
@@ -230,6 +253,9 @@ async fn run_actor(
                 let result = session.revoke_peer(peer_trust);
                 status_tx.send_replace(session.status());
                 let _ = reply.send(result);
+            }
+            RuntimeCommand::ReplacePolicy { policy, reply } => {
+                let _ = reply.send(session.replace_policy(policy));
             }
             RuntimeCommand::Reconnect {
                 session: replacement,
