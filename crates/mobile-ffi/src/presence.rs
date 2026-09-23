@@ -70,6 +70,7 @@ pub enum MobilePresenceError {
     Bind,
     Thread,
     InvalidRoute,
+    StalePolicy,
     QueueFull,
     Closed,
     StateUnavailable,
@@ -84,6 +85,7 @@ impl core::fmt::Display for MobilePresenceError {
             Self::Bind => "trusted presence listener could not start",
             Self::Thread => "trusted presence agent could not start",
             Self::InvalidRoute => "trusted presence route is invalid",
+            Self::StalePolicy => "trusted presence policy revision is stale",
             Self::QueueFull => "trusted presence command queue is full",
             Self::Closed => "trusted presence agent is closed",
             Self::StateUnavailable => "trusted presence state is unavailable",
@@ -312,6 +314,7 @@ impl From<PresenceAgentError> for MobilePresenceError {
             PresenceAgentError::Bind => Self::Bind,
             PresenceAgentError::Thread => Self::Thread,
             PresenceAgentError::InvalidRoute => Self::InvalidRoute,
+            PresenceAgentError::StalePolicy => Self::StalePolicy,
             PresenceAgentError::CommandQueueFull => Self::QueueFull,
             PresenceAgentError::Closed => Self::Closed,
         }
