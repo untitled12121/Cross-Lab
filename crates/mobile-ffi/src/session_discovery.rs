@@ -32,13 +32,17 @@ pub fn new_trusted_session_discovery_profile()
 -> Result<MobileTrustedSessionDiscoveryProfile, MobileTrustedSessionDiscoveryError> {
     let nonce = random_bytes::<SESSION_DNS_SD_INSTANCE_NONCE_LEN>()
         .map_err(|_| MobileTrustedSessionDiscoveryError::Random)?;
-    Ok(MobileTrustedSessionDiscoveryProfile {
-        instance: session_dns_sd_instance(nonce),
+    Ok(profile_for_instance(session_dns_sd_instance(nonce)))
+}
+
+pub(crate) fn profile_for_instance(instance: String) -> MobileTrustedSessionDiscoveryProfile {
+    MobileTrustedSessionDiscoveryProfile {
+        instance,
         service_type: SESSION_DNS_SD_SERVICE_TYPE.to_owned(),
         txt_version_key: SESSION_DNS_SD_TXT_VERSION_KEY.to_owned(),
         txt_version: SESSION_DNS_SD_TXT_VERSION_V1.to_owned(),
         max_candidates: MAX_SESSION_DISCOVERY_CANDIDATES as u32,
-    })
+    }
 }
 
 #[uniffi::export]
