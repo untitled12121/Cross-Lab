@@ -11,6 +11,7 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import dev.crosslab.android.features.devices.MobileRuntimePort
+import dev.crosslab.android.features.devices.ProductPresencePort
 import dev.crosslab.android.features.identity.AndroidEd25519Signer
 import dev.crosslab.android.features.identity.AndroidIdentityStore
 import dev.crosslab.android.features.identity.AndroidProductIdentityRepository
@@ -49,7 +50,6 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
 
     override fun onCreate() {
         super<Application>.onCreate()
-        runtimeController = RuntimeController(MobileRuntimePort(developmentProvisioningPath()))
         identityStore = AndroidIdentityStore(this)
         localDeviceSigner = AndroidEd25519Signer(this, AndroidSigningSlot.LOCAL_DEVICE)
         identityRepository =
@@ -60,7 +60,21 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
                     AndroidEd25519Signer(this, AndroidSigningSlot.DEVICE_SIGNING),
                 localDeviceSigner = localDeviceSigner,
             )
-        pairingController = PairingJoinerController(this, identityRepository)
+        val developmentProvisioning = developmentProvisioningPath()
+        runtimeController =
+            RuntimeController(
+                if (developmentProvisioning != null) {
+                    MobileRuntimePort(developmentProvisioning)
+                } else {
+                    ProductPresencePort(this, identityRepository)
+                },
+            )
+        pairingController =
+            PairingJoinerController(
+                context = this,
+                identityRepository = identityRepository,
+                onPaired = runtimeController::reconnectPeer,
+            )
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
 
         connectivityManager = getSystemService(ConnectivityManager::class.java)

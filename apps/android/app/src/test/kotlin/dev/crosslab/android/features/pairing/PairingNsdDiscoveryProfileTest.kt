@@ -1,5 +1,6 @@
 package dev.crosslab.android.features.pairing
 
+import dev.crosslab.android.features.networking.androidNsdServiceType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

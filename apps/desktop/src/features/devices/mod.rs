@@ -1,14 +1,65 @@
 use core::fmt::Write as _;
 
+use crosslab_agent::{PresencePhase, PresenceSnapshot};
 use crosslab_core::{SessionState, TransportSecurityClass};
 use crosslab_identity::{DeviceId, OwnerId};
 use crosslab_policy::{NetworkClass, TrustState};
 use crosslab_protocol::ProtocolVersion;
 use crosslab_runtime::{ConnectivityState, RuntimeStatus};
 
+#[cfg(target_os = "linux")]
+mod linux_discovery;
+#[cfg(target_os = "linux")]
+mod product_presence;
 mod runtime;
 
+#[cfg(target_os = "linux")]
+pub use linux_discovery::{
+    LinuxTrustedSessionDiscovery, LinuxTrustedSessionDiscoveryError,
+    LinuxTrustedSessionDiscoveryEvent, LinuxTrustedSessionRoute,
+};
+#[cfg(target_os = "linux")]
+pub use product_presence::{DesktopPresenceError, DesktopProductPresenceController};
 pub use runtime::{DesktopRuntimeControlError, DesktopRuntimeController};
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PresenceDisplay {
+    #[default]
+    Unavailable,
+    Discovering,
+    Connecting,
+    Online,
+    Reconnecting,
+    Paused,
+    Failed,
+}
+
+impl PresenceDisplay {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Unavailable => "Unavailable",
+            Self::Discovering => "Discovering",
+            Self::Connecting => "Connecting",
+            Self::Online => "Online",
+            Self::Reconnecting => "Reconnecting",
+            Self::Paused => "Paused",
+            Self::Failed => "Discovery failed",
+        }
+    }
+}
+
+impl From<PresencePhase> for PresenceDisplay {
+    fn from(phase: PresencePhase) -> Self {
+        match phase {
+            PresencePhase::Discovering => Self::Discovering,
+            PresencePhase::Connecting => Self::Connecting,
+            PresencePhase::Online => Self::Online,
+            PresencePhase::Reconnecting => Self::Reconnecting,
+            PresencePhase::Paused => Self::Paused,
+            PresencePhase::Failed => Self::Failed,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrustDisplay {
@@ -218,29 +269,45 @@ impl DevicePresentation {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DevicesFeatureState {
     current: Option<DevicePresentation>,
+    presence: PresenceDisplay,
 }
 
 impl DevicesFeatureState {
     pub const fn empty() -> Self {
-        Self { current: None }
+        Self {
+            current: None,
+            presence: PresenceDisplay::Unavailable,
+        }
     }
 
     pub fn from_runtime(status: &RuntimeStatus) -> Self {
         Self {
             current: Some(DevicePresentation::from_runtime(status)),
+            presence: PresenceDisplay::Online,
         }
     }
 
     pub fn update_runtime(&mut self, status: &RuntimeStatus) {
         self.current = Some(DevicePresentation::from_runtime(status));
+        self.presence = PresenceDisplay::Online;
+    }
+
+    pub fn update_presence(&mut self, snapshot: &PresenceSnapshot) {
+        self.presence = snapshot.phase().into();
+        self.current = snapshot.runtime().map(DevicePresentation::from_runtime);
     }
 
     pub fn clear(&mut self) {
         self.current = None;
+        self.presence = PresenceDisplay::Unavailable;
     }
 
     pub const fn current(&self) -> Option<&DevicePresentation> {
         self.current.as_ref()
+    }
+
+    pub const fn presence(&self) -> PresenceDisplay {
+        self.presence
     }
 }
 

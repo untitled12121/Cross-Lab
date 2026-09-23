@@ -13,6 +13,19 @@ class DevicesStateTest {
     }
 
     @Test
+    fun reconnectingPresenceDoesNotInventADevice() {
+        val state =
+            DevicesState.from(
+                RuntimeSnapshot.disconnected().copy(
+                    presence = RuntimePresence.RECONNECTING,
+                ),
+            )
+
+        assertNull(state.current)
+        assertEquals(PresenceDisplay.RECONNECTING, state.presence)
+    }
+
+    @Test
     fun connectedTrustedSnapshotMapsToPresentationState() {
         val state = DevicesState.from(
             RuntimeSnapshot(

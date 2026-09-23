@@ -2,6 +2,7 @@
 members = [
     "apps/desktop",
     "apps/sim",
+    "crates/agent",
     "crates/core",
     "crates/crypto",
     "crates/identity",
@@ -26,6 +27,7 @@ repository = "https://github.com/untitled12121/Cross-Lab"
 [workspace.dependencies]
 blake3 = "=1.8.7"
 ed25519-dalek = { version = "=3.0.0", default-features = false, features = ["zeroize"] }
+futures-util = "=0.3.34"
 getrandom = "=0.4.3"
 gpui-kit = "=0.6.1"
 hmac = "=0.13.0"

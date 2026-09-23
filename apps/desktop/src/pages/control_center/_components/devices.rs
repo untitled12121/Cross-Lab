@@ -2,7 +2,10 @@ use crate::{
     components::ui::{StatusTone, status_badge},
     features::{
         appearance::{active_theme, font_weight},
-        devices::{ConnectivityDisplay, DevicePresentation, DevicesFeatureState, TrustDisplay},
+        devices::{
+            ConnectivityDisplay, DevicePresentation, DevicesFeatureState, PresenceDisplay,
+            TrustDisplay,
+        },
     },
 };
 use gpui_kit::{
@@ -73,12 +76,12 @@ pub(crate) fn devices_content(
     }
 
     content.child(match state.current() {
-        Some(device) => device_panel(device, cx),
-        None => empty_state(cx),
+        Some(device) => device_panel(device, state.presence(), cx),
+        None => empty_state(state.presence(), cx),
     })
 }
 
-fn empty_state(cx: &App) -> Div {
+fn empty_state(presence: PresenceDisplay, cx: &App) -> Div {
     let theme = cx.theme();
     let appearance = active_theme(cx);
 
@@ -96,12 +99,24 @@ fn empty_state(cx: &App) -> Div {
                 .flex()
                 .items_center()
                 .gap(px(appearance.spacing.md))
-                .child(status_badge("Disconnected", StatusTone::Neutral, cx))
+                .child(status_badge(
+                            presence.label(),
+                            presence_tone(presence),
+                            cx,
+                        ))
                 .child(
                     div()
                         .text_size(px(appearance.typography.scales.body.size))
                         .text_color(theme.muted_foreground)
-                        .child("No active authenticated device session"),
+                        .child(match presence {
+                            PresenceDisplay::Discovering => "Looking for trusted devices on this LAN",
+                            PresenceDisplay::Connecting => "Authenticating a discovered trusted device",
+                            PresenceDisplay::Reconnecting => "The trusted session is reconnecting",
+                            PresenceDisplay::Paused => "Automatic trusted-device connection is paused",
+                            PresenceDisplay::Failed => "Local trusted-device discovery is unavailable",
+                            PresenceDisplay::Online => "Authenticated device is online",
+                            PresenceDisplay::Unavailable => "No active authenticated device session",
+                        }),
                 ),
         )
         .child(
@@ -114,7 +129,7 @@ fn empty_state(cx: &App) -> Div {
         )
 }
 
-fn device_panel(device: &DevicePresentation, cx: &App) -> Div {
+fn device_panel(device: &DevicePresentation, presence: PresenceDisplay, cx: &App) -> Div {
     let theme = cx.theme();
     let appearance = active_theme(cx);
     let trust_tone = match device.trust() {
@@ -166,6 +181,7 @@ fn device_panel(device: &DevicePresentation, cx: &App) -> Div {
                         .flex()
                         .items_center()
                         .gap(px(appearance.spacing.sm))
+                        .child(status_badge(presence.label(), presence_tone(presence), cx))
                         .child(status_badge(
                             device.connectivity().label(),
                             connectivity_tone,
@@ -211,6 +227,18 @@ fn device_panel(device: &DevicePresentation, cx: &App) -> Div {
             &device.capability_count().to_string(),
             cx,
         ))
+}
+
+fn presence_tone(presence: PresenceDisplay) -> StatusTone {
+    match presence {
+        PresenceDisplay::Online => StatusTone::Accent,
+        PresenceDisplay::Failed => StatusTone::Critical,
+        PresenceDisplay::Unavailable
+        | PresenceDisplay::Discovering
+        | PresenceDisplay::Connecting
+        | PresenceDisplay::Reconnecting
+        | PresenceDisplay::Paused => StatusTone::Neutral,
+    }
 }
 
 fn detail_row(label: &str, value: &str, cx: &App) -> Div {

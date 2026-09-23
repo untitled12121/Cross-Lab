@@ -41,6 +41,7 @@ data class PairingJoinerState(
 class PairingJoinerController(
     context: Context,
     private val identityRepository: AndroidProductIdentityRepository,
+    private val onPaired: () -> Unit = {},
 ) : AutoCloseable {
     private val discovery = AndroidPairingDiscovery(context)
     private val executor =
@@ -218,6 +219,7 @@ class PairingJoinerController(
                     message = "Device paired successfully.",
                 ),
             )
+            onPaired()
         }
     }
 

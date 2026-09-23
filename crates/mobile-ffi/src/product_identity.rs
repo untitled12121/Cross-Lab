@@ -35,6 +35,7 @@ pub struct MobileProductIdentity {
     pub payload: Vec<u8>,
     pub owner_id: String,
     pub local_device_id: String,
+    pub trusted_peer_count: u64,
 }
 
 impl MobileProductIdentity {
@@ -44,6 +45,7 @@ impl MobileProductIdentity {
             payload: state.encode(),
             owner_id: short_hex(state.owner_id().as_bytes()),
             local_device_id: short_hex(state.local_device_id().as_bytes()),
+            trusted_peer_count: state.trusted_peers().len() as u64,
         }
     }
 }

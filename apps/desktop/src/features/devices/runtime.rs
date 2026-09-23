@@ -72,6 +72,18 @@ impl DesktopRuntimeController {
         self.status.clone()
     }
 
+    pub fn uses_development_provisioning(&self) -> bool {
+        #[cfg(feature = "development-provisioning")]
+        {
+            self.command_tx.is_some()
+        }
+
+        #[cfg(not(feature = "development-provisioning"))]
+        {
+            false
+        }
+    }
+
     pub fn disconnect_current_peer(&self) -> Result<(), DesktopRuntimeControlError> {
         self.send_control(DesktopCommandKind::DisconnectPeer)
     }

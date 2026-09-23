@@ -1,5 +1,15 @@
 package dev.crosslab.android.features.devices
 
+enum class PresenceDisplay(val label: String) {
+    UNAVAILABLE("Unavailable"),
+    DISCOVERING("Discovering"),
+    CONNECTING("Connecting"),
+    ONLINE("Online"),
+    RECONNECTING("Reconnecting"),
+    PAUSED("Paused"),
+    FAILED("Discovery failed"),
+}
+
 enum class TrustDisplay(val label: String) {
     PENDING("Pending"),
     TRUSTED("Trusted"),
@@ -49,10 +59,23 @@ data class DevicePresentation(
 
 data class DevicesState(
     val current: DevicePresentation?,
+    val presence: PresenceDisplay,
 ) {
     companion object {
         fun from(snapshot: RuntimeSnapshot): DevicesState {
-            val peerId = snapshot.peerDeviceId ?: return DevicesState(current = null)
+            val presence =
+                when (snapshot.presence) {
+                    RuntimePresence.UNAVAILABLE -> PresenceDisplay.UNAVAILABLE
+                    RuntimePresence.DISCOVERING -> PresenceDisplay.DISCOVERING
+                    RuntimePresence.CONNECTING -> PresenceDisplay.CONNECTING
+                    RuntimePresence.ONLINE -> PresenceDisplay.ONLINE
+                    RuntimePresence.RECONNECTING -> PresenceDisplay.RECONNECTING
+                    RuntimePresence.PAUSED -> PresenceDisplay.PAUSED
+                    RuntimePresence.FAILED -> PresenceDisplay.FAILED
+                }
+            val peerId =
+                snapshot.peerDeviceId
+                    ?: return DevicesState(current = null, presence = presence)
             return DevicesState(
                 current = DevicePresentation(
                     ownerId = snapshot.ownerId?.take(16),
@@ -96,6 +119,7 @@ data class DevicesState(
                     metered = snapshot.metered,
                     capabilityCount = snapshot.capabilityCount,
                 ),
+                presence = presence,
             )
         }
     }
