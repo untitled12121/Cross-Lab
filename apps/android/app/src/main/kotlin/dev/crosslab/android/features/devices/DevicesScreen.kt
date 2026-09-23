@@ -44,6 +44,7 @@ fun DevicesScreen(
 ) {
     val colors = theme.colors
     val device = devices.current
+    val presence = devices.presence
     var scanning by remember { mutableStateOf(false) }
 
     Column(
@@ -89,22 +90,27 @@ fun DevicesScreen(
                     onClick = { scanning = !scanning },
                 )
 
-                if (device != null && runtime.peerControlAvailable) {
-                    ControlButton(
-                        theme = theme,
-                        label = "Disconnect",
-                        onClick = onDisconnect,
-                    )
-                } else if (
+                if (
                     runtime.peerControlAvailable &&
-                        runtime.lifecycle == RuntimeLifecycle.RUNNING &&
-                        runtime.networkAvailable
+                        runtime.lifecycle == RuntimeLifecycle.RUNNING
                 ) {
-                    ControlButton(
-                        theme = theme,
-                        label = "Reconnect",
-                        onClick = onReconnect,
-                    )
+                    if (presence == PresenceDisplay.PAUSED ||
+                        (presence == PresenceDisplay.UNAVAILABLE &&
+                            device == null &&
+                            runtime.networkAvailable)
+                    ) {
+                        ControlButton(
+                            theme = theme,
+                            label = "Reconnect",
+                            onClick = onReconnect,
+                        )
+                    } else if (presence != PresenceDisplay.UNAVAILABLE || device != null) {
+                        ControlButton(
+                            theme = theme,
+                            label = "Disconnect",
+                            onClick = onDisconnect,
+                        )
+                    }
                 }
             }
         }
@@ -131,9 +137,9 @@ fun DevicesScreen(
         }
 
         if (device == null) {
-            DisconnectedState(theme, runtime.networkAvailable)
+            DisconnectedState(theme, presence, runtime.networkAvailable)
         } else {
-            DevicePanel(theme, device)
+            DevicePanel(theme, device, presence)
         }
     }
 }
@@ -141,6 +147,7 @@ fun DevicesScreen(
 @Composable
 private fun DisconnectedState(
     theme: ThemeDocument,
+    presence: PresenceDisplay,
     networkAvailable: Boolean,
 ) {
     val colors = theme.colors
@@ -154,8 +161,23 @@ private fun DisconnectedState(
                 )
                 .padding(theme.spacing.xl.toFloat().dp),
     ) {
+        DeviceBadge(
+            theme = theme,
+            label = presence.label,
+            tone = presenceTone(presence),
+        )
+        Spacer(Modifier.height(theme.spacing.md.toFloat().dp))
         BasicText(
-            text = "No connected device",
+            text =
+                when (presence) {
+                    PresenceDisplay.DISCOVERING -> "Looking for trusted devices"
+                    PresenceDisplay.CONNECTING -> "Authenticating device"
+                    PresenceDisplay.RECONNECTING -> "Reconnecting trusted device"
+                    PresenceDisplay.PAUSED -> "Automatic connection paused"
+                    PresenceDisplay.FAILED -> "Local discovery unavailable"
+                    PresenceDisplay.ONLINE -> "Authenticated device online"
+                    PresenceDisplay.UNAVAILABLE -> "No connected device"
+                },
             style =
                 theme.typography.scales.label
                     .toTextStyle()
@@ -164,10 +186,25 @@ private fun DisconnectedState(
         Spacer(Modifier.height(theme.spacing.xs.toFloat().dp))
         BasicText(
             text =
-                if (networkAvailable) {
-                    "Cross-Lab is ready for an authenticated local device session."
+                if (!networkAvailable) {
+                    "Network unavailable. Cross-Lab will retry when the local network returns."
                 } else {
-                    "Network unavailable."
+                    when (presence) {
+                        PresenceDisplay.DISCOVERING ->
+                            "Discovery is routing-only. A device is shown here only after authentication."
+                        PresenceDisplay.CONNECTING ->
+                            "Cross-Lab is verifying durable trust and a fresh session proof."
+                        PresenceDisplay.RECONNECTING ->
+                            "The previous session ended. A fresh authenticated session is being established."
+                        PresenceDisplay.PAUSED ->
+                            "Use Reconnect when you want Cross-Lab to resume automatic local sessions."
+                        PresenceDisplay.FAILED ->
+                            "Local discovery could not continue. Reconnect to retry the presence lifecycle."
+                        PresenceDisplay.ONLINE ->
+                            "The authenticated session is active."
+                        PresenceDisplay.UNAVAILABLE ->
+                            "Pair a device to enable automatic authenticated local sessions."
+                    }
                 },
             style =
                 theme.typography.scales.body
@@ -181,6 +218,7 @@ private fun DisconnectedState(
 private fun DevicePanel(
     theme: ThemeDocument,
     device: DevicePresentation,
+    presence: PresenceDisplay,
 ) {
     val colors = theme.colors
     val trustTone =
@@ -221,6 +259,7 @@ private fun DevicePanel(
                         .copy(color = colors.foreground.toComposeColor()),
             )
             Row(horizontalArrangement = Arrangement.spacedBy(theme.spacing.sm.toFloat().dp)) {
+                DeviceBadge(theme, presence.label, presenceTone(presence))
                 DeviceBadge(theme, device.connectivity.label, connectivityTone)
                 DeviceBadge(theme, device.trust.label, trustTone)
             }
@@ -245,6 +284,19 @@ private fun DevicePanel(
         DetailRow(theme, "Capabilities", device.capabilityCount.toString())
     }
 }
+
+
+private fun presenceTone(presence: PresenceDisplay): StatusTone =
+    when (presence) {
+        PresenceDisplay.ONLINE -> StatusTone.ACCENT
+        PresenceDisplay.FAILED -> StatusTone.CRITICAL
+        PresenceDisplay.UNAVAILABLE,
+        PresenceDisplay.DISCOVERING,
+        PresenceDisplay.CONNECTING,
+        PresenceDisplay.RECONNECTING,
+        PresenceDisplay.PAUSED,
+        -> StatusTone.NEUTRAL
+    }
 
 @Composable
 private fun DeviceBadge(
