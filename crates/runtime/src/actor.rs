@@ -34,6 +34,7 @@ pub enum RuntimeActorError {
     NoAsyncRuntime,
     TaskCancelled,
     PeerRevocationRejected,
+    PolicyRejected,
 }
 
 impl fmt::Display for RuntimeActorError {
@@ -47,6 +48,7 @@ impl fmt::Display for RuntimeActorError {
             Self::NoAsyncRuntime => "runtime actor requires an active Tokio runtime",
             Self::TaskCancelled => "runtime actor task was cancelled",
             Self::PeerRevocationRejected => "runtime actor rejected peer revocation",
+            Self::PolicyRejected => "runtime actor rejected stale policy state",
         })
     }
 }
