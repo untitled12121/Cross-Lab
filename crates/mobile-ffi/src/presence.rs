@@ -199,7 +199,7 @@ impl MobileTrustedPresenceAgent {
         }
     }
 
-    pub fn close(&self) -> Result<(), MobilePresenceError> {
+    pub fn shutdown(&self) -> Result<(), MobilePresenceError> {
         let mut agent = self
             .agent
             .lock()
