@@ -33,6 +33,12 @@ pub enum PresenceDisplay {
     Failed,
 }
 
+impl Default for PresenceDisplay {
+    fn default() -> Self {
+        Self::Unavailable
+    }
+}
+
 impl PresenceDisplay {
     pub const fn label(self) -> &'static str {
         match self {
