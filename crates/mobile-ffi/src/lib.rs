@@ -7,6 +7,7 @@ mod development;
 mod dto;
 mod error;
 mod identity_store;
+mod network;
 mod pairing;
 mod pairing_network;
 mod pairing_persistence;
