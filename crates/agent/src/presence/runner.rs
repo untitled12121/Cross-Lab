@@ -501,11 +501,7 @@ async fn handle_command(
             }
 
             let apply_failed = match connected.as_ref() {
-                Some(connection) => connection
-                    .actor
-                    .replace_policy(next.clone())
-                    .await
-                    .is_err(),
+                Some(connection) => connection.actor.replace_policy(next.clone()).await.is_err(),
                 None => false,
             };
             if apply_failed {
