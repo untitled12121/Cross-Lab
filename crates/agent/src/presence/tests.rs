@@ -93,6 +93,8 @@ async fn trusted_agents_connect_and_reconnect_with_fresh_session_authority() {
     left.disconnect().unwrap();
     wait_phase(&mut left_status, PresencePhase::Paused).await;
     left.reconnect().unwrap();
+    left.candidate_available(route_for(&right)).unwrap();
+    right.candidate_available(route_for(&left)).unwrap();
 
     let second_left = wait_online_with_new_session(&mut left_status, first_session).await;
     let second_right = wait_online_with_new_session(&mut right_status, first_session).await;
