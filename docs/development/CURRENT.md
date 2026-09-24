@@ -21,7 +21,8 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 - M10 evidence protocol: `docs/research/M10-platform-evidence.md`.
 - Product pairing implementation plan: `docs/superpowers/plans/2026-09-20-product-add-device-pairing.md`.
 - PR #55 — trusted-session platform presence lifecycle: merged as `6abb3984a36be276aa439e9e1dabb42ffaa4a8b3`; exact-head `91a96966a55c52b6b72c7e5f9b8dc686f8cf0211` passed Rust + Android CI `35859170053`.
-- Active Phase 2 branch: `phase2-device-permissions`.
+- Active Phase 2 PR: #56 on `phase2-device-permissions`.
+- PR #56 implementation head `23b41512a5c92cf0ed6b3fbe37fd0d2a0fe376f5` passed full CI `35940387599` and Fuzz Smoke `35940387579`; final documentation head must pass the same gate before merge.
 
 ## Implemented M10 Product Path
 
@@ -73,9 +74,17 @@ PR #55 implements the trusted-session platform lifecycle:
 - authenticated presence is surfaced in Linux GPUI and Android Compose as discovering, connecting, online, reconnecting, paused, or failed without treating discovery/TLS metadata as identity authority;
 - physical Linux/Android LAN evidence remains separately pending; PR #55 merged after exact-head Rust + Android CI `35859170053` passed.
 
+PR #56 implements the per-device permission/capability-control foundation:
+
+- `PolicyState` exposes exact typed rule lookup/effect update/removal while preserving constraints/obligations, monotonic revisioning, idempotent no-ops, and default deny when no exact rule exists;
+- runtime policy replacement rejects stale revisions and clears request/subscription state tied to the previous policy revision;
+- `TrustedPresenceAgent` owns the current in-memory policy, propagates changes into the active runtime, and carries the latest policy into fresh authenticated reconnects;
+- Linux GPUI and Android Compose receive presentation-safe negotiated capability IDs plus exact per-peer permission posture, showing unruled capability operations as default deny;
+- the slice deliberately does not invent wildcard authority, new product operation identifiers, or a persistent policy-store format; concrete capability features register exact operations and persistence is reviewed when the first product editor requires it.
+
 Continue in small verified vertical slices:
 
-- per-device permissions and capability controls;
+- per-device permissions/capability-control foundation — implemented on PR #56;
 - clipboard;
 - resumable file transfer;
 - notifications;
@@ -96,10 +105,10 @@ Phase 3 adaptive networking does not begin until Phase 2 is complete.
 
 ## Exact Next Task
 
-1. implement the Phase 2 per-device permissions/capability-control vertical slice on the existing authenticated session/policy boundaries;
-2. keep capability support separate from permission and preserve default-deny/no-rule behavior;
-3. expose only presentation-safe per-device capability/permission state in Linux GPUI and Android Compose;
-4. then continue through clipboard, resumable file transfer, notifications, audit/history, and revocation/device removal;
+1. finish PR #56 only after the final documentation head passes full Rust + Android CI and Fuzz Smoke, then merge it;
+2. begin the Phase 2 clipboard vertical slice on the merged authenticated-session/policy foundation, defining only the exact clipboard capability operations actually required by the implementation;
+3. preserve default deny and current policy/reconnect invalidation semantics when clipboard authorization is wired;
+4. then continue through resumable file transfer, notifications, audit/history, and revocation/device removal;
 5. keep M10 physical evidence separately pending until owner hardware is available;
 6. stop before Phase 3.
 
