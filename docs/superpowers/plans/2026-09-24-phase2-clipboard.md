@@ -104,6 +104,8 @@ Expose the smallest clear controls:
 
 ## Verification
 
+Infrastructure milestone head `956aac69b152a6a402d8952f6ec6900b041b237f` passed full Rust + Android CI `35970744991`.
+
 - Rust format/check/clippy/test workspace gate;
 - Quinn/runtime actor event-driven control tests;
 - clipboard codec boundary/privacy tests after ADR acceptance;
