@@ -1,4 +1,4 @@
-use std::{fmt, future::pending, num::NonZeroUsize};
+use std::{fmt, num::NonZeroUsize};
 
 use crosslab_core::ControlReceiveError;
 use crosslab_policy::{PolicyState, SessionId, TrustRecord};
@@ -349,6 +349,11 @@ impl Drop for RuntimeActor {
     }
 }
 
+enum ActorInput {
+    Command(Option<RuntimeCommand>),
+    ControlReady(bool),
+}
+
 async fn run_actor(
     mut session: RuntimeActorSession,
     mut command_rx: mpsc::Receiver<RuntimeCommand>,
@@ -361,88 +366,92 @@ async fn run_actor(
     }
 
     loop {
-        tokio::select! {
-            command = command_rx.recv() => {
-                let Some(command) = command else {
-                    session.shutdown();
+        let input = if let Some(ready) = control_ready.as_mut() {
+            tokio::select! {
+                command = command_rx.recv() => ActorInput::Command(command),
+                changed = ready.changed() => ActorInput::ControlReady(changed.is_ok()),
+            }
+        } else {
+            ActorInput::Command(command_rx.recv().await)
+        };
+
+        match input {
+            ActorInput::Command(Some(command)) => match command {
+                RuntimeCommand::NetworkLost => {
+                    session.network_lost();
                     status_tx.send_replace(session.status());
-                    return;
-                };
+                }
+                RuntimeCommand::PeerRevoked { peer_trust, reply } => {
+                    let result = session.revoke_peer(peer_trust);
+                    status_tx.send_replace(session.status());
+                    let _ = reply.send(result);
+                }
+                RuntimeCommand::ReplacePolicy { policy, reply } => {
+                    let _ = reply.send(session.replace_policy(policy));
+                }
+                RuntimeCommand::SendCapabilities {
+                    advertisement,
+                    reply,
+                } => {
+                    let _ = reply.send(session.send_capabilities(advertisement));
+                }
+                RuntimeCommand::SendRequest { request, reply } => {
+                    let _ = reply.send(session.send_request(request));
+                }
+                RuntimeCommand::SendResponse {
+                    request_id,
+                    result,
+                    reply,
+                } => {
+                    let _ = reply.send(session.send_response(request_id, result));
+                }
+                RuntimeCommand::Reconnect {
+                    session: replacement,
+                    reply,
+                } => {
+                    let mut replacement = *replacement;
+                    if replacement.session_id() == session.session_id() {
+                        replacement.shutdown();
+                        let _ = reply.send(Err(RuntimeActorError::StaleSession));
+                        continue;
+                    }
 
-                match command {
-                    RuntimeCommand::NetworkLost => {
-                        session.network_lost();
-                        status_tx.send_replace(session.status());
-                    }
-                    RuntimeCommand::PeerRevoked { peer_trust, reply } => {
-                        let result = session.revoke_peer(peer_trust);
-                        status_tx.send_replace(session.status());
-                        let _ = reply.send(result);
-                    }
-                    RuntimeCommand::ReplacePolicy { policy, reply } => {
-                        let _ = reply.send(session.replace_policy(policy));
-                    }
-                    RuntimeCommand::SendCapabilities {
-                        advertisement,
-                        reply,
-                    } => {
-                        let _ = reply.send(session.send_capabilities(advertisement));
-                    }
-                    RuntimeCommand::SendRequest { request, reply } => {
-                        let _ = reply.send(session.send_request(request));
-                    }
-                    RuntimeCommand::SendResponse {
-                        request_id,
-                        result,
-                        reply,
-                    } => {
-                        let _ = reply.send(session.send_response(request_id, result));
-                    }
-                    RuntimeCommand::Reconnect {
-                        session: replacement,
-                        reply,
-                    } => {
-                        let mut replacement = *replacement;
-                        if replacement.session_id() == session.session_id() {
-                            replacement.shutdown();
-                            let _ = reply.send(Err(RuntimeActorError::StaleSession));
-                            continue;
-                        }
+                    let replacement_ready = replacement.take_control_ready();
+                    session.shutdown();
+                    session = replacement;
+                    control_ready = replacement_ready;
+                    status_tx.send_replace(session.status());
+                    let _ = reply.send(Ok(()));
 
-                        let replacement_ready = replacement.take_control_ready();
-                        session.shutdown();
-                        session = replacement;
-                        control_ready = replacement_ready;
-                        status_tx.send_replace(session.status());
-                        let _ = reply.send(Ok(()));
-
-                        if !drain_inbound(&mut session, &status_tx, &event_tx).await {
-                            return;
-                        }
-                    }
-                    RuntimeCommand::Stop { reply } => {
-                        session.shutdown();
-                        status_tx.send_replace(session.status());
-                        let _ = reply.send(());
+                    if !drain_inbound(&mut session, &status_tx, &event_tx).await {
                         return;
                     }
                 }
+                RuntimeCommand::Stop { reply } => {
+                    session.shutdown();
+                    status_tx.send_replace(session.status());
+                    let _ = reply.send(());
+                    return;
+                }
+            },
+            ActorInput::Command(None) => {
+                session.shutdown();
+                status_tx.send_replace(session.status());
+                return;
             }
-            ready = wait_control_ready(&mut control_ready) => {
-                if !ready || !drain_inbound(&mut session, &status_tx, &event_tx).await {
+            ActorInput::ControlReady(true) => {
+                if !drain_inbound(&mut session, &status_tx, &event_tx).await {
                     session.shutdown();
                     status_tx.send_replace(session.status());
                     return;
                 }
             }
+            ActorInput::ControlReady(false) => {
+                session.shutdown();
+                status_tx.send_replace(session.status());
+                return;
+            }
         }
-    }
-}
-
-async fn wait_control_ready(control_ready: &mut Option<watch::Receiver<u64>>) -> bool {
-    match control_ready {
-        Some(control_ready) => control_ready.changed().await.is_ok(),
-        None => pending::<bool>().await,
     }
 }
 
