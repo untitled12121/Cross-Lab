@@ -10,7 +10,7 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 
 ## Canonical Baseline
 
-- Current `main` after PR #55: `6abb3984a36be276aa439e9e1dabb42ffaa4a8b3`.
+- Current `main` after PR #56: `d707b330b5d1008e8020267faa3755ad84920591`.
 - PR #49 — Linux Add Device QR invitation UI + Android CameraX/ML Kit scanner: merged as `445bbf32178dff94f339fc1ae80447967f5da215`; exact-head CI `35533414673` green on `7d3176ffd4387d3e29982ae5fe641249d6d33445`.
 - PR #50 — shared product pairing coordinator + durable reciprocal trust persistence: merged as `3af825e6f78bef4512168f587f452c1b0267b6a7`; exact-head CI `35567548228` and Fuzz Smoke `35567548208` green on `ec59f99f7c09898aa2533d8b40bd4e980fa2b022`.
 - PR #51 — ADR-0016 LAN discovery profile + versioned product-pairing wire + provisional Quinn pairing channel: merged as `cf2add350ffa60056d74ac57b0a187a0297d8777`; exact-head CI `35593397861` and Fuzz Smoke `35593397844` green on `2702cc0c926cf044c65aef0376f573aaedae8c6f`.
@@ -21,8 +21,8 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 - M10 evidence protocol: `docs/research/M10-platform-evidence.md`.
 - Product pairing implementation plan: `docs/superpowers/plans/2026-09-20-product-add-device-pairing.md`.
 - PR #55 — trusted-session platform presence lifecycle: merged as `6abb3984a36be276aa439e9e1dabb42ffaa4a8b3`; exact-head `91a96966a55c52b6b72c7e5f9b8dc686f8cf0211` passed Rust + Android CI `35859170053`.
-- Active Phase 2 PR: #56 on `phase2-device-permissions`.
-- PR #56 implementation head `23b41512a5c92cf0ed6b3fbe37fd0d2a0fe376f5` passed full CI `35940387599` and Fuzz Smoke `35940387579`; the current PR head must pass the same gate before merge.
+- PR #56 — per-device permission/capability-control foundation: merged as `d707b330b5d1008e8020267faa3755ad84920591`; exact head `6565efcdaa7ffc533bbeba6d1b16b5ab8c2d7196` passed full CI `35942887247` and Fuzz Smoke `35942887292`.
+- Active Phase 2 branch: `phase2-clipboard`.
 
 ## Implemented M10 Product Path
 
@@ -105,12 +105,13 @@ Phase 3 adaptive networking does not begin until Phase 2 is complete.
 
 ## Exact Next Task
 
-1. finish PR #56 only after the final documentation head passes full Rust + Android CI and Fuzz Smoke, then merge it;
-2. begin the Phase 2 clipboard vertical slice on the merged authenticated-session/policy foundation, defining only the exact clipboard capability operations actually required by the implementation;
-3. preserve default deny and current policy/reconnect invalidation semantics when clipboard authorization is wired;
-4. then continue through resumable file transfer, notifications, audit/history, and revocation/device removal;
-5. keep M10 physical evidence separately pending until owner hardware is available;
-6. stop before Phase 3.
+1. implement the Phase 2 clipboard vertical slice on `phase2-clipboard` using the merged authenticated-session/policy foundation;
+2. define only the exact clipboard capability operations and payload limits required by the product implementation, preserving capability/version negotiation and default deny;
+3. keep clipboard contents out of logs/history by default and use bounded event/request state with reconnect-safe authorization;
+4. expose the smallest professional Linux GPUI + Android Compose clipboard controls/state needed by the slice;
+5. then continue through resumable file transfer, notifications, audit/history, and revocation/device removal;
+6. keep M10 physical evidence separately pending until owner hardware is available;
+7. stop before Phase 3.
 
 ## Resume Procedure
 
