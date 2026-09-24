@@ -451,6 +451,7 @@ async fn mark_transport_lost(
     publish_runtime(status_tx, PresencePhase::Reconnecting, connection);
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_command(
     command: Option<AgentCommand>,
     local_instance: &str,
