@@ -22,7 +22,9 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 - Product pairing implementation plan: `docs/superpowers/plans/2026-09-20-product-add-device-pairing.md`.
 - PR #55 — trusted-session platform presence lifecycle: merged as `6abb3984a36be276aa439e9e1dabb42ffaa4a8b3`; exact-head `91a96966a55c52b6b72c7e5f9b8dc686f8cf0211` passed Rust + Android CI `35859170053`.
 - PR #56 — per-device permission/capability-control foundation: merged as `d707b330b5d1008e8020267faa3755ad84920591`; exact head `6565efcdaa7ffc533bbeba6d1b16b5ab8c2d7196` passed full CI `35942887247` and Fuzz Smoke `35942887292`.
-- Active Phase 2 branch: `phase2-clipboard`.
+- Active Phase 2 PR: #57 on `phase2-clipboard`.
+- PR #57 has completed the generic event-driven control-pump milestone; exact-head CI must be green before the next implementation milestone.
+- ADR-0018 (text clipboard capability profile v1) and ADR-0019 (platform owner-policy store boundary) are Proposed. Do not implement those compatibility/persistence decisions until owner review accepts them.
 
 ## Implemented M10 Product Path
 
@@ -82,6 +84,15 @@ PR #56 implements the per-device permission/capability-control foundation:
 - Linux GPUI and Android Compose receive presentation-safe negotiated capability IDs plus exact per-peer permission posture, showing unruled capability operations as default deny;
 - the slice deliberately does not invent wildcard authority, new product operation identifiers, or a persistent policy-store format; concrete capability features register exact operations and persistence is reviewed when the first product editor requires it.
 
+PR #57 clipboard preparation currently includes:
+
+- Quinn signals inbound control readiness only after a frame enters its existing bounded queue;
+- `RuntimeActor` drains inbound control without polling and publishes bounded non-status `NodeEvent` values;
+- the trusted presence coordinator consumes the runtime event stream so an unobserved event queue cannot stall a session;
+- actor send wrappers expose the existing capability advertisement/request/response paths without defining new wire semantics;
+- ADR-0018 proposes the first product clipboard profile: explicit text-only `clipboard.read/get` and `clipboard.write/set`, no automatic background clipboard event in v1;
+- ADR-0019 proposes a separate rollback/currentness-aware owner-policy store with persist-before-apply ordering.
+
 Continue in small verified vertical slices:
 
 - per-device permissions/capability-control foundation — implemented on PR #56;
@@ -105,13 +116,14 @@ Phase 3 adaptive networking does not begin until Phase 2 is complete.
 
 ## Exact Next Task
 
-1. implement the Phase 2 clipboard vertical slice on `phase2-clipboard` using the merged authenticated-session/policy foundation;
-2. define only the exact clipboard capability operations and payload limits required by the product implementation, preserving capability/version negotiation and default deny;
-3. keep clipboard contents out of logs/history by default and use bounded event/request state with reconnect-safe authorization;
-4. expose the smallest professional Linux GPUI + Android Compose clipboard controls/state needed by the slice;
-5. then continue through resumable file transfer, notifications, audit/history, and revocation/device removal;
-6. keep M10 physical evidence separately pending until owner hardware is available;
-7. stop before Phase 3.
+1. require PR #57 exact-head Rust + Android CI to pass for the completed event-driven control-pump milestone;
+2. obtain owner review/acceptance for proposed ADR-0018 and ADR-0019 before implementing clipboard payload compatibility or durable permission persistence;
+3. after acceptance, implement the owner-policy store first so editable clipboard permissions are persist-before-apply and loaded before trusted-session runtime creation;
+4. then implement the shared text clipboard capability runtime, Linux GPUI adapter/UI, and Android ClipboardManager adapter/UI under the accepted profile;
+5. preserve exact default deny, bounded request state, reconnect/policy invalidation, and no plaintext clipboard logging/history;
+6. then continue through resumable file transfer, notifications, audit/history, and revocation/device removal;
+7. keep M10 physical evidence separately pending until owner hardware is available;
+8. stop before Phase 3.
 
 ## Resume Procedure
 
