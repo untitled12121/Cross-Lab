@@ -138,6 +138,25 @@ async fn control_bridge_preserves_order_and_bounded_backpressure() {
 }
 
 #[tokio::test]
+async fn control_bridge_signals_inbound_readiness_without_polling() {
+    let pair = promoted_loopback_transport_pair(2, 8).await;
+    let mut ready = pair.server.subscribe_control_ready();
+    let before = *ready.borrow();
+
+    pair.client.try_send_control(vec![0x60]).unwrap();
+    timeout(Duration::from_secs(2), ready.changed())
+        .await
+        .expect("control readiness should be signalled")
+        .expect("control readiness channel should stay open");
+
+    assert_ne!(*ready.borrow(), before);
+    assert_eq!(pair.server.try_receive_control().unwrap(), vec![0x60]);
+
+    pair.client.shutdown().await;
+    pair.server.shutdown().await;
+}
+
+#[tokio::test]
 async fn control_bridge_rejects_oversize_without_consuming_queue_capacity() {
     let pair = promoted_loopback_transport_pair(1, 1).await;
 
