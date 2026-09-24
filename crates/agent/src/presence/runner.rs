@@ -12,7 +12,9 @@ use crosslab_crypto::SigningProvider;
 use crosslab_identity::{DeviceCredential, DeviceId, OwnerAuthorityState};
 use crosslab_policy::{NetworkClass, PolicyState, TrustRecord};
 use crosslab_protocol::{FeatureSet, ProtocolRange};
-use crosslab_runtime::{RuntimeActor, RuntimeActorConfig, RuntimeActorSession, RuntimeNode};
+use crosslab_runtime::{
+    NodeEvent, RuntimeActor, RuntimeActorConfig, RuntimeActorSession, RuntimeNode,
+};
 use crosslab_transport_quic::{
     AuthenticatedQuicSession, QuicSessionAuthConfig, QuicSessionError, QuicSessionTimeouts,
     QuicTransportConfig, TrustedSessionQuicClient, TrustedSessionQuicServer,
@@ -84,6 +86,7 @@ struct CandidateState {
 struct ConnectedRuntime {
     actor: RuntimeActor,
     status: watch::Receiver<crosslab_runtime::RuntimeStatus>,
+    events: mpsc::Receiver<NodeEvent>,
     closed: watch::Receiver<bool>,
     peer_id: DeviceId,
     reconnecting: bool,
@@ -102,6 +105,7 @@ struct ConnectResult {
 
 enum ConnectedEvent {
     Command(Option<AgentCommand>),
+    Runtime(NodeEvent),
     StatusChanged,
     TransportClosed,
 }
@@ -151,6 +155,9 @@ pub(super) async fn run_agent(
                             ConnectedEvent::TransportClosed
                         }
                     }
+                    event = connection.events.recv() => {
+                        event.map_or(ConnectedEvent::TransportClosed, ConnectedEvent::Runtime)
+                    }
                     _ = connection.closed.changed() => ConnectedEvent::TransportClosed
                 }
             };
@@ -172,6 +179,11 @@ pub(super) async fn run_agent(
                     {
                         server.close();
                         return;
+                    }
+                }
+                ConnectedEvent::Runtime(event) => {
+                    if matches!(event, NodeEvent::SessionClosed(_)) {
+                        mark_transport_lost(&mut connected, &status_tx).await;
                     }
                 }
                 ConnectedEvent::StatusChanged => {
@@ -421,9 +433,11 @@ async fn install_session(
     let mut actor = RuntimeActor::new(actor_config());
     actor.start(actor_session).map_err(|_| ())?;
     let status = actor.subscribe_status().map_err(|_| ())?;
+    let events = actor.take_events().map_err(|_| ())?;
     let connection = ConnectedRuntime {
         actor,
         status,
+        events,
         closed,
         peer_id,
         reconnecting: false,
@@ -643,6 +657,7 @@ fn runtime_session(
 ) -> Option<(RuntimeActorSession, watch::Receiver<bool>)> {
     let (session, transport) = session.into_parts();
     let closed = transport.subscribe_closed();
+    let control_ready = transport.subscribe_control_ready();
     let node = RuntimeNode::new_owned(
         session,
         Arc::new(transport),
@@ -652,7 +667,10 @@ fn runtime_session(
         NonZeroUsize::new(RUNTIME_CAPACITY)?,
     )
     .ok()?;
-    Some((RuntimeActorSession::new(node, peer_trust), closed))
+    Some((
+        RuntimeActorSession::new(node, peer_trust).with_control_ready(control_ready),
+        closed,
+    ))
 }
 
 async fn stop_connected(connected: Option<ConnectedRuntime>) {

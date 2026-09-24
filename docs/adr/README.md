@@ -25,6 +25,8 @@ Cross-Lab has accepted the following ADRs:
 | ADR-0015 | Platform identity-store boundary | Accepted |
 | ADR-0016 | Bounded LAN discovery and provisional QUIC pairing channel v1 | Accepted |
 | ADR-0017 | Privacy-conscious LAN trusted-session discovery v1 | Accepted |
+| ADR-0018 | Text clipboard capability profile v1 | Proposed |
+| ADR-0019 | Platform owner-policy store boundary | Proposed |
 
 The governing architecture is `docs/architecture/MASTER-ARCHITECTURE.md`.
 
