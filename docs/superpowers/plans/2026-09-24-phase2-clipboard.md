@@ -22,13 +22,21 @@ The architecture already reserves:
 
 Android clipboard reads are platform-restricted when the app is not focused/default IME, so Phase 2 must not depend on background clipboard monitoring.
 
-## Task 1 — Event-driven product control pump
+## Task 1 — Event-driven product control pump — implemented
 
 - Add a bounded Quinn control-readiness signal without changing identity or authorization semantics.
 - Let RuntimeActor consume inbound control frames when signalled instead of polling.
 - Publish bounded non-status NodeEvent values to the owning agent.
 - Mirror only the existing runtime send operations needed by product capabilities.
 - Keep reconnect, policy replacement, revocation, and transport-close behavior fail-closed.
+
+Implemented on PR #57:
+
+- Quinn exposes a bounded watch-based inbound-control readiness signal after a frame enters the existing bounded control queue;
+- RuntimeActor drains control frames only on readiness, publishes bounded non-status NodeEvent values, and preserves reconnect/policy/revocation shutdown semantics;
+- the trusted presence coordinator consumes the actor event stream so capability traffic cannot fill an unobserved queue;
+- actor send wrappers expose only the existing capability advertisement/request/response paths;
+- Quinn and runtime tests cover wake-driven delivery without introducing a polling loop.
 
 This task does not define new wire semantics and can land before the clipboard profile is accepted.
 
@@ -57,7 +65,7 @@ Requirements:
 - no clipboard payloads in the policy store;
 - policy must be loaded before the presence/runtime session is created.
 
-A persistent format/boundary is architecture-significant and requires its own ADR before implementation.
+ADR-0019 now proposes this boundary. It remains Proposed and must be accepted before implementation.
 
 ## Task 4 — Shared clipboard capability runtime
 
