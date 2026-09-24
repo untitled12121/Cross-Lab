@@ -22,7 +22,7 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 - Product pairing implementation plan: `docs/superpowers/plans/2026-09-20-product-add-device-pairing.md`.
 - PR #55 — trusted-session platform presence lifecycle: merged as `6abb3984a36be276aa439e9e1dabb42ffaa4a8b3`; exact-head `91a96966a55c52b6b72c7e5f9b8dc686f8cf0211` passed Rust + Android CI `35859170053`.
 - Active Phase 2 PR: #56 on `phase2-device-permissions`.
-- PR #56 implementation head `23b41512a5c92cf0ed6b3fbe37fd0d2a0fe376f5` passed full CI `35940387599` and Fuzz Smoke `35940387579`; final documentation head must pass the same gate before merge.
+- PR #56 implementation head `23b41512a5c92cf0ed6b3fbe37fd0d2a0fe376f5` passed full CI `35940387599` and Fuzz Smoke `35940387579`; the current PR head must pass the same gate before merge.
 
 ## Implemented M10 Product Path
 
