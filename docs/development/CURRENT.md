@@ -23,7 +23,7 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 - PR #55 — trusted-session platform presence lifecycle: merged as `6abb3984a36be276aa439e9e1dabb42ffaa4a8b3`; exact-head `91a96966a55c52b6b72c7e5f9b8dc686f8cf0211` passed Rust + Android CI `35859170053`.
 - PR #56 — per-device permission/capability-control foundation: merged as `d707b330b5d1008e8020267faa3755ad84920591`; exact head `6565efcdaa7ffc533bbeba6d1b16b5ab8c2d7196` passed full CI `35942887247` and Fuzz Smoke `35942887292`.
 - Active Phase 2 PR: #57 on `phase2-clipboard`.
-- PR #57 has completed the generic event-driven control-pump milestone; exact-head CI must be green before the next implementation milestone.
+- PR #57 event-driven control-pump implementation head `956aac69b152a6a402d8952f6ec6900b041b237f` passed full Rust + Android CI `35970744991`; the final documentation head must pass the same gate before merge/next implementation work.
 - ADR-0018 (text clipboard capability profile v1) and ADR-0019 (platform owner-policy store boundary) are Proposed. Do not implement those compatibility/persistence decisions until owner review accepts them.
 
 ## Implemented M10 Product Path
