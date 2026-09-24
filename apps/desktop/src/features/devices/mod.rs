@@ -1,9 +1,9 @@
 use core::fmt::Write as _;
 
-use crosslab_agent::{PresencePhase, PresenceSnapshot};
+use crosslab_agent::{PermissionSnapshot, PresencePhase, PresenceSnapshot};
 use crosslab_core::{SessionState, TransportSecurityClass};
 use crosslab_identity::{DeviceId, OwnerId};
-use crosslab_policy::{NetworkClass, TrustState};
+use crosslab_policy::{NetworkClass, RuleEffect, TrustState};
 use crosslab_protocol::ProtocolVersion;
 use crosslab_runtime::{ConnectivityState, RuntimeStatus};
 
@@ -148,10 +148,49 @@ impl SecurityDisplay {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PermissionDisplay {
+    Allow,
+    Deny,
+    Ask,
+}
+
+impl PermissionDisplay {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Allow => "Allow",
+            Self::Deny => "Deny",
+            Self::Ask => "Ask",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PermissionPresentation {
+    capability_id: String,
+    operation: String,
+    effect: PermissionDisplay,
+}
+
+impl PermissionPresentation {
+    pub fn capability_id(&self) -> &str {
+        &self.capability_id
+    }
+
+    pub fn operation(&self) -> &str {
+        &self.operation
+    }
+
+    pub const fn effect(&self) -> PermissionDisplay {
+        self.effect
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DevicePresentation {
     owner_id: Option<String>,
     local_device_id: Option<String>,
+    peer_device_id: Option<DeviceId>,
     peer_id: Option<String>,
     trust: TrustDisplay,
     connectivity: ConnectivityDisplay,
@@ -160,12 +199,13 @@ pub struct DevicePresentation {
     network: NetworkDisplay,
     security: SecurityDisplay,
     metered: Option<bool>,
+    capability_ids: Vec<String>,
     capability_count: usize,
 }
 
 impl DevicePresentation {
     pub fn from_runtime(status: &RuntimeStatus) -> Self {
-        Self::from_fields(StatusFields {
+        let mut presentation = Self::from_fields(StatusFields {
             owner_id: status.owner_id(),
             local_device_id: status.local_device_id(),
             peer_device_id: status.peer_device_id(),
@@ -177,7 +217,13 @@ impl DevicePresentation {
             security_class: status.transport().security_class(),
             metered: status.transport().metered(),
             capability_count: status.negotiated_capability_ids().len(),
-        })
+        });
+        presentation.capability_ids = status
+            .negotiated_capability_ids()
+            .iter()
+            .map(|capability| capability.as_str().to_owned())
+            .collect();
+        presentation
     }
 
     pub fn owner_id(&self) -> Option<&str> {
@@ -190,6 +236,10 @@ impl DevicePresentation {
 
     pub fn peer_id(&self) -> Option<&str> {
         self.peer_id.as_deref()
+    }
+
+    pub const fn peer_device_id(&self) -> Option<DeviceId> {
+        self.peer_device_id
     }
 
     pub const fn trust(&self) -> TrustDisplay {
@@ -220,6 +270,10 @@ impl DevicePresentation {
         self.metered
     }
 
+    pub fn capability_ids(&self) -> &[String] {
+        &self.capability_ids
+    }
+
     pub const fn capability_count(&self) -> usize {
         self.capability_count
     }
@@ -228,6 +282,7 @@ impl DevicePresentation {
         Self {
             owner_id: fields.owner_id.map(short_owner_id),
             local_device_id: fields.local_device_id.map(short_device_id),
+            peer_device_id: fields.peer_device_id,
             peer_id: fields.peer_device_id.map(short_device_id),
             trust: match fields.trust_state {
                 TrustState::Pending => TrustDisplay::Pending,
@@ -261,6 +316,7 @@ impl DevicePresentation {
                 }
             },
             metered: fields.metered,
+            capability_ids: Vec::new(),
             capability_count: fields.capability_count,
         }
     }
@@ -270,13 +326,15 @@ impl DevicePresentation {
 pub struct DevicesFeatureState {
     current: Option<DevicePresentation>,
     presence: PresenceDisplay,
+    permissions: PermissionSnapshot,
 }
 
 impl DevicesFeatureState {
-    pub const fn empty() -> Self {
+    pub fn empty() -> Self {
         Self {
             current: None,
             presence: PresenceDisplay::Unavailable,
+            permissions: PermissionSnapshot::default(),
         }
     }
 
@@ -284,6 +342,7 @@ impl DevicesFeatureState {
         Self {
             current: Some(DevicePresentation::from_runtime(status)),
             presence: PresenceDisplay::Online,
+            permissions: PermissionSnapshot::default(),
         }
     }
 
@@ -297,9 +356,43 @@ impl DevicesFeatureState {
         self.current = snapshot.runtime().map(DevicePresentation::from_runtime);
     }
 
+    pub fn update_permissions(&mut self, snapshot: &PermissionSnapshot) {
+        self.permissions = snapshot.clone();
+    }
+
+    pub const fn policy_revision(&self) -> u64 {
+        self.permissions.policy_revision()
+    }
+
+    pub fn current_permissions(&self) -> Vec<PermissionPresentation> {
+        let Some(peer_id) = self
+            .current
+            .as_ref()
+            .and_then(DevicePresentation::peer_device_id)
+        else {
+            return Vec::new();
+        };
+
+        self.permissions
+            .rules()
+            .iter()
+            .filter(|rule| rule.source_device_id() == peer_id)
+            .map(|rule| PermissionPresentation {
+                capability_id: rule.capability_id().as_str().to_owned(),
+                operation: rule.operation().as_str().to_owned(),
+                effect: match rule.effect() {
+                    RuleEffect::Allow => PermissionDisplay::Allow,
+                    RuleEffect::Deny => PermissionDisplay::Deny,
+                    RuleEffect::Ask => PermissionDisplay::Ask,
+                },
+            })
+            .collect()
+    }
+
     pub fn clear(&mut self) {
         self.current = None;
         self.presence = PresenceDisplay::Unavailable;
+        self.permissions = PermissionSnapshot::default();
     }
 
     pub const fn current(&self) -> Option<&DevicePresentation> {

@@ -2,7 +2,7 @@ use core::fmt;
 use std::{sync::Arc, thread, time::Duration};
 
 use crosslab_agent::{
-    PresenceAgentError, PresenceSnapshot, TrustedPresenceAgent,
+    PermissionSnapshot, PresenceAgentError, PresenceSnapshot, TrustedPresenceAgent,
     TrustedSessionRoute as AgentTrustedSessionRoute,
 };
 use crosslab_identity_store::{ProductIdentityError, ProductIdentityState};
@@ -67,6 +67,10 @@ impl DesktopProductPresenceController {
 
     pub fn subscribe_status(&self) -> watch::Receiver<PresenceSnapshot> {
         self.status.clone()
+    }
+
+    pub fn subscribe_permissions(&self) -> watch::Receiver<PermissionSnapshot> {
+        self.agent.subscribe_permissions()
     }
 
     pub fn disconnect(&self) -> Result<(), DesktopPresenceError> {

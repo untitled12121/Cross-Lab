@@ -39,7 +39,24 @@ class DevicesStateTest {
                 network = RuntimeNetwork.LOCAL,
                 security = RuntimeSecurity.AUTHENTICATED,
                 metered = false,
+                capabilityIds = listOf("files.transfer", "clipboard.read"),
                 capabilityCount = 2,
+                policyRevision = 4uL,
+                permissionRules =
+                    listOf(
+                        RuntimePermissionRule(
+                            sourceDeviceId = "0123456789abcdef".repeat(4),
+                            capabilityId = "files.transfer",
+                            operation = "receive",
+                            effect = RuntimePermissionEffect.ALLOW,
+                        ),
+                        RuntimePermissionRule(
+                            sourceDeviceId = "ffffffffffffffff".repeat(4),
+                            capabilityId = "clipboard.read",
+                            operation = "read",
+                            effect = RuntimePermissionEffect.DENY,
+                        ),
+                    ),
             ),
         )
 
@@ -53,7 +70,13 @@ class DevicesStateTest {
         assertEquals("1.4", device.protocol)
         assertEquals(NetworkDisplay.LOCAL, device.network)
         assertEquals(SecurityDisplay.AUTHENTICATED, device.security)
+        assertEquals(listOf("files.transfer", "clipboard.read"), device.capabilityIds)
         assertEquals(2, device.capabilityCount)
+        assertEquals(4uL, device.policyRevision)
+        assertEquals(1, device.permissionRules.size)
+        assertEquals("files.transfer", device.permissionRules.single().capabilityId)
+        assertEquals("receive", device.permissionRules.single().operation)
+        assertEquals(PermissionDisplay.ALLOW, device.permissionRules.single().effect)
     }
 
     @Test

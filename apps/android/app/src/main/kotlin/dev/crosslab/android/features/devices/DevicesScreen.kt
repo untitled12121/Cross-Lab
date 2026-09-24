@@ -282,6 +282,74 @@ private fun DevicePanel(
             },
         )
         DetailRow(theme, "Capabilities", device.capabilityCount.toString())
+        PermissionPanel(theme, device)
+    }
+}
+
+@Composable
+private fun PermissionPanel(
+    theme: ThemeDocument,
+    device: DevicePresentation,
+) {
+    val colors = theme.colors
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(theme.spacing.xl.toFloat().dp),
+    ) {
+        BasicText(
+            text = "Permissions",
+            style =
+                theme.typography.scales.label
+                    .toTextStyle()
+                    .copy(color = colors.foreground.toComposeColor()),
+        )
+        Spacer(Modifier.height(theme.spacing.xs.toFloat().dp))
+        BasicText(
+            text =
+                "Capability support does not grant permission. Operations without an exact rule are denied.",
+            style =
+                theme.typography.scales.caption
+                    .toTextStyle()
+                    .copy(color = colors.mutedForeground.toComposeColor()),
+        )
+        Spacer(Modifier.height(theme.spacing.md.toFloat().dp))
+
+        if (device.capabilityIds.isEmpty()) {
+            BasicText(
+                text = "No negotiated capabilities in this authenticated session.",
+                style =
+                    theme.typography.scales.body
+                        .toTextStyle()
+                        .copy(color = colors.mutedForeground.toComposeColor()),
+            )
+        } else {
+            device.capabilityIds.forEach { capabilityId ->
+                val rules = device.permissionRules.filter { it.capabilityId == capabilityId }
+                DetailRow(
+                    theme = theme,
+                    label = capabilityId,
+                    value =
+                        if (rules.isEmpty()) {
+                            "Default deny"
+                        } else {
+                            rules.joinToString(" · ") { rule ->
+                                "${rule.operation}: ${rule.effect.label}"
+                            }
+                        },
+                )
+            }
+        }
+
+        Spacer(Modifier.height(theme.spacing.xs.toFloat().dp))
+        BasicText(
+            text = "Policy revision ${device.policyRevision}",
+            style =
+                theme.typography.scales.caption
+                    .toTextStyle()
+                    .copy(color = colors.mutedForeground.toComposeColor()),
+        )
     }
 }
 

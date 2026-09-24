@@ -185,6 +185,93 @@ fn explicit_deny_rule_denies() {
 }
 
 #[test]
+fn exact_rule_effect_updates_are_idempotent_and_preserve_rule_shape() {
+    let fixture = Fixture::new();
+    let mut policy = PolicyState::new();
+    policy
+        .insert(
+            fixture
+                .rule(RuleEffect::Allow)
+                .with_constraint(Constraint::LocalOnly)
+                .with_obligation(Obligation::OwnerConfirmation),
+        )
+        .unwrap();
+
+    assert_eq!(policy.revision(), 1);
+    assert_eq!(
+        policy.rule_effect(fixture.source, &fixture.capability, &fixture.operation),
+        Some(RuleEffect::Allow)
+    );
+    assert!(
+        policy
+            .set_rule_effect(
+                fixture.source,
+                fixture.capability.clone(),
+                fixture.operation.clone(),
+                RuleEffect::Ask,
+            )
+            .unwrap()
+    );
+    assert_eq!(policy.revision(), 2);
+
+    let rule = policy.rules().next().unwrap();
+    assert_eq!(rule.effect(), RuleEffect::Ask);
+    assert_eq!(rule.constraints(), &[Constraint::LocalOnly]);
+    assert_eq!(rule.obligations(), &[Obligation::OwnerConfirmation]);
+
+    assert!(
+        !policy
+            .set_rule_effect(
+                fixture.source,
+                fixture.capability.clone(),
+                fixture.operation.clone(),
+                RuleEffect::Ask,
+            )
+            .unwrap()
+    );
+    assert_eq!(policy.revision(), 2);
+}
+
+#[test]
+fn removing_exact_rule_restores_default_deny() {
+    let fixture = Fixture::new();
+    let mut policy = PolicyState::new();
+
+    assert!(
+        policy
+            .set_rule_effect(
+                fixture.source,
+                fixture.capability.clone(),
+                fixture.operation.clone(),
+                RuleEffect::Allow,
+            )
+            .unwrap()
+    );
+    assert_eq!(
+        policy.evaluate(&fixture.context()).effect(),
+        DecisionEffect::Allow
+    );
+
+    assert!(
+        policy
+            .remove_rule(fixture.source, &fixture.capability, &fixture.operation)
+            .unwrap()
+    );
+    assert_eq!(policy.revision(), 2);
+    assert_eq!(
+        policy.evaluate(&fixture.context()).reason(),
+        DecisionReason::NoMatchingRule
+    );
+
+    assert!(
+        !policy
+            .remove_rule(fixture.source, &fixture.capability, &fixture.operation)
+            .unwrap()
+    );
+    assert_eq!(policy.revision(), 2);
+}
+
+#[test]
 fn pending_and_revoked_sources_fail_closed() {
     let fixture = Fixture::new();
     let mut policy = PolicyState::new();

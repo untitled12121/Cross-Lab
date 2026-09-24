@@ -43,6 +43,19 @@ enum class SecurityDisplay(val label: String) {
     UNAVAILABLE("Unavailable"),
 }
 
+enum class PermissionDisplay(val label: String) {
+    ALLOW("Allow"),
+    DENY("Deny"),
+    ASK("Ask"),
+}
+
+data class PermissionPresentation(
+    val capabilityId: String,
+    val operation: String,
+    val effect: PermissionDisplay,
+)
+
+
 data class DevicePresentation(
     val ownerId: String?,
     val localDeviceId: String?,
@@ -54,7 +67,10 @@ data class DevicePresentation(
     val network: NetworkDisplay,
     val security: SecurityDisplay,
     val metered: Boolean?,
+    val capabilityIds: List<String>,
     val capabilityCount: Int,
+    val policyRevision: ULong,
+    val permissionRules: List<PermissionPresentation>,
 )
 
 data class DevicesState(
@@ -117,7 +133,24 @@ data class DevicesState(
                         RuntimeSecurity.UNAVAILABLE -> SecurityDisplay.UNAVAILABLE
                     },
                     metered = snapshot.metered,
+                    capabilityIds = snapshot.capabilityIds,
                     capabilityCount = snapshot.capabilityCount,
+                    policyRevision = snapshot.policyRevision,
+                    permissionRules =
+                        snapshot.permissionRules
+                            .filter { it.sourceDeviceId == peerId }
+                            .map { rule ->
+                                PermissionPresentation(
+                                    capabilityId = rule.capabilityId,
+                                    operation = rule.operation,
+                                    effect =
+                                        when (rule.effect) {
+                                            RuntimePermissionEffect.ALLOW -> PermissionDisplay.ALLOW
+                                            RuntimePermissionEffect.DENY -> PermissionDisplay.DENY
+                                            RuntimePermissionEffect.ASK -> PermissionDisplay.ASK
+                                        },
+                                )
+                            },
                 ),
                 presence = presence,
             )

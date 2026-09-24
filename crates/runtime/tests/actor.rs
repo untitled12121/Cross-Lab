@@ -15,8 +15,8 @@ use crosslab_identity::{
     OwnerRootRecord,
 };
 use crosslab_policy::{
-    NetworkClass, PairingTrustTransition, PolicyState, TransitionId, TrustRecord, TrustState,
-    TrustTransition,
+    CapabilityId, NetworkClass, OperationName, PairingTrustTransition, PolicyState, RuleEffect,
+    TransitionId, TrustRecord, TrustState, TrustTransition,
 };
 use crosslab_protocol::{FeatureSet, ProtocolRange, ProtocolVersion};
 use crosslab_runtime::{
@@ -305,6 +305,30 @@ fn network_loss_drops_session_authority_before_reconnect() {
         );
         assert_eq!(status.borrow().session_state(), SessionState::Closed);
         assert_eq!(status.borrow().session_id(), None);
+        actor.stop().await.unwrap();
+    });
+}
+
+#[test]
+fn policy_replacement_is_applied_by_the_actor() {
+    runtime().block_on(async {
+        let fixture = Fixture::new();
+        let (session, _) = fixture.actor_session([0x97; 32], 0x98);
+        let mut actor = RuntimeActor::new(config(4));
+        actor.start(session).unwrap();
+
+        let mut policy = PolicyState::new();
+        policy
+            .set_rule_effect(
+                fixture.peer_trust.device_id(),
+                CapabilityId::parse("files.transfer").unwrap(),
+                OperationName::parse("receive").unwrap(),
+                RuleEffect::Allow,
+            )
+            .unwrap();
+
+        assert!(actor.replace_policy(policy.clone()).await.unwrap());
+        assert!(!actor.replace_policy(policy).await.unwrap());
         actor.stop().await.unwrap();
     });
 }

@@ -3,8 +3,8 @@ use crate::{
     features::{
         appearance::{active_theme, font_weight},
         devices::{
-            ConnectivityDisplay, DevicePresentation, DevicesFeatureState, PresenceDisplay,
-            TrustDisplay,
+            ConnectivityDisplay, DevicePresentation, DevicesFeatureState, PermissionPresentation,
+            PresenceDisplay, TrustDisplay,
         },
     },
 };
@@ -76,7 +76,7 @@ pub(crate) fn devices_content(
     }
 
     content.child(match state.current() {
-        Some(device) => device_panel(device, state.presence(), cx),
+        Some(device) => device_panel(device, state, cx),
         None => empty_state(state.presence(), cx),
     })
 }
@@ -129,8 +129,9 @@ fn empty_state(presence: PresenceDisplay, cx: &App) -> Div {
         )
 }
 
-fn device_panel(device: &DevicePresentation, presence: PresenceDisplay, cx: &App) -> Div {
+fn device_panel(device: &DevicePresentation, state: &DevicesFeatureState, cx: &App) -> Div {
     let theme = cx.theme();
+    let presence = state.presence();
     let appearance = active_theme(cx);
     let trust_tone = match device.trust() {
         TrustDisplay::Trusted => StatusTone::Accent,
@@ -227,6 +228,73 @@ fn device_panel(device: &DevicePresentation, presence: PresenceDisplay, cx: &App
             &device.capability_count().to_string(),
             cx,
         ))
+        .child(permission_panel(
+            device,
+            &state.current_permissions(),
+            state.policy_revision(),
+            cx,
+        ))
+}
+
+fn permission_panel(
+    device: &DevicePresentation,
+    permissions: &[PermissionPresentation],
+    policy_revision: u64,
+    cx: &App,
+) -> Div {
+    let theme = cx.theme();
+    let appearance = active_theme(cx);
+    let mut content = div()
+        .flex()
+        .flex_col()
+        .border_1()
+        .border_color(theme.border)
+        .p(px(appearance.spacing.xl))
+        .gap(px(appearance.spacing.md))
+        .child(
+            div()
+                .text_size(px(appearance.typography.scales.label.size))
+                .font_weight(font_weight(appearance.typography.scales.label.weight))
+                .child("Permissions"),
+        )
+        .child(
+            div()
+                .text_size(px(appearance.typography.scales.caption.size))
+                .text_color(theme.muted_foreground)
+                .child(
+                    "Capability support does not grant permission. Operations without an exact rule are denied.",
+                ),
+        );
+
+    if device.capability_ids().is_empty() {
+        content = content.child(
+            div()
+                .text_size(px(appearance.typography.scales.body.size))
+                .text_color(theme.muted_foreground)
+                .child("No negotiated capabilities in this authenticated session."),
+        );
+    } else {
+        for capability_id in device.capability_ids() {
+            let matching = permissions
+                .iter()
+                .filter(|rule| rule.capability_id() == capability_id)
+                .map(|rule| format!("{}: {}", rule.operation(), rule.effect().label()))
+                .collect::<Vec<_>>();
+            let value = if matching.is_empty() {
+                "Default deny".to_owned()
+            } else {
+                matching.join(" · ")
+            };
+            content = content.child(detail_row(capability_id, &value, cx));
+        }
+    }
+
+    content.child(
+        div()
+            .text_size(px(appearance.typography.scales.caption.size))
+            .text_color(theme.muted_foreground)
+            .child(format!("Policy revision {policy_revision}")),
+    )
 }
 
 fn presence_tone(presence: PresenceDisplay) -> StatusTone {

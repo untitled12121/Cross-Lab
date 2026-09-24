@@ -255,6 +255,7 @@ fn network_loss_clears_session_facing_state_while_running() {
             network: MobileNetworkClass::Local,
             transport_security: MobileTransportSecurity::Authenticated,
             metered: Some(false),
+            capability_ids: vec!["files.transfer".into()],
             capability_count: 3,
         })
         .expect("publish connected state");

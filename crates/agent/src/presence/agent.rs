@@ -8,14 +8,15 @@ use std::{
 use crosslab_core::{SESSION_DNS_SD_INSTANCE_NONCE_LEN, session_dns_sd_instance};
 use crosslab_crypto::{SigningProvider, random_bytes};
 use crosslab_identity_store::ProductIdentityState;
+use crosslab_policy::PolicyState;
 use crosslab_transport_quic::{QuicTransportConfig, TrustedSessionQuicServer};
 use tokio::sync::{mpsc, watch};
 
 use super::{
     runner::{AgentCommand, AgentSecurity, run_agent},
     types::{
-        PresenceAgentError, PresenceDiscoveryInfo, PresencePhase, PresenceSnapshot,
-        TrustedSessionRoute,
+        PermissionSnapshot, PresenceAgentError, PresenceDiscoveryInfo, PresencePhase,
+        PresenceSnapshot, TrustedSessionRoute,
     },
 };
 
@@ -26,12 +27,21 @@ pub struct TrustedPresenceAgent {
     listen_port: u16,
     command_tx: mpsc::Sender<AgentCommand>,
     status: watch::Receiver<PresenceSnapshot>,
+    permissions: watch::Receiver<PermissionSnapshot>,
 }
 
 impl TrustedPresenceAgent {
     pub fn spawn(
         identity: ProductIdentityState,
         signer: Arc<dyn SigningProvider + Send + Sync>,
+    ) -> Result<Self, PresenceAgentError> {
+        Self::spawn_with_policy(identity, signer, PolicyState::new())
+    }
+
+    pub fn spawn_with_policy(
+        identity: ProductIdentityState,
+        signer: Arc<dyn SigningProvider + Send + Sync>,
+        policy: PolicyState,
     ) -> Result<Self, PresenceAgentError> {
         identity
             .validate_local_device_provider(signer.as_ref())
@@ -59,6 +69,8 @@ impl TrustedPresenceAgent {
         let (command_tx, command_rx) = mpsc::channel(COMMAND_CAPACITY);
         let (status_tx, status) =
             watch::channel(PresenceSnapshot::new(PresencePhase::Discovering, None));
+        let (permissions_tx, permissions) =
+            watch::channel(PermissionSnapshot::from_policy(&policy));
         let (startup_tx, startup_rx) = std_mpsc::sync_channel(1);
         let runner_discovery_instance = Arc::clone(&discovery_instance);
         thread::Builder::new()
@@ -103,8 +115,10 @@ impl TrustedPresenceAgent {
                         server,
                         security,
                         runner_discovery_instance,
+                        policy,
                         command_rx,
                         status_tx,
+                        permissions_tx,
                     )
                     .await;
                 });
@@ -119,6 +133,7 @@ impl TrustedPresenceAgent {
             listen_port,
             command_tx,
             status,
+            permissions,
         })
     }
 
@@ -142,6 +157,21 @@ impl TrustedPresenceAgent {
 
     pub fn subscribe_status(&self) -> watch::Receiver<PresenceSnapshot> {
         self.status.clone()
+    }
+
+    pub fn permission_snapshot(&self) -> PermissionSnapshot {
+        self.permissions.borrow().clone()
+    }
+
+    pub fn subscribe_permissions(&self) -> watch::Receiver<PermissionSnapshot> {
+        self.permissions.clone()
+    }
+
+    pub fn replace_policy(&self, policy: PolicyState) -> Result<(), PresenceAgentError> {
+        if policy.revision() <= self.permissions.borrow().policy_revision() {
+            return Err(PresenceAgentError::StalePolicy);
+        }
+        self.send(AgentCommand::ReplacePolicy(policy))
     }
 
     pub fn candidate_available(

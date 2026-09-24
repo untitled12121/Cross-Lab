@@ -3,6 +3,6 @@
 mod presence;
 
 pub use presence::{
-    PresenceAgentError, PresenceDiscoveryInfo, PresencePhase, PresenceSnapshot,
-    TrustedPresenceAgent, TrustedSessionRoute,
+    PermissionRule, PermissionSnapshot, PresenceAgentError, PresenceDiscoveryInfo, PresencePhase,
+    PresenceSnapshot, TrustedPresenceAgent, TrustedSessionRoute,
 };

@@ -149,11 +149,14 @@ impl ControlCenterPage {
             };
 
             let mut status = controller.subscribe_status();
+            let mut permissions = controller.subscribe_permissions();
             let initial = status.borrow().clone();
+            let initial_permissions = permissions.borrow().clone();
             if this
                 .update(cx, |page, cx| {
                     page.presence_starting = false;
                     page.devices.update_presence(&initial);
+                    page.devices.update_permissions(&initial_permissions);
                     if let Some(runtime) = initial.runtime() {
                         page.owner.update_runtime(runtime);
                     }
@@ -166,19 +169,41 @@ impl ControlCenterPage {
                 return;
             }
 
-            while status.changed().await.is_ok() {
-                let snapshot = status.borrow_and_update().clone();
-                if this
-                    .update(cx, |page, cx| {
-                        page.devices.update_presence(&snapshot);
-                        if let Some(runtime) = snapshot.runtime() {
-                            page.owner.update_runtime(runtime);
+            loop {
+                tokio::select! {
+                    changed = status.changed() => {
+                        if changed.is_err() {
+                            return;
                         }
-                        cx.notify();
-                    })
-                    .is_err()
-                {
-                    return;
+                        let snapshot = status.borrow_and_update().clone();
+                        if this
+                            .update(cx, |page, cx| {
+                                page.devices.update_presence(&snapshot);
+                                if let Some(runtime) = snapshot.runtime() {
+                                    page.owner.update_runtime(runtime);
+                                }
+                                cx.notify();
+                            })
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                    changed = permissions.changed() => {
+                        if changed.is_err() {
+                            return;
+                        }
+                        let snapshot = permissions.borrow_and_update().clone();
+                        if this
+                            .update(cx, |page, cx| {
+                                page.devices.update_permissions(&snapshot);
+                                cx.notify();
+                            })
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
                 }
             }
         })

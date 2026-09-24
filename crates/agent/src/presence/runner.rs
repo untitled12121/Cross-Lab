@@ -22,7 +22,7 @@ use tokio::{
     time::Instant,
 };
 
-use super::types::{PresencePhase, PresenceSnapshot, TrustedSessionRoute};
+use super::types::{PermissionSnapshot, PresencePhase, PresenceSnapshot, TrustedSessionRoute};
 
 const RUNTIME_CAPACITY: usize = 8;
 const CONNECT_RESULT_CAPACITY: usize = 2;
@@ -71,6 +71,7 @@ pub(super) enum AgentCommand {
     NetworkAvailable,
     Disconnect,
     Reconnect,
+    ReplacePolicy(PolicyState),
     Stop,
 }
 
@@ -109,8 +110,10 @@ pub(super) async fn run_agent(
     server: TrustedSessionQuicServer,
     security: Arc<AgentSecurity>,
     discovery_instance: Arc<RwLock<String>>,
+    mut policy: PolicyState,
     mut command_rx: mpsc::Receiver<AgentCommand>,
     status_tx: watch::Sender<PresenceSnapshot>,
+    permissions_tx: watch::Sender<PermissionSnapshot>,
 ) {
     let (connect_tx, mut connect_rx) = mpsc::channel(CONNECT_RESULT_CAPACITY);
     let mut candidates = BTreeMap::<String, CandidateState>::new();
@@ -161,6 +164,8 @@ pub(super) async fn run_agent(
                         &mut connected,
                         &mut network_available,
                         &mut auto_connect,
+                        &mut policy,
+                        &permissions_tx,
                         &status_tx,
                     )
                     .await
@@ -199,6 +204,8 @@ pub(super) async fn run_agent(
                     &mut connected,
                     &mut network_available,
                     &mut auto_connect,
+                    &mut policy,
+                    &permissions_tx,
                     &status_tx,
                 ).await {
                     server.close();
@@ -213,6 +220,7 @@ pub(super) async fn run_agent(
                         session,
                         None,
                         &security,
+                        &policy,
                         &mut connected,
                         &status_tx,
                     ).await.is_err() {
@@ -227,6 +235,7 @@ pub(super) async fn run_agent(
                     handle_connect_result(
                         result,
                         &security,
+                        &policy,
                         &mut candidates,
                         &mut connected,
                         &mut connecting_instance,
@@ -316,6 +325,7 @@ async fn connect_outbound(
 async fn handle_connect_result(
     result: ConnectResult,
     security: &AgentSecurity,
+    policy: &PolicyState,
     candidates: &mut BTreeMap<String, CandidateState>,
     connected: &mut Option<ConnectedRuntime>,
     connecting_instance: &mut Option<String>,
@@ -345,6 +355,7 @@ async fn handle_connect_result(
                 success.session,
                 Some(success.client),
                 security,
+                policy,
                 connected,
                 status_tx,
             )
@@ -374,6 +385,7 @@ async fn install_session(
     session: AuthenticatedQuicSession,
     outbound_client: Option<TrustedSessionQuicClient>,
     security: &AgentSecurity,
+    policy: &PolicyState,
     connected: &mut Option<ConnectedRuntime>,
     status_tx: &watch::Sender<PresenceSnapshot>,
 ) -> Result<(), ()> {
@@ -383,7 +395,7 @@ async fn install_session(
         .map(|context| context.peer_device_id())
         .ok_or(())?;
     let peer_trust = security.peer_trust(peer_id).ok_or(())?;
-    let (actor_session, closed) = runtime_session(session, peer_trust).ok_or(())?;
+    let (actor_session, closed) = runtime_session(session, peer_trust, policy).ok_or(())?;
 
     if let Some(connection) = connected.as_mut()
         && connection.reconnecting
@@ -439,6 +451,7 @@ async fn mark_transport_lost(
     publish_runtime(status_tx, PresencePhase::Reconnecting, connection);
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_command(
     command: Option<AgentCommand>,
     local_instance: &str,
@@ -446,6 +459,8 @@ async fn handle_command(
     connected: &mut Option<ConnectedRuntime>,
     network_available: &mut bool,
     auto_connect: &mut bool,
+    policy: &mut PolicyState,
+    permissions_tx: &watch::Sender<PermissionSnapshot>,
     status_tx: &watch::Sender<PresenceSnapshot>,
 ) -> bool {
     match command {
@@ -479,6 +494,26 @@ async fn handle_command(
         Some(AgentCommand::Reconnect) => {
             *auto_connect = true;
             publish_waiting(status_tx, connected.as_ref(), *network_available, true);
+            false
+        }
+        Some(AgentCommand::ReplacePolicy(next)) => {
+            if *policy == next || next.revision() <= policy.revision() {
+                return false;
+            }
+
+            let apply_failed = match connected.as_ref() {
+                Some(connection) => connection.actor.replace_policy(next.clone()).await.is_err(),
+                None => false,
+            };
+            if apply_failed {
+                stop_connected(connected.take()).await;
+            }
+
+            *policy = next;
+            permissions_tx.send_replace(PermissionSnapshot::from_policy(policy));
+            if apply_failed {
+                publish_failure(status_tx, None);
+            }
             false
         }
         Some(AgentCommand::Stop) | None => {
@@ -604,13 +639,14 @@ fn retry_delay(failures: usize) -> Duration {
 fn runtime_session(
     session: AuthenticatedQuicSession,
     peer_trust: TrustRecord,
+    policy: &PolicyState,
 ) -> Option<(RuntimeActorSession, watch::Receiver<bool>)> {
     let (session, transport) = session.into_parts();
     let closed = transport.subscribe_closed();
     let node = RuntimeNode::new_owned(
         session,
         Arc::new(transport),
-        PolicyState::new(),
+        policy.clone(),
         Vec::new(),
         NetworkClass::Local,
         NonZeroUsize::new(RUNTIME_CAPACITY)?,

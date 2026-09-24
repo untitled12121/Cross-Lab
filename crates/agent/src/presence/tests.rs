@@ -6,10 +6,14 @@ use crosslab_identity::{
     OwnerRootRecord,
 };
 use crosslab_identity_store::ProductIdentityState;
-use crosslab_policy::{PairingTrustTransition, TransitionId};
+use crosslab_policy::{
+    CapabilityId, OperationName, PairingTrustTransition, PolicyState, RuleEffect, TransitionId,
+};
 use tokio::sync::watch;
 
-use super::{PresencePhase, PresenceSnapshot, TrustedPresenceAgent, TrustedSessionRoute};
+use super::{
+    PresenceAgentError, PresencePhase, PresenceSnapshot, TrustedPresenceAgent, TrustedSessionRoute,
+};
 
 const WAIT: Duration = Duration::from_secs(8);
 
@@ -30,11 +34,26 @@ fn discovery_rotation_changes_instance_without_changing_listener_port() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn trusted_agents_connect_and_reconnect_with_fresh_session_authority() {
     let (left_state, right_state) = reciprocal_identities();
+    let right_device_id = right_state.local_credential().device_id();
     let left_signer = Arc::new(SigningKey::from_secret_bytes([0x74; 32]));
     let right_signer = Arc::new(SigningKey::from_secret_bytes([0x75; 32]));
+    let capability = CapabilityId::parse("files.transfer").unwrap();
+    let operation = OperationName::parse("receive").unwrap();
+    let mut policy = PolicyState::new();
+    policy
+        .set_rule_effect(
+            right_device_id,
+            capability.clone(),
+            operation.clone(),
+            RuleEffect::Allow,
+        )
+        .unwrap();
 
-    let left = TrustedPresenceAgent::spawn(left_state, left_signer).unwrap();
+    let left =
+        TrustedPresenceAgent::spawn_with_policy(left_state, left_signer, policy.clone()).unwrap();
     let right = TrustedPresenceAgent::spawn(right_state, right_signer).unwrap();
+    assert_eq!(left.permission_snapshot().policy_revision(), 1);
+    assert_eq!(left.permission_snapshot().rules().len(), 1);
 
     let left_route = route_for(&left);
     let right_route = route_for(&right);
@@ -55,9 +74,27 @@ async fn trusted_agents_connect_and_reconnect_with_fresh_session_authority() {
         first_right.runtime().and_then(|status| status.session_id())
     );
 
+    let mut permissions = left.subscribe_permissions();
+    policy
+        .set_rule_effect(right_device_id, capability, operation, RuleEffect::Deny)
+        .unwrap();
+    left.replace_policy(policy).unwrap();
+    tokio::time::timeout(WAIT, permissions.changed())
+        .await
+        .expect("permission state should update")
+        .expect("permission channel should remain open");
+    assert_eq!(permissions.borrow().policy_revision(), 2);
+    assert_eq!(permissions.borrow().rules()[0].effect(), RuleEffect::Deny);
+    assert_eq!(
+        left.replace_policy(PolicyState::new()),
+        Err(PresenceAgentError::StalePolicy)
+    );
+
     left.disconnect().unwrap();
     wait_phase(&mut left_status, PresencePhase::Paused).await;
     left.reconnect().unwrap();
+    left.candidate_available(route_for(&right)).unwrap();
+    right.candidate_available(route_for(&left)).unwrap();
 
     let second_left = wait_online_with_new_session(&mut left_status, first_session).await;
     let second_right = wait_online_with_new_session(&mut right_status, first_session).await;
@@ -72,6 +109,11 @@ async fn trusted_agents_connect_and_reconnect_with_fresh_session_authority() {
         second_right
             .runtime()
             .and_then(|status| status.session_id())
+    );
+    assert_eq!(left.permission_snapshot().policy_revision(), 2);
+    assert_eq!(
+        left.permission_snapshot().rules()[0].effect(),
+        RuleEffect::Deny
     );
 }
 

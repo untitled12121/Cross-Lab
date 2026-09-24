@@ -28,6 +28,7 @@ pub use pairing::{
 pub use pairing_network::{MobileProductPairingJoinerSession, MobileProductPairingNetworkError};
 pub use pairing_persistence::{MobileProductPairingCommit, MobileProductPairingJoinerCompletion};
 pub use presence::{
+    MobilePermissionEffect, MobilePermissionRule, MobilePermissionSnapshot,
     MobilePresenceDiscovery, MobilePresenceError, MobilePresencePhase, MobilePresenceSnapshot,
     MobileTrustedPresenceAgent,
 };
