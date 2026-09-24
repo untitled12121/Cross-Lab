@@ -1,6 +1,7 @@
 use std::{
     num::NonZeroUsize,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use crosslab_core::{
@@ -18,7 +19,10 @@ use crosslab_policy::{
     CapabilityId, NetworkClass, OperationName, PairingTrustTransition, PolicyState, RuleEffect,
     TransitionId, TrustRecord, TrustState, TrustTransition,
 };
-use crosslab_protocol::{FeatureSet, ProtocolRange, ProtocolVersion};
+use crosslab_protocol::{
+    ControlEnvelope, EnvelopeBody, FeatureSet, ProtocolRange, ProtocolVersion, SessionClose,
+    SessionCloseReason, encode_control_envelope,
+};
 use crosslab_runtime::{
     ConnectivityState, RuntimeActor, RuntimeActorConfig, RuntimeActorError, RuntimeActorSession,
     RuntimeNode,
@@ -27,6 +31,7 @@ use crosslab_runtime::{
 #[derive(Clone)]
 struct TestTransport {
     closed: Arc<Mutex<bool>>,
+    inbound: Arc<Mutex<Vec<Vec<u8>>>>,
     binding: ChannelBinding,
     metadata: ConnectionMetadata,
 }
@@ -35,9 +40,14 @@ impl TestTransport {
     fn new(binding: [u8; 32]) -> Self {
         Self {
             closed: Arc::new(Mutex::new(false)),
+            inbound: Arc::new(Mutex::new(Vec::new())),
             binding: ChannelBinding::new("actor-test-binding", binding.to_vec()),
             metadata: ConnectionMetadata::new(None, None, Some(false)),
         }
+    }
+
+    fn push_inbound(&self, frame: Vec<u8>) {
+        self.inbound.lock().unwrap().push(frame);
     }
 }
 
@@ -64,9 +74,13 @@ impl TransportConnection for TestTransport {
 
     fn try_receive_control(&self) -> Result<Vec<u8>, ControlReceiveError> {
         if self.is_closed() {
-            Err(ControlReceiveError::Closed)
-        } else {
+            return Err(ControlReceiveError::Closed);
+        }
+        let mut inbound = self.inbound.lock().unwrap();
+        if inbound.is_empty() {
             Err(ControlReceiveError::Empty)
+        } else {
+            Ok(inbound.remove(0))
         }
     }
 
@@ -306,6 +320,41 @@ fn network_loss_drops_session_authority_before_reconnect() {
         assert_eq!(status.borrow().session_state(), SessionState::Closed);
         assert_eq!(status.borrow().session_id(), None);
         actor.stop().await.unwrap();
+    });
+}
+
+#[test]
+fn control_readiness_drives_inbound_events_without_polling() {
+    runtime().block_on(async {
+        let fixture = Fixture::new();
+        let (session, transport) = fixture.actor_session([0x99; 32], 0x9a);
+        let session_id = session.session_id();
+        let (ready_tx, ready_rx) = tokio::sync::watch::channel(0_u64);
+        let mut actor = RuntimeActor::new(config(4));
+        actor.start(session.with_control_ready(ready_rx)).unwrap();
+        let mut events = actor.take_events().unwrap();
+
+        let close = ControlEnvelope::new(
+            ProtocolVersion::new(1, 0),
+            session_id,
+            0,
+            EnvelopeBody::SessionClose(SessionClose::new(
+                SessionCloseReason::Normal,
+                None,
+            )),
+        );
+        transport.push_inbound(encode_control_envelope(&close).unwrap());
+        ready_tx.send_replace(1);
+
+        let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+            .await
+            .expect("runtime actor should react to readiness")
+            .expect("runtime actor event channel should stay open");
+        assert!(matches!(
+            event,
+            crosslab_runtime::NodeEvent::SessionClosed(SessionCloseReason::Normal)
+        ));
+        assert!(transport.is_closed());
     });
 }
 
