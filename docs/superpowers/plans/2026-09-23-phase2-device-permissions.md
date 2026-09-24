@@ -1,6 +1,6 @@
 # Phase 2 Device Permissions / Capability Controls
 
-**Status:** Active
+**Status:** Implemented
 **Date:** 2026-09-23
 **Base:** PR #55 merged as `6abb3984a36be276aa439e9e1dabb42ffaa4a8b3`
 
@@ -47,9 +47,10 @@ Expose owner-controlled per-device permission state on top of the existing exact
 
 ## Verification
 
-- `cargo fmt --check`
-- `cargo check --workspace --all-targets --all-features`
-- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
-- `cargo test --workspace --all-features`
-- Android JVM tests + debug/development assemblies
-- no new secret-bearing UI/FFI fields
+Implementation head `23b41512a5c92cf0ed6b3fbe37fd0d2a0fe376f5` passed:
+
+- CI `35940387599`: Rust format/check/UniFFI generation/Linux desktop builds/clippy/tests and Android JVM/debug/development gates;
+- Fuzz Smoke `35940387579`;
+- no new secret-bearing UI/FFI fields.
+
+The slice intentionally stops at the generic presentation/mutation seam. Concrete capability features own their exact operation descriptors; persistent policy storage remains a separately reviewed compatibility decision when the first product permission editor needs it.
