@@ -1,0 +1,105 @@
+# Phase 2 Clipboard Vertical Slice
+
+**Status:** Active
+**Date:** 2026-09-24
+**Base:** PR #56 merged as d707b330b5d1008e8020267faa3755ad84920591
+
+## Goal
+
+Deliver the first real product capability on the authenticated-session and exact-policy foundation without weakening Cross-Lab's capability, privacy, reconnect, or platform boundaries.
+
+The first product clipboard slice is text-only. Files/images remain part of the later resumable file-transfer work.
+
+## Existing Baseline
+
+The architecture already reserves:
+
+- clipboard.read with protected operation get;
+- clipboard.write with protected operation set;
+- capability version 1.0 in Phase 1 fixtures;
+- exact device-scoped default-deny authorization;
+- opaque capability request/response bodies on the authenticated control channel.
+
+Android clipboard reads are platform-restricted when the app is not focused/default IME, so Phase 2 must not depend on background clipboard monitoring.
+
+## Task 1 — Event-driven product control pump
+
+- Add a bounded Quinn control-readiness signal without changing identity or authorization semantics.
+- Let RuntimeActor consume inbound control frames when signalled instead of polling.
+- Publish bounded non-status NodeEvent values to the owning agent.
+- Mirror only the existing runtime send operations needed by product capabilities.
+- Keep reconnect, policy replacement, revocation, and transport-close behavior fail-closed.
+
+This task does not define new wire semantics and can land before the clipboard profile is accepted.
+
+## Task 2 — Clipboard profile decision
+
+ADR-0018 proposes the product clipboard v1 compatibility surface:
+
+- explicit request/response only for the MVP;
+- clipboard.write/set: bounded UTF-8 text request, empty success body;
+- clipboard.read/get: empty request, bounded UTF-8 text success body;
+- no clipboard.changed auto-sync event in v1;
+- no file/image clipboard payloads;
+- no plaintext clipboard content in logs/audit/debug formatting.
+
+Do not implement the public capability payload contract until ADR-0018 is accepted.
+
+## Task 3 — Owner policy persistence
+
+The first editable product permission requires durable policy state. Design this as a separate reviewed policy-store boundary rather than embedding rules into identity state or silently reusing identity-store semantics.
+
+Requirements:
+
+- exact device/capability/operation rules only;
+- monotonic currentness and rollback/mixed-state rejection;
+- Android protected currentness material and Linux protected currentness material;
+- no clipboard payloads in the policy store;
+- policy must be loaded before the presence/runtime session is created.
+
+A persistent format/boundary is architecture-significant and requires its own ADR before implementation.
+
+## Task 4 — Shared clipboard capability runtime
+
+After the clipboard profile is accepted:
+
+- advertise only runtime-available clipboard capabilities;
+- require negotiated version plus exact policy before dispatch;
+- bound and validate UTF-8 before platform delivery;
+- correlate outbound requests with bounded session-local request state;
+- cancel pending clipboard work on reconnect, policy revision, disconnect, revocation, or shutdown;
+- expose ephemeral clipboard operations, not retained clipboard history.
+
+## Task 5 — Linux and Android adapters
+
+Linux:
+
+- use GPUI's native clipboard access instead of adding a clipboard dependency;
+- keep OS clipboard reads/writes in the desktop adapter/UI boundary.
+
+Android:
+
+- use ClipboardManager;
+- read only from an explicit foreground user action when platform access is available;
+- write received text with the platform API;
+- mark sensitive local clipboard content where the platform contract supports it;
+- never claim background clipboard monitoring.
+
+## Task 6 — Product UI
+
+Expose the smallest clear controls:
+
+- current per-device clipboard permissions;
+- explicit Send clipboard and Fetch clipboard actions when supported/allowed;
+- actionable unavailable/denied/oversized/failure state;
+- no plaintext clipboard preview/history in the control center.
+
+## Verification
+
+- Rust format/check/clippy/test workspace gate;
+- Quinn/runtime actor event-driven control tests;
+- clipboard codec boundary/privacy tests after ADR acceptance;
+- Linux desktop build + development build;
+- Android JVM tests + debug/development assemblies;
+- reconnect/policy-change tests prove pending clipboard authority is not carried across sessions;
+- no plaintext clipboard content in Debug/error/log output.
