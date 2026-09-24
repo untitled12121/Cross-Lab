@@ -338,10 +338,7 @@ fn control_readiness_drives_inbound_events_without_polling() {
             ProtocolVersion::new(1, 0),
             session_id,
             0,
-            EnvelopeBody::SessionClose(SessionClose::new(
-                SessionCloseReason::Normal,
-                None,
-            )),
+            EnvelopeBody::SessionClose(SessionClose::new(SessionCloseReason::Normal, None)),
         );
         transport.push_inbound(encode_control_envelope(&close).unwrap());
         ready_tx.send_replace(1);
