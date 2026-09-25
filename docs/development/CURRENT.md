@@ -16,7 +16,7 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 - PR #51 — ADR-0016 LAN discovery profile + versioned product-pairing wire + provisional Quinn pairing channel: merged as `cf2add350ffa60056d74ac57b0a187a0297d8777`; exact-head CI `35593397861` and Fuzz Smoke `35593397844` green on `2702cc0c926cf044c65aef0376f573aaedae8c6f`.
 - PR #52 — bounded DNS-SD discovery adapters: merged as `2881a8cb042207bf55a1ede9f2dc61f30ccd4eb9`; exact-head CI `35598750651` green on `2ef9ab362fb9fa59d7693662ec8de2f65e5031af`.
 - PR #53 — product pairing network/platform lifecycle: merged as `9453b0e7f3e67578c79615acb1034c849a82603d`; implementation head `cc099fd7bf3335f51f54d4e09f2d002ab136e4e0` and documentation head `c5570add764ac1e223b08bdb63737abd3b182a25` both passed the full Rust + Android gate (`35641211049` / `35643137494`).
-- Master Architecture revision 2.8, ADR-0016, and ADR-0017 govern local product pairing and trusted-session LAN discovery.
+- Master Architecture revision 2.9 governs the accepted ADR-0018 text clipboard profile and ADR-0019 owner-policy-store boundary in addition to the established pairing/trusted-session architecture.
 - Physical-evidence continuation branch: `m10-task10-real-device-evidence`.
 - M10 evidence protocol: `docs/research/M10-platform-evidence.md`.
 - Product pairing implementation plan: `docs/superpowers/plans/2026-09-20-product-add-device-pairing.md`.
@@ -24,7 +24,7 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 - PR #56 — per-device permission/capability-control foundation: merged as `d707b330b5d1008e8020267faa3755ad84920591`; exact head `6565efcdaa7ffc533bbeba6d1b16b5ab8c2d7196` passed full CI `35942887247` and Fuzz Smoke `35942887292`.
 - PR #57 — clipboard event-driven control preparation: merged as `7e5985f0f8d8ce4546396da8aa4288fb809b508b`; exact head `f8190dfcf70dc70c94c5f15aae86d907ce4b7a15` passed full Rust + Android CI `35972369409`.
 - Active Phase 2 branch: `phase2-clipboard-implementation`.
-- ADR-0018 (text clipboard capability profile v1) and ADR-0019 (platform owner-policy store boundary) are Proposed. Owner review/acceptance is the current architecture gate before clipboard payload compatibility or durable permission persistence is implemented.
+- ADR-0018 (text clipboard capability profile v1) and ADR-0019 (platform owner-policy store boundary) were owner-accepted on 2026-09-25. The active milestone is the shared owner-policy store core, followed by Linux/Android protected-currentness adapters before writable permission UI.
 
 ## Implemented M10 Product Path
 
@@ -90,8 +90,10 @@ PR #57 clipboard preparation implements:
 - `RuntimeActor` drains inbound control without polling and publishes bounded non-status `NodeEvent` values;
 - the trusted presence coordinator consumes the runtime event stream so an unobserved event queue cannot stall a session;
 - actor send wrappers expose the existing capability advertisement/request/response paths without defining new wire semantics;
-- ADR-0018 proposes the first product clipboard profile: explicit text-only `clipboard.read/get` and `clipboard.write/set`, no automatic background clipboard event in v1;
-- ADR-0019 proposes a separate rollback/currentness-aware owner-policy store with persist-before-apply ordering.
+- ADR-0018 now fixes the first product clipboard profile: explicit text-only `clipboard.read/get` and `clipboard.write/set`, no automatic background clipboard event in v1;
+- ADR-0019 now fixes a separate rollback/currentness-aware owner-policy store with load-before-session and persist-before-apply ordering.
+
+Owner approval on 2026-09-25 unblocked implementation. This branch adds the shared `crosslab-policy-store` deterministic bounded snapshot/currentness/CAS core and exact `PolicyState` snapshot restoration; full CI verification is pending for this commit.
 
 Continue in small verified vertical slices:
 
@@ -116,10 +118,10 @@ Phase 3 adaptive networking does not begin until Phase 2 is complete.
 
 ## Exact Next Task
 
-1. obtain owner review/acceptance for proposed ADR-0018 and ADR-0019;
-2. after acceptance, mark the ADRs Accepted, update the Master Architecture to record the approved clipboard/profile and owner-policy-store decisions, and implement the owner-policy store first;
+1. require full Rust + Android CI to pass for the shared `crosslab-policy-store` core milestone;
+2. implement Linux policy-state file + policy-specific Secret Service currentness anchor and Android AtomicFile + policy-specific Keystore currentness material;
 3. load validated durable policy before trusted-session runtime creation and use persist-before-apply ordering for editable permissions;
-4. then implement the shared text clipboard capability runtime, Linux GPUI adapter/UI, and Android ClipboardManager adapter/UI under the accepted profile;
+4. then implement the shared text clipboard capability runtime, Linux GPUI adapter/UI, and Android ClipboardManager adapter/UI under accepted ADR-0018;
 5. preserve exact default deny, bounded request state, reconnect/policy invalidation, and no plaintext clipboard logging/history;
 6. then continue through resumable file transfer, notifications, audit/history, and revocation/device removal;
 7. keep M10 physical evidence separately pending until owner hardware is available;

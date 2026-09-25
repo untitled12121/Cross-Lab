@@ -1,0 +1,16 @@
+[package]
+name = "crosslab-policy-store"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+blake3.workspace = true
+crosslab-identity = { path = "../identity" }
+crosslab-policy = { path = "../policy" }

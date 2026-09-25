@@ -9,6 +9,7 @@ members = [
     "crates/identity-store",
     "crates/mobile-ffi",
     "crates/policy",
+    "crates/policy-store",
     "crates/protocol",
     "crates/runtime",
     "experiments/m9-networking",
