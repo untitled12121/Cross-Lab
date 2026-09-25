@@ -76,6 +76,29 @@ pub(super) enum AgentCommand {
     Stop,
 }
 
+pub(super) struct AgentChannels {
+    policy_rx: watch::Receiver<PolicyState>,
+    command_rx: mpsc::Receiver<AgentCommand>,
+    status_tx: watch::Sender<PresenceSnapshot>,
+    permissions_tx: watch::Sender<PermissionSnapshot>,
+}
+
+impl AgentChannels {
+    pub(super) fn new(
+        policy_rx: watch::Receiver<PolicyState>,
+        command_rx: mpsc::Receiver<AgentCommand>,
+        status_tx: watch::Sender<PresenceSnapshot>,
+        permissions_tx: watch::Sender<PermissionSnapshot>,
+    ) -> Self {
+        Self {
+            policy_rx,
+            command_rx,
+            status_tx,
+            permissions_tx,
+        }
+    }
+}
+
 struct CandidateState {
     route: TrustedSessionRoute,
     failures: usize,
@@ -116,11 +139,14 @@ pub(super) async fn run_agent(
     security: Arc<AgentSecurity>,
     discovery_instance: Arc<RwLock<String>>,
     mut policy: PolicyState,
-    mut policy_rx: watch::Receiver<PolicyState>,
-    mut command_rx: mpsc::Receiver<AgentCommand>,
-    status_tx: watch::Sender<PresenceSnapshot>,
-    permissions_tx: watch::Sender<PermissionSnapshot>,
+    channels: AgentChannels,
 ) {
+    let AgentChannels {
+        mut policy_rx,
+        mut command_rx,
+        status_tx,
+        permissions_tx,
+    } = channels;
     let (connect_tx, mut connect_rx) = mpsc::channel(CONNECT_RESULT_CAPACITY);
     let mut candidates = BTreeMap::<String, CandidateState>::new();
     let mut connected: Option<ConnectedRuntime> = None;
