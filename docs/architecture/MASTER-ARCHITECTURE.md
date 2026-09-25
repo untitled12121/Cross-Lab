@@ -1,8 +1,8 @@
 # Cross-Lab Master Architecture & Development Plan
 
 **Document status:** Architecture Baseline — Source of Truth  
-**Revision:** 2.8  
-**Date:** 2026-09-22  
+**Revision:** 2.9  
+**Date:** 2026-09-25  
 **Project:** Cross-Lab  
 **Scope:** Architecture, security boundaries, repository structure, protocol foundations, platform strategy, development phases, and technology evaluation rules
 
@@ -26,7 +26,7 @@ The following rules apply:
 - License compatibility, security implications, platform support, maintenance status, and performance impact must be reviewed before code is reused or adapted.
 - The smallest architecture that cleanly satisfies the current milestone is preferred over speculative extensibility.
 
-Revision 2.8 incorporates accepted ADR-0017 privacy-conscious LAN trusted-session discovery in addition to ADR-0016 product pairing and the accepted production identity-store, pairing-bootstrap, and signing-provider boundaries. Product pairing discovery remains short-lived and keyed only by PairingId. Normal trusted-session discovery uses ephemeral random DNS-SD instances with no stable owner/device identifier; route/TLS/discovery metadata remains non-authoritative, and every normal reconnect performs fresh Cross-Lab credential/trust/currentness/channel-binding authentication with a fresh SessionId. Detailed protocol/security mechanics live in focused specifications; this document records the governing architecture and dependency boundaries.
+Revision 2.9 incorporates accepted ADR-0018 text clipboard profile v1 and ADR-0019 platform owner-policy store boundary in addition to the existing pairing, identity-store, and trusted-session decisions. Clipboard v1 is explicit text-only request/response with independently authorized read/get and write/set operations. Owner-edited policy persists in a separate rollback/currentness-aware store, loads before protected runtime/session creation, and uses persist-before-apply ordering. Detailed encoding and platform mechanics live in the focused ADR/specification documents; this document records the governing architecture and dependency boundaries.
 
 ---
 
@@ -400,11 +400,19 @@ Capability negotiation must account for:
 
 Unsupported functionality must be reported as unsupported rather than emulated through unsafe or misleading behavior.
 
+### 9.1 Text clipboard profile v1
+
+ADR-0018 defines the first production clipboard profile. Version 1.0 uses explicit request/response operations only: `clipboard.read/get` and `clipboard.write/set`. Payloads are UTF-8 text bounded to 65,536 bytes. Read and write authority remain independent, automatic `clipboard.changed` synchronization is not part of v1, and files/images/rich clipboard data remain outside ordinary clipboard control frames.
+
+Plaintext clipboard content is operation-lifetime data and must not be written to normal logs, audit history, diagnostics, or retained Cross-Lab clipboard history.
+
 ---
 
 ## 10. Authorization and Policy
 
 Policy evaluation is default-deny.
+
+ADR-0019 selects a separate owner-policy persistence boundary for product-edited authorization rules. Durable policy state preserves the exact `PolicyState` revision, uses rollback/currentness protection independent from identity storage, is validated before protected runtime/session creation, and is committed before an edited policy is applied to the active runtime. Missing or corrupt previously committed policy state fails closed rather than silently resetting to revision 0.
 
 Policy decisions must separate the primary effect from constraints or obligations.
 
@@ -1474,6 +1482,7 @@ crosslab/
 │   ├── crypto/
 │   ├── identity/
 │   ├── policy/
+│   ├── policy-store/
 │   ├── protocol/
 │   └── core/
 │
@@ -1581,7 +1590,19 @@ Initially owns:
 
 If trust and capability domains grow independently, they may later be extracted into dedicated crates through an ADR.
 
-### 37.4 `crosslab-protocol`
+### 37.4 `crosslab-policy-store`
+
+Owns the platform-neutral durable owner-policy snapshot/currentness contract selected by ADR-0019:
+
+- deterministic bounded policy snapshot encoding/decoding;
+- exact policy revision preservation;
+- rollback/mixed-state validation;
+- compare-and-swap commit preparation;
+- currentness anchor semantics.
+
+It does not own platform secure storage, UI preference editing, identity/trust persistence, capability payloads, or runtime authorization decisions. Platform adapters own crash-safe file replacement and protected currentness material.
+
+### 37.5 `crosslab-protocol`
 
 Owns wire-contract concerns only:
 
@@ -1598,7 +1619,7 @@ Owns wire-contract concerns only:
 
 It does not own sockets, platform APIs, UI, policy evaluation, or privileged actions.
 
-### 37.5 `crosslab-core`
+### 37.6 `crosslab-core`
 
 Owns the unprivileged coordination engine:
 
@@ -1617,7 +1638,7 @@ Owns the unprivileged coordination engine:
 
 It must remain platform-independent and must not implement privileged OS operations.
 
-### 37.6 Transport Abstraction
+### 37.7 Transport Abstraction
 
 The transport contract begins as a narrow API seam used by the core rather than an empty crate created for theoretical purity.
 
@@ -1653,7 +1674,7 @@ crosslab-protocol│
 simulator      concrete adapters
 ```
 
-`crosslab-protocol` may depend directly on `crosslab-crypto` for shared canonical/digest helpers and on domain crates for validated domain values. `crosslab-core` may depend on `crosslab-crypto` only for session/security orchestration mechanics not owned by another domain.
+`crosslab-protocol` may depend directly on `crosslab-crypto` for shared canonical/digest helpers and on domain crates for validated domain values. `crosslab-core` may depend on `crosslab-crypto` only for session/security orchestration mechanics not owned by another domain. `crosslab-policy-store` may depend on identity/policy domain types plus narrow digest primitives, but domain crates do not depend on persistence or platform adapters.
 
 Forbidden examples include:
 

@@ -400,9 +400,13 @@ A cancelled operation ID cannot be reactivated.
 
 ## 20. Policy persistence
 
-Persistent policy storage is outside Phase 1. The simulator uses in-memory typed policy state.
+Phase 1 remains in-memory, but Phase 2 product-edited permissions use the owner-policy persistence boundary accepted in ADR-0019.
 
-When persistence is introduced, storage format/migrations must preserve policy revisions and fail safely on corrupt/unknown security state. SQLite or another database remains unselected until a feature requires it.
+The durable store is separate from identity/trust state and preserves the exact `PolicyState` revision plus bounded exact rules. The shared `crosslab-policy-store` layer owns deterministic snapshot encoding, schema/bounds, rollback/mixed-state validation, and compare-and-swap commit preparation. Platform adapters own crash-safe file replacement and protected currentness material.
+
+Product startup validates durable policy before constructing a protected trusted-session runtime. Owner edits use persist-before-apply ordering: derive the next state, durably commit against the expected revision, then replace active runtime policy. A failed commit leaves active policy unchanged; a failed runtime replacement after successful persistence fails the affected runtime closed and reloads from durable state.
+
+First-run absence is the valid empty revision-0 policy. Once policy has been durably committed, missing/corrupt snapshot or mismatched currentness state is an availability/security failure, not an implicit reset. No database is selected for this boundary.
 
 ## 21. Phase 1 required tests
 

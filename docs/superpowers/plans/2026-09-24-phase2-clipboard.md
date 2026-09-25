@@ -40,9 +40,9 @@ Implemented on PR #57:
 
 This task does not define new wire semantics and can land before the clipboard profile is accepted.
 
-## Task 2 — Clipboard profile decision
+## Task 2 — Clipboard profile decision — accepted
 
-ADR-0018 proposes the product clipboard v1 compatibility surface:
+ADR-0018 defines the accepted product clipboard v1 compatibility surface:
 
 - explicit request/response only for the MVP;
 - clipboard.write/set: bounded UTF-8 text request, empty success body;
@@ -51,9 +51,9 @@ ADR-0018 proposes the product clipboard v1 compatibility surface:
 - no file/image clipboard payloads;
 - no plaintext clipboard content in logs/audit/debug formatting.
 
-Do not implement the public capability payload contract until ADR-0018 is accepted.
+ADR-0018 was accepted by the owner on 2026-09-25; implementation may now depend on this compatibility surface.
 
-## Task 3 — Owner policy persistence
+## Task 3 — Owner policy persistence — active
 
 The first editable product permission requires durable policy state. Design this as a separate reviewed policy-store boundary rather than embedding rules into identity state or silently reusing identity-store semantics.
 
@@ -65,7 +65,7 @@ Requirements:
 - no clipboard payloads in the policy store;
 - policy must be loaded before the presence/runtime session is created.
 
-ADR-0019 now proposes this boundary. It remains Proposed and must be accepted before implementation.
+ADR-0019 was accepted by the owner on 2026-09-25. PR #58 implements the shared rollback/currentness-aware policy-store core plus Linux policy-state/Secret Service and Android AtomicFile/Keystore protected-currentness adapters. Both production presence paths load validated policy before trusted-session runtime creation. Exact-head verification is pending before writable permission controls are added.
 
 ## Task 4 — Shared clipboard capability runtime
 

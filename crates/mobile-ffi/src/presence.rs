@@ -9,12 +9,13 @@ use crosslab_agent::{
 };
 use crosslab_crypto::SigningProvider;
 use crosslab_identity_store::ProductIdentityState;
-use crosslab_policy::RuleEffect;
+use crosslab_policy::{PolicyState, RuleEffect};
 use tokio::runtime::Runtime;
 
 use crate::{
     MobileLifecycleState, MobileRuntimeSnapshot,
     network::socket_addr,
+    policy_store::{MobilePolicyStoreError, decode_policy_store},
     product_identity::{ForeignSigningProvider, MobileProductIdentityError, MobileSigningProvider},
     session_discovery::{MobileTrustedSessionDiscoveryProfile, profile_for_instance},
 };
@@ -65,6 +66,7 @@ pub struct MobilePresenceDiscovery {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Error)]
 pub enum MobilePresenceError {
     Identity,
+    PolicyStore,
     NoTrustedPeers,
     Random,
     Bind,
@@ -80,6 +82,7 @@ impl core::fmt::Display for MobilePresenceError {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         formatter.write_str(match self {
             Self::Identity => "trusted presence identity is unavailable",
+            Self::PolicyStore => "trusted presence policy state is unavailable",
             Self::NoTrustedPeers => "trusted presence requires at least one trusted peer",
             Self::Random => "trusted presence discovery identity generation failed",
             Self::Bind => "trusted presence listener could not start",
@@ -114,12 +117,19 @@ impl MobileTrustedPresenceAgent {
     pub fn new(
         identity_payload: Vec<u8>,
         local_device_signer: Arc<dyn MobileSigningProvider>,
+        policy_envelope: Option<Vec<u8>>,
+        policy_anchor: Option<Vec<u8>>,
     ) -> Result<Self, MobilePresenceError> {
         let identity = ProductIdentityState::decode(&identity_payload)
             .map_err(|_| MobilePresenceError::Identity)?;
+        let policy = match (policy_envelope, policy_anchor) {
+            (None, None) => PolicyState::new(),
+            (Some(envelope), Some(anchor)) => decode_policy_store(&envelope, &anchor)?,
+            _ => return Err(MobilePresenceError::PolicyStore),
+        };
         let signer = ForeignSigningProvider::new(local_device_signer)?;
         let signer: Arc<dyn SigningProvider + Send + Sync> = Arc::new(signer);
-        let agent = TrustedPresenceAgent::spawn(identity, signer)?;
+        let agent = TrustedPresenceAgent::spawn_with_policy(identity, signer, policy)?;
         let status = agent.subscribe_status();
         let wait_runtime = tokio::runtime::Builder::new_current_thread()
             .enable_time()
@@ -324,5 +334,11 @@ impl From<PresenceAgentError> for MobilePresenceError {
 impl From<MobileProductIdentityError> for MobilePresenceError {
     fn from(_: MobileProductIdentityError) -> Self {
         Self::Identity
+    }
+}
+
+impl From<MobilePolicyStoreError> for MobilePresenceError {
+    fn from(_: MobilePolicyStoreError) -> Self {
+        Self::PolicyStore
     }
 }

@@ -1,7 +1,8 @@
 # ADR-0018: Text clipboard capability profile v1
 
-**Status:** Proposed
-**Date:** 2026-09-24
+**Status:** Accepted
+**Date:** 2026-09-24  
+**Accepted:** 2026-09-25
 
 ## Context
 

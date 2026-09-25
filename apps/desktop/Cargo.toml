@@ -35,5 +35,6 @@ serde_json.workspace = true
 [target.'cfg(target_os = "linux")'.dependencies]
 crosslab-crypto = { path = "../../crates/crypto" }
 crosslab-identity-store = { path = "../../crates/identity-store" }
+crosslab-policy-store = { path = "../../crates/policy-store" }
 oo7.workspace = true
 zbus.workspace = true

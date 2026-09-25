@@ -7,6 +7,7 @@ import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import dev.crosslab.android.features.identity.AndroidProductIdentityRepository
+import dev.crosslab.android.features.permissions.AndroidPolicyStore
 import uniffi.crosslab_mobile_ffi.MobilePermissionSnapshot
 import uniffi.crosslab_mobile_ffi.MobilePresenceDiscovery
 import uniffi.crosslab_mobile_ffi.MobilePresencePhase
@@ -18,6 +19,7 @@ private const val DISCOVERY_RETRY_MS = 2_000L
 class ProductPresencePort(
     context: Context,
     private val identityRepository: AndroidProductIdentityRepository,
+    private val policyStore: AndroidPolicyStore,
 ) : RuntimePort {
     override val peerControlAvailable: Boolean = true
 
@@ -137,11 +139,22 @@ class ProductPresencePort(
             return
         }
 
+        val policy =
+            runCatching { policyStore.load() }
+                .getOrElse {
+                    publishLocked(
+                        RuntimeSnapshot.disconnected().copy(presence = RuntimePresence.FAILED),
+                    )
+                    return
+                }
+
         val active =
             runCatching {
                 MobileTrustedPresenceAgent(
                     identityPayload = identity.payload,
                     localDeviceSigner = identityRepository.localDeviceSigner,
+                    policyEnvelope = policy?.envelope,
+                    policyAnchor = policy?.anchor,
                 )
             }.getOrElse {
                 publishLocked(

@@ -287,6 +287,27 @@ impl PolicyState {
         Self::default()
     }
 
+    pub fn from_snapshot(
+        revision: u64,
+        rules: impl IntoIterator<Item = PolicyRule>,
+    ) -> Result<Self, PolicyError> {
+        let mut indexed = BTreeMap::new();
+        for rule in rules {
+            let key = PolicyKey::new(
+                rule.source_device_id,
+                rule.capability_id.clone(),
+                rule.operation.clone(),
+            );
+            if indexed.insert(key, rule).is_some() {
+                return Err(PolicyError::DuplicateRule);
+            }
+        }
+        Ok(Self {
+            revision,
+            rules: indexed,
+        })
+    }
+
     pub fn insert(&mut self, rule: PolicyRule) -> Result<(), PolicyError> {
         let key = PolicyKey::new(
             rule.source_device_id,

@@ -1746,6 +1746,7 @@ dependencies = [
  "crosslab-identity",
  "crosslab-identity-store",
  "crosslab-policy",
+ "crosslab-policy-store",
  "crosslab-protocol",
  "crosslab-runtime",
  "crosslab-transport-quic",
@@ -1806,6 +1807,7 @@ dependencies = [
  "crosslab-identity",
  "crosslab-identity-store",
  "crosslab-policy",
+ "crosslab-policy-store",
  "crosslab-protocol",
  "crosslab-runtime",
  "crosslab-transport-quic",
@@ -1821,6 +1823,15 @@ version = "0.1.0"
 dependencies = [
  "crosslab-crypto",
  "crosslab-identity",
+]
+
+[[package]]
+name = "crosslab-policy-store"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "crosslab-identity",
+ "crosslab-policy",
 ]
 
 [[package]]
