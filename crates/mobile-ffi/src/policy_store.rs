@@ -89,8 +89,8 @@ pub fn policy_store_prepare_rule_effect(
 ) -> Result<Option<MobilePolicyCommit>, MobilePolicyStoreError> {
     let (current, mut policy) = decode_current(current_envelope, current_anchor)?;
     let source_device_id = parse_device_id(&source_device_id)?;
-    let capability_id =
-        CapabilityId::parse(&capability_id).map_err(|_| MobilePolicyStoreError::InvalidIdentifier)?;
+    let capability_id = CapabilityId::parse(&capability_id)
+        .map_err(|_| MobilePolicyStoreError::InvalidIdentifier)?;
     let operation =
         OperationName::parse(&operation).map_err(|_| MobilePolicyStoreError::InvalidIdentifier)?;
     let effect = match effect {
