@@ -264,10 +264,6 @@ pub fn decode_policy_snapshot(encoded: &[u8]) -> Result<PolicyState, PolicyStore
     if rule_count > MAX_POLICY_RULES {
         return Err(PolicyStoreError::TooManyRules);
     }
-    if revision < rule_count as u64 {
-        return Err(PolicyStoreError::MalformedSnapshot);
-    }
-
     let mut rules = Vec::with_capacity(rule_count);
     let mut rule_ids = BTreeSet::new();
     for _ in 0..rule_count {
