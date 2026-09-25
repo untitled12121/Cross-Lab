@@ -88,9 +88,7 @@ impl From<PolicyStoreError> for MobilePolicyStoreError {
 #[cfg(test)]
 mod tests {
     use crosslab_identity::DeviceId;
-    use crosslab_policy::{
-        CapabilityId, OperationName, PolicyRule, RuleEffect, RuleId,
-    };
+    use crosslab_policy::{CapabilityId, OperationName, PolicyRule, RuleEffect, RuleId};
     use crosslab_policy_store::prepare_commit;
 
     use super::*;

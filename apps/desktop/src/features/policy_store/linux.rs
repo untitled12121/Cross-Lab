@@ -58,10 +58,7 @@ impl LinuxPolicyStore {
             return Err(PolicyStoreError::RevisionConflict.into());
         }
 
-        let commit = prepare_commit(
-            current.as_ref().map(|current| &current.envelope),
-            policy,
-        )?;
+        let commit = prepare_commit(current.as_ref().map(|current| &current.envelope), policy)?;
         let next_anchor = commit.anchor();
         self.create_anchor(next_anchor).await?;
 
@@ -139,10 +136,7 @@ impl LinuxPolicyStore {
             .is_empty())
     }
 
-    async fn create_anchor(
-        &self,
-        anchor: PolicyStoreAnchor,
-    ) -> Result<(), LinuxPolicyStoreError> {
+    async fn create_anchor(&self, anchor: PolicyStoreAnchor) -> Result<(), LinuxPolicyStoreError> {
         let keyring = Keyring::new().await?;
         let revision = anchor.revision().to_string();
         let attributes = [APP_ATTRIBUTE, ANCHOR_KIND, ("revision", revision.as_str())];
@@ -158,10 +152,7 @@ impl LinuxPolicyStore {
         Ok(())
     }
 
-    async fn verify_anchor(
-        &self,
-        anchor: PolicyStoreAnchor,
-    ) -> Result<(), LinuxPolicyStoreError> {
+    async fn verify_anchor(&self, anchor: PolicyStoreAnchor) -> Result<(), LinuxPolicyStoreError> {
         let keyring = Keyring::new().await?;
         let revision = anchor.revision().to_string();
         let attributes = [APP_ATTRIBUTE, ANCHOR_KIND, ("revision", revision.as_str())];
