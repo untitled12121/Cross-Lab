@@ -13,6 +13,12 @@ interface RuntimePort {
     fun disconnectPeer()
     fun reconnectPeer()
 
+    fun setPermission(
+        capabilityId: String,
+        operation: String,
+        effect: RuntimePermissionEffect,
+    ): Boolean = false
+
     fun snapshot(): RuntimeSnapshot = RuntimeSnapshot.disconnected()
 
     fun observeSnapshots(listener: (RuntimeSnapshot) -> Unit): AutoCloseable {
@@ -129,6 +135,20 @@ class RuntimeController(
             port.reconnectPeer()
             it.copy(snapshot = port.snapshot())
         }
+    }
+
+    fun setPermission(
+        capabilityId: String,
+        operation: String,
+        effect: RuntimePermissionEffect,
+    ): Boolean {
+        var changed = false
+        update {
+            if (it.lifecycle != RuntimeLifecycle.RUNNING) return@update null
+            changed = port.setPermission(capabilityId, operation, effect)
+            it.copy(snapshot = port.snapshot())
+        }
+        return changed
     }
 
     fun shutdown() {

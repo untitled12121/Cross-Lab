@@ -8,11 +8,14 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import dev.crosslab.android.features.identity.AndroidProductIdentityRepository
 import dev.crosslab.android.features.permissions.AndroidPolicyStore
+import dev.crosslab.android.features.permissions.PolicyStoreUnavailable
+import uniffi.crosslab_mobile_ffi.MobilePermissionEffect
 import uniffi.crosslab_mobile_ffi.MobilePermissionSnapshot
 import uniffi.crosslab_mobile_ffi.MobilePresenceDiscovery
 import uniffi.crosslab_mobile_ffi.MobilePresencePhase
 import uniffi.crosslab_mobile_ffi.MobilePresenceSnapshot
 import uniffi.crosslab_mobile_ffi.MobileTrustedPresenceAgent
+import uniffi.crosslab_mobile_ffi.policyStorePrepareRuleEffect
 
 private const val DISCOVERY_RETRY_MS = 2_000L
 
@@ -106,6 +109,82 @@ class ProductPresencePort(
             publishAgentSnapshotLocked()
         }
     }
+
+    override fun setPermission(
+        capabilityId: String,
+        operation: String,
+        effect: RuntimePermissionEffect,
+    ): Boolean =
+        synchronized(lock) {
+            val active = agent ?: return@synchronized false
+            val peerDeviceId = current.peerDeviceId ?: return@synchronized false
+            val permissions = active.permissionSnapshot()
+            val stored =
+                try {
+                    policyStore.load()
+                } catch (error: Throwable) {
+                    failClosedPolicyLocked(active)
+                    throw error
+                }
+            val storedRevision = stored?.anchorRevision() ?: 0uL
+            if (storedRevision != permissions.policyRevision) {
+                failClosedPolicyLocked(active)
+                throw PolicyStoreUnavailable("active policy revision does not match durable policy")
+            }
+
+            val commit =
+                policyStorePrepareRuleEffect(
+                    currentEnvelope = stored?.envelope,
+                    currentAnchor = stored?.anchor,
+                    sourceDeviceId = peerDeviceId,
+                    capabilityId = capabilityId,
+                    operation = operation,
+                    effect = effect.toMobilePermissionEffect(),
+                ) ?: return@synchronized false
+
+            try {
+                policyStore.commit(
+                    expectedRevision = permissions.policyRevision,
+                    envelope = commit.envelope,
+                    anchor = commit.anchor,
+                )
+            } catch (error: Throwable) {
+                val recovered = runCatching { policyStore.load() }
+                if (recovered.isSuccess) {
+                    val durable = recovered.getOrNull()
+                    val durableRevision = durable?.anchorRevision() ?: 0uL
+                    if (durableRevision == permissions.policyRevision) {
+                        throw error
+                    }
+                    if (
+                        durable != null &&
+                            durableRevision == commit.revision &&
+                            durable.envelope.contentEquals(commit.envelope) &&
+                            durable.anchor.contentEquals(commit.anchor)
+                    ) {
+                        try {
+                            active.replacePolicy(durable.envelope, durable.anchor)
+                        } catch (applyError: Throwable) {
+                            failClosedPolicyLocked(active)
+                            throw applyError
+                        }
+                        publishAgentSnapshotLocked()
+                        return@synchronized true
+                    }
+                }
+                failClosedPolicyLocked(active)
+                throw error
+            }
+
+            try {
+                active.replacePolicy(commit.envelope, commit.anchor)
+            } catch (error: Throwable) {
+                failClosedPolicyLocked(active)
+                throw error
+            }
+            publishAgentSnapshotLocked()
+            true
+        }
 
     override fun snapshot(): RuntimeSnapshot = current
 
@@ -307,6 +386,17 @@ class ProductPresencePort(
         }
     }
 
+    private fun failClosedPolicyLocked(active: MobileTrustedPresenceAgent) {
+        if (runCatching { active.failClosedPolicy() }.isFailure) {
+            stopAgentLocked()
+            publishLocked(
+                RuntimeSnapshot.disconnected().copy(presence = RuntimePresence.FAILED),
+            )
+            return
+        }
+        publishAgentSnapshotLocked()
+    }
+
     private fun publishLocked(snapshot: RuntimeSnapshot) {
         current = snapshot
         listeners.forEach { it(snapshot) }
@@ -348,3 +438,10 @@ private fun MobilePresenceSnapshot.toRuntimeSnapshot(
                 },
         )
 }
+
+private fun RuntimePermissionEffect.toMobilePermissionEffect(): MobilePermissionEffect =
+    when (this) {
+        RuntimePermissionEffect.ALLOW -> MobilePermissionEffect.ALLOW
+        RuntimePermissionEffect.DENY -> MobilePermissionEffect.DENY
+        RuntimePermissionEffect.ASK -> MobilePermissionEffect.ASK
+    }

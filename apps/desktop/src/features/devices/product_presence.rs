@@ -6,6 +6,7 @@ use crosslab_agent::{
     TrustedSessionRoute as AgentTrustedSessionRoute,
 };
 use crosslab_identity_store::{ProductIdentityError, ProductIdentityState};
+use crosslab_policy::{CapabilityId, OperationName, PolicyError, RuleEffect};
 use tokio::sync::{mpsc, watch};
 
 use crate::features::{
@@ -92,6 +93,62 @@ impl DesktopProductPresenceController {
         self.send_control(DiscoveryControl::Resume)
     }
 
+    pub async fn set_permission(
+        &self,
+        capability_id: CapabilityId,
+        operation: OperationName,
+        effect: RuleEffect,
+    ) -> Result<bool, DesktopPresenceError> {
+        let peer_device_id = self
+            .status
+            .borrow()
+            .runtime()
+            .and_then(|runtime| runtime.peer_device_id())
+            .ok_or(DesktopPresenceError::PeerUnavailable)?;
+        let store = LinuxPolicyStore::from_environment()?;
+        let mut policy = match store.load().await {
+            Ok(policy) => policy,
+            Err(error) => {
+                let _ = self.agent.fail_closed_policy().await;
+                return Err(error.into());
+            }
+        };
+        let expected_revision = policy.revision();
+        if expected_revision != self.agent.permission_snapshot().policy_revision() {
+            let _ = self.agent.fail_closed_policy().await;
+            return Err(DesktopPresenceError::PolicyOutOfSync);
+        }
+        if !policy.set_rule_effect(peer_device_id, capability_id, operation, effect)? {
+            return Ok(false);
+        }
+
+        match store.commit(expected_revision, &policy).await {
+            Ok(revision) if revision == policy.revision() => {}
+            Ok(_) => {
+                let _ = self.agent.fail_closed_policy().await;
+                return Err(DesktopPresenceError::PolicyOutOfSync);
+            }
+            Err(error) => {
+                match store.load().await {
+                    Ok(durable) if durable.revision() == expected_revision => {
+                        return Err(error.into());
+                    }
+                    Ok(durable) if durable == policy => {
+                        self.agent.replace_policy_and_wait(durable).await?;
+                        return Ok(true);
+                    }
+                    Ok(_) | Err(_) => {
+                        let _ = self.agent.fail_closed_policy().await;
+                    }
+                }
+                return Err(error.into());
+            }
+        }
+
+        self.agent.replace_policy_and_wait(policy).await?;
+        Ok(true)
+    }
+
     fn send_control(&self, control: DiscoveryControl) -> Result<(), DesktopPresenceError> {
         self.control_tx
             .try_send(control)
@@ -109,9 +166,12 @@ impl Drop for DesktopProductPresenceController {
 pub enum DesktopPresenceError {
     IdentityStore(LinuxIdentityStoreError),
     PolicyStore(LinuxPolicyStoreError),
+    Policy(PolicyError),
     ProductIdentity(ProductIdentityError),
     Agent(PresenceAgentError),
     Discovery(LinuxTrustedSessionDiscoveryError),
+    PeerUnavailable,
+    PolicyOutOfSync,
     Control,
     Thread,
 }
@@ -121,9 +181,14 @@ impl fmt::Display for DesktopPresenceError {
         match self {
             Self::IdentityStore(error) => fmt::Display::fmt(error, formatter),
             Self::PolicyStore(error) => fmt::Display::fmt(error, formatter),
+            Self::Policy(_) => formatter.write_str("desktop policy mutation failed"),
             Self::ProductIdentity(error) => fmt::Display::fmt(error, formatter),
             Self::Agent(error) => fmt::Display::fmt(error, formatter),
             Self::Discovery(error) => fmt::Display::fmt(error, formatter),
+            Self::PeerUnavailable => formatter.write_str("desktop permission peer is unavailable"),
+            Self::PolicyOutOfSync => {
+                formatter.write_str("desktop active policy does not match durable policy")
+            }
             Self::Control => formatter.write_str("desktop presence control queue is unavailable"),
             Self::Thread => formatter.write_str("desktop presence supervisor could not start"),
         }
@@ -141,6 +206,12 @@ impl From<LinuxIdentityStoreError> for DesktopPresenceError {
 impl From<LinuxPolicyStoreError> for DesktopPresenceError {
     fn from(error: LinuxPolicyStoreError) -> Self {
         Self::PolicyStore(error)
+    }
+}
+
+impl From<PolicyError> for DesktopPresenceError {
+    fn from(error: PolicyError) -> Self {
+        Self::Policy(error)
     }
 }
 
