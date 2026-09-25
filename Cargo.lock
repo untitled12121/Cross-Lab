@@ -1824,6 +1824,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "crosslab-policy-store"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "crosslab-identity",
+ "crosslab-policy",
+]
+
+[[package]]
 name = "crosslab-protocol"
 version = "0.1.0"
 dependencies = [

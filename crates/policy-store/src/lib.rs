@@ -1,10 +1,7 @@
 //! Platform-neutral durable owner-policy snapshot/currentness contract.
 
 use core::fmt;
-use std::{
-    collections::BTreeSet,
-    sync::Mutex,
-};
+use std::{collections::BTreeSet, sync::Mutex};
 
 use crosslab_identity::DeviceId;
 use crosslab_policy::{
@@ -261,7 +258,7 @@ pub fn decode_policy_snapshot(encoded: &[u8]) -> Result<PolicyState, PolicyStore
         return Err(PolicyStoreError::UnsupportedSnapshotSchema);
     }
     let revision = reader.u64()?;
-    let rule_count = usize::try_from(reader.u32()?).map_err(|_| PolicyStoreError::TooManyRules)?;
+    let rule_count = reader.u32()? as usize;
     if rule_count > MAX_POLICY_RULES {
         return Err(PolicyStoreError::TooManyRules);
     }
