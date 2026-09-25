@@ -8,8 +8,11 @@ use crosslab_agent::{
 use crosslab_identity_store::{ProductIdentityError, ProductIdentityState};
 use tokio::sync::{mpsc, watch};
 
-use crate::features::identity_store::{
-    LinuxEd25519Signer, LinuxIdentityStore, LinuxIdentityStoreError, LinuxSigningSlot,
+use crate::features::{
+    identity_store::{
+        LinuxEd25519Signer, LinuxIdentityStore, LinuxIdentityStoreError, LinuxSigningSlot,
+    },
+    policy_store::{LinuxPolicyStore, LinuxPolicyStoreError},
 };
 
 use super::{
@@ -38,8 +41,13 @@ impl DesktopProductPresenceController {
             return Ok(None);
         }
 
+        let policy = LinuxPolicyStore::from_environment()?.load().await?;
         let signer = LinuxEd25519Signer::load_required(LinuxSigningSlot::LocalDevice).await?;
-        let agent = Arc::new(TrustedPresenceAgent::spawn(identity, Arc::new(signer))?);
+        let agent = Arc::new(TrustedPresenceAgent::spawn_with_policy(
+            identity,
+            Arc::new(signer),
+            policy,
+        )?);
         let status = agent.subscribe_status();
         let discovery_agent = Arc::clone(&agent);
         let (control_tx, control_rx) = mpsc::channel(CONTROL_CAPACITY);
@@ -100,6 +108,7 @@ impl Drop for DesktopProductPresenceController {
 #[derive(Debug)]
 pub enum DesktopPresenceError {
     IdentityStore(LinuxIdentityStoreError),
+    PolicyStore(LinuxPolicyStoreError),
     ProductIdentity(ProductIdentityError),
     Agent(PresenceAgentError),
     Discovery(LinuxTrustedSessionDiscoveryError),
@@ -111,6 +120,7 @@ impl fmt::Display for DesktopPresenceError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::IdentityStore(error) => fmt::Display::fmt(error, formatter),
+            Self::PolicyStore(error) => fmt::Display::fmt(error, formatter),
             Self::ProductIdentity(error) => fmt::Display::fmt(error, formatter),
             Self::Agent(error) => fmt::Display::fmt(error, formatter),
             Self::Discovery(error) => fmt::Display::fmt(error, formatter),
@@ -125,6 +135,12 @@ impl std::error::Error for DesktopPresenceError {}
 impl From<LinuxIdentityStoreError> for DesktopPresenceError {
     fn from(error: LinuxIdentityStoreError) -> Self {
         Self::IdentityStore(error)
+    }
+}
+
+impl From<LinuxPolicyStoreError> for DesktopPresenceError {
+    fn from(error: LinuxPolicyStoreError) -> Self {
+        Self::PolicyStore(error)
     }
 }
 

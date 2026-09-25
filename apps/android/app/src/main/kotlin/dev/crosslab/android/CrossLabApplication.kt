@@ -18,6 +18,7 @@ import dev.crosslab.android.features.identity.AndroidProductIdentityRepository
 import dev.crosslab.android.features.identity.AndroidSigningSlot
 import dev.crosslab.android.features.devices.RuntimeController
 import dev.crosslab.android.features.pairing.PairingJoinerController
+import dev.crosslab.android.features.permissions.AndroidPolicyStore
 
 class CrossLabApplication : Application(), DefaultLifecycleObserver {
     lateinit var runtimeController: RuntimeController
@@ -30,6 +31,9 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
         private set
 
     lateinit var identityRepository: AndroidProductIdentityRepository
+        private set
+
+    lateinit var policyStore: AndroidPolicyStore
         private set
 
     lateinit var pairingController: PairingJoinerController
@@ -51,6 +55,7 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
     override fun onCreate() {
         super<Application>.onCreate()
         identityStore = AndroidIdentityStore(this)
+        policyStore = AndroidPolicyStore(this)
         localDeviceSigner = AndroidEd25519Signer(this, AndroidSigningSlot.LOCAL_DEVICE)
         identityRepository =
             AndroidProductIdentityRepository(
@@ -66,7 +71,7 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
                 if (developmentProvisioning != null) {
                     MobileRuntimePort(developmentProvisioning)
                 } else {
-                    ProductPresencePort(this, identityRepository)
+                    ProductPresencePort(this, identityRepository, policyStore)
                 },
             )
         pairingController =

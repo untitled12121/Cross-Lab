@@ -11,6 +11,7 @@ mod network;
 mod pairing;
 mod pairing_network;
 mod pairing_persistence;
+mod policy_store;
 mod presence;
 mod product_identity;
 mod runtime;
@@ -27,6 +28,7 @@ pub use pairing::{
 };
 pub use pairing_network::{MobileProductPairingJoinerSession, MobileProductPairingNetworkError};
 pub use pairing_persistence::{MobileProductPairingCommit, MobileProductPairingJoinerCompletion};
+pub use policy_store::MobilePolicyStoreError;
 pub use presence::{
     MobilePermissionEffect, MobilePermissionRule, MobilePermissionSnapshot,
     MobilePresenceDiscovery, MobilePresenceError, MobilePresencePhase, MobilePresenceSnapshot,

@@ -21,6 +21,7 @@ crosslab-crypto = { path = "../crypto" }
 crosslab-identity = { path = "../identity" }
 crosslab-identity-store = { path = "../identity-store" }
 crosslab-policy = { path = "../policy" }
+crosslab-policy-store = { path = "../policy-store" }
 crosslab-protocol = { path = "../protocol" }
 crosslab-runtime = { path = "../runtime" }
 crosslab-transport-quic = { path = "../../transports/quic" }
