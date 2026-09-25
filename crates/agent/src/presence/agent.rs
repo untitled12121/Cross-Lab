@@ -172,7 +172,7 @@ impl TrustedPresenceAgent {
     }
 
     pub fn replace_policy(&self, policy: PolicyState) -> Result<(), PresenceAgentError> {
-        if policy.revision() <= self.permissions.borrow().policy_revision() {
+        if policy.revision() <= self.policy_tx.borrow().revision() {
             return Err(PresenceAgentError::StalePolicy);
         }
         self.policy_tx
@@ -201,9 +201,9 @@ impl TrustedPresenceAgent {
 
     pub async fn fail_closed_policy(&self) -> Result<(), PresenceAgentError> {
         let revision = self
-            .permissions
+            .policy_tx
             .borrow()
-            .policy_revision()
+            .revision()
             .checked_add(1)
             .ok_or(PresenceAgentError::PolicyRevisionExhausted)?;
         let policy = PolicyState::from_snapshot(revision, std::iter::empty())
