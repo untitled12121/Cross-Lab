@@ -121,7 +121,7 @@ Phase 3 adaptive networking does not begin until Phase 2 is complete.
 
 ## Exact Next Task
 
-1. require exact-head Rust + Android CI and Fuzz Smoke to pass for the `phase2-permission-edits` persist-before-apply milestone;
+1. require exact-head full Rust + Android CI to pass for the `phase2-permission-edits` persist-before-apply milestone; Fuzz Smoke remains path-gated and is unchanged by this slice;
 2. merge the permission-edit slice once green, preserving exact revision CAS, durable-state recovery, and fail-closed active policy on indeterminate storage/apply failure;
 3. then implement the shared text clipboard capability runtime, Linux GPUI adapter/UI, and Android ClipboardManager adapter/UI under accepted ADR-0018;
 4. keep policy loaded before every trusted-session runtime and never fall back to revision 0 after committed-state corruption;
