@@ -154,12 +154,22 @@ impl LinuxPolicyStore {
 
     async fn verify_anchor(&self, anchor: PolicyStoreAnchor) -> Result<(), LinuxPolicyStoreError> {
         let keyring = Keyring::new().await?;
-        let revision = anchor.revision().to_string();
-        let attributes = [APP_ATTRIBUTE, ANCHOR_KIND, ("revision", revision.as_str())];
-        let items = keyring.search_items(&attributes).await?;
-        let item = items
-            .first()
-            .ok_or(LinuxPolicyStoreError::CurrentnessMissing)?;
+        let items = keyring.search_items(&[APP_ATTRIBUTE, ANCHOR_KIND]).await?;
+        let [item] = items.as_slice() else {
+            return Err(if items.is_empty() {
+                LinuxPolicyStoreError::CurrentnessMissing
+            } else {
+                LinuxPolicyStoreError::CurrentnessMismatch
+            });
+        };
+        let attributes = item.attributes().await?;
+        let revision = attributes
+            .get("revision")
+            .and_then(|value| value.parse::<u64>().ok())
+            .ok_or(LinuxPolicyStoreError::CurrentnessMismatch)?;
+        if revision != anchor.revision() {
+            return Err(LinuxPolicyStoreError::CurrentnessMismatch);
+        }
         let secret = item.secret().await?;
         if secret.as_bytes() != anchor.protected_digest() {
             return Err(LinuxPolicyStoreError::CurrentnessMismatch);

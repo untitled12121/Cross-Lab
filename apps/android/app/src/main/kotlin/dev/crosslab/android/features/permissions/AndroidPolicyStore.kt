@@ -98,6 +98,10 @@ class AndroidPolicyStore(
         val bundle = PolicyStoreBundle.decode(stateFile.readFully())
         val revision = bundle.anchorRevision()
         val alias = anchorAlias(revision)
+        val aliases = anchorAliases()
+        if (aliases.size != 1 || aliases.single() != alias) {
+            throw PolicyStoreUnavailable("policy currentness key set is inconsistent")
+        }
         val key =
             keyStore.getKey(alias, null) as? SecretKey
                 ?: throw PolicyStoreUnavailable("policy currentness key is missing")
@@ -111,8 +115,10 @@ class AndroidPolicyStore(
         return bundle
     }
 
-    private fun hasAnchorKeys(): Boolean =
-        keyStore.aliases().toList().any { it.startsWith(ANCHOR_ALIAS_PREFIX) }
+    private fun hasAnchorKeys(): Boolean = anchorAliases().isNotEmpty()
+
+    private fun anchorAliases(): List<String> =
+        keyStore.aliases().toList().filter { it.startsWith(ANCHOR_ALIAS_PREFIX) }
 
     private fun createAnchorKey(alias: String): SecretKey {
         val generator =
@@ -147,9 +153,7 @@ class AndroidPolicyStore(
                 alias.startsWith(ANCHOR_ALIAS_PREFIX) &&
                     alias != anchorAlias(currentRevision)
             }
-            .forEach { alias ->
-                runCatching { keyStore.deleteEntry(alias) }
-            }
+            .forEach(keyStore::deleteEntry)
     }
 
     private fun anchorAlias(revision: ULong): String = "$ANCHOR_ALIAS_PREFIX$revision"
