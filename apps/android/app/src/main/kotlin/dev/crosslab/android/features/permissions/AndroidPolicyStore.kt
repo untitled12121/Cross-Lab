@@ -165,7 +165,7 @@ class PolicyStoreUnavailable(
     message: String,
 ) : IllegalStateException(message)
 
-internal data class PolicyStoreBundle(
+data class PolicyStoreBundle(
     val envelope: ByteArray,
     val anchor: ByteArray,
     val anchorMac: ByteArray,
