@@ -147,6 +147,7 @@ pub enum PresenceAgentError {
     Thread,
     InvalidRoute,
     StalePolicy,
+    PolicyRevisionExhausted,
     CommandQueueFull,
     Closed,
 }
@@ -161,6 +162,7 @@ impl fmt::Display for PresenceAgentError {
             Self::Thread => "trusted presence agent could not start",
             Self::InvalidRoute => "trusted presence route is invalid",
             Self::StalePolicy => "trusted presence policy revision is stale",
+            Self::PolicyRevisionExhausted => "trusted presence policy revision is exhausted",
             Self::CommandQueueFull => "trusted presence command queue is full",
             Self::Closed => "trusted presence agent is closed",
         })

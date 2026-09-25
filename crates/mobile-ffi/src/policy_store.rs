@@ -1,7 +1,18 @@
-use crosslab_policy::PolicyState;
+use crosslab_identity::DeviceId;
+use crosslab_policy::{CapabilityId, OperationName, PolicyError, PolicyState, RuleEffect};
 use crosslab_policy_store::{
-    PolicyStoreAnchor, PolicyStoreEnvelope, PolicyStoreError, validate_loaded,
+    PolicyStoreAnchor, PolicyStoreEnvelope, PolicyStoreError, prepare_commit, validate_loaded,
 };
+
+use crate::presence::MobilePermissionEffect;
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct MobilePolicyCommit {
+    pub previous_revision: Option<u64>,
+    pub revision: u64,
+    pub envelope: Vec<u8>,
+    pub anchor: Vec<u8>,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Error)]
 pub enum MobilePolicyStoreError {
@@ -14,6 +25,8 @@ pub enum MobilePolicyStoreError {
     SnapshotTooLarge,
     TooManyRules,
     InvalidIdentifier,
+    InvalidDeviceId,
+    PolicyMutation,
     DuplicateRule,
     DuplicateRuleId,
     RevisionMismatch,
@@ -34,6 +47,8 @@ impl core::fmt::Display for MobilePolicyStoreError {
             Self::SnapshotTooLarge => "policy snapshot exceeds its size bound",
             Self::TooManyRules => "policy snapshot exceeds its rule bound",
             Self::InvalidIdentifier => "policy snapshot contains an invalid identifier",
+            Self::InvalidDeviceId => "policy edit contains an invalid device identifier",
+            Self::PolicyMutation => "policy edit could not advance local policy state",
             Self::DuplicateRule => "policy snapshot contains a duplicate exact rule",
             Self::DuplicateRuleId => "policy snapshot contains a duplicate rule identifier",
             Self::RevisionMismatch => "policy snapshot and envelope revisions disagree",
@@ -61,6 +76,86 @@ pub fn policy_store_validate(
     anchor: Vec<u8>,
 ) -> Result<u64, MobilePolicyStoreError> {
     Ok(decode_policy_store(&envelope, &anchor)?.revision())
+}
+
+#[uniffi::export]
+pub fn policy_store_prepare_rule_effect(
+    current_envelope: Option<Vec<u8>>,
+    current_anchor: Option<Vec<u8>>,
+    source_device_id: String,
+    capability_id: String,
+    operation: String,
+    effect: MobilePermissionEffect,
+) -> Result<Option<MobilePolicyCommit>, MobilePolicyStoreError> {
+    let (current, mut policy) = decode_current(current_envelope, current_anchor)?;
+    let source_device_id = parse_device_id(&source_device_id)?;
+    let capability_id =
+        CapabilityId::parse(&capability_id).map_err(|_| MobilePolicyStoreError::InvalidIdentifier)?;
+    let operation =
+        OperationName::parse(&operation).map_err(|_| MobilePolicyStoreError::InvalidIdentifier)?;
+    let effect = match effect {
+        MobilePermissionEffect::Allow => RuleEffect::Allow,
+        MobilePermissionEffect::Deny => RuleEffect::Deny,
+        MobilePermissionEffect::Ask => RuleEffect::Ask,
+    };
+
+    if !policy.set_rule_effect(source_device_id, capability_id, operation, effect)? {
+        return Ok(None);
+    }
+
+    let commit = prepare_commit(current.as_ref(), &policy)?;
+    let (previous_revision, envelope, anchor) = commit.into_parts();
+    Ok(Some(MobilePolicyCommit {
+        previous_revision,
+        revision: envelope.revision(),
+        envelope: envelope.encode(),
+        anchor: anchor.encode().to_vec(),
+    }))
+}
+
+fn decode_current(
+    envelope: Option<Vec<u8>>,
+    anchor: Option<Vec<u8>>,
+) -> Result<(Option<PolicyStoreEnvelope>, PolicyState), MobilePolicyStoreError> {
+    match (envelope, anchor) {
+        (None, None) => Ok((None, PolicyState::new())),
+        (Some(envelope), Some(anchor)) => {
+            let envelope = PolicyStoreEnvelope::decode(&envelope)?;
+            let anchor = PolicyStoreAnchor::decode(&anchor)?;
+            let policy = validate_loaded(&envelope, anchor)?;
+            Ok((Some(envelope), policy))
+        }
+        _ => Err(MobilePolicyStoreError::StaleOrMixedState),
+    }
+}
+
+fn parse_device_id(value: &str) -> Result<DeviceId, MobilePolicyStoreError> {
+    if value.len() != 64 {
+        return Err(MobilePolicyStoreError::InvalidDeviceId);
+    }
+
+    let mut bytes = [0_u8; 32];
+    for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
+        let high = hex_nibble(pair[0]).ok_or(MobilePolicyStoreError::InvalidDeviceId)?;
+        let low = hex_nibble(pair[1]).ok_or(MobilePolicyStoreError::InvalidDeviceId)?;
+        bytes[index] = (high << 4) | low;
+    }
+    Ok(DeviceId::from_bytes(bytes))
+}
+
+const fn hex_nibble(value: u8) -> Option<u8> {
+    match value {
+        b'0'..=b'9' => Some(value - b'0'),
+        b'a'..=b'f' => Some(value - b'a' + 10),
+        b'A'..=b'F' => Some(value - b'A' + 10),
+        _ => None,
+    }
+}
+
+impl From<PolicyError> for MobilePolicyStoreError {
+    fn from(_: PolicyError) -> Self {
+        Self::PolicyMutation
+    }
 }
 
 impl From<PolicyStoreError> for MobilePolicyStoreError {
@@ -92,6 +187,53 @@ mod tests {
     use crosslab_policy_store::prepare_commit;
 
     use super::*;
+
+    #[test]
+    fn mobile_rule_effect_commit_advances_and_noops_exact_policy() {
+        let source_device_id = "09".repeat(32);
+        let first = policy_store_prepare_rule_effect(
+            None,
+            None,
+            source_device_id.clone(),
+            "clipboard.read".to_owned(),
+            "get".to_owned(),
+            MobilePermissionEffect::Allow,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(first.previous_revision, None);
+        assert_eq!(first.revision, 1);
+        assert_eq!(
+            policy_store_validate(first.envelope.clone(), first.anchor.clone()).unwrap(),
+            1
+        );
+
+        assert!(
+            policy_store_prepare_rule_effect(
+                Some(first.envelope.clone()),
+                Some(first.anchor.clone()),
+                source_device_id.clone(),
+                "clipboard.read".to_owned(),
+                "get".to_owned(),
+                MobilePermissionEffect::Allow,
+            )
+            .unwrap()
+            .is_none()
+        );
+
+        let second = policy_store_prepare_rule_effect(
+            Some(first.envelope),
+            Some(first.anchor),
+            source_device_id,
+            "clipboard.read".to_owned(),
+            "get".to_owned(),
+            MobilePermissionEffect::Deny,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(second.previous_revision, Some(1));
+        assert_eq!(second.revision, 2);
+    }
 
     #[test]
     fn mobile_validation_restores_exact_policy_revision() {

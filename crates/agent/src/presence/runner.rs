@@ -73,7 +73,6 @@ pub(super) enum AgentCommand {
     NetworkAvailable,
     Disconnect,
     Reconnect,
-    ReplacePolicy(PolicyState),
     Stop,
 }
 
@@ -105,6 +104,8 @@ struct ConnectResult {
 
 enum ConnectedEvent {
     Command(Option<AgentCommand>),
+    PolicyChanged,
+    PolicyClosed,
     Runtime(NodeEvent),
     StatusChanged,
     TransportClosed,
@@ -115,6 +116,7 @@ pub(super) async fn run_agent(
     security: Arc<AgentSecurity>,
     discovery_instance: Arc<RwLock<String>>,
     mut policy: PolicyState,
+    mut policy_rx: watch::Receiver<PolicyState>,
     mut command_rx: mpsc::Receiver<AgentCommand>,
     status_tx: watch::Sender<PresenceSnapshot>,
     permissions_tx: watch::Sender<PermissionSnapshot>,
@@ -148,6 +150,13 @@ pub(super) async fn run_agent(
                 let connection = connected.as_mut().expect("connected state checked above");
                 tokio::select! {
                     command = command_rx.recv() => ConnectedEvent::Command(command),
+                    changed = policy_rx.changed() => {
+                        if changed.is_ok() {
+                            ConnectedEvent::PolicyChanged
+                        } else {
+                            ConnectedEvent::PolicyClosed
+                        }
+                    }
                     changed = connection.status.changed() => {
                         if changed.is_ok() {
                             ConnectedEvent::StatusChanged
@@ -171,8 +180,6 @@ pub(super) async fn run_agent(
                         &mut connected,
                         &mut network_available,
                         &mut auto_connect,
-                        &mut policy,
-                        &permissions_tx,
                         &status_tx,
                     )
                     .await
@@ -180,6 +187,21 @@ pub(super) async fn run_agent(
                         server.close();
                         return;
                     }
+                }
+                ConnectedEvent::PolicyChanged => {
+                    apply_policy_update(
+                        &mut policy_rx,
+                        &mut policy,
+                        &mut connected,
+                        &permissions_tx,
+                        &status_tx,
+                    )
+                    .await;
+                }
+                ConnectedEvent::PolicyClosed => {
+                    stop_connected(connected.take()).await;
+                    server.close();
+                    return;
                 }
                 ConnectedEvent::Runtime(event) => {
                     if matches!(event, NodeEvent::SessionClosed(_)) {
@@ -216,13 +238,25 @@ pub(super) async fn run_agent(
                     &mut connected,
                     &mut network_available,
                     &mut auto_connect,
-                    &mut policy,
-                    &permissions_tx,
                     &status_tx,
                 ).await {
                     server.close();
                     return;
                 }
+            }
+            changed = policy_rx.changed() => {
+                if changed.is_err() {
+                    stop_connected(connected.take()).await;
+                    server.close();
+                    return;
+                }
+                apply_policy_update(
+                    &mut policy_rx,
+                    &mut policy,
+                    &mut connected,
+                    &permissions_tx,
+                    &status_tx,
+                ).await;
             }
             accepted = server.accept_authenticated(&auth, server_timeouts()),
                 if network_available && auto_connect =>
@@ -473,8 +507,6 @@ async fn handle_command(
     connected: &mut Option<ConnectedRuntime>,
     network_available: &mut bool,
     auto_connect: &mut bool,
-    policy: &mut PolicyState,
-    permissions_tx: &watch::Sender<PermissionSnapshot>,
     status_tx: &watch::Sender<PresenceSnapshot>,
 ) -> bool {
     match command {
@@ -510,30 +542,37 @@ async fn handle_command(
             publish_waiting(status_tx, connected.as_ref(), *network_available, true);
             false
         }
-        Some(AgentCommand::ReplacePolicy(next)) => {
-            if *policy == next || next.revision() <= policy.revision() {
-                return false;
-            }
-
-            let apply_failed = match connected.as_ref() {
-                Some(connection) => connection.actor.replace_policy(next.clone()).await.is_err(),
-                None => false,
-            };
-            if apply_failed {
-                stop_connected(connected.take()).await;
-            }
-
-            *policy = next;
-            permissions_tx.send_replace(PermissionSnapshot::from_policy(policy));
-            if apply_failed {
-                publish_failure(status_tx, None);
-            }
-            false
-        }
         Some(AgentCommand::Stop) | None => {
             stop_connected(connected.take()).await;
             true
         }
+    }
+}
+
+async fn apply_policy_update(
+    policy_rx: &mut watch::Receiver<PolicyState>,
+    policy: &mut PolicyState,
+    connected: &mut Option<ConnectedRuntime>,
+    permissions_tx: &watch::Sender<PermissionSnapshot>,
+    status_tx: &watch::Sender<PresenceSnapshot>,
+) {
+    let next = policy_rx.borrow_and_update().clone();
+    if *policy == next || next.revision() <= policy.revision() {
+        return;
+    }
+
+    let apply_failed = match connected.as_ref() {
+        Some(connection) => connection.actor.replace_policy(next.clone()).await.is_err(),
+        None => false,
+    };
+    if apply_failed {
+        stop_connected(connected.take()).await;
+    }
+
+    *policy = next;
+    permissions_tx.send_replace(PermissionSnapshot::from_policy(policy));
+    if apply_failed {
+        publish_failure(status_tx, None);
     }
 }
 
