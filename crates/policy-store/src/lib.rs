@@ -5,7 +5,8 @@ use std::{collections::BTreeSet, sync::Mutex};
 
 use crosslab_identity::DeviceId;
 use crosslab_policy::{
-    CapabilityId, Constraint, Obligation, OperationName, PolicyRule, PolicyState, RuleEffect, RuleId,
+    CapabilityId, Constraint, Obligation, OperationName, PolicyRule, PolicyState, RuleEffect,
+    RuleId,
 };
 
 pub const POLICY_STORE_SCHEMA_VERSION: u16 = 1;
@@ -65,7 +66,8 @@ impl PolicyStoreEnvelope {
     }
 
     pub fn encode(&self) -> Vec<u8> {
-        let payload_len = u64::try_from(self.payload.len()).expect("policy payload length fits u64");
+        let payload_len =
+            u64::try_from(self.payload.len()).expect("policy payload length fits u64");
         let mut encoded = Vec::with_capacity(ENVELOPE_HEADER_LEN + self.payload.len());
         encoded.extend_from_slice(&self.schema_version.to_be_bytes());
         encoded.extend_from_slice(&self.revision.to_be_bytes());
@@ -262,6 +264,9 @@ pub fn decode_policy_snapshot(encoded: &[u8]) -> Result<PolicyState, PolicyStore
     if rule_count > MAX_POLICY_RULES {
         return Err(PolicyStoreError::TooManyRules);
     }
+    if revision < rule_count as u64 {
+        return Err(PolicyStoreError::MalformedSnapshot);
+    }
 
     let mut rules = Vec::with_capacity(rule_count);
     let mut rule_ids = BTreeSet::new();
@@ -271,10 +276,10 @@ pub fn decode_policy_snapshot(encoded: &[u8]) -> Result<PolicyState, PolicyStore
             return Err(PolicyStoreError::DuplicateRuleId);
         }
         let source_device_id = DeviceId::from_bytes(reader.array()?);
-        let capability =
-            CapabilityId::parse(reader.string()?).map_err(|_| PolicyStoreError::InvalidIdentifier)?;
-        let operation =
-            OperationName::parse(reader.string()?).map_err(|_| PolicyStoreError::InvalidIdentifier)?;
+        let capability = CapabilityId::parse(reader.string()?)
+            .map_err(|_| PolicyStoreError::InvalidIdentifier)?;
+        let operation = OperationName::parse(reader.string()?)
+            .map_err(|_| PolicyStoreError::InvalidIdentifier)?;
 
         let effect = match reader.u8()? {
             1 => RuleEffect::Allow,
@@ -390,7 +395,10 @@ struct MemoryState {
 
 impl MemoryPolicyStore {
     pub fn load(&self) -> Result<PolicyState, PolicyStoreError> {
-        let state = self.state.lock().expect("memory policy-store lock poisoned");
+        let state = self
+            .state
+            .lock()
+            .expect("memory policy-store lock poisoned");
         match (&state.envelope, state.anchor) {
             (None, None) => Ok(PolicyState::new()),
             (Some(envelope), Some(anchor)) => validate_loaded(envelope, anchor),
@@ -403,7 +411,10 @@ impl MemoryPolicyStore {
         expected_revision: u64,
         policy: &PolicyState,
     ) -> Result<PolicyStoreEnvelope, PolicyStoreError> {
-        let mut state = self.state.lock().expect("memory policy-store lock poisoned");
+        let mut state = self
+            .state
+            .lock()
+            .expect("memory policy-store lock poisoned");
         let current_revision = match (&state.envelope, state.anchor) {
             (None, None) => 0,
             (Some(envelope), Some(anchor)) => validate_loaded(envelope, anchor)?.revision(),
