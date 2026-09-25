@@ -10,7 +10,7 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 
 ## Canonical Baseline
 
-- Current `main` after PR #57: `7e5985f0f8d8ce4546396da8aa4288fb809b508b`.
+- Current `main` after PR #58: `5b9f271a39c43fb06960a7c3597cd20a4ccdb944`.
 - PR #49 — Linux Add Device QR invitation UI + Android CameraX/ML Kit scanner: merged as `445bbf32178dff94f339fc1ae80447967f5da215`; exact-head CI `35533414673` green on `7d3176ffd4387d3e29982ae5fe641249d6d33445`.
 - PR #50 — shared product pairing coordinator + durable reciprocal trust persistence: merged as `3af825e6f78bef4512168f587f452c1b0267b6a7`; exact-head CI `35567548228` and Fuzz Smoke `35567548208` green on `ec59f99f7c09898aa2533d8b40bd4e980fa2b022`.
 - PR #51 — ADR-0016 LAN discovery profile + versioned product-pairing wire + provisional Quinn pairing channel: merged as `cf2add350ffa60056d74ac57b0a187a0297d8777`; exact-head CI `35593397861` and Fuzz Smoke `35593397844` green on `2702cc0c926cf044c65aef0376f573aaedae8c6f`.
@@ -23,8 +23,9 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 - PR #55 — trusted-session platform presence lifecycle: merged as `6abb3984a36be276aa439e9e1dabb42ffaa4a8b3`; exact-head `91a96966a55c52b6b72c7e5f9b8dc686f8cf0211` passed Rust + Android CI `35859170053`.
 - PR #56 — per-device permission/capability-control foundation: merged as `d707b330b5d1008e8020267faa3755ad84920591`; exact head `6565efcdaa7ffc533bbeba6d1b16b5ab8c2d7196` passed full CI `35942887247` and Fuzz Smoke `35942887292`.
 - PR #57 — clipboard event-driven control preparation: merged as `7e5985f0f8d8ce4546396da8aa4288fb809b508b`; exact head `f8190dfcf70dc70c94c5f15aae86d907ce4b7a15` passed full Rust + Android CI `35972369409`.
-- Active Phase 2 PR: #58 on `phase2-clipboard-implementation`.
-- ADR-0018 (text clipboard capability profile v1) and ADR-0019 (platform owner-policy store boundary) were owner-accepted on 2026-09-25. The active milestone is the shared owner-policy store core, followed by Linux/Android protected-currentness adapters before writable permission UI.
+- PR #58 — durable owner-policy persistence: merged as `5b9f271a39c43fb06960a7c3597cd20a4ccdb944`; exact head `04035a036f34dd99391d717e9eb0b12a1506537e` passed full Rust + Android CI `36173154192` and Fuzz Smoke `36173154207`.
+- Active Phase 2 branch: `phase2-permission-edits`.
+- ADR-0018 (text clipboard capability profile v1) and ADR-0019 (platform owner-policy store boundary) were owner-accepted on 2026-09-25. The active milestone is persist-before-apply owner permission editing on the merged durable policy-store boundary.
 
 ## Implemented M10 Product Path
 
@@ -93,7 +94,9 @@ PR #57 clipboard preparation implements:
 - ADR-0018 now fixes the first product clipboard profile: explicit text-only `clipboard.read/get` and `clipboard.write/set`, no automatic background clipboard event in v1;
 - ADR-0019 now fixes a separate rollback/currentness-aware owner-policy store with load-before-session and persist-before-apply ordering.
 
-Owner approval on 2026-09-25 unblocked implementation. PR #58 now contains the shared `crosslab-policy-store` deterministic bounded snapshot/currentness/CAS core and exact `PolicyState` snapshot restoration, plus Linux policy-state/Secret Service currentness and Android AtomicFile/Keystore currentness adapters. Both product presence paths load validated durable policy before constructing the trusted-session agent. Exact-head full CI is pending for the platform-persistence milestone.
+Owner approval on 2026-09-25 unblocked implementation. PR #58 merged the shared `crosslab-policy-store` deterministic bounded snapshot/currentness/CAS core and exact `PolicyState` snapshot restoration, plus Linux policy-state/Secret Service currentness and Android AtomicFile/Keystore currentness adapters. Both product presence paths load validated durable policy before constructing the trusted-session agent. Exact-head Rust + Android CI and Fuzz Smoke passed, including fail-closed rejection of ambiguous multi-anchor currentness state.
+
+The active `phase2-permission-edits` branch moves policy replacement onto a bounded latest-state watch path, adds an explicit in-memory fail-closed policy transition, prepares exact mobile rule-effect commits through Rust FFI, and wires Linux/Android owner edits as persist-before-apply with durable-state recovery checks.
 
 Continue in small verified vertical slices:
 
@@ -118,8 +121,8 @@ Phase 3 adaptive networking does not begin until Phase 2 is complete.
 
 ## Exact Next Task
 
-1. require exact-head Rust + Android CI and Fuzz Smoke to pass for PR #58 owner-policy persistence;
-2. wire owner permission edits through persist-before-apply storage commits and active-policy replacement, preserving exact revision CAS and fail-closed recovery;
+1. require exact-head Rust + Android CI and Fuzz Smoke to pass for the `phase2-permission-edits` persist-before-apply milestone;
+2. merge the permission-edit slice once green, preserving exact revision CAS, durable-state recovery, and fail-closed active policy on indeterminate storage/apply failure;
 3. then implement the shared text clipboard capability runtime, Linux GPUI adapter/UI, and Android ClipboardManager adapter/UI under accepted ADR-0018;
 4. keep policy loaded before every trusted-session runtime and never fall back to revision 0 after committed-state corruption;
 5. preserve exact default deny, bounded request state, reconnect/policy invalidation, and no plaintext clipboard logging/history;
@@ -130,7 +133,7 @@ Phase 3 adaptive networking does not begin until Phase 2 is complete.
 ## Resume Procedure
 
 1. verify `main`, active feature/evidence branches, open PRs, exact-head CI, and recent commits;
-2. read Master Architecture revision 2.8, this file, active plans, and relevant ADRs/specifications;
+2. read Master Architecture revision 2.9, this file, active plans, and relevant ADRs/specifications;
 3. inspect existing code and relevant uploaded research before adding adapters/dependencies;
 4. reuse existing pairing/session/policy/currentness boundaries rather than duplicating security semantics;
 5. work in small verifiable milestones, run full relevant gates, commit/push, and update this file;
