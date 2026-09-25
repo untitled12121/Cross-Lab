@@ -134,11 +134,13 @@ fn parse_device_id(value: &str) -> Result<DeviceId, MobilePolicyStoreError> {
         return Err(MobilePolicyStoreError::InvalidDeviceId);
     }
 
+    let encoded = value.as_bytes();
     let mut bytes = [0_u8; 32];
-    for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
-        let high = hex_nibble(pair[0]).ok_or(MobilePolicyStoreError::InvalidDeviceId)?;
-        let low = hex_nibble(pair[1]).ok_or(MobilePolicyStoreError::InvalidDeviceId)?;
-        bytes[index] = (high << 4) | low;
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        let offset = index * 2;
+        let high = hex_nibble(encoded[offset]).ok_or(MobilePolicyStoreError::InvalidDeviceId)?;
+        let low = hex_nibble(encoded[offset + 1]).ok_or(MobilePolicyStoreError::InvalidDeviceId)?;
+        *byte = (high << 4) | low;
     }
     Ok(DeviceId::from_bytes(bytes))
 }
