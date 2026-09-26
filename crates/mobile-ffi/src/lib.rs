@@ -19,8 +19,8 @@ mod runtime;
 mod session_discovery;
 
 pub use clipboard::{
-    MobileClipboardError, MobileClipboardPlatformFailure, MobileClipboardRequest,
-    MobileClipboardRequestKind,
+    MobileClipboardError, MobileClipboardOperationResult, MobileClipboardOutcome,
+    MobileClipboardPlatformFailure, MobileClipboardRequest, MobileClipboardRequestKind,
 };
 pub use dto::{
     MobileConnectivityState, MobileLifecycleState, MobileNetworkClass, MobileProtocolVersion,
