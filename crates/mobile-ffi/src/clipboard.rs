@@ -61,19 +61,14 @@ impl MobileClipboardRequest {
     }
 
     pub fn take_text(&self) -> Result<Option<String>, MobileClipboardError> {
-        self.text
+        let mut text = self
+            .text
             .lock()
-            .map_err(|_| MobileClipboardError::StateUnavailable)?
-            .take()
-            .ok_or(MobileClipboardError::PayloadUnavailable)
-            .map(Some)
-            .or_else(|error| {
-                if self.kind == MobileClipboardRequestKind::Read {
-                    Ok(None)
-                } else {
-                    Err(error)
-                }
-            })
+            .map_err(|_| MobileClipboardError::StateUnavailable)?;
+        match self.kind {
+            MobileClipboardRequestKind::Read => Ok(None),
+            MobileClipboardRequestKind::Write => Ok(text.take()),
+        }
     }
 }
 
@@ -198,17 +193,8 @@ impl MobileClipboardOperationResult {
     pub fn take_text(&self) -> Result<Option<String>, MobileClipboardError> {
         self.text
             .lock()
-            .map_err(|_| MobileClipboardError::StateUnavailable)?
-            .take()
-            .ok_or(MobileClipboardError::PayloadUnavailable)
-            .map(Some)
-            .or_else(|error| {
-                if self.outcome == MobileClipboardOutcome::Success {
-                    Err(error)
-                } else {
-                    Ok(None)
-                }
-            })
+            .map_err(|_| MobileClipboardError::StateUnavailable)
+            .map(|mut text| text.take())
     }
 }
 
@@ -216,7 +202,6 @@ impl MobileClipboardOperationResult {
 pub enum MobileClipboardError {
     StateUnavailable,
     InvalidRequestId,
-    PayloadUnavailable,
     NotConnected,
     NotNegotiated,
     Oversized,
@@ -237,7 +222,6 @@ impl fmt::Display for MobileClipboardError {
         formatter.write_str(match self {
             Self::StateUnavailable => "clipboard state is unavailable",
             Self::InvalidRequestId => "clipboard request identifier is invalid",
-            Self::PayloadUnavailable => "clipboard request payload is unavailable",
             Self::NotConnected => "clipboard peer is not connected",
             Self::NotNegotiated => "clipboard capability is not negotiated",
             Self::Oversized => "clipboard text exceeds the v1 size limit",
