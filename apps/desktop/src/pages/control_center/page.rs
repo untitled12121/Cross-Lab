@@ -1,23 +1,35 @@
 #[cfg(target_os = "linux")]
+use std::sync::Arc;
+
+#[cfg(target_os = "linux")]
+use crosslab_agent::{ClipboardPlatformError, ClipboardRequest};
+
+#[cfg(target_os = "linux")]
 use crate::features::devices::DesktopProductPresenceController;
 #[cfg(feature = "development-provisioning")]
 use crate::features::devices::TrustDisplay;
 use crate::{
     features::{
         appearance::{active_theme, font_weight},
-        devices::{DesktopRuntimeController, DevicesFeatureState, PresenceDisplay},
+        clipboard::{ClipboardAction, ClipboardFeatureState, ClipboardResult},
+        devices::{
+            ConnectivityDisplay, DesktopRuntimeController, DevicesFeatureState, PresenceDisplay,
+            SessionDisplay,
+        },
         owner::OwnerFeatureState,
         pairing::{DesktopPairingInvitation, DesktopPairingStage, load_existing_product_identity},
     },
     pages::control_center::{
-        _components::{devices_content, owner_content, pairing_invitation_panel},
+        _components::{
+            clipboard_panel, devices_content, owner_content, pairing_invitation_panel,
+        },
         layout::control_center_layout,
     },
 };
 
 use gpui_kit::{
-    Context, InteractiveElement as _, IntoElement, ParentElement as _, Render, Styled as _, Window,
-    base::Button, component::theme::ActiveTheme as _, div, px,
+    ClipboardItem, Context, InteractiveElement as _, IntoElement, ParentElement as _, Render,
+    Styled as _, Window, base::Button, component::theme::ActiveTheme as _, div, px,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,10 +41,11 @@ enum Section {
 pub struct ControlCenterPage {
     section: Section,
     devices: DevicesFeatureState,
+    clipboard: ClipboardFeatureState,
     owner: OwnerFeatureState,
     runtime: DesktopRuntimeController,
     #[cfg(target_os = "linux")]
-    product_presence: Option<DesktopProductPresenceController>,
+    product_presence: Option<Arc<DesktopProductPresenceController>>,
     #[cfg(target_os = "linux")]
     presence_starting: bool,
     pairing_invitation: Option<DesktopPairingInvitation>,
@@ -101,6 +114,7 @@ impl ControlCenterPage {
         let mut page = Self {
             section: Section::Devices,
             devices,
+            clipboard: ClipboardFeatureState::new(),
             owner,
             runtime,
             #[cfg(target_os = "linux")]
@@ -134,6 +148,7 @@ impl ControlCenterPage {
                 Ok(None) => {
                     let _ = this.update(cx, |page, cx| {
                         page.presence_starting = false;
+                        page.clipboard.set_available(false);
                         cx.notify();
                     });
                     return;
@@ -141,6 +156,7 @@ impl ControlCenterPage {
                 Err(error) => {
                     let _ = this.update(cx, |page, cx| {
                         page.presence_starting = false;
+                        page.clipboard.set_available(false);
                         page.notice = Some(error.to_string());
                         cx.notify();
                     });
@@ -148,8 +164,21 @@ impl ControlCenterPage {
                 }
             };
 
+            let controller = Arc::new(controller);
             let mut status = controller.subscribe_status();
             let mut permissions = controller.subscribe_permissions();
+            let mut clipboard_requests = match controller.take_clipboard_requests() {
+                Ok(requests) => requests,
+                Err(error) => {
+                    let _ = this.update(cx, |page, cx| {
+                        page.presence_starting = false;
+                        page.clipboard.set_available(false);
+                        page.notice = Some(error.to_string());
+                        cx.notify();
+                    });
+                    return;
+                }
+            };
             let initial = status.borrow().clone();
             let initial_permissions = permissions.borrow().clone();
             if this
@@ -157,10 +186,11 @@ impl ControlCenterPage {
                     page.presence_starting = false;
                     page.devices.update_presence(&initial);
                     page.devices.update_permissions(&initial_permissions);
+                    page.clipboard.set_available(true);
                     if let Some(runtime) = initial.runtime() {
                         page.owner.update_runtime(runtime);
                     }
-                    page.product_presence = Some(controller);
+                    page.product_presence = Some(Arc::clone(&controller));
                     page.notice = None;
                     cx.notify();
                 })
@@ -202,6 +232,35 @@ impl ControlCenterPage {
                             .is_err()
                         {
                             return;
+                        }
+                    }
+                    request = clipboard_requests.recv() => {
+                        let Some(request) = request else {
+                            return;
+                        };
+                        match request {
+                            ClipboardRequest::Read { request_id } => {
+                                let result = this.update(cx, |_, cx| {
+                                    cx.read_from_clipboard()
+                                        .and_then(|item| item.text())
+                                        .ok_or(ClipboardPlatformError::Unavailable)
+                                });
+                                let Ok(result) = result else {
+                                    return;
+                                };
+                                let _ = controller.complete_clipboard_read(request_id, result).await;
+                            }
+                            ClipboardRequest::Write { request_id, text } => {
+                                if this
+                                    .update(cx, move |_, cx| {
+                                        cx.write_to_clipboard(ClipboardItem::new_string(text));
+                                    })
+                                    .is_err()
+                                {
+                                    return;
+                                }
+                                let _ = controller.complete_clipboard_write(request_id, Ok(())).await;
+                            }
                         }
                     }
                 }
@@ -356,6 +415,73 @@ impl ControlCenterPage {
             Err(error) => error.to_string(),
         });
         cx.notify();
+    }
+
+    #[cfg(target_os = "linux")]
+    fn send_clipboard(&mut self, cx: &mut Context<Self>) {
+        if !self.clipboard.begin(ClipboardAction::Send) {
+            return;
+        }
+        let Some(controller) = self.product_presence.as_ref().map(Arc::clone) else {
+            self.clipboard
+                .finish(ClipboardAction::Send, ClipboardResult::Unavailable);
+            cx.notify();
+            return;
+        };
+        let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
+            self.clipboard
+                .finish(ClipboardAction::Send, ClipboardResult::Unavailable);
+            cx.notify();
+            return;
+        };
+
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            let result = match controller.send_clipboard_text(text).await {
+                Ok(()) => ClipboardResult::Success,
+                Err(error) => error.into(),
+            };
+            let _ = this.update(cx, |page, cx| {
+                page.clipboard.finish(ClipboardAction::Send, result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    #[cfg(target_os = "linux")]
+    fn fetch_clipboard(&mut self, cx: &mut Context<Self>) {
+        if !self.clipboard.begin(ClipboardAction::Fetch) {
+            return;
+        }
+        let Some(controller) = self.product_presence.as_ref().map(Arc::clone) else {
+            self.clipboard
+                .finish(ClipboardAction::Fetch, ClipboardResult::Unavailable);
+            cx.notify();
+            return;
+        };
+
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            match controller.fetch_clipboard_text().await {
+                Ok(text) => {
+                    let _ = this.update(cx, move |page, cx| {
+                        cx.write_to_clipboard(ClipboardItem::new_string(text));
+                        page.clipboard
+                            .finish(ClipboardAction::Fetch, ClipboardResult::Success);
+                        cx.notify();
+                    });
+                }
+                Err(error) => {
+                    let result = ClipboardResult::from(error);
+                    let _ = this.update(cx, |page, cx| {
+                        page.clipboard.finish(ClipboardAction::Fetch, result);
+                        cx.notify();
+                    });
+                }
+            }
+        })
+        .detach();
     }
 
     fn revoke_peer(&mut self, cx: &mut Context<Self>) {
@@ -562,6 +688,80 @@ impl Render for ControlCenterPage {
                 );
         }
 
+        #[cfg(target_os = "linux")]
+        let clipboard_controls = self.devices.current().map(|device| {
+            let send_negotiated = device
+                .capability_ids()
+                .iter()
+                .any(|id| id == "clipboard.write");
+            let fetch_negotiated = device
+                .capability_ids()
+                .iter()
+                .any(|id| id == "clipboard.read");
+            let session_ready = device.connectivity() == ConnectivityDisplay::Connected
+                && device.session() == SessionDisplay::Active;
+            let enabled = self.clipboard.available() && session_ready && !self.clipboard.busy();
+
+            let actions = div()
+                .flex()
+                .items_center()
+                .gap(px(appearance.spacing.sm))
+                .child(
+                    Button::new("clipboard-send")
+                        .accessibility_label("Send local clipboard to this device")
+                        .disabled(!enabled || !send_negotiated)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.send_clipboard(cx);
+                        }))
+                        .h(px(appearance.metrics.control_height_default))
+                        .px(px(appearance.spacing.lg))
+                        .border_1()
+                        .border_color(theme.border)
+                        .bg(theme.secondary)
+                        .text_color(theme.secondary_foreground)
+                        .focus_visible(|style| style.border_color(theme.ring))
+                        .child(if self.clipboard.busy()
+                            && self.clipboard.action() == Some(ClipboardAction::Send)
+                        {
+                            "Sending…"
+                        } else {
+                            "Send clipboard"
+                        }),
+                )
+                .child(
+                    Button::new("clipboard-fetch")
+                        .accessibility_label("Fetch this device clipboard")
+                        .disabled(!enabled || !fetch_negotiated)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.fetch_clipboard(cx);
+                        }))
+                        .h(px(appearance.metrics.control_height_default))
+                        .px(px(appearance.spacing.lg))
+                        .border_1()
+                        .border_color(theme.border)
+                        .bg(theme.secondary)
+                        .text_color(theme.secondary_foreground)
+                        .focus_visible(|style| style.border_color(theme.ring))
+                        .child(if self.clipboard.busy()
+                            && self.clipboard.action() == Some(ClipboardAction::Fetch)
+                        {
+                            "Fetching…"
+                        } else {
+                            "Fetch clipboard"
+                        }),
+                );
+
+            clipboard_panel(
+                device,
+                &self.devices.current_permissions(),
+                &self.clipboard,
+                actions,
+                cx,
+            )
+        });
+        #[cfg(not(target_os = "linux"))]
+        let clipboard_controls = None;
+
         let pairing_panel = self
             .pairing_invitation
             .as_ref()
@@ -572,6 +772,7 @@ impl Render for ControlCenterPage {
                 &self.devices,
                 Some(actions),
                 pairing_panel,
+                clipboard_controls,
                 self.notice.as_deref(),
                 cx,
             ),
