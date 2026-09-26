@@ -293,6 +293,7 @@ pub(crate) async fn run_uni_acceptor(
     connection: Connection,
     shared: Arc<SharedState>,
     inbound: mpsc::Sender<IncomingUniStream>,
+    stream_ready: watch::Sender<u64>,
     incoming_slots: Arc<Semaphore>,
     tasks: Arc<TaskRegistry>,
     config: QuicTransportConfig,
@@ -329,6 +330,7 @@ pub(crate) async fn run_uni_acceptor(
 
         let child_shared = Arc::clone(&shared);
         let child_inbound = inbound.clone();
+        let child_ready = stream_ready.clone();
         let mut recv = Some(recv);
         let mut permit = Some(permit);
         if !tasks.spawn_if_open(|| {
@@ -336,6 +338,7 @@ pub(crate) async fn run_uni_acceptor(
                 recv.take().expect("accepted stream is available"),
                 child_shared,
                 child_inbound,
+                child_ready,
                 config,
                 permit.take().expect("incoming stream permit is available"),
             )
@@ -349,6 +352,7 @@ async fn run_incoming_uni_stream(
     mut recv: RecvStream,
     shared: Arc<SharedState>,
     inbound: mpsc::Sender<IncomingUniStream>,
+    stream_ready: watch::Sender<u64>,
     config: QuicTransportConfig,
     _permit: OwnedSemaphorePermit,
 ) {
@@ -394,6 +398,7 @@ async fn run_incoming_uni_stream(
                 let _ = recv.stop(STREAM_CANCEL_CODE);
                 return;
             }
+            signal_ready(&stream_ready);
         }
     }
 
@@ -422,10 +427,12 @@ async fn run_incoming_uni_stream(
             Ok(chunk) => chunk,
             Err(RecordError::Finished) => {
                 state.finish();
+                signal_ready(&stream_ready);
                 return;
             }
             Err(_) => {
                 state.cancel();
+                signal_ready(&stream_ready);
                 let _ = recv.stop(STREAM_CANCEL_CODE);
                 return;
             }
@@ -448,6 +455,7 @@ async fn run_incoming_uni_stream(
                     let _ = recv.stop(STREAM_CANCEL_CODE);
                     return;
                 }
+                signal_ready(&stream_ready);
             }
         }
     }
@@ -498,4 +506,10 @@ impl Drop for QuicReceiveStream {
             self.cancel();
         }
     }
+}
+
+fn signal_ready(ready: &watch::Sender<u64>) {
+    ready.send_modify(|revision| {
+        *revision = revision.wrapping_add(1);
+    });
 }

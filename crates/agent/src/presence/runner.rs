@@ -953,7 +953,10 @@ async fn handle_runtime_event(
         NodeEvent::SessionClosed(_) => {
             clipboard.cancel_all(ClipboardOperationError::Cancelled);
         }
-        NodeEvent::CapabilitiesUpdated | NodeEvent::Event(_) | NodeEvent::ProtocolFailure(_) => {}
+        NodeEvent::CapabilitiesUpdated
+        | NodeEvent::Event(_)
+        | NodeEvent::ProtocolFailure(_)
+        | NodeEvent::Stream(_) => {}
     }
 }
 
