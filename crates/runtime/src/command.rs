@@ -29,6 +29,10 @@ pub(crate) enum RuntimeCommand {
         result: ControlResponseResult,
         reply: oneshot::Sender<Result<(), RuntimeActorError>>,
     },
+    SendCancel {
+        request_id: RequestId,
+        reply: oneshot::Sender<Result<(), RuntimeActorError>>,
+    },
     Reconnect {
         session: Box<RuntimeActorSession>,
         reply: oneshot::Sender<Result<(), RuntimeActorError>>,
