@@ -117,6 +117,7 @@ pub struct QuicTransportConnection {
     outbound_control: mpsc::Sender<Vec<u8>>,
     inbound_control: Mutex<mpsc::Receiver<Vec<u8>>>,
     control_ready: watch::Sender<u64>,
+    stream_ready: watch::Sender<u64>,
     outgoing_stream_slots: Arc<Semaphore>,
     incoming_streams: Mutex<mpsc::Receiver<IncomingUniStream>>,
     tasks: Arc<TaskRegistry>,
@@ -177,6 +178,7 @@ impl QuicTransportConnection {
         let (outbound_control, outbound_rx) = mpsc::channel(config.control_queue_capacity());
         let (inbound_tx, inbound_control) = mpsc::channel(config.control_queue_capacity());
         let (control_ready, _) = watch::channel(0_u64);
+        let (stream_ready, _) = watch::channel(0_u64);
         let (incoming_tx, incoming_streams) =
             mpsc::channel(config.incoming_stream_queue_capacity());
         let outgoing_stream_slots = Arc::new(Semaphore::new(config.outgoing_stream_capacity()));
@@ -207,6 +209,7 @@ impl QuicTransportConnection {
             connection.clone(),
             Arc::clone(&shared),
             incoming_tx,
+            stream_ready.clone(),
             incoming_stream_slots,
             acceptor_tasks,
             config,
@@ -226,6 +229,7 @@ impl QuicTransportConnection {
             outbound_control,
             inbound_control: Mutex::new(inbound_control),
             control_ready,
+            stream_ready,
             outgoing_stream_slots,
             incoming_streams: Mutex::new(incoming_streams),
             tasks,
@@ -244,6 +248,10 @@ impl QuicTransportConnection {
 
     pub fn subscribe_control_ready(&self) -> watch::Receiver<u64> {
         self.control_ready.subscribe()
+    }
+
+    pub fn subscribe_stream_ready(&self) -> watch::Receiver<u64> {
+        self.stream_ready.subscribe()
     }
 
     fn begin_shutdown(&self) -> Vec<JoinHandle<()>> {
