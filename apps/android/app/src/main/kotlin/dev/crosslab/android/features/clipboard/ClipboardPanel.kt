@@ -23,7 +23,6 @@ import dev.crosslab.android.features.appearance.toComposeColor
 import dev.crosslab.android.features.appearance.toTextStyle
 import dev.crosslab.android.features.devices.ConnectivityDisplay
 import dev.crosslab.android.features.devices.DevicePresentation
-import dev.crosslab.android.features.devices.PermissionDisplay
 import dev.crosslab.android.features.devices.SessionDisplay
 
 private const val CLIPBOARD_READ = "clipboard.read"
