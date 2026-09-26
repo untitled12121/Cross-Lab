@@ -24,16 +24,17 @@ use tokio::{
     time::Instant,
 };
 
+use super::types::{PermissionSnapshot, PresencePhase, PresenceSnapshot, TrustedSessionRoute};
 use crate::clipboard::{
     ClipboardAvailability, ClipboardKind, ClipboardOperationError, ClipboardPlatformError,
     ClipboardRequest, advertisement as clipboard_advertisement,
     capability_negotiated as clipboard_capability_negotiated, decode_inbound as decode_clipboard,
     decode_response as decode_clipboard_response, internal_failure as clipboard_internal_failure,
-    local_capabilities as clipboard_local_capabilities, read_completion as clipboard_read_completion,
-    read_request as clipboard_read_request, resource_failure as clipboard_resource_failure,
-    write_completion as clipboard_write_completion, write_request as clipboard_write_request,
+    local_capabilities as clipboard_local_capabilities,
+    read_completion as clipboard_read_completion, read_request as clipboard_read_request,
+    resource_failure as clipboard_resource_failure, write_completion as clipboard_write_completion,
+    write_request as clipboard_write_request,
 };
-use super::types::{PermissionSnapshot, PresencePhase, PresenceSnapshot, TrustedSessionRoute};
 
 const RUNTIME_CAPACITY: usize = 8;
 const CONNECT_RESULT_CAPACITY: usize = 2;
@@ -186,7 +187,8 @@ impl PendingClipboard {
     fn finish(self, result: Result<Option<String>, ClipboardOperationError>) {
         match self {
             Self::Read { reply, .. } => {
-                let result = result.and_then(|text| text.ok_or(ClipboardOperationError::InvalidResponse));
+                let result =
+                    result.and_then(|text| text.ok_or(ClipboardOperationError::InvalidResponse));
                 let _ = reply.send(result);
             }
             Self::Write { reply, .. } => {
@@ -932,8 +934,9 @@ async fn handle_runtime_event(
             };
 
             if let Some(result) = result
-                && let Some(connection) =
-                    connected.as_ref().filter(|connection| !connection.reconnecting)
+                && let Some(connection) = connected
+                    .as_ref()
+                    .filter(|connection| !connection.reconnecting)
             {
                 let _ = connection.actor.send_response(request_id, result).await;
             }
@@ -950,9 +953,7 @@ async fn handle_runtime_event(
         NodeEvent::SessionClosed(_) => {
             clipboard.cancel_all(ClipboardOperationError::Cancelled);
         }
-        NodeEvent::CapabilitiesUpdated
-        | NodeEvent::Event(_)
-        | NodeEvent::ProtocolFailure(_) => {}
+        NodeEvent::CapabilitiesUpdated | NodeEvent::Event(_) | NodeEvent::ProtocolFailure(_) => {}
     }
 }
 
