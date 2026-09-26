@@ -116,6 +116,7 @@ pub struct MobileTrustedPresenceAgent {
     wait_runtime: Mutex<Runtime>,
     clipboard_wait_runtime: Mutex<Runtime>,
     clipboard_operation_runtime: Mutex<Runtime>,
+    clipboard_completion_runtime: Mutex<Runtime>,
     policy_runtime: Mutex<Runtime>,
 }
 
@@ -159,6 +160,7 @@ impl MobileTrustedPresenceAgent {
         let wait_runtime = blocking_runtime()?;
         let clipboard_wait_runtime = blocking_runtime()?;
         let clipboard_operation_runtime = blocking_runtime()?;
+        let clipboard_completion_runtime = blocking_runtime()?;
         let policy_runtime = blocking_runtime()?;
 
         Ok(Self {
@@ -168,6 +170,7 @@ impl MobileTrustedPresenceAgent {
             wait_runtime: Mutex::new(wait_runtime),
             clipboard_wait_runtime: Mutex::new(clipboard_wait_runtime),
             clipboard_operation_runtime: Mutex::new(clipboard_operation_runtime),
+            clipboard_completion_runtime: Mutex::new(clipboard_completion_runtime),
             policy_runtime: Mutex::new(policy_runtime),
         })
     }
@@ -420,7 +423,7 @@ impl MobileTrustedPresenceAgent {
             .agent_handle()
             .map_err(|_| MobileClipboardError::Closed)?;
         let runtime = self
-            .clipboard_operation_runtime
+            .clipboard_completion_runtime
             .lock()
             .map_err(|_| MobileClipboardError::StateUnavailable)?;
         runtime
@@ -438,7 +441,7 @@ impl MobileTrustedPresenceAgent {
             .agent_handle()
             .map_err(|_| MobileClipboardError::Closed)?;
         let runtime = self
-            .clipboard_operation_runtime
+            .clipboard_completion_runtime
             .lock()
             .map_err(|_| MobileClipboardError::StateUnavailable)?;
         runtime
