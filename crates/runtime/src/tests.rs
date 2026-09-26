@@ -88,9 +88,7 @@ impl TransportReceiveStream for TestReceiveStream {
         if self.cancelled {
             return Err(StreamReceiveError::Cancelled);
         }
-        self.chunks
-            .pop_front()
-            .ok_or(StreamReceiveError::Finished)
+        self.chunks.pop_front().ok_or(StreamReceiveError::Finished)
     }
 
     fn cancel(&mut self) {
@@ -598,7 +596,6 @@ fn inactive_status_drops_session_id() {
     assert_eq!(status.connectivity(), ConnectivityState::Disconnected);
 }
 
-
 fn files_capability() -> CapabilityId {
     CapabilityId::parse("files.transfer").unwrap()
 }
@@ -660,8 +657,7 @@ fn stream_policy_and_operation(
         NetworkClass::Local,
     );
     let grant = policy.evaluate(&authorization).into_grant().unwrap();
-    let operation =
-        AuthorizedOperation::issue(grant, 10, 20, UsePolicy::SingleStream).unwrap();
+    let operation = AuthorizedOperation::issue(grant, 10, 20, UsePolicy::SingleStream).unwrap();
     (policy, operation)
 }
 
