@@ -158,9 +158,17 @@ impl<'a> RuntimeNode<'a> {
     }
 
     pub fn open_data_stream(&mut self, open: &DataStreamOpen) -> Result<StreamId, NodeError> {
-        self.streams
+        match self
+            .streams
             .open_uni(&self.session, self.transport.as_ref(), open)
-            .map_err(NodeError::Stream)
+        {
+            Ok(stream_id) => Ok(stream_id),
+            Err(error @ RuntimeStreamError::Open(StreamOpenError::Closed(_))) => {
+                self.terminate_transport_loss();
+                Err(NodeError::Stream(error))
+            }
+            Err(error) => Err(NodeError::Stream(error)),
+        }
     }
 
     pub fn try_send_stream_chunk(
@@ -168,7 +176,13 @@ impl<'a> RuntimeNode<'a> {
         stream_id: StreamId,
         chunk: Vec<u8>,
     ) -> Result<(), StreamSendError> {
-        self.streams.try_send_chunk(stream_id, chunk)
+        let result = self.streams.try_send_chunk(stream_id, chunk);
+        if matches!(&result, Err(StreamSendError::Closed(_)))
+            && self.transport.as_ref().is_closed()
+        {
+            self.terminate_transport_loss();
+        }
+        result
     }
 
     pub fn finish_data_stream(&mut self, stream_id: StreamId) -> Result<(), NodeError> {
@@ -201,7 +215,14 @@ impl<'a> RuntimeNode<'a> {
             peer_trust,
             &self.policy,
         ) {
-            Ok(event) => Ok(NodeEvent::Stream(event)),
+            Ok(event) => {
+                if matches!(&event, RuntimeStreamEvent::Cancelled(_))
+                    && self.transport.as_ref().is_closed()
+                {
+                    self.terminate_transport_loss();
+                }
+                Ok(NodeEvent::Stream(event))
+            }
             Err(error @ RuntimeStreamError::Accept(StreamAcceptError::Closed)) => {
                 self.terminate_transport_loss();
                 Err(NodeError::Stream(error))
