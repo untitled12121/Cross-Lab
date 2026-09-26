@@ -307,12 +307,12 @@ impl RuntimeStreams {
         peer_trust: &TrustRecord,
         policy: &PolicyState,
     ) -> Result<RuntimeStreamEvent, RuntimeStreamError> {
-        if self.inbound.len() >= self.capacity {
-            return Err(RuntimeStreamError::ResourceLimit);
-        }
-
         let incoming = transport.try_accept_uni_stream()?;
         let (frame, mut stream) = incoming.into_parts();
+        if self.inbound.len() >= self.capacity {
+            stream.cancel();
+            return Err(RuntimeStreamError::ResourceLimit);
+        }
         let open = match decode_data_stream_open(&frame) {
             Ok(open) => open,
             Err(error) => {
