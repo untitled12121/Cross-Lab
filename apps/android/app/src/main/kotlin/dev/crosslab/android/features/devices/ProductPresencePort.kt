@@ -6,9 +6,18 @@ import android.os.Looper
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import dev.crosslab.android.features.clipboard.AndroidClipboardAdapter
+import dev.crosslab.android.features.clipboard.ClipboardPort
+import dev.crosslab.android.features.clipboard.ClipboardResult
+import dev.crosslab.android.features.clipboard.LocalClipboardRead
+import dev.crosslab.android.features.clipboard.LocalClipboardWrite
 import dev.crosslab.android.features.identity.AndroidProductIdentityRepository
 import dev.crosslab.android.features.permissions.AndroidPolicyStore
 import dev.crosslab.android.features.permissions.PolicyStoreUnavailable
+import uniffi.crosslab_mobile_ffi.MobileClipboardOutcome
+import uniffi.crosslab_mobile_ffi.MobileClipboardPlatformFailure
+import uniffi.crosslab_mobile_ffi.MobileClipboardRequest
+import uniffi.crosslab_mobile_ffi.MobileClipboardRequestKind
 import uniffi.crosslab_mobile_ffi.MobilePermissionEffect
 import uniffi.crosslab_mobile_ffi.MobilePermissionSnapshot
 import uniffi.crosslab_mobile_ffi.MobilePresenceDiscovery
@@ -23,14 +32,24 @@ class ProductPresencePort(
     context: Context,
     private val identityRepository: AndroidProductIdentityRepository,
     private val policyStore: AndroidPolicyStore,
-) : RuntimePort {
+) : RuntimePort, ClipboardPort {
     override val peerControlAvailable: Boolean = true
+    override val clipboardAvailable: Boolean = true
 
     private val discovery = AndroidTrustedSessionDiscovery(context)
+    private val clipboard = AndroidClipboardAdapter(context)
     private val listeners = CopyOnWriteArraySet<(RuntimeSnapshot) -> Unit>()
     private val events =
         Executors.newSingleThreadExecutor { task ->
             Thread(task, "crosslab-presence-events").apply { isDaemon = true }
+        }
+    private val clipboardEvents =
+        Executors.newSingleThreadExecutor { task ->
+            Thread(task, "crosslab-clipboard-events").apply { isDaemon = true }
+        }
+    private val clipboardWorkers =
+        Executors.newFixedThreadPool(2) { task ->
+            Thread(task, "crosslab-clipboard-worker").apply { isDaemon = true }
         }
     private val closed = AtomicBoolean(false)
     private val lock = Any()
@@ -108,6 +127,92 @@ class ProductPresencePort(
             ensureDiscoveryLocked(active)
             publishAgentSnapshotLocked()
         }
+    }
+
+    override fun sendClipboard(onComplete: (ClipboardResult) -> Unit): Boolean {
+        val (active, token) =
+            synchronized(lock) {
+                agent?.let { it to generation }
+            } ?: return false
+
+        handler.post {
+            if (!isCurrentAgent(active, token)) {
+                onComplete(ClipboardResult.CANCELLED)
+                return@post
+            }
+
+            when (val local = clipboard.readText()) {
+                is LocalClipboardRead.Text ->
+                    clipboardWorkers.execute {
+                        val result =
+                            runCatching { active.sendClipboardText(local.value) }
+                                .getOrNull()
+                        val outcome =
+                            result?.outcome()?.toClipboardResult()
+                                ?: ClipboardResult.FAILED
+                        handler.post {
+                            onComplete(
+                                if (isCurrentAgent(active, token)) {
+                                    outcome
+                                } else {
+                                    ClipboardResult.CANCELLED
+                                },
+                            )
+                        }
+                    }
+
+                LocalClipboardRead.Unavailable -> onComplete(ClipboardResult.UNAVAILABLE)
+                LocalClipboardRead.Failed -> onComplete(ClipboardResult.FAILED)
+            }
+        }
+        return true
+    }
+
+    override fun fetchClipboard(onComplete: (ClipboardResult) -> Unit): Boolean {
+        val (active, token) =
+            synchronized(lock) {
+                agent?.let { it to generation }
+            } ?: return false
+
+        clipboardWorkers.execute {
+            val result =
+                runCatching { active.fetchClipboardText() }
+                    .getOrNull()
+            val outcome =
+                result?.outcome()?.toClipboardResult()
+                    ?: ClipboardResult.FAILED
+            if (outcome != ClipboardResult.SUCCESS) {
+                handler.post {
+                    onComplete(
+                        if (isCurrentAgent(active, token)) {
+                            outcome
+                        } else {
+                            ClipboardResult.CANCELLED
+                        },
+                    )
+                }
+                return@execute
+            }
+
+            val text = runCatching { result.takeText() }.getOrNull()
+            handler.post {
+                if (!isCurrentAgent(active, token)) {
+                    onComplete(ClipboardResult.CANCELLED)
+                    return@post
+                }
+                if (text == null) {
+                    onComplete(ClipboardResult.FAILED)
+                    return@post
+                }
+                onComplete(
+                    when (clipboard.writeRemoteText(text)) {
+                        LocalClipboardWrite.SUCCESS -> ClipboardResult.SUCCESS
+                        LocalClipboardWrite.FAILED -> ClipboardResult.FAILED
+                    },
+                )
+            }
+        }
+        return true
     }
 
     override fun setPermission(
@@ -202,6 +307,8 @@ class ProductPresencePort(
         }
         handler.removeCallbacksAndMessages(null)
         events.shutdownNow()
+        clipboardEvents.shutdownNow()
+        clipboardWorkers.shutdownNow()
         listeners.clear()
     }
 
@@ -234,6 +341,8 @@ class ProductPresencePort(
                     localDeviceSigner = identityRepository.localDeviceSigner,
                     policyEnvelope = policy?.envelope,
                     policyAnchor = policy?.anchor,
+                    clipboardReadAvailable = clipboardAvailable,
+                    clipboardWriteAvailable = clipboardAvailable,
                 )
             }.getOrElse {
                 publishLocked(
@@ -263,6 +372,7 @@ class ProductPresencePort(
             ),
         )
         events.execute { eventLoop(active, token) }
+        clipboardEvents.execute { clipboardEventLoop(active, token) }
     }
 
     private fun stopAgentLocked() {
@@ -377,6 +487,104 @@ class ProductPresencePort(
         }
     }
 
+    private fun clipboardEventLoop(
+        active: MobileTrustedPresenceAgent,
+        token: Long,
+    ) {
+        while (!closed.get()) {
+            val request =
+                try {
+                    active.waitClipboardRequest(60_000uL)
+                } catch (_: Exception) {
+                    return
+                } ?: continue
+
+            if (!isCurrentAgent(active, token)) return
+            handler.post {
+                handleClipboardRequest(active, token, request)
+            }
+        }
+    }
+
+    private fun handleClipboardRequest(
+        active: MobileTrustedPresenceAgent,
+        token: Long,
+        request: MobileClipboardRequest,
+    ) {
+        if (!isCurrentAgent(active, token)) return
+
+        val requestId = request.requestId()
+        when (request.kind()) {
+            MobileClipboardRequestKind.READ -> {
+                when (val local = clipboard.readText()) {
+                    is LocalClipboardRead.Text ->
+                        clipboardWorkers.execute {
+                            runCatching {
+                                active.completeClipboardRead(requestId, local.value)
+                            }
+                        }
+
+                    LocalClipboardRead.Unavailable ->
+                        clipboardWorkers.execute {
+                            runCatching {
+                                active.failClipboardRead(
+                                    requestId,
+                                    MobileClipboardPlatformFailure.UNAVAILABLE,
+                                )
+                            }
+                        }
+
+                    LocalClipboardRead.Failed ->
+                        clipboardWorkers.execute {
+                            runCatching {
+                                active.failClipboardRead(
+                                    requestId,
+                                    MobileClipboardPlatformFailure.FAILED,
+                                )
+                            }
+                        }
+                }
+            }
+
+            MobileClipboardRequestKind.WRITE -> {
+                val text = runCatching { request.takeText() }.getOrNull()
+                if (text == null) {
+                    clipboardWorkers.execute {
+                        runCatching {
+                            active.failClipboardWrite(
+                                requestId,
+                                MobileClipboardPlatformFailure.FAILED,
+                            )
+                        }
+                    }
+                    return
+                }
+                clipboardWorkers.execute {
+                    when (clipboard.writeRemoteText(text)) {
+                        LocalClipboardWrite.SUCCESS ->
+                            runCatching { active.completeClipboardWrite(requestId) }
+
+                        LocalClipboardWrite.FAILED ->
+                            runCatching {
+                                active.failClipboardWrite(
+                                    requestId,
+                                    MobileClipboardPlatformFailure.FAILED,
+                                )
+                            }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun isCurrentAgent(
+        active: MobileTrustedPresenceAgent,
+        token: Long,
+    ): Boolean =
+        synchronized(lock) {
+            !closed.get() && generation == token && agent === active
+        }
+
     private fun publishAgentSnapshotLocked() {
         val active = agent ?: return
         runCatching {
@@ -438,6 +646,20 @@ private fun MobilePresenceSnapshot.toRuntimeSnapshot(
                 },
         )
 }
+
+private fun MobileClipboardOutcome.toClipboardResult(): ClipboardResult =
+    when (this) {
+        MobileClipboardOutcome.SUCCESS -> ClipboardResult.SUCCESS
+        MobileClipboardOutcome.NOT_CONNECTED -> ClipboardResult.NOT_CONNECTED
+        MobileClipboardOutcome.NOT_NEGOTIATED -> ClipboardResult.NOT_NEGOTIATED
+        MobileClipboardOutcome.OVERSIZED -> ClipboardResult.OVERSIZED
+        MobileClipboardOutcome.RESOURCE_LIMIT -> ClipboardResult.RESOURCE_LIMIT
+        MobileClipboardOutcome.TIMED_OUT -> ClipboardResult.TIMED_OUT
+        MobileClipboardOutcome.CANCELLED -> ClipboardResult.CANCELLED
+        MobileClipboardOutcome.DENIED -> ClipboardResult.DENIED
+        MobileClipboardOutcome.UNAVAILABLE -> ClipboardResult.UNAVAILABLE
+        MobileClipboardOutcome.FAILED -> ClipboardResult.FAILED
+    }
 
 private fun RuntimePermissionEffect.toMobilePermissionEffect(): MobilePermissionEffect =
     when (this) {
