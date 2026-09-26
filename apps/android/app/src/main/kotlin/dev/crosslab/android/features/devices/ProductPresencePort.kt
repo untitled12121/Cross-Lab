@@ -194,7 +194,9 @@ class ProductPresencePort(
                 return@execute
             }
 
-            val text = runCatching { result.takeText() }.getOrNull()
+            val text = result?.let { operation ->
+                runCatching { operation.takeText() }.getOrNull()
+            }
             handler.post {
                 if (!isCurrentAgent(active, token)) {
                     onComplete(ClipboardResult.CANCELLED)
