@@ -293,6 +293,178 @@ async fn clipboard_pending_work_is_cancelled_on_disconnect() {
     assert_eq!(send.await, Err(ClipboardOperationError::Cancelled));
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn clipboard_pending_work_is_cancelled_on_policy_replacement() {
+    let (left_state, right_state) = reciprocal_identities();
+    let left_device_id = left_state.local_credential().device_id();
+    let right_device_id = right_state.local_credential().device_id();
+    let left_signer = Arc::new(SigningKey::from_secret_bytes([0x74; 32]));
+    let right_signer = Arc::new(SigningKey::from_secret_bytes([0x75; 32]));
+
+    let mut right_policy = PolicyState::new();
+    right_policy
+        .set_rule_effect(
+            left_device_id,
+            CapabilityId::parse("clipboard.write").unwrap(),
+            OperationName::parse("set").unwrap(),
+            RuleEffect::Allow,
+        )
+        .unwrap();
+
+    let availability = ClipboardAvailability::new(true, true);
+    let left = TrustedPresenceAgent::spawn_with_policy_and_clipboard(
+        left_state,
+        left_signer,
+        PolicyState::new(),
+        availability,
+    )
+    .unwrap();
+    let right = TrustedPresenceAgent::spawn_with_policy_and_clipboard(
+        right_state,
+        right_signer,
+        right_policy,
+        availability,
+    )
+    .unwrap();
+    let mut right_clipboard = right.take_clipboard_requests().unwrap();
+
+    left.candidate_available(route_for(&right)).unwrap();
+    right.candidate_available(route_for(&left)).unwrap();
+    let mut left_status = left.subscribe_status();
+    wait_clipboard_negotiated(&mut left_status).await;
+
+    let send = left.send_clipboard_text("ephemeral policy work".into());
+    tokio::pin!(send);
+    let _request = tokio::time::timeout(WAIT, async {
+        tokio::select! {
+            result = &mut send => panic!("clipboard send completed before peer request: {result:?}"),
+            request = right_clipboard.recv() => request,
+        }
+    })
+    .await
+    .expect("write request should arrive")
+    .expect("clipboard channel should remain open");
+
+    let mut replacement = PolicyState::new();
+    replacement
+        .set_rule_effect(
+            right_device_id,
+            CapabilityId::parse("clipboard.read").unwrap(),
+            OperationName::parse("get").unwrap(),
+            RuleEffect::Deny,
+        )
+        .unwrap();
+    left.replace_policy(replacement).unwrap();
+
+    assert_eq!(
+        tokio::time::timeout(WAIT, &mut send)
+            .await
+            .expect("policy replacement should cancel pending clipboard work"),
+        Err(ClipboardOperationError::Cancelled)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn clipboard_pending_work_does_not_cross_reconnect() {
+    let (left_state, right_state) = reciprocal_identities();
+    let left_device_id = left_state.local_credential().device_id();
+    let left_signer = Arc::new(SigningKey::from_secret_bytes([0x74; 32]));
+    let right_signer = Arc::new(SigningKey::from_secret_bytes([0x75; 32]));
+
+    let mut right_policy = PolicyState::new();
+    right_policy
+        .set_rule_effect(
+            left_device_id,
+            CapabilityId::parse("clipboard.write").unwrap(),
+            OperationName::parse("set").unwrap(),
+            RuleEffect::Allow,
+        )
+        .unwrap();
+
+    let availability = ClipboardAvailability::new(true, true);
+    let left = TrustedPresenceAgent::spawn_with_policy_and_clipboard(
+        left_state,
+        left_signer,
+        PolicyState::new(),
+        availability,
+    )
+    .unwrap();
+    let right = TrustedPresenceAgent::spawn_with_policy_and_clipboard(
+        right_state,
+        right_signer,
+        right_policy,
+        availability,
+    )
+    .unwrap();
+    let mut right_clipboard = right.take_clipboard_requests().unwrap();
+
+    left.candidate_available(route_for(&right)).unwrap();
+    right.candidate_available(route_for(&left)).unwrap();
+    let mut left_status = left.subscribe_status();
+    let mut right_status = right.subscribe_status();
+    let first = wait_clipboard_negotiated(&mut left_status).await;
+    wait_clipboard_negotiated(&mut right_status).await;
+    let first_session = first
+        .runtime()
+        .and_then(|runtime| runtime.session_id())
+        .expect("clipboard session should be active");
+
+    let send = left.send_clipboard_text("old session".into());
+    tokio::pin!(send);
+    let _old_request = tokio::time::timeout(WAIT, async {
+        tokio::select! {
+            result = &mut send => panic!("clipboard send completed before peer request: {result:?}"),
+            request = right_clipboard.recv() => request,
+        }
+    })
+    .await
+    .expect("write request should arrive")
+    .expect("clipboard channel should remain open");
+
+    left.network_lost().unwrap();
+    right.network_lost().unwrap();
+    assert_eq!(
+        tokio::time::timeout(WAIT, &mut send)
+            .await
+            .expect("network loss should cancel pending clipboard work"),
+        Err(ClipboardOperationError::Cancelled)
+    );
+
+    left.network_available().unwrap();
+    right.network_available().unwrap();
+    left.candidate_available(route_for(&right)).unwrap();
+    right.candidate_available(route_for(&left)).unwrap();
+
+    wait_online_with_new_session(&mut left_status, first_session).await;
+    wait_online_with_new_session(&mut right_status, first_session).await;
+    wait_clipboard_negotiated(&mut left_status).await;
+    wait_clipboard_negotiated(&mut right_status).await;
+
+    let fresh = left.send_clipboard_text("fresh session".into());
+    tokio::pin!(fresh);
+    let request = tokio::time::timeout(WAIT, async {
+        tokio::select! {
+            result = &mut fresh => panic!("fresh clipboard send completed before peer request: {result:?}"),
+            request = right_clipboard.recv() => request,
+        }
+    })
+    .await
+    .expect("fresh write request should arrive")
+    .expect("clipboard channel should remain open");
+    let request_id = match request {
+        ClipboardRequest::Write { request_id, text } => {
+            assert_eq!(text, "fresh session");
+            request_id
+        }
+        ClipboardRequest::Read { .. } => panic!("expected clipboard write"),
+    };
+    right
+        .complete_clipboard_write(request_id, Ok(()))
+        .await
+        .unwrap();
+    fresh.await.unwrap();
+}
+
 fn reciprocal_identities() -> (ProductIdentityState, ProductIdentityState) {
     let owner_id = OwnerId::from_bytes([0x70; 32]);
     let root_key = SigningKey::from_secret_bytes([0x71; 32]);
