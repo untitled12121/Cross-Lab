@@ -717,6 +717,44 @@ fn runtime_streams_admit_and_redact_authorized_payload() {
     ));
 }
 
+
+#[test]
+fn closed_data_stream_open_terminates_session_authority() {
+    let fixture = Fixture::new();
+    let transport = TestTransport::new([0x84; 32]);
+    let mut session = fixture.active_session(&transport);
+    activate_files_capability(&mut session);
+    let (policy, operation) = stream_policy_and_operation(&fixture, &session);
+    let context = session.context().unwrap();
+    let open = DataStreamOpen::new(
+        context.session_id(),
+        StreamId::from_bytes([0x85; 16]),
+        operation.id(),
+        files_capability(),
+        CapabilityVersion::new(1, 0),
+        receive_operation(),
+        StreamDirection::SourceToDestination,
+        0,
+    );
+    let mut runtime = RuntimeNode::new(
+        session,
+        &transport,
+        policy,
+        vec![files_local_capability()],
+        NetworkClass::Local,
+        NonZeroUsize::new(4).unwrap(),
+    )
+    .unwrap();
+
+    assert!(matches!(
+        runtime.open_data_stream(&open),
+        Err(NodeError::Stream(crate::RuntimeStreamError::Open(
+            StreamOpenError::Closed(_)
+        )))
+    ));
+    assert_eq!(runtime.session().state(), SessionState::Closed);
+}
+
 #[test]
 fn policy_replacement_invalidates_registered_stream_authority() {
     let fixture = Fixture::new();
