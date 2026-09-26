@@ -26,6 +26,7 @@ import dev.crosslab.android.components.ui.StatusTone
 import dev.crosslab.android.features.appearance.ThemeDocument
 import dev.crosslab.android.features.appearance.toComposeColor
 import dev.crosslab.android.features.appearance.toTextStyle
+import dev.crosslab.android.features.clipboard.ClipboardState
 import dev.crosslab.android.features.devices.DevicesScreen
 import dev.crosslab.android.features.devices.DevicesState
 import dev.crosslab.android.features.devices.RuntimeControllerState
@@ -43,8 +44,11 @@ private enum class ControlCenterSection {
 fun ControlCenterScreen(
     theme: ThemeDocument,
     runtime: RuntimeControllerState,
+    clipboard: ClipboardState,
     onDisconnect: () -> Unit,
     onReconnect: () -> Unit,
+    onSendClipboard: () -> Unit,
+    onFetchClipboard: () -> Unit,
     pairing: PairingJoinerState,
     onPairingBootstrapScanned: (MobilePairingBootstrap) -> Unit,
     onCancelPairing: () -> Unit,
@@ -138,8 +142,11 @@ fun ControlCenterScreen(
                     theme = theme,
                     devices = DevicesState.from(runtime.snapshot),
                     runtime = runtime,
+                    clipboard = clipboard,
                     onDisconnect = onDisconnect,
                     onReconnect = onReconnect,
+                    onSendClipboard = onSendClipboard,
+                    onFetchClipboard = onFetchClipboard,
                     pairing = pairing,
                     onPairingBootstrapScanned = onPairingBootstrapScanned,
                     onCancelPairing = onCancelPairing,

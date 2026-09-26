@@ -16,6 +16,7 @@ pub(crate) fn devices_content(
     state: &DevicesFeatureState,
     actions: Option<Div>,
     pairing: Option<Div>,
+    clipboard: Option<Div>,
     notice: Option<&str>,
     cx: &App,
 ) -> Div {
@@ -76,7 +77,7 @@ pub(crate) fn devices_content(
     }
 
     content.child(match state.current() {
-        Some(device) => device_panel(device, state, cx),
+        Some(device) => device_panel(device, state, clipboard, cx),
         None => empty_state(state.presence(), cx),
     })
 }
@@ -129,7 +130,12 @@ fn empty_state(presence: PresenceDisplay, cx: &App) -> Div {
         )
 }
 
-fn device_panel(device: &DevicePresentation, state: &DevicesFeatureState, cx: &App) -> Div {
+fn device_panel(
+    device: &DevicePresentation,
+    state: &DevicesFeatureState,
+    clipboard: Option<Div>,
+    cx: &App,
+) -> Div {
     let theme = cx.theme();
     let presence = state.presence();
     let appearance = active_theme(cx);
@@ -143,7 +149,7 @@ fn device_panel(device: &DevicePresentation, state: &DevicesFeatureState, cx: &A
         ConnectivityDisplay::Disconnected => StatusTone::Neutral,
     };
 
-    div()
+    let mut panel = div()
         .flex()
         .flex_col()
         .rounded(px(appearance.radius.md))
@@ -233,7 +239,13 @@ fn device_panel(device: &DevicePresentation, state: &DevicesFeatureState, cx: &A
             &state.current_permissions(),
             state.policy_revision(),
             cx,
-        ))
+        ));
+
+    if let Some(clipboard) = clipboard {
+        panel = panel.child(clipboard);
+    }
+
+    panel
 }
 
 fn permission_panel(

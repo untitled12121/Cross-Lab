@@ -10,6 +10,8 @@ import android.os.Build
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import dev.crosslab.android.features.clipboard.ClipboardController
+import dev.crosslab.android.features.clipboard.UnavailableClipboardPort
 import dev.crosslab.android.features.devices.MobileRuntimePort
 import dev.crosslab.android.features.devices.ProductPresencePort
 import dev.crosslab.android.features.identity.AndroidEd25519Signer
@@ -22,6 +24,9 @@ import dev.crosslab.android.features.permissions.AndroidPolicyStore
 
 class CrossLabApplication : Application(), DefaultLifecycleObserver {
     lateinit var runtimeController: RuntimeController
+        private set
+
+    lateinit var clipboardController: ClipboardController
         private set
 
     lateinit var identityStore: AndroidIdentityStore
@@ -66,14 +71,18 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
                 localDeviceSigner = localDeviceSigner,
             )
         val developmentProvisioning = developmentProvisioningPath()
+        val productPresence =
+            if (developmentProvisioning == null) {
+                ProductPresencePort(this, identityRepository, policyStore)
+            } else {
+                null
+            }
         runtimeController =
             RuntimeController(
-                if (developmentProvisioning != null) {
-                    MobileRuntimePort(developmentProvisioning)
-                } else {
-                    ProductPresencePort(this, identityRepository, policyStore)
-                },
+                productPresence ?: MobileRuntimePort(checkNotNull(developmentProvisioning)),
             )
+        clipboardController =
+            ClipboardController(productPresence ?: UnavailableClipboardPort)
         pairingController =
             PairingJoinerController(
                 context = this,
@@ -117,6 +126,7 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
         connectivityManager.unregisterNetworkCallback(networkCallback)
         ProcessLifecycleOwner.get().lifecycle.removeObserver(this)
         pairingController.close()
+        clipboardController.shutdown()
         runtimeController.shutdown()
         super.onTerminate()
     }
