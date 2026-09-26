@@ -1,7 +1,7 @@
 use std::sync::mpsc as std_mpsc;
 use std::{
     net::{Ipv6Addr, SocketAddr},
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex, RwLock},
     thread,
 };
 
@@ -10,8 +10,11 @@ use crosslab_crypto::{SigningProvider, random_bytes};
 use crosslab_identity_store::ProductIdentityState;
 use crosslab_policy::PolicyState;
 use crosslab_transport_quic::{QuicTransportConfig, TrustedSessionQuicServer};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, oneshot, watch};
 
+use crate::clipboard::{
+    ClipboardAvailability, ClipboardOperationError, ClipboardPlatformError, ClipboardRequest,
+};
 use super::{
     runner::{AgentChannels, AgentCommand, AgentSecurity, run_agent},
     types::{
@@ -21,6 +24,7 @@ use super::{
 };
 
 const COMMAND_CAPACITY: usize = 64;
+const CLIPBOARD_REQUEST_CAPACITY: usize = 8;
 
 pub struct TrustedPresenceAgent {
     discovery_instance: Arc<RwLock<String>>,
@@ -29,6 +33,7 @@ pub struct TrustedPresenceAgent {
     policy_tx: watch::Sender<PolicyState>,
     status: watch::Receiver<PresenceSnapshot>,
     permissions: watch::Receiver<PermissionSnapshot>,
+    clipboard_requests: Mutex<Option<mpsc::Receiver<ClipboardRequest>>>,
 }
 
 impl TrustedPresenceAgent {
@@ -43,6 +48,20 @@ impl TrustedPresenceAgent {
         identity: ProductIdentityState,
         signer: Arc<dyn SigningProvider + Send + Sync>,
         policy: PolicyState,
+    ) -> Result<Self, PresenceAgentError> {
+        Self::spawn_with_policy_and_clipboard(
+            identity,
+            signer,
+            policy,
+            ClipboardAvailability::default(),
+        )
+    }
+
+    pub fn spawn_with_policy_and_clipboard(
+        identity: ProductIdentityState,
+        signer: Arc<dyn SigningProvider + Send + Sync>,
+        policy: PolicyState,
+        clipboard_availability: ClipboardAvailability,
     ) -> Result<Self, PresenceAgentError> {
         identity
             .validate_local_device_provider(signer.as_ref())
@@ -73,6 +92,8 @@ impl TrustedPresenceAgent {
             watch::channel(PresenceSnapshot::new(PresencePhase::Discovering, None));
         let (permissions_tx, permissions) =
             watch::channel(PermissionSnapshot::from_policy(&policy));
+        let (clipboard_requests_tx, clipboard_requests) =
+            mpsc::channel(CLIPBOARD_REQUEST_CAPACITY);
         let (startup_tx, startup_rx) = std_mpsc::sync_channel(1);
         let runner_discovery_instance = Arc::clone(&discovery_instance);
         thread::Builder::new()
@@ -118,7 +139,14 @@ impl TrustedPresenceAgent {
                         security,
                         runner_discovery_instance,
                         policy,
-                        AgentChannels::new(policy_rx, command_rx, status_tx, permissions_tx),
+                        AgentChannels::new(
+                            policy_rx,
+                            command_rx,
+                            status_tx,
+                            permissions_tx,
+                            clipboard_requests_tx,
+                            clipboard_availability,
+                        ),
                     )
                     .await;
                 });
@@ -135,6 +163,7 @@ impl TrustedPresenceAgent {
             policy_tx,
             status,
             permissions,
+            clipboard_requests: Mutex::new(Some(clipboard_requests)),
         })
     }
 
@@ -233,6 +262,82 @@ impl TrustedPresenceAgent {
 
     pub fn reconnect(&self) -> Result<(), PresenceAgentError> {
         self.send(AgentCommand::Reconnect)
+    }
+
+    pub fn take_clipboard_requests(
+        &self,
+    ) -> Result<mpsc::Receiver<ClipboardRequest>, ClipboardOperationError> {
+        self.clipboard_requests
+            .lock()
+            .map_err(|_| ClipboardOperationError::Closed)?
+            .take()
+            .ok_or(ClipboardOperationError::Closed)
+    }
+
+    pub async fn send_clipboard_text(
+        &self,
+        text: String,
+    ) -> Result<(), ClipboardOperationError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.command_tx
+            .send(AgentCommand::ClipboardWrite {
+                text,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| ClipboardOperationError::Closed)?;
+        reply_rx
+            .await
+            .map_err(|_| ClipboardOperationError::Closed)?
+    }
+
+    pub async fn fetch_clipboard_text(&self) -> Result<String, ClipboardOperationError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.command_tx
+            .send(AgentCommand::ClipboardRead { reply: reply_tx })
+            .await
+            .map_err(|_| ClipboardOperationError::Closed)?;
+        reply_rx
+            .await
+            .map_err(|_| ClipboardOperationError::Closed)?
+    }
+
+    pub async fn complete_clipboard_read(
+        &self,
+        request_id: crosslab_protocol::RequestId,
+        result: Result<String, ClipboardPlatformError>,
+    ) -> Result<(), ClipboardOperationError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.command_tx
+            .send(AgentCommand::ClipboardReadComplete {
+                request_id,
+                result,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| ClipboardOperationError::Closed)?;
+        reply_rx
+            .await
+            .map_err(|_| ClipboardOperationError::Closed)?
+    }
+
+    pub async fn complete_clipboard_write(
+        &self,
+        request_id: crosslab_protocol::RequestId,
+        result: Result<(), ClipboardPlatformError>,
+    ) -> Result<(), ClipboardOperationError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.command_tx
+            .send(AgentCommand::ClipboardWriteComplete {
+                request_id,
+                result,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| ClipboardOperationError::Closed)?;
+        reply_rx
+            .await
+            .map_err(|_| ClipboardOperationError::Closed)?
     }
 
     fn discovery_instance(&self) -> String {
