@@ -195,10 +195,15 @@ async fn clipboard_v1_round_trips_explicit_write_and_read() {
 
     let send = left.send_clipboard_text("hello from left".into());
     tokio::pin!(send);
-    let write = tokio::time::timeout(WAIT, right_clipboard.recv())
-        .await
-        .expect("write request should arrive")
-        .expect("clipboard channel should remain open");
+    let write = tokio::time::timeout(WAIT, async {
+        tokio::select! {
+            result = &mut send => panic!("clipboard send completed before peer request: {result:?}"),
+            request = right_clipboard.recv() => request,
+        }
+    })
+    .await
+    .expect("write request should arrive")
+    .expect("clipboard channel should remain open");
     let request_id = match write {
         ClipboardRequest::Write { request_id, text } => {
             assert_eq!(text, "hello from left");
@@ -214,10 +219,15 @@ async fn clipboard_v1_round_trips_explicit_write_and_read() {
 
     let fetch = left.fetch_clipboard_text();
     tokio::pin!(fetch);
-    let read = tokio::time::timeout(WAIT, right_clipboard.recv())
-        .await
-        .expect("read request should arrive")
-        .expect("clipboard channel should remain open");
+    let read = tokio::time::timeout(WAIT, async {
+        tokio::select! {
+            result = &mut fetch => panic!("clipboard fetch completed before peer request: {result:?}"),
+            request = right_clipboard.recv() => request,
+        }
+    })
+    .await
+    .expect("read request should arrive")
+    .expect("clipboard channel should remain open");
     let request_id = match read {
         ClipboardRequest::Read { request_id } => request_id,
         ClipboardRequest::Write { .. } => panic!("expected clipboard read"),
@@ -269,10 +279,15 @@ async fn clipboard_pending_work_is_cancelled_on_disconnect() {
 
     let send = left.send_clipboard_text("ephemeral".into());
     tokio::pin!(send);
-    let _request = tokio::time::timeout(WAIT, right_clipboard.recv())
-        .await
-        .expect("write request should arrive")
-        .expect("clipboard channel should remain open");
+    let _request = tokio::time::timeout(WAIT, async {
+        tokio::select! {
+            result = &mut send => panic!("clipboard send completed before peer request: {result:?}"),
+            request = right_clipboard.recv() => request,
+        }
+    })
+    .await
+    .expect("write request should arrive")
+    .expect("clipboard channel should remain open");
 
     left.disconnect().unwrap();
     assert_eq!(send.await, Err(ClipboardOperationError::Cancelled));
