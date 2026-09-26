@@ -253,6 +253,42 @@ async fn uni_stream_carries_opening_frame_and_chunks_in_order() {
 }
 
 #[tokio::test]
+async fn uni_stream_signals_open_chunk_and_finish_without_polling() {
+    let pair = promoted_loopback_transport_pair_with_config(QuicTransportConfig::default()).await;
+    let mut ready = pair.server.subscribe_stream_ready();
+    let mut send = pair.client.try_open_uni_stream(vec![0x11]).unwrap();
+
+    timeout(Duration::from_secs(2), ready.changed())
+        .await
+        .expect("stream open readiness should be signalled")
+        .expect("stream readiness channel should stay open");
+    let _ = ready.borrow_and_update();
+    let incoming = pair.server.try_accept_uni_stream().unwrap();
+    let (_, mut recv) = incoming.into_parts();
+
+    send.try_send_chunk(vec![0x22]).unwrap();
+    timeout(Duration::from_secs(2), ready.changed())
+        .await
+        .expect("stream chunk readiness should be signalled")
+        .expect("stream readiness channel should stay open");
+    let _ = ready.borrow_and_update();
+    assert_eq!(recv.try_receive_chunk().unwrap(), vec![0x22]);
+
+    send.finish();
+    timeout(Duration::from_secs(2), ready.changed())
+        .await
+        .expect("stream finish readiness should be signalled")
+        .expect("stream readiness channel should stay open");
+    assert_eq!(
+        recv.try_receive_chunk().unwrap_err(),
+        StreamReceiveError::Finished
+    );
+
+    pair.client.shutdown().await;
+    pair.server.shutdown().await;
+}
+
+#[tokio::test]
 async fn uni_stream_open_saturation_preserves_opening_frame() {
     let config = QuicTransportConfig::default();
     let pair = promoted_loopback_transport_pair_with_config(config).await;
