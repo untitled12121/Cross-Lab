@@ -387,7 +387,9 @@ impl MobileTrustedPresenceAgent {
             .agent
             .lock()
             .map_err(|_| MobilePresenceError::StateUnavailable)?;
-        agent.take();
+        if let Some(active) = agent.take() {
+            let _ = active.disconnect();
+        }
         Ok(())
     }
 }
