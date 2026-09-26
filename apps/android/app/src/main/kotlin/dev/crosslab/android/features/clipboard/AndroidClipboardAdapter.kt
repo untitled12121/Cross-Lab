@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.Build
 import android.os.PersistableBundle
 
 private const val EXTRA_IS_SENSITIVE = "android.content.extra.IS_SENSITIVE"
@@ -48,11 +49,13 @@ class AndroidClipboardAdapter(context: Context) {
     internal fun writeRemoteText(text: String): LocalClipboardWrite =
         try {
             val clip = ClipData.newPlainText("Cross-Lab clipboard", text)
-            clip.description.extras =
-                PersistableBundle().apply {
-                    putBoolean(EXTRA_IS_SENSITIVE, true)
-                    putBoolean(EXTRA_IS_REMOTE_DEVICE, true)
-                }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                clip.description.extras =
+                    PersistableBundle().apply {
+                        putBoolean(EXTRA_IS_SENSITIVE, true)
+                        putBoolean(EXTRA_IS_REMOTE_DEVICE, true)
+                    }
+            }
             clipboard.setPrimaryClip(clip)
             LocalClipboardWrite.SUCCESS
         } catch (_: RuntimeException) {
