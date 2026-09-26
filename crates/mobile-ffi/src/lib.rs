@@ -4,6 +4,7 @@
 
 #[cfg(feature = "development-provisioning")]
 mod development;
+mod clipboard;
 mod dto;
 mod error;
 mod identity_store;
@@ -17,6 +18,10 @@ mod product_identity;
 mod runtime;
 mod session_discovery;
 
+pub use clipboard::{
+    MobileClipboardError, MobileClipboardPlatformFailure, MobileClipboardRequest,
+    MobileClipboardRequestKind,
+};
 pub use dto::{
     MobileConnectivityState, MobileLifecycleState, MobileNetworkClass, MobileProtocolVersion,
     MobileRuntimeSnapshot, MobileSessionState, MobileTransportSecurity, MobileTrustState,
