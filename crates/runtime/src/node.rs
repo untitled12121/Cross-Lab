@@ -3,7 +3,7 @@ use std::{num::NonZeroUsize, sync::Arc};
 use crosslab_core::{
     ControlDispatchError, ControlDispatcher, ControlReceiveError, ControlSendError,
     EventSubscription, InboundControl, LogicalSession, SessionError, SessionState,
-    StreamAcceptError, StreamSendError, TransportConnection,
+    StreamAcceptError, StreamOpenError, StreamSendError, TransportConnection,
 };
 use crosslab_identity::OwnerAuthorityState;
 use crosslab_policy::{
