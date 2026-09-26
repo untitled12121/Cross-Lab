@@ -12,15 +12,15 @@ use crosslab_policy::PolicyState;
 use crosslab_transport_quic::{QuicTransportConfig, TrustedSessionQuicServer};
 use tokio::sync::{mpsc, oneshot, watch};
 
-use crate::clipboard::{
-    ClipboardAvailability, ClipboardOperationError, ClipboardPlatformError, ClipboardRequest,
-};
 use super::{
     runner::{AgentChannels, AgentCommand, AgentSecurity, run_agent},
     types::{
         PermissionSnapshot, PresenceAgentError, PresenceDiscoveryInfo, PresencePhase,
         PresenceSnapshot, TrustedSessionRoute,
     },
+};
+use crate::clipboard::{
+    ClipboardAvailability, ClipboardOperationError, ClipboardPlatformError, ClipboardRequest,
 };
 
 const COMMAND_CAPACITY: usize = 64;
@@ -92,8 +92,7 @@ impl TrustedPresenceAgent {
             watch::channel(PresenceSnapshot::new(PresencePhase::Discovering, None));
         let (permissions_tx, permissions) =
             watch::channel(PermissionSnapshot::from_policy(&policy));
-        let (clipboard_requests_tx, clipboard_requests) =
-            mpsc::channel(CLIPBOARD_REQUEST_CAPACITY);
+        let (clipboard_requests_tx, clipboard_requests) = mpsc::channel(CLIPBOARD_REQUEST_CAPACITY);
         let (startup_tx, startup_rx) = std_mpsc::sync_channel(1);
         let runner_discovery_instance = Arc::clone(&discovery_instance);
         thread::Builder::new()
@@ -274,10 +273,7 @@ impl TrustedPresenceAgent {
             .ok_or(ClipboardOperationError::Closed)
     }
 
-    pub async fn send_clipboard_text(
-        &self,
-        text: String,
-    ) -> Result<(), ClipboardOperationError> {
+    pub async fn send_clipboard_text(&self, text: String) -> Result<(), ClipboardOperationError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.command_tx
             .send(AgentCommand::ClipboardWrite {
