@@ -177,8 +177,7 @@ impl<'a> RuntimeNode<'a> {
         chunk: Vec<u8>,
     ) -> Result<(), StreamSendError> {
         let result = self.streams.try_send_chunk(stream_id, chunk);
-        if matches!(&result, Err(StreamSendError::Closed(_)))
-            && self.transport.as_ref().is_closed()
+        if matches!(&result, Err(StreamSendError::Closed(_))) && self.transport.as_ref().is_closed()
         {
             self.terminate_transport_loss();
         }
