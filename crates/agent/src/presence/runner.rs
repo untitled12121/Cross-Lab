@@ -11,7 +11,7 @@ use crosslab_core::{MAX_SESSION_DISCOVERY_CANDIDATES, should_initiate_session};
 use crosslab_crypto::SigningProvider;
 use crosslab_identity::{DeviceCredential, DeviceId, OwnerAuthorityState};
 use crosslab_policy::{NetworkClass, PolicyState, TrustRecord};
-use crosslab_protocol::{FeatureSet, ProtocolRange};
+use crosslab_protocol::{FeatureSet, ProtocolRange, RequestId};
 use crosslab_runtime::{
     NodeEvent, RuntimeActor, RuntimeActorConfig, RuntimeActorSession, RuntimeNode,
 };
@@ -20,10 +20,19 @@ use crosslab_transport_quic::{
     QuicTransportConfig, TrustedSessionQuicClient, TrustedSessionQuicServer,
 };
 use tokio::{
-    sync::{mpsc, watch},
+    sync::{mpsc, oneshot, watch},
     time::Instant,
 };
 
+use crate::clipboard::{
+    ClipboardAvailability, ClipboardKind, ClipboardOperationError, ClipboardPlatformError,
+    ClipboardRequest, advertisement as clipboard_advertisement,
+    capability_negotiated as clipboard_capability_negotiated, decode_inbound as decode_clipboard,
+    decode_response as decode_clipboard_response, internal_failure as clipboard_internal_failure,
+    local_capabilities as clipboard_local_capabilities, read_completion as clipboard_read_completion,
+    read_request as clipboard_read_request, resource_failure as clipboard_resource_failure,
+    write_completion as clipboard_write_completion, write_request as clipboard_write_request,
+};
 use super::types::{PermissionSnapshot, PresencePhase, PresenceSnapshot, TrustedSessionRoute};
 
 const RUNTIME_CAPACITY: usize = 8;
@@ -31,6 +40,7 @@ const CONNECT_RESULT_CAPACITY: usize = 2;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const ACCEPT_TIMEOUT: Duration = Duration::from_secs(30);
 const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
+const CLIPBOARD_OPERATION_TIMEOUT: Duration = Duration::from_secs(10);
 const RETRY_DELAYS: [Duration; 5] = [
     Duration::from_secs(1),
     Duration::from_secs(2),
@@ -73,6 +83,23 @@ pub(super) enum AgentCommand {
     NetworkAvailable,
     Disconnect,
     Reconnect,
+    ClipboardWrite {
+        text: String,
+        reply: oneshot::Sender<Result<(), ClipboardOperationError>>,
+    },
+    ClipboardRead {
+        reply: oneshot::Sender<Result<String, ClipboardOperationError>>,
+    },
+    ClipboardReadComplete {
+        request_id: RequestId,
+        result: Result<String, ClipboardPlatformError>,
+        reply: oneshot::Sender<Result<(), ClipboardOperationError>>,
+    },
+    ClipboardWriteComplete {
+        request_id: RequestId,
+        result: Result<(), ClipboardPlatformError>,
+        reply: oneshot::Sender<Result<(), ClipboardOperationError>>,
+    },
     Stop,
 }
 
@@ -81,6 +108,8 @@ pub(super) struct AgentChannels {
     command_rx: mpsc::Receiver<AgentCommand>,
     status_tx: watch::Sender<PresenceSnapshot>,
     permissions_tx: watch::Sender<PermissionSnapshot>,
+    clipboard_requests_tx: mpsc::Sender<ClipboardRequest>,
+    clipboard_availability: ClipboardAvailability,
 }
 
 impl AgentChannels {
@@ -89,12 +118,16 @@ impl AgentChannels {
         command_rx: mpsc::Receiver<AgentCommand>,
         status_tx: watch::Sender<PresenceSnapshot>,
         permissions_tx: watch::Sender<PermissionSnapshot>,
+        clipboard_requests_tx: mpsc::Sender<ClipboardRequest>,
+        clipboard_availability: ClipboardAvailability,
     ) -> Self {
         Self {
             policy_rx,
             command_rx,
             status_tx,
             permissions_tx,
+            clipboard_requests_tx,
+            clipboard_availability,
         }
     }
 }
@@ -125,11 +158,100 @@ struct ConnectResult {
     result: Result<OutboundSuccess, ()>,
 }
 
+enum PendingClipboard {
+    Read {
+        deadline: Instant,
+        reply: oneshot::Sender<Result<String, ClipboardOperationError>>,
+    },
+    Write {
+        deadline: Instant,
+        reply: oneshot::Sender<Result<(), ClipboardOperationError>>,
+    },
+}
+
+impl PendingClipboard {
+    fn kind(&self) -> ClipboardKind {
+        match self {
+            Self::Read { .. } => ClipboardKind::Read,
+            Self::Write { .. } => ClipboardKind::Write,
+        }
+    }
+
+    fn deadline(&self) -> Instant {
+        match self {
+            Self::Read { deadline, .. } | Self::Write { deadline, .. } => *deadline,
+        }
+    }
+
+    fn finish(self, result: Result<Option<String>, ClipboardOperationError>) {
+        match self {
+            Self::Read { reply, .. } => {
+                let result = result.and_then(|text| text.ok_or(ClipboardOperationError::InvalidResponse));
+                let _ = reply.send(result);
+            }
+            Self::Write { reply, .. } => {
+                let result = result.and_then(|text| {
+                    if text.is_none() {
+                        Ok(())
+                    } else {
+                        Err(ClipboardOperationError::InvalidResponse)
+                    }
+                });
+                let _ = reply.send(result);
+            }
+        }
+    }
+
+    fn cancel(self, error: ClipboardOperationError) {
+        match self {
+            Self::Read { reply, .. } => {
+                let _ = reply.send(Err(error));
+            }
+            Self::Write { reply, .. } => {
+                let _ = reply.send(Err(error));
+            }
+        }
+    }
+}
+
+struct ClipboardRuntimeState {
+    requests_tx: mpsc::Sender<ClipboardRequest>,
+    availability: ClipboardAvailability,
+    outgoing: BTreeMap<RequestId, PendingClipboard>,
+    inbound: BTreeMap<RequestId, ClipboardKind>,
+}
+
+impl ClipboardRuntimeState {
+    fn new(
+        requests_tx: mpsc::Sender<ClipboardRequest>,
+        availability: ClipboardAvailability,
+    ) -> Self {
+        Self {
+            requests_tx,
+            availability,
+            outgoing: BTreeMap::new(),
+            inbound: BTreeMap::new(),
+        }
+    }
+
+    fn cancel_all(&mut self, error: ClipboardOperationError) {
+        for (_, pending) in core::mem::take(&mut self.outgoing) {
+            pending.cancel(error);
+        }
+        self.inbound.clear();
+    }
+
+    fn next_deadline(&self) -> Option<Instant> {
+        self.outgoing.values().map(PendingClipboard::deadline).min()
+    }
+}
+
 enum ConnectedEvent {
     Command(Option<AgentCommand>),
     PolicyChanged,
     PolicyClosed,
     Runtime(NodeEvent),
+    ClipboardTimeout,
     StatusChanged,
     TransportClosed,
 }
@@ -146,8 +268,11 @@ pub(super) async fn run_agent(
         mut command_rx,
         status_tx,
         permissions_tx,
+        clipboard_requests_tx,
+        clipboard_availability,
     } = channels;
     let (connect_tx, mut connect_rx) = mpsc::channel(CONNECT_RESULT_CAPACITY);
+    let mut clipboard = ClipboardRuntimeState::new(clipboard_requests_tx, clipboard_availability);
     let mut candidates = BTreeMap::<String, CandidateState>::new();
     let mut connected: Option<ConnectedRuntime> = None;
     let mut connecting_instance: Option<String> = None;
