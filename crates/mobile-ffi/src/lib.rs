@@ -2,9 +2,9 @@
 
 #![allow(unsafe_code)]
 
+mod clipboard;
 #[cfg(feature = "development-provisioning")]
 mod development;
-mod clipboard;
 mod dto;
 mod error;
 mod identity_store;
