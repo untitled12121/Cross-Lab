@@ -194,14 +194,19 @@ impl RuntimeStreams {
         stream_id: StreamId,
         chunk: Vec<u8>,
     ) -> Result<(), StreamSendError> {
-        let Some(outbound) = self
+        let Some(position) = self
             .outbound
-            .iter_mut()
-            .find(|outbound| outbound.stream_id == stream_id)
+            .iter()
+            .position(|outbound| outbound.stream_id == stream_id)
         else {
             return Err(StreamSendError::Closed(chunk));
         };
-        outbound.stream.try_send_chunk(chunk)
+
+        let result = self.outbound[position].stream.try_send_chunk(chunk);
+        if matches!(&result, Err(StreamSendError::Closed(_))) {
+            self.outbound.remove(position);
+        }
+        result
     }
 
     pub(crate) fn finish_outbound(
@@ -371,6 +376,18 @@ fn validate_open_for_session(
 mod tests {
     use super::*;
 
+    struct ClosedSendStream;
+
+    impl TransportSendStream for ClosedSendStream {
+        fn try_send_chunk(&mut self, chunk: Vec<u8>) -> Result<(), StreamSendError> {
+            Err(StreamSendError::Closed(chunk))
+        }
+
+        fn finish(&mut self) {}
+
+        fn cancel(&mut self) {}
+    }
+
     #[test]
     fn chunk_debug_redacts_payload() {
         let chunk = RuntimeStreamChunk::new(
@@ -381,5 +398,22 @@ mod tests {
 
         assert!(!debug.contains("private-file-bytes"));
         assert!(debug.contains("18 bytes"));
+    }
+
+    #[test]
+    fn closed_outbound_stream_releases_runtime_capacity() {
+        let stream_id = StreamId::from_bytes([0x52; 16]);
+        let mut streams = RuntimeStreams::new(NonZeroUsize::new(1).unwrap());
+        streams.outbound.push(OutboundStream {
+            stream_id,
+            stream: Box::new(ClosedSendStream),
+        });
+        let payload = b"unsent-private-bytes".to_vec();
+
+        assert_eq!(
+            streams.try_send_chunk(stream_id, payload.clone()),
+            Err(StreamSendError::Closed(payload))
+        );
+        assert!(streams.outbound.is_empty());
     }
 }
