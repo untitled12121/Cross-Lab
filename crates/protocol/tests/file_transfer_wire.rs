@@ -65,7 +65,10 @@ fn resume_offsets_follow_durable_checkpoint_rule() {
     let file_size = FILE_TRANSFER_CHECKPOINT_BYTES + 13;
 
     assert!(valid_resume_offset(0, file_size));
-    assert!(valid_resume_offset(FILE_TRANSFER_CHECKPOINT_BYTES, file_size));
+    assert!(valid_resume_offset(
+        FILE_TRANSFER_CHECKPOINT_BYTES,
+        file_size
+    ));
     assert!(valid_resume_offset(file_size, file_size));
     assert!(!valid_resume_offset(1, file_size));
     assert!(!valid_resume_offset(file_size + 1, file_size));
