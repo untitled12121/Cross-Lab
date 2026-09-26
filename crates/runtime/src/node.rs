@@ -3,19 +3,23 @@ use std::{num::NonZeroUsize, sync::Arc};
 use crosslab_core::{
     ControlDispatchError, ControlDispatcher, ControlReceiveError, ControlSendError,
     EventSubscription, InboundControl, LogicalSession, SessionError, SessionState,
-    TransportConnection,
+    StreamAcceptError, StreamSendError, TransportConnection,
 };
 use crosslab_identity::OwnerAuthorityState;
 use crosslab_policy::{
-    ApprovalInstant, DecisionReason, LocalCapability, NetworkClass, PolicyState, TrustRecord,
+    ApprovalInstant, AuthorizedOperation, DecisionReason, LocalCapability, NetworkClass,
+    PolicyState, TrustRecord,
 };
 use crosslab_protocol::{
     CancelRequest, CapabilityAdvertisement, ControlRequest, ControlResponse, ControlResponseResult,
-    EnvelopeBody, Event, ProtocolFailure, ProtocolWireError, RequestId, SessionClose,
-    SessionCloseReason, decode_control_envelope, encode_control_envelope,
+    DataStreamOpen, EnvelopeBody, Event, ProtocolFailure, ProtocolWireError, RequestId,
+    SessionClose, SessionCloseReason, StreamId, decode_control_envelope, encode_control_envelope,
 };
 
-use crate::RuntimeStatus;
+use crate::{
+    RuntimeStatus,
+    stream::{RuntimeStreamError, RuntimeStreamEvent, RuntimeStreams},
+};
 
 #[derive(Debug)]
 pub enum NodeError {
@@ -24,6 +28,7 @@ pub enum NodeError {
     Dispatch(ControlDispatchError),
     Send(ControlSendError),
     Receive(ControlReceiveError),
+    Stream(RuntimeStreamError),
     PolicyRevisionRollback,
 }
 
@@ -36,6 +41,7 @@ pub enum NodeEvent {
     RequestCancelled(RequestId),
     ProtocolFailure(ProtocolFailure),
     SessionClosed(SessionCloseReason),
+    Stream(RuntimeStreamEvent),
 }
 
 enum RuntimeTransport<'a> {
@@ -55,6 +61,7 @@ impl RuntimeTransport<'_> {
 pub struct RuntimeNode<'a> {
     session: LogicalSession,
     dispatcher: ControlDispatcher,
+    streams: RuntimeStreams,
     transport: RuntimeTransport<'a>,
     policy: PolicyState,
     local_capabilities: Vec<LocalCapability>,
@@ -117,6 +124,7 @@ impl<'a> RuntimeNode<'a> {
             return Err(NodeError::PolicyRevisionRollback);
         }
         self.dispatcher.cancel_session_state();
+        self.streams.cancel_all();
         self.policy = policy;
         Ok(true)
     }
@@ -138,6 +146,68 @@ impl<'a> RuntimeNode<'a> {
             return Err(NodeError::Session(SessionError::InvalidState));
         }
         Ok(self.dispatcher.unsubscribe_event(subscription))
+    }
+
+    pub fn register_stream_operation(
+        &mut self,
+        operation: AuthorizedOperation,
+    ) -> Result<(), NodeError> {
+        self.streams
+            .register_operation(&self.session, operation)
+            .map_err(NodeError::Stream)
+    }
+
+    pub fn open_data_stream(&mut self, open: &DataStreamOpen) -> Result<StreamId, NodeError> {
+        self.streams
+            .open_uni(&self.session, self.transport.as_ref(), open)
+            .map_err(NodeError::Stream)
+    }
+
+    pub fn try_send_stream_chunk(
+        &mut self,
+        stream_id: StreamId,
+        chunk: Vec<u8>,
+    ) -> Result<(), StreamSendError> {
+        self.streams.try_send_chunk(stream_id, chunk)
+    }
+
+    pub fn finish_data_stream(&mut self, stream_id: StreamId) -> Result<(), NodeError> {
+        self.streams
+            .finish_outbound(stream_id)
+            .map_err(NodeError::Stream)
+    }
+
+    pub fn cancel_outbound_stream(&mut self, stream_id: StreamId) -> Result<(), NodeError> {
+        self.streams
+            .cancel_outbound(stream_id)
+            .map_err(NodeError::Stream)
+    }
+
+    pub fn cancel_inbound_stream(&mut self, stream_id: StreamId) -> Result<(), NodeError> {
+        self.streams
+            .cancel_inbound(stream_id)
+            .map_err(NodeError::Stream)
+    }
+
+    pub fn receive_stream_one(
+        &mut self,
+        peer_trust: &TrustRecord,
+        now: u64,
+    ) -> Result<NodeEvent, NodeError> {
+        match self.streams.receive_one(
+            &self.session,
+            self.transport.as_ref(),
+            now,
+            peer_trust,
+            &self.policy,
+        ) {
+            Ok(event) => Ok(NodeEvent::Stream(event)),
+            Err(error @ RuntimeStreamError::Accept(StreamAcceptError::Closed)) => {
+                self.terminate_transport_loss();
+                Err(NodeError::Stream(error))
+            }
+            Err(error) => Err(NodeError::Stream(error)),
+        }
     }
 
     pub fn send_request(&mut self, request: ControlRequest) -> Result<(), NodeError> {
@@ -171,6 +241,7 @@ impl<'a> RuntimeNode<'a> {
 
     pub fn send_close(&mut self, close: SessionClose) -> Result<(), NodeError> {
         self.send_body(EnvelopeBody::SessionClose(close))?;
+        self.streams.cancel_all();
         self.session.begin_close().map_err(NodeError::Session)
     }
 
@@ -179,6 +250,7 @@ impl<'a> RuntimeNode<'a> {
             .apply_peer_revocation(peer_trust)
             .map_err(NodeError::Session)?;
         self.dispatcher.cancel_session_state();
+        self.streams.cancel_all();
         self.transport.as_ref().close();
         self.session.finish_close().map_err(NodeError::Session)
     }
@@ -189,6 +261,7 @@ impl<'a> RuntimeNode<'a> {
     ) -> Result<(), NodeError> {
         if let Err(error) = self.session.revalidate_authority(authority) {
             self.dispatcher.cancel_session_state();
+            self.streams.cancel_all();
             self.transport.as_ref().close();
             return Err(NodeError::Session(error));
         }
@@ -197,12 +270,14 @@ impl<'a> RuntimeNode<'a> {
 
     pub fn network_lost(&mut self) {
         self.dispatcher.cancel_session_state();
+        self.streams.cancel_all();
         let _ = self.session.transport_lost();
         self.transport.as_ref().close();
     }
 
     pub fn shutdown(&mut self) {
         self.dispatcher.cancel_session_state();
+        self.streams.cancel_all();
         match self.session.state() {
             SessionState::Active => {
                 let _ = self.session.begin_close();
@@ -313,11 +388,13 @@ impl<'a> RuntimeNode<'a> {
 
     fn terminate_transport_loss(&mut self) {
         self.dispatcher.cancel_session_state();
+        self.streams.cancel_all();
         let _ = self.session.transport_lost();
     }
 
     fn close_received(&mut self) -> Result<(), NodeError> {
         self.dispatcher.cancel_session_state();
+        self.streams.cancel_all();
         match self.session.state() {
             SessionState::Active => {
                 self.session.begin_close().map_err(NodeError::Session)?;
@@ -337,6 +414,7 @@ impl<'a> RuntimeNode<'a> {
 
     fn fail_closed(&mut self) {
         self.dispatcher.cancel_session_state();
+        self.streams.cancel_all();
         match self.session.state() {
             SessionState::Active => {
                 let _ = self.session.begin_close();
@@ -396,9 +474,11 @@ fn build_runtime<'a>(
         .context()
         .ok_or(NodeError::Session(SessionError::InvalidState))?;
     let dispatcher = ControlDispatcher::new(context, state_capacity);
+    let streams = RuntimeStreams::new(state_capacity);
     Ok(RuntimeNode {
         session,
         dispatcher,
+        streams,
         transport,
         policy,
         local_capabilities,
