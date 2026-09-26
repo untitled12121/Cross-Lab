@@ -8,7 +8,7 @@ use crosslab_core::{
     ChannelBinding, ConnectionMetadata, ControlReceiveError, ControlSendError, EventSubscription,
     IncomingUniStream, LogicalSession, SessionActivation, SessionAuthRole, SessionAuthTranscriptV1,
     SessionError, SessionHandshakeSide, SessionState, StreamAcceptError, StreamOpenError,
-    TransportConnection, TransportSecurityClass,
+    StreamReceiveError, TransportConnection, TransportReceiveStream, TransportSecurityClass,
 };
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
@@ -16,11 +16,14 @@ use crosslab_identity::{
     OwnerRootRecord, RootSuccessor,
 };
 use crosslab_policy::{
-    CapabilityId, NetworkClass, OperationName, PairingTrustTransition, PolicyState, RuleEffect,
-    TransitionId, TrustRecord, TrustState, TrustTransition,
+    AuthorizationContext, AuthorizedOperation, CapabilityId, CapabilityVersion,
+    CapabilityVersionRange, LocalCapability, NetworkClass, OperationName, PairingTrustTransition,
+    PolicyState, RuleEffect, TransitionId, TrustRecord, TrustState, TrustTransition, UsePolicy,
 };
 use crosslab_protocol::{
-    ControlRequest, EventType, FeatureSet, ProtocolRange, ProtocolVersion, RequestId, RetryClass,
+    CapabilityAdvertisement, CapabilityAdvertisementEntry, ControlRequest, DataStreamOpen,
+    EventType, FeatureSet, ProtocolRange, ProtocolVersion, RequestId, RetryClass, StreamDirection,
+    StreamId, encode_data_stream_open,
 };
 
 use crate::{ConnectivityState, NodeError, RuntimeNode};
@@ -28,6 +31,7 @@ use crate::{ConnectivityState, NodeError, RuntimeNode};
 struct TestTransportState {
     inbound: VecDeque<Vec<u8>>,
     outbound: VecDeque<Vec<u8>>,
+    incoming_streams: VecDeque<IncomingUniStream>,
     closed: bool,
 }
 
@@ -43,6 +47,7 @@ impl TestTransport {
             state: Arc::new(Mutex::new(TestTransportState {
                 inbound: VecDeque::new(),
                 outbound: VecDeque::new(),
+                incoming_streams: VecDeque::new(),
                 closed: false,
             })),
             binding: ChannelBinding::new("secret-binding-profile", binding.to_vec()),
@@ -56,6 +61,41 @@ impl TestTransport {
 
     fn disconnect_now(&self) {
         self.state.lock().unwrap().closed = true;
+    }
+
+    fn push_incoming_stream(&self, opening_frame: Vec<u8>, chunks: Vec<Vec<u8>>) {
+        self.state
+            .lock()
+            .unwrap()
+            .incoming_streams
+            .push_back(IncomingUniStream::new(
+                opening_frame,
+                Box::new(TestReceiveStream {
+                    chunks: chunks.into(),
+                    cancelled: false,
+                }),
+            ));
+    }
+}
+
+struct TestReceiveStream {
+    chunks: VecDeque<Vec<u8>>,
+    cancelled: bool,
+}
+
+impl TransportReceiveStream for TestReceiveStream {
+    fn try_receive_chunk(&mut self) -> Result<Vec<u8>, StreamReceiveError> {
+        if self.cancelled {
+            return Err(StreamReceiveError::Cancelled);
+        }
+        self.chunks
+            .pop_front()
+            .ok_or(StreamReceiveError::Finished)
+    }
+
+    fn cancel(&mut self) {
+        self.cancelled = true;
+        self.chunks.clear();
     }
 }
 
@@ -97,7 +137,14 @@ impl TransportConnection for TestTransport {
     }
 
     fn try_accept_uni_stream(&self) -> Result<IncomingUniStream, StreamAcceptError> {
-        Err(StreamAcceptError::Closed)
+        let mut state = self.state.lock().unwrap();
+        if state.closed {
+            return Err(StreamAcceptError::Closed);
+        }
+        state
+            .incoming_streams
+            .pop_front()
+            .ok_or(StreamAcceptError::Empty)
     }
 
     fn close(&self) {
@@ -549,4 +596,176 @@ fn inactive_status_drops_session_id() {
     assert_eq!(status.session_id(), None);
     assert_eq!(status.session_state(), SessionState::Closed);
     assert_eq!(status.connectivity(), ConnectivityState::Disconnected);
+}
+
+
+fn files_capability() -> CapabilityId {
+    CapabilityId::parse("files.transfer").unwrap()
+}
+
+fn receive_operation() -> OperationName {
+    OperationName::parse("receive").unwrap()
+}
+
+fn files_local_capability() -> LocalCapability {
+    LocalCapability::new(
+        files_capability(),
+        CapabilityVersionRange::new(1, 0, 0).unwrap(),
+        true,
+    )
+}
+
+fn activate_files_capability(session: &mut LogicalSession) {
+    session
+        .negotiate_capabilities(
+            &[files_local_capability()],
+            &CapabilityAdvertisement::new(vec![
+                CapabilityAdvertisementEntry::new(
+                    files_capability(),
+                    CapabilityVersion::new(1, 0),
+                    CapabilityVersion::new(1, 0),
+                    true,
+                )
+                .unwrap(),
+            ])
+            .unwrap(),
+        )
+        .unwrap();
+}
+
+fn stream_policy_and_operation(
+    fixture: &Fixture,
+    session: &LogicalSession,
+) -> (PolicyState, AuthorizedOperation) {
+    let mut policy = PolicyState::new();
+    policy
+        .set_rule_effect(
+            fixture.peer_trust.device_id(),
+            files_capability(),
+            receive_operation(),
+            RuleEffect::Allow,
+        )
+        .unwrap();
+    let context = session.context().unwrap();
+    let authorization = AuthorizationContext::new(
+        fixture.peer_trust.device_id(),
+        context.local_device_id(),
+        context.session_id(),
+        files_capability(),
+        CapabilityVersion::new(1, 0),
+        receive_operation(),
+        fixture.peer_trust.state(),
+        fixture.peer_trust.trust_revision(),
+        files_local_capability(),
+        NetworkClass::Local,
+    );
+    let grant = policy.evaluate(&authorization).into_grant().unwrap();
+    let operation =
+        AuthorizedOperation::issue(grant, 10, 20, UsePolicy::SingleStream).unwrap();
+    (policy, operation)
+}
+
+#[test]
+fn runtime_streams_admit_and_redact_authorized_payload() {
+    let fixture = Fixture::new();
+    let transport = TestTransport::new([0x80; 32]);
+    let mut session = fixture.active_session(&transport);
+    activate_files_capability(&mut session);
+    let (policy, operation) = stream_policy_and_operation(&fixture, &session);
+    let context = session.context().unwrap();
+    let stream_id = StreamId::from_bytes([0x81; 16]);
+    let open = DataStreamOpen::new(
+        context.session_id(),
+        stream_id,
+        operation.id(),
+        files_capability(),
+        CapabilityVersion::new(1, 0),
+        receive_operation(),
+        StreamDirection::SourceToDestination,
+        0,
+    );
+    let mut runtime = RuntimeNode::new(
+        session,
+        &transport,
+        policy,
+        vec![files_local_capability()],
+        NetworkClass::Local,
+        NonZeroUsize::new(4).unwrap(),
+    )
+    .unwrap();
+    runtime.register_stream_operation(operation).unwrap();
+    transport.push_incoming_stream(
+        encode_data_stream_open(&open).unwrap(),
+        vec![b"private-file-payload".to_vec()],
+    );
+
+    let opened = runtime.receive_stream_one(&fixture.peer_trust, 11).unwrap();
+    assert!(matches!(
+        opened,
+        crate::NodeEvent::Stream(crate::RuntimeStreamEvent::Opened(admitted))
+            if admitted.stream_id() == stream_id
+    ));
+
+    let chunk = runtime.receive_stream_one(&fixture.peer_trust, 11).unwrap();
+    let rendered = format!("{chunk:?}");
+    assert!(!rendered.contains("private-file-payload"));
+    assert!(matches!(
+        chunk,
+        crate::NodeEvent::Stream(crate::RuntimeStreamEvent::Chunk(ref chunk))
+            if chunk.stream_id() == stream_id && chunk.bytes() == b"private-file-payload"
+    ));
+
+    assert!(matches!(
+        runtime.receive_stream_one(&fixture.peer_trust, 11).unwrap(),
+        crate::NodeEvent::Stream(crate::RuntimeStreamEvent::Finished(id)) if id == stream_id
+    ));
+}
+
+#[test]
+fn policy_replacement_invalidates_registered_stream_authority() {
+    let fixture = Fixture::new();
+    let transport = TestTransport::new([0x82; 32]);
+    let mut session = fixture.active_session(&transport);
+    activate_files_capability(&mut session);
+    let (policy, operation) = stream_policy_and_operation(&fixture, &session);
+    let context = session.context().unwrap();
+    let open = DataStreamOpen::new(
+        context.session_id(),
+        StreamId::from_bytes([0x83; 16]),
+        operation.id(),
+        files_capability(),
+        CapabilityVersion::new(1, 0),
+        receive_operation(),
+        StreamDirection::SourceToDestination,
+        0,
+    );
+    let mut runtime = RuntimeNode::new(
+        session,
+        &transport,
+        policy.clone(),
+        vec![files_local_capability()],
+        NetworkClass::Local,
+        NonZeroUsize::new(4).unwrap(),
+    )
+    .unwrap();
+    runtime.register_stream_operation(operation).unwrap();
+
+    let mut replacement = policy;
+    replacement
+        .set_rule_effect(
+            fixture.peer_trust.device_id(),
+            files_capability(),
+            receive_operation(),
+            RuleEffect::Deny,
+        )
+        .unwrap();
+    runtime.replace_policy(replacement).unwrap();
+
+    transport.push_incoming_stream(encode_data_stream_open(&open).unwrap(), Vec::new());
+    assert!(matches!(
+        runtime.receive_stream_one(&fixture.peer_trust, 11),
+        Err(NodeError::Stream(crate::RuntimeStreamError::Admission(
+            crosslab_core::StreamAdmissionError::OperationNotFound
+        )))
+    ));
 }
