@@ -667,7 +667,9 @@ async fn install_session(
 async fn mark_transport_lost(
     connected: &mut Option<ConnectedRuntime>,
     status_tx: &watch::Sender<PresenceSnapshot>,
+    clipboard: &mut ClipboardRuntimeState,
 ) {
+    clipboard.cancel_all(ClipboardOperationError::Cancelled);
     let Some(connection) = connected.as_mut() else {
         return;
     };
@@ -690,6 +692,7 @@ async fn handle_command(
     network_available: &mut bool,
     auto_connect: &mut bool,
     status_tx: &watch::Sender<PresenceSnapshot>,
+    clipboard: &mut ClipboardRuntimeState,
 ) -> bool {
     match command {
         Some(AgentCommand::CandidateAvailable(route)) => {
@@ -703,7 +706,7 @@ async fn handle_command(
         Some(AgentCommand::NetworkLost) => {
             *network_available = false;
             candidates.clear();
-            mark_transport_lost(connected, status_tx).await;
+            mark_transport_lost(connected, status_tx, clipboard).await;
             publish_waiting(status_tx, connected.as_ref(), false, *auto_connect);
             false
         }
@@ -715,6 +718,7 @@ async fn handle_command(
         Some(AgentCommand::Disconnect) => {
             *auto_connect = false;
             candidates.clear();
+            clipboard.cancel_all(ClipboardOperationError::Cancelled);
             stop_connected(connected.take()).await;
             status_tx.send_replace(PresenceSnapshot::new(PresencePhase::Paused, None));
             false
@@ -724,10 +728,256 @@ async fn handle_command(
             publish_waiting(status_tx, connected.as_ref(), *network_available, true);
             false
         }
+        Some(AgentCommand::ClipboardWrite { text, reply }) => {
+            start_clipboard_write(connected.as_ref(), clipboard, text, reply).await;
+            false
+        }
+        Some(AgentCommand::ClipboardRead { reply }) => {
+            start_clipboard_read(connected.as_ref(), clipboard, reply).await;
+            false
+        }
+        Some(AgentCommand::ClipboardReadComplete {
+            request_id,
+            result,
+            reply,
+        }) => {
+            let outcome =
+                complete_clipboard_read(connected.as_ref(), clipboard, request_id, result).await;
+            let _ = reply.send(outcome);
+            false
+        }
+        Some(AgentCommand::ClipboardWriteComplete {
+            request_id,
+            result,
+            reply,
+        }) => {
+            let outcome =
+                complete_clipboard_write(connected.as_ref(), clipboard, request_id, result).await;
+            let _ = reply.send(outcome);
+            false
+        }
         Some(AgentCommand::Stop) | None => {
+            clipboard.cancel_all(ClipboardOperationError::Cancelled);
             stop_connected(connected.take()).await;
             true
         }
+    }
+}
+
+async fn start_clipboard_write(
+    connected: Option<&ConnectedRuntime>,
+    clipboard: &mut ClipboardRuntimeState,
+    text: String,
+    reply: oneshot::Sender<Result<(), ClipboardOperationError>>,
+) {
+    if clipboard.outgoing.len() >= RUNTIME_CAPACITY {
+        let _ = reply.send(Err(ClipboardOperationError::ResourceLimit));
+        return;
+    }
+    let Some(connection) = connected.filter(|connection| !connection.reconnecting) else {
+        let _ = reply.send(Err(ClipboardOperationError::NotConnected));
+        return;
+    };
+    if !clipboard_capability_negotiated(
+        connection.status.borrow().negotiated_capability_ids(),
+        ClipboardKind::Write,
+    ) {
+        let _ = reply.send(Err(ClipboardOperationError::NotNegotiated));
+        return;
+    }
+    let request_id = match RequestId::generate() {
+        Ok(request_id) => request_id,
+        Err(_) => {
+            let _ = reply.send(Err(ClipboardOperationError::Random));
+            return;
+        }
+    };
+    let request = match clipboard_write_request(request_id, text) {
+        Ok(request) => request,
+        Err(error) => {
+            let _ = reply.send(Err(error));
+            return;
+        }
+    };
+    if connection.actor.send_request(request).await.is_err() {
+        let _ = reply.send(Err(ClipboardOperationError::Transport));
+        return;
+    }
+    clipboard.outgoing.insert(
+        request_id,
+        PendingClipboard::Write {
+            deadline: Instant::now() + CLIPBOARD_OPERATION_TIMEOUT,
+            reply,
+        },
+    );
+}
+
+async fn start_clipboard_read(
+    connected: Option<&ConnectedRuntime>,
+    clipboard: &mut ClipboardRuntimeState,
+    reply: oneshot::Sender<Result<String, ClipboardOperationError>>,
+) {
+    if clipboard.outgoing.len() >= RUNTIME_CAPACITY {
+        let _ = reply.send(Err(ClipboardOperationError::ResourceLimit));
+        return;
+    }
+    let Some(connection) = connected.filter(|connection| !connection.reconnecting) else {
+        let _ = reply.send(Err(ClipboardOperationError::NotConnected));
+        return;
+    };
+    if !clipboard_capability_negotiated(
+        connection.status.borrow().negotiated_capability_ids(),
+        ClipboardKind::Read,
+    ) {
+        let _ = reply.send(Err(ClipboardOperationError::NotNegotiated));
+        return;
+    }
+    let request_id = match RequestId::generate() {
+        Ok(request_id) => request_id,
+        Err(_) => {
+            let _ = reply.send(Err(ClipboardOperationError::Random));
+            return;
+        }
+    };
+    if connection
+        .actor
+        .send_request(clipboard_read_request(request_id))
+        .await
+        .is_err()
+    {
+        let _ = reply.send(Err(ClipboardOperationError::Transport));
+        return;
+    }
+    clipboard.outgoing.insert(
+        request_id,
+        PendingClipboard::Read {
+            deadline: Instant::now() + CLIPBOARD_OPERATION_TIMEOUT,
+            reply,
+        },
+    );
+}
+
+async fn complete_clipboard_read(
+    connected: Option<&ConnectedRuntime>,
+    clipboard: &mut ClipboardRuntimeState,
+    request_id: RequestId,
+    result: Result<String, ClipboardPlatformError>,
+) -> Result<(), ClipboardOperationError> {
+    match clipboard.inbound.remove(&request_id) {
+        Some(ClipboardKind::Read) => {}
+        Some(ClipboardKind::Write) | None => return Err(ClipboardOperationError::Cancelled),
+    }
+    let connection = connected
+        .filter(|connection| !connection.reconnecting)
+        .ok_or(ClipboardOperationError::Cancelled)?;
+    connection
+        .actor
+        .send_response(request_id, clipboard_read_completion(result))
+        .await
+        .map_err(|_| ClipboardOperationError::Transport)
+}
+
+async fn complete_clipboard_write(
+    connected: Option<&ConnectedRuntime>,
+    clipboard: &mut ClipboardRuntimeState,
+    request_id: RequestId,
+    result: Result<(), ClipboardPlatformError>,
+) -> Result<(), ClipboardOperationError> {
+    match clipboard.inbound.remove(&request_id) {
+        Some(ClipboardKind::Write) => {}
+        Some(ClipboardKind::Read) | None => return Err(ClipboardOperationError::Cancelled),
+    }
+    let connection = connected
+        .filter(|connection| !connection.reconnecting)
+        .ok_or(ClipboardOperationError::Cancelled)?;
+    connection
+        .actor
+        .send_response(request_id, clipboard_write_completion(result))
+        .await
+        .map_err(|_| ClipboardOperationError::Transport)
+}
+
+async fn handle_runtime_event(
+    event: NodeEvent,
+    connected: &mut Option<ConnectedRuntime>,
+    clipboard: &mut ClipboardRuntimeState,
+) {
+    match event {
+        NodeEvent::RequestDispatched(request) => {
+            let request_id = request.request_id();
+            let result = match decode_clipboard(&request) {
+                Ok(platform_request) => {
+                    if clipboard.inbound.len() >= RUNTIME_CAPACITY {
+                        Some(clipboard_resource_failure())
+                    } else {
+                        let kind = match &platform_request {
+                            ClipboardRequest::Read { .. } => ClipboardKind::Read,
+                            ClipboardRequest::Write { .. } => ClipboardKind::Write,
+                        };
+                        match clipboard.requests_tx.try_send(platform_request) {
+                            Ok(()) => {
+                                clipboard.inbound.insert(request_id, kind);
+                                None
+                            }
+                            Err(mpsc::error::TrySendError::Full(_)) => {
+                                Some(clipboard_resource_failure())
+                            }
+                            Err(mpsc::error::TrySendError::Closed(_)) => {
+                                Some(clipboard_internal_failure())
+                            }
+                        }
+                    }
+                }
+                Err(result) => Some(result),
+            };
+
+            if let Some(result) = result
+                && let Some(connection) =
+                    connected.as_ref().filter(|connection| !connection.reconnecting)
+            {
+                let _ = connection.actor.send_response(request_id, result).await;
+            }
+        }
+        NodeEvent::Response(response) => {
+            if let Some(pending) = clipboard.outgoing.remove(&response.request_id()) {
+                let result = decode_clipboard_response(pending.kind(), response.result());
+                pending.finish(result);
+            }
+        }
+        NodeEvent::RequestCancelled(request_id) => {
+            clipboard.inbound.remove(&request_id);
+        }
+        NodeEvent::SessionClosed(_) => {
+            clipboard.cancel_all(ClipboardOperationError::Cancelled);
+        }
+        NodeEvent::CapabilitiesUpdated
+        | NodeEvent::Event(_)
+        | NodeEvent::ProtocolFailure(_) => {}
+    }
+}
+
+async fn expire_clipboard_operations(
+    connected: &mut Option<ConnectedRuntime>,
+    clipboard: &mut ClipboardRuntimeState,
+) {
+    let now = Instant::now();
+    let expired = clipboard
+        .outgoing
+        .iter()
+        .filter_map(|(request_id, pending)| (pending.deadline() <= now).then_some(*request_id))
+        .collect::<Vec<_>>();
+
+    for request_id in expired {
+        let Some(pending) = clipboard.outgoing.remove(&request_id) else {
+            continue;
+        };
+        if let Some(connection) = connected
+            .as_ref()
+            .filter(|connection| !connection.reconnecting)
+        {
+            let _ = connection.actor.send_cancel(request_id).await;
+        }
+        pending.cancel(ClipboardOperationError::TimedOut);
     }
 }
 
@@ -737,12 +987,14 @@ async fn apply_policy_update(
     connected: &mut Option<ConnectedRuntime>,
     permissions_tx: &watch::Sender<PermissionSnapshot>,
     status_tx: &watch::Sender<PresenceSnapshot>,
+    clipboard: &mut ClipboardRuntimeState,
 ) {
     let next = policy_rx.borrow_and_update().clone();
     if *policy == next || next.revision() <= policy.revision() {
         return;
     }
 
+    clipboard.cancel_all(ClipboardOperationError::Cancelled);
     let apply_failed = match connected.as_ref() {
         Some(connection) => connection.actor.replace_policy(next.clone()).await.is_err(),
         None => false,
