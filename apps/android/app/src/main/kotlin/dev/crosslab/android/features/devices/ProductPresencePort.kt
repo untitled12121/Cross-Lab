@@ -559,8 +559,9 @@ class ProductPresencePort(
                     }
                     return
                 }
+                val write = clipboard.writeRemoteText(text)
                 clipboardWorkers.execute {
-                    when (clipboard.writeRemoteText(text)) {
+                    when (write) {
                         LocalClipboardWrite.SUCCESS ->
                             runCatching { active.completeClipboardWrite(requestId) }
 
