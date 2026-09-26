@@ -13,7 +13,7 @@ use crosslab_transport_quic::{QuicTransportConfig, TrustedSessionQuicServer};
 use tokio::sync::{mpsc, watch};
 
 use super::{
-    runner::{AgentCommand, AgentSecurity, run_agent},
+    runner::{AgentChannels, AgentCommand, AgentSecurity, run_agent},
     types::{
         PermissionSnapshot, PresenceAgentError, PresenceDiscoveryInfo, PresencePhase,
         PresenceSnapshot, TrustedSessionRoute,
@@ -26,6 +26,7 @@ pub struct TrustedPresenceAgent {
     discovery_instance: Arc<RwLock<String>>,
     listen_port: u16,
     command_tx: mpsc::Sender<AgentCommand>,
+    policy_tx: watch::Sender<PolicyState>,
     status: watch::Receiver<PresenceSnapshot>,
     permissions: watch::Receiver<PermissionSnapshot>,
 }
@@ -67,6 +68,7 @@ impl TrustedPresenceAgent {
             trusts,
         });
         let (command_tx, command_rx) = mpsc::channel(COMMAND_CAPACITY);
+        let (policy_tx, policy_rx) = watch::channel(policy.clone());
         let (status_tx, status) =
             watch::channel(PresenceSnapshot::new(PresencePhase::Discovering, None));
         let (permissions_tx, permissions) =
@@ -116,9 +118,7 @@ impl TrustedPresenceAgent {
                         security,
                         runner_discovery_instance,
                         policy,
-                        command_rx,
-                        status_tx,
-                        permissions_tx,
+                        AgentChannels::new(policy_rx, command_rx, status_tx, permissions_tx),
                     )
                     .await;
                 });
@@ -132,6 +132,7 @@ impl TrustedPresenceAgent {
             discovery_instance,
             listen_port,
             command_tx,
+            policy_tx,
             status,
             permissions,
         })
@@ -168,10 +169,43 @@ impl TrustedPresenceAgent {
     }
 
     pub fn replace_policy(&self, policy: PolicyState) -> Result<(), PresenceAgentError> {
-        if policy.revision() <= self.permissions.borrow().policy_revision() {
+        if policy.revision() <= self.policy_tx.borrow().revision() {
             return Err(PresenceAgentError::StalePolicy);
         }
-        self.send(AgentCommand::ReplacePolicy(policy))
+        self.policy_tx
+            .send(policy)
+            .map_err(|_| PresenceAgentError::Closed)
+    }
+
+    pub async fn replace_policy_and_wait(
+        &self,
+        policy: PolicyState,
+    ) -> Result<(), PresenceAgentError> {
+        let target_revision = policy.revision();
+        let mut permissions = self.subscribe_permissions();
+        self.replace_policy(policy)?;
+
+        loop {
+            if permissions.borrow().policy_revision() >= target_revision {
+                return Ok(());
+            }
+            permissions
+                .changed()
+                .await
+                .map_err(|_| PresenceAgentError::Closed)?;
+        }
+    }
+
+    pub async fn fail_closed_policy(&self) -> Result<(), PresenceAgentError> {
+        let revision = self
+            .policy_tx
+            .borrow()
+            .revision()
+            .checked_add(1)
+            .ok_or(PresenceAgentError::PolicyRevisionExhausted)?;
+        let policy = PolicyState::from_snapshot(revision, std::iter::empty())
+            .expect("empty policy snapshot cannot contain duplicate rules");
+        self.replace_policy_and_wait(policy).await
     }
 
     pub fn candidate_available(

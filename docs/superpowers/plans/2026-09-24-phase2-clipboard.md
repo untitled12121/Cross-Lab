@@ -65,7 +65,7 @@ Requirements:
 - no clipboard payloads in the policy store;
 - policy must be loaded before the presence/runtime session is created.
 
-ADR-0019 was accepted by the owner on 2026-09-25. PR #58 implements the shared rollback/currentness-aware policy-store core plus Linux policy-state/Secret Service and Android AtomicFile/Keystore protected-currentness adapters. Both production presence paths load validated policy before trusted-session runtime creation. Exact-head verification is pending before writable permission controls are added.
+ADR-0019 was accepted by the owner on 2026-09-25. PR #58 merged the shared rollback/currentness-aware policy-store core plus Linux policy-state/Secret Service and Android AtomicFile/Keystore protected-currentness adapters after exact-head CI and Fuzz Smoke passed. Both production presence paths load validated policy before trusted-session runtime creation. The active `phase2-permission-edits` milestone wires exact owner edits through persist-before-apply storage commits, active-policy replacement acknowledgement, and fail-closed recovery before clipboard execution is added.
 
 ## Task 4 — Shared clipboard capability runtime
 

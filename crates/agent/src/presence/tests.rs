@@ -117,6 +117,33 @@ async fn trusted_agents_connect_and_reconnect_with_fresh_session_authority() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn fail_closed_policy_advances_revision_and_removes_rules() {
+    let (left_state, right_state) = reciprocal_identities();
+    let right_device_id = right_state.local_credential().device_id();
+    let signer = Arc::new(SigningKey::from_secret_bytes([0x74; 32]));
+    let mut policy = PolicyState::new();
+    policy
+        .set_rule_effect(
+            right_device_id,
+            CapabilityId::parse("clipboard.read").unwrap(),
+            OperationName::parse("get").unwrap(),
+            RuleEffect::Allow,
+        )
+        .unwrap();
+
+    let agent = TrustedPresenceAgent::spawn_with_policy(left_state, signer, policy).unwrap();
+    let mut permissions = agent.subscribe_permissions();
+    agent.fail_closed_policy().await.unwrap();
+    tokio::time::timeout(WAIT, permissions.changed())
+        .await
+        .expect("fail-closed policy should publish")
+        .expect("permission channel should remain open");
+
+    assert_eq!(permissions.borrow().policy_revision(), 2);
+    assert!(permissions.borrow().rules().is_empty());
+}
+
 fn reciprocal_identities() -> (ProductIdentityState, ProductIdentityState) {
     let owner_id = OwnerId::from_bytes([0x70; 32]);
     let root_key = SigningKey::from_secret_bytes([0x71; 32]);

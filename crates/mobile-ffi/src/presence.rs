@@ -76,6 +76,8 @@ pub enum MobilePresenceError {
     QueueFull,
     Closed,
     StateUnavailable,
+    PolicyRevisionExhausted,
+    PolicyApplyTimeout,
 }
 
 impl core::fmt::Display for MobilePresenceError {
@@ -92,17 +94,22 @@ impl core::fmt::Display for MobilePresenceError {
             Self::QueueFull => "trusted presence command queue is full",
             Self::Closed => "trusted presence agent is closed",
             Self::StateUnavailable => "trusted presence state is unavailable",
+            Self::PolicyRevisionExhausted => "trusted presence policy revision is exhausted",
+            Self::PolicyApplyTimeout => "trusted presence policy update timed out",
         })
     }
 }
 
 impl std::error::Error for MobilePresenceError {}
 
+const POLICY_APPLY_TIMEOUT: Duration = Duration::from_secs(5);
+
 #[derive(uniffi::Object)]
 pub struct MobileTrustedPresenceAgent {
     agent: Mutex<Option<TrustedPresenceAgent>>,
     status: Mutex<tokio::sync::watch::Receiver<crosslab_agent::PresenceSnapshot>>,
     wait_runtime: Mutex<Runtime>,
+    policy_runtime: Mutex<Runtime>,
 }
 
 impl core::fmt::Debug for MobileTrustedPresenceAgent {
@@ -135,11 +142,16 @@ impl MobileTrustedPresenceAgent {
             .enable_time()
             .build()
             .map_err(|_| MobilePresenceError::Thread)?;
+        let policy_runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .map_err(|_| MobilePresenceError::Thread)?;
 
         Ok(Self {
             agent: Mutex::new(Some(agent)),
             status: Mutex::new(status),
             wait_runtime: Mutex::new(wait_runtime),
+            policy_runtime: Mutex::new(policy_runtime),
         })
     }
 
@@ -204,6 +216,49 @@ impl MobileTrustedPresenceAgent {
 
     pub fn permission_snapshot(&self) -> Result<MobilePermissionSnapshot, MobilePresenceError> {
         self.with_agent(|agent| Ok(to_mobile_permission_snapshot(&agent.permission_snapshot())))
+    }
+
+    pub fn replace_policy(
+        &self,
+        policy_envelope: Vec<u8>,
+        policy_anchor: Vec<u8>,
+    ) -> Result<(), MobilePresenceError> {
+        let policy = decode_policy_store(&policy_envelope, &policy_anchor)?;
+        let agent = self
+            .agent
+            .lock()
+            .map_err(|_| MobilePresenceError::StateUnavailable)?;
+        let agent = agent.as_ref().ok_or(MobilePresenceError::Closed)?;
+        let runtime = self
+            .policy_runtime
+            .lock()
+            .map_err(|_| MobilePresenceError::StateUnavailable)?;
+        runtime
+            .block_on(tokio::time::timeout(
+                POLICY_APPLY_TIMEOUT,
+                agent.replace_policy_and_wait(policy),
+            ))
+            .map_err(|_| MobilePresenceError::PolicyApplyTimeout)??;
+        Ok(())
+    }
+
+    pub fn fail_closed_policy(&self) -> Result<(), MobilePresenceError> {
+        let agent = self
+            .agent
+            .lock()
+            .map_err(|_| MobilePresenceError::StateUnavailable)?;
+        let agent = agent.as_ref().ok_or(MobilePresenceError::Closed)?;
+        let runtime = self
+            .policy_runtime
+            .lock()
+            .map_err(|_| MobilePresenceError::StateUnavailable)?;
+        runtime
+            .block_on(tokio::time::timeout(
+                POLICY_APPLY_TIMEOUT,
+                agent.fail_closed_policy(),
+            ))
+            .map_err(|_| MobilePresenceError::PolicyApplyTimeout)??;
+        Ok(())
     }
 
     pub fn snapshot(&self) -> Result<MobilePresenceSnapshot, MobilePresenceError> {
@@ -325,6 +380,7 @@ impl From<PresenceAgentError> for MobilePresenceError {
             PresenceAgentError::Thread => Self::Thread,
             PresenceAgentError::InvalidRoute => Self::InvalidRoute,
             PresenceAgentError::StalePolicy => Self::StalePolicy,
+            PresenceAgentError::PolicyRevisionExhausted => Self::PolicyRevisionExhausted,
             PresenceAgentError::CommandQueueFull => Self::QueueFull,
             PresenceAgentError::Closed => Self::Closed,
         }

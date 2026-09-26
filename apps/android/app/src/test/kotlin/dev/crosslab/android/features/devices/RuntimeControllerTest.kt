@@ -80,6 +80,38 @@ class RuntimeControllerTest {
     }
 
     @Test
+    fun permissionEditsOnlyReachARunningRuntime() {
+        val port = FakeRuntimePort()
+        val controller = RuntimeController(port)
+
+        assertEquals(
+            false,
+            controller.setPermission(
+                "clipboard.read",
+                "get",
+                RuntimePermissionEffect.ALLOW,
+            ),
+        )
+        controller.onForeground()
+        assertEquals(
+            true,
+            controller.setPermission(
+                "clipboard.read",
+                "get",
+                RuntimePermissionEffect.ALLOW,
+            ),
+        )
+        controller.onBackground()
+        controller.setPermission(
+            "clipboard.read",
+            "get",
+            RuntimePermissionEffect.DENY,
+        )
+
+        assertEquals(1, port.permissionEdits)
+    }
+
+    @Test
     fun shutdownStopsOnceAndPreventsRestart() {
         val port = FakeRuntimePort()
         val controller = RuntimeController(port)
@@ -101,6 +133,7 @@ class RuntimeControllerTest {
         var networkAvailable = 0
         var disconnects = 0
         var reconnects = 0
+        var permissionEdits = 0
         private var current = RuntimeSnapshot.disconnected()
         private val snapshotListeners = CopyOnWriteArraySet<(RuntimeSnapshot) -> Unit>()
 
@@ -126,6 +159,15 @@ class RuntimeControllerTest {
 
         override fun reconnectPeer() {
             reconnects += 1
+        }
+
+        override fun setPermission(
+            capabilityId: String,
+            operation: String,
+            effect: RuntimePermissionEffect,
+        ): Boolean {
+            permissionEdits += 1
+            return true
         }
 
         override fun snapshot(): RuntimeSnapshot = current
