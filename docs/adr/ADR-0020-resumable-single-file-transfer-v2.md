@@ -49,7 +49,7 @@ The request body is a bounded versioned transfer offer containing:
 Bounds:
 
 - filename is at most 255 UTF-8 bytes;
-- filename must not contain path separators, NUL, `.`, or `..` path components;
+- filename must not be `.` or `..` and must not contain `/`, `\\`, or NUL;
 - one request describes exactly one regular file;
 - directories, symlinks, device nodes, sparse-file semantics, extended attributes, and alternate streams are not represented by v2.0;
 - platform/policy storage limits may reject a file before transfer even when the wire representation is valid.
@@ -63,7 +63,7 @@ A successful destination response is a bounded versioned acceptance result with 
 - `Ready`: the same `TransferId`, a destination-validated `resume_offset`, and a fresh `OperationId` authorizing one source-to-destination data stream;
 - `AlreadyComplete`: the same `TransferId` and no `OperationId`, used only when bounded retained completion state proves that the same authenticated source and exact file identity tuple already completed.
 
-Rejected, cancelled, unavailable, or resource-limited offers use the existing typed control failure path and never carry an `OperationId`.
+Capability-level rejection, cancellation, unavailability, or resource exhaustion after dispatch uses the existing typed control-response failure path. Session/policy failures rejected by the shared dispatcher follow existing control-plane failure behavior. Neither path carries an `OperationId`.
 
 Before returning `Ready`, the destination:
 
