@@ -49,9 +49,9 @@ This task must not define file metadata, resume offsets, filesystem paths, or ne
 
 Implemented on PR #62. The shared runtime now owns authorized stream lifecycle, Quinn provides event-driven incoming-stream readiness, stale authority is cancelled on policy/revocation/transport/session shutdown paths, closed outbound streams release bounded runtime capacity, and stream payload debug output remains redacted. Exact implementation head `e663909443d208c712ccb7f6e1e74fb8dab26ab8` passed full Rust + Android CI `36258390585`.
 
-## Task 2 — File-transfer v2 profile decision — Pending owner decision
+## Task 2 — File-transfer v2 profile decision — Reviewed; pending owner decision
 
-Review and accept/reject ADR-0020 before capability payload implementation.
+Review completed against the merged stream foundation and current policy/control lifecycle. ADR-0020 remains Proposed and now makes the pre-acceptance compatibility gaps explicit: local `Ask` never mints authority, acceptance distinguishes `Ready` from idempotent `AlreadyComplete`, durable checkpoint recovery fails closed on inconsistent partial state, and `files.transfer.result` provides a terminal outcome after the one-way data stream. No capability payload implementation is authorized until owner acceptance.
 
 The proposal scopes v2.0 to explicit single-file push with:
 
@@ -61,7 +61,9 @@ The proposal scopes v2.0 to explicit single-file push with:
 - 1 MiB contiguous resume checkpoints;
 - a fresh session-bound `OperationId` for every transfer attempt/reconnect;
 - one authorized source-to-destination data stream;
-- partial-file state that survives reconnect without carrying session authority.
+- partial-file state that survives reconnect without carrying session authority;
+- bounded completion tombstones so a lost terminal result cannot duplicate an already completed transfer;
+- a session-local `files.transfer.result` event for confirmed terminal outcome.
 
 If ADR-0020 changes, update this plan before Task 3.
 
