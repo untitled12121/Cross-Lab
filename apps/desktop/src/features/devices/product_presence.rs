@@ -90,10 +90,7 @@ impl DesktopProductPresenceController {
         self.agent.take_clipboard_requests()
     }
 
-    pub async fn send_clipboard_text(
-        &self,
-        text: String,
-    ) -> Result<(), ClipboardOperationError> {
+    pub async fn send_clipboard_text(&self, text: String) -> Result<(), ClipboardOperationError> {
         self.agent.send_clipboard_text(text).await
     }
 
@@ -114,7 +111,9 @@ impl DesktopProductPresenceController {
         request_id: crosslab_protocol::RequestId,
         result: Result<(), ClipboardPlatformError>,
     ) -> Result<(), ClipboardOperationError> {
-        self.agent.complete_clipboard_write(request_id, result).await
+        self.agent
+            .complete_clipboard_write(request_id, result)
+            .await
     }
 
     pub fn disconnect(&self) -> Result<(), DesktopPresenceError> {
