@@ -717,7 +717,6 @@ fn runtime_streams_admit_and_redact_authorized_payload() {
     ));
 }
 
-
 #[test]
 fn closed_data_stream_open_terminates_session_authority() {
     let fixture = Fixture::new();
