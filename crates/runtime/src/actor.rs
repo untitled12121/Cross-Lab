@@ -139,6 +139,12 @@ impl RuntimeActorSession {
             .map_err(|_| RuntimeActorError::ControlRejected)
     }
 
+    fn send_cancel(&mut self, request_id: RequestId) -> Result<(), RuntimeActorError> {
+        self.node
+            .send_cancel(request_id)
+            .map_err(|_| RuntimeActorError::ControlRejected)
+    }
+
     fn receive_one(&mut self) -> Result<NodeEvent, NodeError> {
         self.node.receive_one(&self.peer_trust)
     }
@@ -303,6 +309,22 @@ impl RuntimeActor {
         reply_rx.await.map_err(|_| RuntimeActorError::ActorClosed)?
     }
 
+    pub async fn send_cancel(&self, request_id: RequestId) -> Result<(), RuntimeActorError> {
+        let command_tx = self
+            .command_tx
+            .as_ref()
+            .ok_or(RuntimeActorError::NotRunning)?;
+        let (reply_tx, reply_rx) = oneshot::channel();
+        command_tx
+            .send(RuntimeCommand::SendCancel {
+                request_id,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| RuntimeActorError::ActorClosed)?;
+        reply_rx.await.map_err(|_| RuntimeActorError::ActorClosed)?
+    }
+
     pub async fn reconnect(&self, session: RuntimeActorSession) -> Result<(), RuntimeActorError> {
         let command_tx = self
             .command_tx
@@ -404,6 +426,9 @@ async fn run_actor(
                     reply,
                 } => {
                     let _ = reply.send(session.send_response(request_id, result));
+                }
+                RuntimeCommand::SendCancel { request_id, reply } => {
+                    let _ = reply.send(session.send_cancel(request_id));
                 }
                 RuntimeCommand::Reconnect {
                     session: replacement,
