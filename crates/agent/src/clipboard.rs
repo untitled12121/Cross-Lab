@@ -37,13 +37,8 @@ impl ClipboardAvailability {
 }
 
 pub enum ClipboardRequest {
-    Read {
-        request_id: RequestId,
-    },
-    Write {
-        request_id: RequestId,
-        text: String,
-    },
+    Read { request_id: RequestId },
+    Write { request_id: RequestId, text: String },
 }
 
 impl ClipboardRequest {
@@ -97,14 +92,20 @@ impl fmt::Display for ClipboardOperationError {
             Self::NotConnected => formatter.write_str("clipboard peer is not connected"),
             Self::NotNegotiated => formatter.write_str("clipboard capability is not negotiated"),
             Self::Oversized => formatter.write_str("clipboard text exceeds the v1 size limit"),
-            Self::InvalidResponse => formatter.write_str("clipboard response violates the v1 profile"),
+            Self::InvalidResponse => {
+                formatter.write_str("clipboard response violates the v1 profile")
+            }
             Self::ResourceLimit => formatter.write_str("clipboard operation capacity is exhausted"),
             Self::Random => formatter.write_str("clipboard request identifier generation failed"),
             Self::TimedOut => formatter.write_str("clipboard operation timed out"),
             Self::Cancelled => formatter.write_str("clipboard operation was cancelled"),
             Self::Transport => formatter.write_str("clipboard control transport failed"),
             Self::Closed => formatter.write_str("clipboard runtime is closed"),
-            Self::Remote(code) => write!(formatter, "clipboard peer returned protocol error {}", code.code()),
+            Self::Remote(code) => write!(
+                formatter,
+                "clipboard peer returned protocol error {}",
+                code.code()
+            ),
         }
     }
 }
@@ -141,24 +142,14 @@ pub(crate) fn advertisement(availability: ClipboardAvailability) -> CapabilityAd
     let mut entries = Vec::with_capacity(2);
     if availability.read {
         entries.push(
-            CapabilityAdvertisementEntry::new(
-                capability(CLIPBOARD_READ),
-                VERSION,
-                VERSION,
-                true,
-            )
-            .expect("clipboard read v1 advertisement is valid"),
+            CapabilityAdvertisementEntry::new(capability(CLIPBOARD_READ), VERSION, VERSION, true)
+                .expect("clipboard read v1 advertisement is valid"),
         );
     }
     if availability.write {
         entries.push(
-            CapabilityAdvertisementEntry::new(
-                capability(CLIPBOARD_WRITE),
-                VERSION,
-                VERSION,
-                true,
-            )
-            .expect("clipboard write v1 advertisement is valid"),
+            CapabilityAdvertisementEntry::new(capability(CLIPBOARD_WRITE), VERSION, VERSION, true)
+                .expect("clipboard write v1 advertisement is valid"),
         );
     }
     CapabilityAdvertisement::new(entries).expect("clipboard advertisement is bounded")
@@ -278,10 +269,9 @@ pub(crate) fn read_completion(
             ProtocolErrorCode::CapabilityUnsupported,
             "clipboard read is unavailable",
         ),
-        Err(ClipboardPlatformError::Failed) => failure(
-            ProtocolErrorCode::InternalFailure,
-            "clipboard read failed",
-        ),
+        Err(ClipboardPlatformError::Failed) => {
+            failure(ProtocolErrorCode::InternalFailure, "clipboard read failed")
+        }
     }
 }
 
@@ -294,10 +284,9 @@ pub(crate) fn write_completion(
             ProtocolErrorCode::CapabilityUnsupported,
             "clipboard write is unavailable",
         ),
-        Err(ClipboardPlatformError::Failed) => failure(
-            ProtocolErrorCode::InternalFailure,
-            "clipboard write failed",
-        ),
+        Err(ClipboardPlatformError::Failed) => {
+            failure(ProtocolErrorCode::InternalFailure, "clipboard write failed")
+        }
     }
 }
 
@@ -315,10 +304,7 @@ pub(crate) fn internal_failure() -> ControlResponseResult {
     )
 }
 
-pub(crate) fn capability_negotiated(
-    negotiated: &[CapabilityId],
-    kind: ClipboardKind,
-) -> bool {
+pub(crate) fn capability_negotiated(negotiated: &[CapabilityId], kind: ClipboardKind) -> bool {
     let expected = match kind {
         ClipboardKind::Read => CLIPBOARD_READ,
         ClipboardKind::Write => CLIPBOARD_WRITE,
