@@ -20,9 +20,7 @@ use crate::{
         pairing::{DesktopPairingInvitation, DesktopPairingStage, load_existing_product_identity},
     },
     pages::control_center::{
-        _components::{
-            clipboard_panel, devices_content, owner_content, pairing_invitation_panel,
-        },
+        _components::{clipboard_panel, devices_content, owner_content, pairing_invitation_panel},
         layout::control_center_layout,
     },
 };
@@ -462,8 +460,8 @@ impl ControlCenterPage {
         };
 
         cx.notify();
-        cx.spawn(async move |this, cx| {
-            match controller.fetch_clipboard_text().await {
+        cx.spawn(
+            async move |this, cx| match controller.fetch_clipboard_text().await {
                 Ok(text) => {
                     let _ = this.update(cx, move |page, cx| {
                         cx.write_to_clipboard(ClipboardItem::new_string(text));
@@ -479,8 +477,8 @@ impl ControlCenterPage {
                         cx.notify();
                     });
                 }
-            }
-        })
+            },
+        )
         .detach();
     }
 
@@ -720,13 +718,15 @@ impl Render for ControlCenterPage {
                         .bg(theme.secondary)
                         .text_color(theme.secondary_foreground)
                         .focus_visible(|style| style.border_color(theme.ring))
-                        .child(if self.clipboard.busy()
-                            && self.clipboard.action() == Some(ClipboardAction::Send)
-                        {
-                            "Sending…"
-                        } else {
-                            "Send clipboard"
-                        }),
+                        .child(
+                            if self.clipboard.busy()
+                                && self.clipboard.action() == Some(ClipboardAction::Send)
+                            {
+                                "Sending…"
+                            } else {
+                                "Send clipboard"
+                            },
+                        ),
                 )
                 .child(
                     Button::new("clipboard-fetch")
@@ -742,13 +742,15 @@ impl Render for ControlCenterPage {
                         .bg(theme.secondary)
                         .text_color(theme.secondary_foreground)
                         .focus_visible(|style| style.border_color(theme.ring))
-                        .child(if self.clipboard.busy()
-                            && self.clipboard.action() == Some(ClipboardAction::Fetch)
-                        {
-                            "Fetching…"
-                        } else {
-                            "Fetch clipboard"
-                        }),
+                        .child(
+                            if self.clipboard.busy()
+                                && self.clipboard.action() == Some(ClipboardAction::Fetch)
+                            {
+                                "Fetching…"
+                            } else {
+                                "Fetch clipboard"
+                            },
+                        ),
                 );
 
             clipboard_panel(
