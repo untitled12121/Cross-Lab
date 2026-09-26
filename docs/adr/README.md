@@ -28,6 +28,12 @@ Cross-Lab has accepted the following ADRs:
 | ADR-0018 | Text clipboard capability profile v1 | Accepted |
 | ADR-0019 | Platform owner-policy store boundary | Accepted |
 
+Proposed decisions awaiting owner review:
+
+| ADR | Decision | Status |
+|---|---|---|
+| ADR-0020 | Resumable single-file transfer profile v2 | Proposed |
+
 The governing architecture is `docs/architecture/MASTER-ARCHITECTURE.md`.
 
 ## Naming
