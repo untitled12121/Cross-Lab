@@ -41,7 +41,9 @@ impl fmt::Display for FileTransferWireError {
             Self::InvalidDigestLength(_) => "file transfer digest length is invalid",
             Self::InvalidDisplayName => "file transfer display name is invalid",
             Self::MissingAcceptance => "file transfer acceptance result is missing",
-            Self::InvalidOperationIdLength(_) => "file transfer operation identifier length is invalid",
+            Self::InvalidOperationIdLength(_) => {
+                "file transfer operation identifier length is invalid"
+            }
             Self::InvalidTerminalOutcome(_) => "file transfer terminal outcome is invalid",
         })
     }
@@ -67,8 +69,7 @@ pub fn encode_file_transfer_offer(
 pub fn decode_file_transfer_offer(
     payload: &[u8],
 ) -> Result<FileTransferOffer, FileTransferWireError> {
-    let wire: FileTransferOfferV2 =
-        decode_bounded(payload, MAX_FILE_TRANSFER_OFFER_WIRE_BYTES)?;
+    let wire: FileTransferOfferV2 = decode_bounded(payload, MAX_FILE_TRANSFER_OFFER_WIRE_BYTES)?;
     require_profile(wire.profile_version)?;
 
     FileTransferOffer::new(
@@ -123,16 +124,14 @@ pub fn decode_file_transfer_acceptance(
         .result
         .ok_or(FileTransferWireError::MissingAcceptance)?
     {
-        file_transfer_acceptance_v2::Result::Ready(ready) => {
-            Ok(FileTransferAcceptance::Ready {
-                transfer_id: decode_transfer_id(ready.transfer_id)?,
-                resume_offset: ready.resume_offset,
-                operation_id: OperationId::from_bytes(copy_32(
-                    ready.operation_id,
-                    FileTransferWireError::InvalidOperationIdLength,
-                )?),
-            })
-        }
+        file_transfer_acceptance_v2::Result::Ready(ready) => Ok(FileTransferAcceptance::Ready {
+            transfer_id: decode_transfer_id(ready.transfer_id)?,
+            resume_offset: ready.resume_offset,
+            operation_id: OperationId::from_bytes(copy_32(
+                ready.operation_id,
+                FileTransferWireError::InvalidOperationIdLength,
+            )?),
+        }),
         file_transfer_acceptance_v2::Result::AlreadyComplete(complete) => {
             Ok(FileTransferAcceptance::AlreadyComplete {
                 transfer_id: decode_transfer_id(complete.transfer_id)?,
@@ -166,8 +165,7 @@ pub fn encode_file_transfer_result(
 pub fn decode_file_transfer_result(
     payload: &[u8],
 ) -> Result<FileTransferResult, FileTransferWireError> {
-    let wire: FileTransferResultV2 =
-        decode_bounded(payload, MAX_FILE_TRANSFER_RESULT_WIRE_BYTES)?;
+    let wire: FileTransferResultV2 = decode_bounded(payload, MAX_FILE_TRANSFER_RESULT_WIRE_BYTES)?;
     require_profile(wire.profile_version)?;
 
     let outcome = match wire.outcome {
@@ -204,10 +202,7 @@ fn decode_transfer_id(bytes: Vec<u8>) -> Result<TransferId, FileTransferWireErro
     copy_32(bytes, FileTransferWireError::InvalidTransferIdLength).map(TransferId::from_bytes)
 }
 
-fn encode_bounded(
-    message: &impl Message,
-    max: usize,
-) -> Result<Vec<u8>, FileTransferWireError> {
+fn encode_bounded(message: &impl Message, max: usize) -> Result<Vec<u8>, FileTransferWireError> {
     let encoded = message.encode_to_vec();
     if encoded.len() > max {
         return Err(FileTransferWireError::PayloadTooLarge {
