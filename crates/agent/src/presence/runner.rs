@@ -318,6 +318,7 @@ pub(super) async fn run_agent(
                     event = connection.events.recv() => {
                         event.map_or(ConnectedEvent::TransportClosed, ConnectedEvent::Runtime)
                     }
+                    _ = wait_clipboard_timeout(clipboard.next_deadline()) => ConnectedEvent::ClipboardTimeout,
                     _ = connection.closed.changed() => ConnectedEvent::TransportClosed
                 }
             };
@@ -332,6 +333,7 @@ pub(super) async fn run_agent(
                         &mut network_available,
                         &mut auto_connect,
                         &status_tx,
+                        &mut clipboard,
                     )
                     .await
                     {
@@ -346,18 +348,25 @@ pub(super) async fn run_agent(
                         &mut connected,
                         &permissions_tx,
                         &status_tx,
+                        &mut clipboard,
                     )
                     .await;
                 }
                 ConnectedEvent::PolicyClosed => {
+                    clipboard.cancel_all(ClipboardOperationError::Cancelled);
                     stop_connected(connected.take()).await;
                     server.close();
                     return;
                 }
                 ConnectedEvent::Runtime(event) => {
-                    if matches!(event, NodeEvent::SessionClosed(_)) {
-                        mark_transport_lost(&mut connected, &status_tx).await;
+                    let session_closed = matches!(event, NodeEvent::SessionClosed(_));
+                    handle_runtime_event(event, &mut connected, &mut clipboard).await;
+                    if session_closed {
+                        mark_transport_lost(&mut connected, &status_tx, &mut clipboard).await;
                     }
+                }
+                ConnectedEvent::ClipboardTimeout => {
+                    expire_clipboard_operations(&mut connected, &mut clipboard).await;
                 }
                 ConnectedEvent::StatusChanged => {
                     if let Some(connection) = connected.as_ref() {
@@ -365,7 +374,7 @@ pub(super) async fn run_agent(
                     }
                 }
                 ConnectedEvent::TransportClosed => {
-                    mark_transport_lost(&mut connected, &status_tx).await;
+                    mark_transport_lost(&mut connected, &status_tx, &mut clipboard).await;
                 }
             }
             continue;
@@ -390,6 +399,7 @@ pub(super) async fn run_agent(
                     &mut network_available,
                     &mut auto_connect,
                     &status_tx,
+                    &mut clipboard,
                 ).await {
                     server.close();
                     return;
@@ -397,6 +407,7 @@ pub(super) async fn run_agent(
             }
             changed = policy_rx.changed() => {
                 if changed.is_err() {
+                    clipboard.cancel_all(ClipboardOperationError::Cancelled);
                     stop_connected(connected.take()).await;
                     server.close();
                     return;
@@ -407,6 +418,7 @@ pub(super) async fn run_agent(
                     &mut connected,
                     &permissions_tx,
                     &status_tx,
+                    &mut clipboard,
                 ).await;
             }
             accepted = server.accept_authenticated(&auth, server_timeouts()),
@@ -420,6 +432,7 @@ pub(super) async fn run_agent(
                         &policy,
                         &mut connected,
                         &status_tx,
+                        clipboard.availability,
                     ).await.is_err() {
                         publish_failure(&status_tx, connected.as_ref());
                     }
@@ -439,6 +452,7 @@ pub(super) async fn run_agent(
                         network_available,
                         auto_connect,
                         &status_tx,
+                        clipboard.availability,
                     ).await;
                 }
             }
