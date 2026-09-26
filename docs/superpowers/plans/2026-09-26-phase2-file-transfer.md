@@ -1,8 +1,9 @@
 # Phase 2 Resumable File Transfer
 
-**Status:** Active — profile decision pending
+**Status:** Active — Task 1 implemented; ADR-0020 owner decision pending
 **Date:** 2026-09-26
-**Base:** PR #61 merged as `61ae275356201245a7dcac95d11bd598d2c3045e`
+**Base:** PR #61 merged as `61ae275356201245a7dcac95d11bd598d2c3045e`  
+**Foundation:** PR #62 merged as `e338d10911ccdb908bc495150f048503086c0ce2`; exact implementation head `e663909443d208c712ccb7f6e1e74fb8dab26ab8` passed full Rust + Android CI `36258390585`.
 
 ## Goal
 
@@ -32,7 +33,7 @@ The reference review supports a deliberately smaller Cross-Lab design:
 
 No reference architecture is copied. Cross-Lab keeps its own session, policy, authorization, and platform boundaries.
 
-## Task 1 — Product data-stream runtime foundation
+## Task 1 — Product data-stream runtime foundation — Implemented
 
 Implement protocol-neutral runtime plumbing only:
 
@@ -46,9 +47,11 @@ Implement protocol-neutral runtime plumbing only:
 
 This task must not define file metadata, resume offsets, filesystem paths, or new wire semantics.
 
-## Task 2 — File-transfer v2 profile decision
+Implemented on PR #62. The shared runtime now owns authorized stream lifecycle, Quinn provides event-driven incoming-stream readiness, stale authority is cancelled on policy/revocation/transport/session shutdown paths, closed outbound streams release bounded runtime capacity, and stream payload debug output remains redacted. Exact implementation head `e663909443d208c712ccb7f6e1e74fb8dab26ab8` passed full Rust + Android CI `36258390585`.
 
-Review and accept/reject ADR-0020 before capability payload implementation.
+## Task 2 — File-transfer v2 profile decision — Reviewed; pending owner decision
+
+Review completed against the merged stream foundation and current policy/control lifecycle. ADR-0020 remains Proposed and now makes the pre-acceptance compatibility gaps explicit: local `Ask` never mints authority, acceptance distinguishes `Ready` from idempotent `AlreadyComplete`, durable checkpoint recovery fails closed on inconsistent partial state, and `files.transfer.result` provides a terminal outcome after the one-way data stream. No capability payload implementation is authorized until owner acceptance.
 
 The proposal scopes v2.0 to explicit single-file push with:
 
@@ -58,7 +61,9 @@ The proposal scopes v2.0 to explicit single-file push with:
 - 1 MiB contiguous resume checkpoints;
 - a fresh session-bound `OperationId` for every transfer attempt/reconnect;
 - one authorized source-to-destination data stream;
-- partial-file state that survives reconnect without carrying session authority.
+- partial-file state that survives reconnect without carrying session authority;
+- bounded completion tombstones so a lost terminal result cannot duplicate an already completed transfer;
+- a session-local `files.transfer.result` event for confirmed terminal outcome.
 
 If ADR-0020 changes, update this plan before Task 3.
 

@@ -10,7 +10,7 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 
 ## Canonical Baseline
 
-- Current `main` after PR #61: `61ae275356201245a7dcac95d11bd598d2c3045e`.
+- Current `main` after PR #62: `e338d10911ccdb908bc495150f048503086c0ce2`.
 - PR #49 — Linux Add Device QR invitation UI + Android CameraX/ML Kit scanner: merged as `445bbf32178dff94f339fc1ae80447967f5da215`; exact-head CI `35533414673` green on `7d3176ffd4387d3e29982ae5fe641249d6d33445`.
 - PR #50 — shared product pairing coordinator + durable reciprocal trust persistence: merged as `3af825e6f78bef4512168f587f452c1b0267b6a7`; exact-head CI `35567548228` and Fuzz Smoke `35567548208` green on `ec59f99f7c09898aa2533d8b40bd4e980fa2b022`.
 - PR #51 — ADR-0016 LAN discovery profile + versioned product-pairing wire + provisional Quinn pairing channel: merged as `cf2add350ffa60056d74ac57b0a187a0297d8777`; exact-head CI `35593397861` and Fuzz Smoke `35593397844` green on `2702cc0c926cf044c65aef0376f573aaedae8c6f`.
@@ -27,7 +27,8 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 - PR #59 — persist-before-apply owner permission editing: merged as `f2780f66fd82c430625f534a4109f56c66400d00`; exact head `5efe69bd8b8cda69ed71b6c4b4c0f4188a14d862` passed full Rust + Android CI `36185572618`.
 - PR #60 — shared ADR-0018 clipboard v1 runtime: merged as `aade03ad1e09ed97616a70e5eac2431c6651ac11`; exact head `13e7b4faea4f3b8b045249e6c4059c3f8f15dd1e` passed full Rust + Android CI `36239584543`.
 - PR #61 — Linux GPUI + Android ClipboardManager product adapters/UI: merged as `61ae275356201245a7dcac95d11bd598d2c3045e`; exact head `11c8b46732facd2c881ee6963f46a9248da0cba6` passed full Rust + Android CI `36244041548`.
-- Active Phase 2 branch: `phase2-file-transfer-foundation`.
+- PR #62 — protocol-neutral authorized data-stream runtime foundation: merged as `e338d10911ccdb908bc495150f048503086c0ce2`; exact implementation head `e663909443d208c712ccb7f6e1e74fb8dab26ab8` passed full Rust + Android CI `36258390585`.
+- Active Phase 2 implementation branch: none until the ADR-0020 owner decision.
 - ADR-0018 and ADR-0019 are accepted and implemented. ADR-0020 is a proposed resumable single-file transfer v2 profile; it is not an accepted compatibility surface until owner approval.
 
 ## Implemented M10 Product Path
@@ -101,13 +102,13 @@ Owner approval on 2026-09-25 unblocked implementation. PR #58 merged the shared 
 
 PR #59 completed the persist-before-apply permission-edit boundary. PR #60 then added the shared ADR-0018 clipboard runtime with bounded UTF-8 payloads, capability negotiation, session-local request correlation, and cancellation across policy/reconnect/disconnect/shutdown. PR #61 completed the Linux GPUI and Android ClipboardManager adapters plus explicit Send/Fetch product controls without background clipboard monitoring or plaintext history.
 
-Clipboard is complete for the Phase 2 MVP software slice. The active `phase2-file-transfer-foundation` branch starts resumable file transfer by first reusing the existing authorized data-stream architecture and recording the proposed `files.transfer` v2 compatibility profile in ADR-0020. File payload codecs and persistent resume semantics remain blocked on ADR-0020 acceptance.
+Clipboard is complete for the Phase 2 MVP software slice. PR #62 completed the protocol-neutral authorized data-stream runtime foundation by reusing the existing `AuthorizedOperation`, `StreamAdmission`, `DataStreamOpenV1`, bounded Quinn stream, and fresh-session authority model. ADR-0020 remains Proposed; file payload codecs, resume semantics, partial-transfer persistence, and platform file access remain blocked until explicit owner acceptance.
 
 Continue in small verified vertical slices:
 
 - per-device permissions/capability-control foundation — implemented on PR #56;
 - clipboard — implemented on PR #60 + PR #61;
-- resumable file transfer — active;
+- resumable file transfer — protocol-neutral stream foundation implemented on PR #62; ADR-0020 owner decision pending;
 - notifications;
 - privacy-conscious audit/history;
 - revocation/device removal;
@@ -126,14 +127,13 @@ Phase 3 adaptive networking does not begin until Phase 2 is complete.
 
 ## Exact Next Task
 
-1. implement the protocol-neutral product data-stream runtime foundation on `phase2-file-transfer-foundation`, reusing `AuthorizedOperation`, `StreamAdmission`, `DataStreamOpenV1`, bounded Quinn streams, and fresh-session authority;
-2. require exact-head full Rust + Android CI for that foundation and update this handoff with the verified commit/run;
-3. review ADR-0020. Do not implement its file metadata/resume compatibility surface until it is owner-accepted;
-4. after acceptance, implement the shared `files.transfer` v2 runtime, Linux adapter/UI, and Android SAF/ContentResolver adapter/UI in small verified slices;
-5. preserve exact default deny, no peer path authority, bounded streaming/backpressure, fresh `OperationId` on reconnect, and no file-content/path logging;
-6. then continue through notifications, privacy-conscious audit/history, and revocation/device removal;
-7. keep M10 physical evidence separately pending until owner hardware is available;
-8. stop before Phase 3.
+1. review ADR-0020 and obtain an explicit owner accept/reject/revise decision before implementing any `files.transfer` v2 payload semantics;
+2. if accepted, record the accepted decision in ADR-0020 and the Master Architecture before capability payload code depends on it; if revised, update the ADR and active plan first;
+3. after acceptance, create the next feature branch and implement the shared `files.transfer` v2 runtime, Linux adapter/UI, and Android SAF/ContentResolver adapter/UI in small verified slices;
+4. preserve exact default deny, no peer path authority, bounded streaming/backpressure, fresh `OperationId` on reconnect, and no file-content/path logging;
+5. then continue through notifications, privacy-conscious audit/history, and revocation/device removal;
+6. keep M10 physical evidence separately pending until owner hardware is available;
+7. stop before Phase 3.
 
 ## Resume Procedure
 
