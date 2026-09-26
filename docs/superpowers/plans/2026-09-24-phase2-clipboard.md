@@ -1,6 +1,6 @@
 # Phase 2 Clipboard Vertical Slice
 
-**Status:** Active
+**Status:** Implemented
 **Date:** 2026-09-24
 **Base:** PR #56 merged as d707b330b5d1008e8020267faa3755ad84920591
 
@@ -101,6 +101,10 @@ Expose the smallest clear controls:
 - explicit Send clipboard and Fetch clipboard actions when supported/allowed;
 - actionable unavailable/denied/oversized/failure state;
 - no plaintext clipboard preview/history in the control center.
+
+## Completion
+
+PR #59 completed durable persist-before-apply permission editing. PR #60 implemented the shared ADR-0018 runtime and passed exact-head Rust + Android CI `36239584543`. PR #61 implemented Linux GPUI and Android ClipboardManager product adapters/UI and passed exact-head Rust + Android CI `36244041548`. The clipboard MVP software slice is complete; physical cross-device evidence remains part of the separate owner-hardware validation track.
 
 ## Verification
 
