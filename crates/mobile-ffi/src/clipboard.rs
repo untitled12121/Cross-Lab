@@ -1,9 +1,7 @@
 use core::fmt;
 use std::sync::Mutex;
 
-use crosslab_agent::{
-    ClipboardOperationError, ClipboardPlatformError, ClipboardRequest,
-};
+use crosslab_agent::{ClipboardOperationError, ClipboardPlatformError, ClipboardRequest};
 use crosslab_protocol::{ProtocolErrorCode, RequestId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
@@ -319,10 +317,7 @@ mod tests {
             request_id(vec![0u8; 17]).unwrap_err(),
             MobileClipboardError::InvalidRequestId
         );
-        assert_eq!(
-            request_id(vec![0x44; 16]).unwrap().to_bytes(),
-            [0x44; 16]
-        );
+        assert_eq!(request_id(vec![0x44; 16]).unwrap().to_bytes(), [0x44; 16]);
     }
 
     #[test]
