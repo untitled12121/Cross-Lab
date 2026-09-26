@@ -109,7 +109,10 @@ impl fmt::Debug for RuntimeStreamChunk {
         formatter
             .debug_struct("RuntimeStreamChunk")
             .field("stream_id", &self.stream_id)
-            .field("bytes", &format_args!("[REDACTED; {} bytes]", self.bytes.len()))
+            .field(
+                "bytes",
+                &format_args!("[REDACTED; {} bytes]", self.bytes.len()),
+            )
             .finish()
     }
 }
@@ -270,10 +273,7 @@ impl RuntimeStreams {
         Err(RuntimeStreamError::Receive(StreamReceiveError::Empty))
     }
 
-    pub(crate) fn cancel_inbound(
-        &mut self,
-        stream_id: StreamId,
-    ) -> Result<(), RuntimeStreamError> {
+    pub(crate) fn cancel_inbound(&mut self, stream_id: StreamId) -> Result<(), RuntimeStreamError> {
         let position = self
             .inbound
             .iter()
@@ -331,10 +331,7 @@ impl RuntimeStreams {
             }
         };
 
-        self.inbound.push(InboundStream {
-            admitted,
-            stream,
-        });
+        self.inbound.push(InboundStream { admitted, stream });
         Ok(RuntimeStreamEvent::Opened(admitted))
     }
 }
