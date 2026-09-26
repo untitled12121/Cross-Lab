@@ -282,3 +282,43 @@ message SessionAuthBootstrapV1 {
     SessionAuthProofV1 proof = 3;
   }
 }
+
+message FileTransferOfferV2 {
+  uint32 profile_version = 1;
+  bytes transfer_id = 2;
+  string display_name = 3;
+  uint64 file_size = 4;
+  bytes blake3_digest = 5;
+}
+
+message FileTransferReadyV2 {
+  bytes transfer_id = 1;
+  uint64 resume_offset = 2;
+  bytes operation_id = 3;
+}
+
+message FileTransferAlreadyCompleteV2 {
+  bytes transfer_id = 1;
+}
+
+message FileTransferAcceptanceV2 {
+  uint32 profile_version = 1;
+  oneof result {
+    FileTransferReadyV2 ready = 2;
+    FileTransferAlreadyCompleteV2 already_complete = 3;
+  }
+}
+
+enum FileTransferTerminalOutcomeV2 {
+  FILE_TRANSFER_TERMINAL_OUTCOME_UNSPECIFIED = 0;
+  FILE_TRANSFER_TERMINAL_OUTCOME_COMPLETED = 1;
+  FILE_TRANSFER_TERMINAL_OUTCOME_CANCELLED = 2;
+  FILE_TRANSFER_TERMINAL_OUTCOME_INTEGRITY_FAILED = 3;
+  FILE_TRANSFER_TERMINAL_OUTCOME_STORAGE_FAILED = 4;
+}
+
+message FileTransferResultV2 {
+  uint32 profile_version = 1;
+  bytes transfer_id = 2;
+  FileTransferTerminalOutcomeV2 outcome = 3;
+}
