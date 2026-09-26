@@ -1,6 +1,6 @@
 # Phase 2 Resumable File Transfer
 
-**Status:** Active — Task 1 implemented; ADR-0020 owner decision pending
+**Status:** Active — Task 1 implemented; ADR-0020 accepted; Task 3 ready
 **Date:** 2026-09-26
 **Base:** PR #61 merged as `61ae275356201245a7dcac95d11bd598d2c3045e`  
 **Foundation:** PR #62 merged as `e338d10911ccdb908bc495150f048503086c0ce2`; exact implementation head `e663909443d208c712ccb7f6e1e74fb8dab26ab8` passed full Rust + Android CI `36258390585`.
@@ -49,9 +49,9 @@ This task must not define file metadata, resume offsets, filesystem paths, or ne
 
 Implemented on PR #62. The shared runtime now owns authorized stream lifecycle, Quinn provides event-driven incoming-stream readiness, stale authority is cancelled on policy/revocation/transport/session shutdown paths, closed outbound streams release bounded runtime capacity, and stream payload debug output remains redacted. Exact implementation head `e663909443d208c712ccb7f6e1e74fb8dab26ab8` passed full Rust + Android CI `36258390585`.
 
-## Task 2 — File-transfer v2 profile decision — Reviewed; pending owner decision
+## Task 2 — File-transfer v2 profile decision — Accepted
 
-Review completed against the merged stream foundation and current policy/control lifecycle. ADR-0020 remains Proposed and now makes the pre-acceptance compatibility gaps explicit: local `Ask` never mints authority, acceptance distinguishes `Ready` from idempotent `AlreadyComplete`, durable checkpoint recovery fails closed on inconsistent partial state, and `files.transfer.result` provides a terminal outcome after the one-way data stream. No capability payload implementation is authorized until owner acceptance.
+Owner accepted ADR-0020 as revised on 2026-09-26. The compatibility surface now fixes local approval-before-authority, `Ready` / `AlreadyComplete` acceptance, durable fail-closed checkpoint recovery, fresh session-bound `OperationId` authority on every attempt, bounded completion tombstones, and terminal `files.transfer.result` outcomes.
 
 The proposal scopes v2.0 to explicit single-file push with:
 
@@ -65,9 +65,9 @@ The proposal scopes v2.0 to explicit single-file push with:
 - bounded completion tombstones so a lost terminal result cannot duplicate an already completed transfer;
 - a session-local `files.transfer.result` event for confirmed terminal outcome.
 
-If ADR-0020 changes, update this plan before Task 3.
+Any incompatible change to ADR-0020 now requires a new capability profile/version and architecture review.
 
-## Task 3 — Shared transfer capability runtime
+## Task 3 — Shared transfer capability runtime — Active
 
 After ADR-0020 acceptance:
 

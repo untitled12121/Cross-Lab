@@ -1,8 +1,8 @@
 # Cross-Lab Master Architecture & Development Plan
 
 **Document status:** Architecture Baseline — Source of Truth  
-**Revision:** 2.9  
-**Date:** 2026-09-25  
+**Revision:** 2.10  
+**Date:** 2026-09-26  
 **Project:** Cross-Lab  
 **Scope:** Architecture, security boundaries, repository structure, protocol foundations, platform strategy, development phases, and technology evaluation rules
 
@@ -26,7 +26,7 @@ The following rules apply:
 - License compatibility, security implications, platform support, maintenance status, and performance impact must be reviewed before code is reused or adapted.
 - The smallest architecture that cleanly satisfies the current milestone is preferred over speculative extensibility.
 
-Revision 2.9 incorporates accepted ADR-0018 text clipboard profile v1 and ADR-0019 platform owner-policy store boundary in addition to the existing pairing, identity-store, and trusted-session decisions. Clipboard v1 is explicit text-only request/response with independently authorized read/get and write/set operations. Owner-edited policy persists in a separate rollback/currentness-aware store, loads before protected runtime/session creation, and uses persist-before-apply ordering. Detailed encoding and platform mechanics live in the focused ADR/specification documents; this document records the governing architecture and dependency boundaries.
+Revision 2.10 incorporates accepted ADR-0020 resumable single-file transfer profile v2. Revision 2.9 incorporated ADR-0018 text clipboard profile v1 and ADR-0019 platform owner-policy store boundary in addition to the existing pairing, identity-store, and trusted-session decisions. File transfer v2 is an explicit single-file push profile that reuses authenticated control, exact policy, fresh session-bound `OperationId` authority, and bounded unidirectional data streams. Resume state may survive reconnect, but session/transport authority never does. Detailed encoding and platform mechanics live in the focused ADR/specification documents; this document records the governing architecture and dependency boundaries.
 
 ---
 
@@ -405,6 +405,16 @@ Unsupported functionality must be reported as unsupported rather than emulated t
 ADR-0018 defines the first production clipboard profile. Version 1.0 uses explicit request/response operations only: `clipboard.read/get` and `clipboard.write/set`. Payloads are UTF-8 text bounded to 65,536 bytes. Read and write authority remain independent, automatic `clipboard.changed` synchronization is not part of v1, and files/images/rich clipboard data remain outside ordinary clipboard control frames.
 
 Plaintext clipboard content is operation-lifetime data and must not be written to normal logs, audit history, diagnostics, or retained Cross-Lab clipboard history.
+
+### 9.2 Resumable single-file transfer profile v2
+
+ADR-0020 defines the first production file-transfer profile. Version 2.0 is an explicit single-file push operation using `files.transfer/receive`; remote filesystem browsing, folder sync, arbitrary peer-supplied destination paths, and background broad-storage authority are outside this profile.
+
+A transfer offer carries a random 256-bit `TransferId`, a bounded UTF-8 basename, exact `u64` file size, and BLAKE3-256 digest. The destination may return `Ready` with a durable resume offset plus a fresh session-bound `OperationId`, or `AlreadyComplete` when bounded retained completion state proves the same authenticated source and exact file identity already completed.
+
+Resume uses 1 MiB durable contiguous checkpoints. Partial-transfer state may survive process restart or reconnect, but old `SessionId`, `OperationId`, stream, request sequence, event subscription, or transport authority never survives reconnect. Every resumed attempt re-enters the normal authenticated-session and exact-policy path and receives fresh operation authority.
+
+File bytes remain on the authorized data plane. Final publication requires exact length and BLAKE3 verification, non-clobbering destination behavior, and a bounded terminal `files.transfer.result` outcome. Linux and Android retain ownership of native file/document access; filesystem paths and Android content URIs remain local platform state and never become protocol authority.
 
 ---
 

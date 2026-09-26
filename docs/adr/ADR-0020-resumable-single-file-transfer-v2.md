@@ -1,6 +1,6 @@
 # ADR-0020: Resumable single-file transfer profile v2
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-09-26
 
 ## Context
@@ -21,7 +21,7 @@ Foundation review also exposed three profile requirements that must be explicit 
 
 ## Decision
 
-If accepted, the first Cross-Lab file-transfer product profile is `files.transfer` capability version **2.0** and provides explicit, single-file, resumable push transfer.
+The first Cross-Lab file-transfer product profile is `files.transfer` capability version **2.0** and provides explicit, single-file, resumable push transfer.
 
 ### Product operation
 
@@ -211,7 +211,7 @@ Resume state is bound to authenticated peer identity and complete-file digest, w
 
 ## Compatibility impact
 
-If accepted, the following become the `files.transfer` v2.0 compatibility surface:
+The following are the `files.transfer` v2.0 compatibility surface:
 
 - explicit single-file push via operation `receive`;
 - versioned bounded offer and `Ready` / `AlreadyComplete` acceptance bodies;
@@ -236,4 +236,4 @@ Partial-transfer persistence and completion tombstones are capability state, sep
 
 Cross-Lab gets a small resumable transfer model that reuses existing authenticated control, capability events, and authorized data-stream boundaries instead of creating a second transfer transport. The terminal-result event plus bounded completion tombstone gives the source a confirmed completion path without turning a transfer identifier into authority or duplicating a completed transfer after acknowledgement loss.
 
-The proposal intentionally does not authorize implementation of v2 payload codecs until accepted. Protocol-neutral stream runtime plumbing may proceed independently because it preserves already-accepted `OperationId` and `DataStreamOpenV1` semantics.
+Acceptance authorizes implementation of v2 payload codecs and platform adapters within this compatibility contract. Incompatible changes require a new capability profile/version and architecture review rather than silent reinterpretation.
