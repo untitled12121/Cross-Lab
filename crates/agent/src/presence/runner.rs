@@ -543,6 +543,7 @@ async fn handle_connect_result(
     network_available: bool,
     auto_connect: bool,
     status_tx: &watch::Sender<PresenceSnapshot>,
+    clipboard_availability: ClipboardAvailability,
 ) {
     if connecting_instance.as_deref() != Some(result.instance.as_str()) {
         return;
@@ -569,6 +570,7 @@ async fn handle_connect_result(
                 policy,
                 connected,
                 status_tx,
+                clipboard_availability,
             )
             .await
             .is_err()
@@ -599,6 +601,7 @@ async fn install_session(
     policy: &PolicyState,
     connected: &mut Option<ConnectedRuntime>,
     status_tx: &watch::Sender<PresenceSnapshot>,
+    clipboard_availability: ClipboardAvailability,
 ) -> Result<(), ()> {
     let peer_id = session
         .session()
@@ -606,7 +609,8 @@ async fn install_session(
         .map(|context| context.peer_device_id())
         .ok_or(())?;
     let peer_trust = security.peer_trust(peer_id).ok_or(())?;
-    let (actor_session, closed) = runtime_session(session, peer_trust, policy).ok_or(())?;
+    let (actor_session, closed) =
+        runtime_session(session, peer_trust, policy, clipboard_availability).ok_or(())?;
 
     if let Some(connection) = connected.as_mut()
         && connection.reconnecting
@@ -615,6 +619,11 @@ async fn install_session(
         connection
             .actor
             .reconnect(actor_session)
+            .await
+            .map_err(|_| ())?;
+        connection
+            .actor
+            .send_capabilities(clipboard_advertisement(clipboard_availability))
             .await
             .map_err(|_| ())?;
         connection.closed = closed;
@@ -631,6 +640,14 @@ async fn install_session(
 
     let mut actor = RuntimeActor::new(actor_config());
     actor.start(actor_session).map_err(|_| ())?;
+    if actor
+        .send_capabilities(clipboard_advertisement(clipboard_availability))
+        .await
+        .is_err()
+    {
+        let _ = actor.stop().await;
+        return Err(());
+    }
     let status = actor.subscribe_status().map_err(|_| ())?;
     let events = actor.take_events().map_err(|_| ())?;
     let connection = ConnectedRuntime {
@@ -858,6 +875,7 @@ fn runtime_session(
     session: AuthenticatedQuicSession,
     peer_trust: TrustRecord,
     policy: &PolicyState,
+    clipboard_availability: ClipboardAvailability,
 ) -> Option<(RuntimeActorSession, watch::Receiver<bool>)> {
     let (session, transport) = session.into_parts();
     let closed = transport.subscribe_closed();
@@ -866,7 +884,7 @@ fn runtime_session(
         session,
         Arc::new(transport),
         policy.clone(),
-        Vec::new(),
+        clipboard_local_capabilities(clipboard_availability),
         NetworkClass::Local,
         NonZeroUsize::new(RUNTIME_CAPACITY)?,
     )
