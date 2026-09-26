@@ -94,6 +94,126 @@ impl From<MobileClipboardPlatformFailure> for ClipboardPlatformError {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum MobileClipboardOutcome {
+    Success,
+    NotConnected,
+    NotNegotiated,
+    Oversized,
+    ResourceLimit,
+    TimedOut,
+    Cancelled,
+    Denied,
+    Unavailable,
+    Failed,
+}
+
+impl From<ClipboardOperationError> for MobileClipboardOutcome {
+    fn from(error: ClipboardOperationError) -> Self {
+        match error {
+            ClipboardOperationError::NotConnected => Self::NotConnected,
+            ClipboardOperationError::NotNegotiated => Self::NotNegotiated,
+            ClipboardOperationError::Oversized => Self::Oversized,
+            ClipboardOperationError::ResourceLimit => Self::ResourceLimit,
+            ClipboardOperationError::TimedOut => Self::TimedOut,
+            ClipboardOperationError::Cancelled => Self::Cancelled,
+            ClipboardOperationError::Remote(code) => match code {
+                ProtocolErrorCode::AuthorizationDenied
+                | ProtocolErrorCode::TrustDenied
+                | ProtocolErrorCode::OperationRevoked => Self::Denied,
+                ProtocolErrorCode::CapabilityUnsupported
+                | ProtocolErrorCode::CapabilityVersionIncompatible => Self::Unavailable,
+                ProtocolErrorCode::ResourceLimit => Self::ResourceLimit,
+                ProtocolErrorCode::Cancelled => Self::Cancelled,
+                _ => Self::Failed,
+            },
+            ClipboardOperationError::InvalidResponse
+            | ClipboardOperationError::Random
+            | ClipboardOperationError::Transport
+            | ClipboardOperationError::Closed => Self::Failed,
+        }
+    }
+}
+
+#[derive(uniffi::Object)]
+pub struct MobileClipboardOperationResult {
+    outcome: MobileClipboardOutcome,
+    text: Mutex<Option<String>>,
+}
+
+impl MobileClipboardOperationResult {
+    pub(crate) fn sent(result: Result<(), ClipboardOperationError>) -> Self {
+        match result {
+            Ok(()) => Self {
+                outcome: MobileClipboardOutcome::Success,
+                text: Mutex::new(None),
+            },
+            Err(error) => Self {
+                outcome: error.into(),
+                text: Mutex::new(None),
+            },
+        }
+    }
+
+    pub(crate) fn fetched(result: Result<String, ClipboardOperationError>) -> Self {
+        match result {
+            Ok(text) => Self {
+                outcome: MobileClipboardOutcome::Success,
+                text: Mutex::new(Some(text)),
+            },
+            Err(error) => Self {
+                outcome: error.into(),
+                text: Mutex::new(None),
+            },
+        }
+    }
+
+    pub(crate) fn failed() -> Self {
+        Self {
+            outcome: MobileClipboardOutcome::Failed,
+            text: Mutex::new(None),
+        }
+    }
+}
+
+impl fmt::Debug for MobileClipboardOperationResult {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let text_len = self
+            .text
+            .lock()
+            .ok()
+            .and_then(|text| text.as_ref().map(String::len));
+        formatter
+            .debug_struct("MobileClipboardOperationResult")
+            .field("outcome", &self.outcome)
+            .field("text_len", &text_len)
+            .finish()
+    }
+}
+
+#[uniffi::export]
+impl MobileClipboardOperationResult {
+    pub fn outcome(&self) -> MobileClipboardOutcome {
+        self.outcome
+    }
+
+    pub fn take_text(&self) -> Result<Option<String>, MobileClipboardError> {
+        self.text
+            .lock()
+            .map_err(|_| MobileClipboardError::StateUnavailable)?
+            .take()
+            .ok_or(MobileClipboardError::PayloadUnavailable)
+            .map(Some)
+            .or_else(|error| {
+                if self.outcome == MobileClipboardOutcome::Success {
+                    Err(error)
+                } else {
+                    Ok(None)
+                }
+            })
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Error)]
 pub enum MobileClipboardError {
     StateUnavailable,
@@ -213,5 +333,19 @@ mod tests {
             )),
             MobileClipboardError::RemoteDenied
         );
+        assert_eq!(
+            MobileClipboardOutcome::from(ClipboardOperationError::Remote(
+                ProtocolErrorCode::AuthorizationDenied,
+            )),
+            MobileClipboardOutcome::Denied
+        );
+    }
+
+    #[test]
+    fn operation_result_debug_redacts_plaintext() {
+        let result = MobileClipboardOperationResult::fetched(Ok("private-fetch-result".into()));
+        let debug = format!("{result:?}");
+        assert!(!debug.contains("private-fetch-result"));
+        assert!(debug.contains("text_len"));
     }
 }
