@@ -318,7 +318,7 @@ pub(super) async fn run_agent(
                     event = connection.events.recv() => {
                         event.map_or(ConnectedEvent::TransportClosed, ConnectedEvent::Runtime)
                     }
-                    _ = wait_clipboard_timeout(clipboard.next_deadline()) => ConnectedEvent::ClipboardTimeout,
+                    _ = wait_retry(clipboard.next_deadline()) => ConnectedEvent::ClipboardTimeout,
                     _ = connection.closed.changed() => ConnectedEvent::TransportClosed
                 }
             };
