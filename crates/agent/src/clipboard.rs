@@ -83,6 +83,7 @@ pub enum ClipboardOperationError {
     Oversized,
     InvalidResponse,
     ResourceLimit,
+    Random,
     TimedOut,
     Cancelled,
     Transport,
@@ -98,6 +99,7 @@ impl fmt::Display for ClipboardOperationError {
             Self::Oversized => formatter.write_str("clipboard text exceeds the v1 size limit"),
             Self::InvalidResponse => formatter.write_str("clipboard response violates the v1 profile"),
             Self::ResourceLimit => formatter.write_str("clipboard operation capacity is exhausted"),
+            Self::Random => formatter.write_str("clipboard request identifier generation failed"),
             Self::TimedOut => formatter.write_str("clipboard operation timed out"),
             Self::Cancelled => formatter.write_str("clipboard operation was cancelled"),
             Self::Transport => formatter.write_str("clipboard control transport failed"),
@@ -297,6 +299,20 @@ pub(crate) fn write_completion(
             "clipboard write failed",
         ),
     }
+}
+
+pub(crate) fn resource_failure() -> ControlResponseResult {
+    failure(
+        ProtocolErrorCode::ResourceLimit,
+        "clipboard operation capacity is exhausted",
+    )
+}
+
+pub(crate) fn internal_failure() -> ControlResponseResult {
+    failure(
+        ProtocolErrorCode::InternalFailure,
+        "clipboard platform request is unavailable",
+    )
 }
 
 pub(crate) fn capability_negotiated(
