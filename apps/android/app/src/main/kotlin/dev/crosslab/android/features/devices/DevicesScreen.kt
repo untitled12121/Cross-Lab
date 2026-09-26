@@ -26,6 +26,8 @@ import dev.crosslab.android.components.ui.StatusTone
 import dev.crosslab.android.features.appearance.ThemeDocument
 import dev.crosslab.android.features.appearance.toComposeColor
 import dev.crosslab.android.features.appearance.toTextStyle
+import dev.crosslab.android.features.clipboard.ClipboardPanel
+import dev.crosslab.android.features.clipboard.ClipboardState
 import dev.crosslab.android.features.pairing.PairingJoinerStage
 import dev.crosslab.android.features.pairing.PairingJoinerState
 import dev.crosslab.android.features.pairing.PairingScannerPanel
@@ -36,8 +38,11 @@ fun DevicesScreen(
     theme: ThemeDocument,
     devices: DevicesState,
     runtime: RuntimeControllerState,
+    clipboard: ClipboardState,
     onDisconnect: () -> Unit,
     onReconnect: () -> Unit,
+    onSendClipboard: () -> Unit,
+    onFetchClipboard: () -> Unit,
     pairing: PairingJoinerState,
     onPairingBootstrapScanned: (MobilePairingBootstrap) -> Unit,
     onCancelPairing: () -> Unit,
@@ -139,7 +144,14 @@ fun DevicesScreen(
         if (device == null) {
             DisconnectedState(theme, presence, runtime.networkAvailable)
         } else {
-            DevicePanel(theme, device, presence)
+            DevicePanel(
+                theme = theme,
+                device = device,
+                presence = presence,
+                clipboard = clipboard,
+                onSendClipboard = onSendClipboard,
+                onFetchClipboard = onFetchClipboard,
+            )
         }
     }
 }
@@ -219,6 +231,9 @@ private fun DevicePanel(
     theme: ThemeDocument,
     device: DevicePresentation,
     presence: PresenceDisplay,
+    clipboard: ClipboardState,
+    onSendClipboard: () -> Unit,
+    onFetchClipboard: () -> Unit,
 ) {
     val colors = theme.colors
     val trustTone =
@@ -283,6 +298,13 @@ private fun DevicePanel(
         )
         DetailRow(theme, "Capabilities", device.capabilityCount.toString())
         PermissionPanel(theme, device)
+        ClipboardPanel(
+            theme = theme,
+            device = device,
+            state = clipboard,
+            onSend = onSendClipboard,
+            onFetch = onFetchClipboard,
+        )
     }
 }
 
