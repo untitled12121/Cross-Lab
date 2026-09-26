@@ -4,8 +4,8 @@ use std::{
 };
 
 use crosslab_agent::{
-    PermissionSnapshot, PresenceAgentError, PresencePhase, TrustedPresenceAgent,
-    TrustedSessionRoute,
+    ClipboardAvailability, PermissionSnapshot, PresenceAgentError, PresencePhase,
+    TrustedPresenceAgent, TrustedSessionRoute,
 };
 use crosslab_crypto::SigningProvider;
 use crosslab_identity_store::ProductIdentityState;
@@ -14,6 +14,9 @@ use tokio::runtime::Runtime;
 
 use crate::{
     MobileLifecycleState, MobileRuntimeSnapshot,
+    clipboard::{
+        MobileClipboardError, MobileClipboardPlatformFailure, MobileClipboardRequest, request_id,
+    },
     network::socket_addr,
     policy_store::{MobilePolicyStoreError, decode_policy_store},
     product_identity::{ForeignSigningProvider, MobileProductIdentityError, MobileSigningProvider},
@@ -106,9 +109,12 @@ const POLICY_APPLY_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(uniffi::Object)]
 pub struct MobileTrustedPresenceAgent {
-    agent: Mutex<Option<TrustedPresenceAgent>>,
+    agent: Mutex<Option<Arc<TrustedPresenceAgent>>>,
     status: Mutex<tokio::sync::watch::Receiver<crosslab_agent::PresenceSnapshot>>,
+    clipboard_requests: Mutex<tokio::sync::mpsc::Receiver<crosslab_agent::ClipboardRequest>>,
     wait_runtime: Mutex<Runtime>,
+    clipboard_wait_runtime: Mutex<Runtime>,
+    clipboard_operation_runtime: Mutex<Runtime>,
     policy_runtime: Mutex<Runtime>,
 }
 
@@ -126,6 +132,8 @@ impl MobileTrustedPresenceAgent {
         local_device_signer: Arc<dyn MobileSigningProvider>,
         policy_envelope: Option<Vec<u8>>,
         policy_anchor: Option<Vec<u8>>,
+        clipboard_read_available: bool,
+        clipboard_write_available: bool,
     ) -> Result<Self, MobilePresenceError> {
         let identity = ProductIdentityState::decode(&identity_payload)
             .map_err(|_| MobilePresenceError::Identity)?;
@@ -136,21 +144,32 @@ impl MobileTrustedPresenceAgent {
         };
         let signer = ForeignSigningProvider::new(local_device_signer)?;
         let signer: Arc<dyn SigningProvider + Send + Sync> = Arc::new(signer);
-        let agent = TrustedPresenceAgent::spawn_with_policy(identity, signer, policy)?;
+        let agent = TrustedPresenceAgent::spawn_with_policy_and_clipboard(
+            identity,
+            signer,
+            policy,
+            ClipboardAvailability::new(
+                clipboard_read_available,
+                clipboard_write_available,
+            ),
+        )?;
         let status = agent.subscribe_status();
-        let wait_runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_time()
-            .build()
-            .map_err(|_| MobilePresenceError::Thread)?;
-        let policy_runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_time()
-            .build()
-            .map_err(|_| MobilePresenceError::Thread)?;
+        let clipboard_requests = agent
+            .take_clipboard_requests()
+            .map_err(|_| MobilePresenceError::StateUnavailable)?;
+        let agent = Arc::new(agent);
+        let wait_runtime = blocking_runtime()?;
+        let clipboard_wait_runtime = blocking_runtime()?;
+        let clipboard_operation_runtime = blocking_runtime()?;
+        let policy_runtime = blocking_runtime()?;
 
         Ok(Self {
             agent: Mutex::new(Some(agent)),
             status: Mutex::new(status),
+            clipboard_requests: Mutex::new(clipboard_requests),
             wait_runtime: Mutex::new(wait_runtime),
+            clipboard_wait_runtime: Mutex::new(clipboard_wait_runtime),
+            clipboard_operation_runtime: Mutex::new(clipboard_operation_runtime),
             policy_runtime: Mutex::new(policy_runtime),
         })
     }
@@ -224,11 +243,7 @@ impl MobileTrustedPresenceAgent {
         policy_anchor: Vec<u8>,
     ) -> Result<(), MobilePresenceError> {
         let policy = decode_policy_store(&policy_envelope, &policy_anchor)?;
-        let agent = self
-            .agent
-            .lock()
-            .map_err(|_| MobilePresenceError::StateUnavailable)?;
-        let agent = agent.as_ref().ok_or(MobilePresenceError::Closed)?;
+        let agent = self.agent_handle()?;
         let runtime = self
             .policy_runtime
             .lock()
@@ -243,11 +258,7 @@ impl MobileTrustedPresenceAgent {
     }
 
     pub fn fail_closed_policy(&self) -> Result<(), MobilePresenceError> {
-        let agent = self
-            .agent
-            .lock()
-            .map_err(|_| MobilePresenceError::StateUnavailable)?;
-        let agent = agent.as_ref().ok_or(MobilePresenceError::Closed)?;
+        let agent = self.agent_handle()?;
         let runtime = self
             .policy_runtime
             .lock()
@@ -259,6 +270,86 @@ impl MobileTrustedPresenceAgent {
             ))
             .map_err(|_| MobilePresenceError::PolicyApplyTimeout)??;
         Ok(())
+    }
+
+    pub fn wait_clipboard_request(
+        &self,
+        timeout_ms: u64,
+    ) -> Result<Option<Arc<MobileClipboardRequest>>, MobileClipboardError> {
+        let mut requests = self
+            .clipboard_requests
+            .lock()
+            .map_err(|_| MobileClipboardError::StateUnavailable)?;
+        let runtime = self
+            .clipboard_wait_runtime
+            .lock()
+            .map_err(|_| MobileClipboardError::StateUnavailable)?;
+        let request = runtime.block_on(async {
+            tokio::time::timeout(Duration::from_millis(timeout_ms), requests.recv()).await
+        });
+
+        match request {
+            Ok(Some(request)) => Ok(Some(Arc::new(MobileClipboardRequest::from_agent(request)))),
+            Ok(None) => Err(MobileClipboardError::Closed),
+            Err(_) => Ok(None),
+        }
+    }
+
+    pub fn send_clipboard_text(&self, text: String) -> Result<(), MobileClipboardError> {
+        let agent = self
+            .agent_handle()
+            .map_err(|_| MobileClipboardError::Closed)?;
+        let runtime = self
+            .clipboard_operation_runtime
+            .lock()
+            .map_err(|_| MobileClipboardError::StateUnavailable)?;
+        runtime
+            .block_on(agent.send_clipboard_text(text))
+            .map_err(MobileClipboardError::from)
+    }
+
+    pub fn fetch_clipboard_text(&self) -> Result<String, MobileClipboardError> {
+        let agent = self
+            .agent_handle()
+            .map_err(|_| MobileClipboardError::Closed)?;
+        let runtime = self
+            .clipboard_operation_runtime
+            .lock()
+            .map_err(|_| MobileClipboardError::StateUnavailable)?;
+        runtime
+            .block_on(agent.fetch_clipboard_text())
+            .map_err(MobileClipboardError::from)
+    }
+
+    pub fn complete_clipboard_read(
+        &self,
+        request_id_bytes: Vec<u8>,
+        text: String,
+    ) -> Result<(), MobileClipboardError> {
+        self.finish_clipboard_read(request_id_bytes, Ok(text))
+    }
+
+    pub fn fail_clipboard_read(
+        &self,
+        request_id_bytes: Vec<u8>,
+        failure: MobileClipboardPlatformFailure,
+    ) -> Result<(), MobileClipboardError> {
+        self.finish_clipboard_read(request_id_bytes, Err(failure.into()))
+    }
+
+    pub fn complete_clipboard_write(
+        &self,
+        request_id_bytes: Vec<u8>,
+    ) -> Result<(), MobileClipboardError> {
+        self.finish_clipboard_write(request_id_bytes, Ok(()))
+    }
+
+    pub fn fail_clipboard_write(
+        &self,
+        request_id_bytes: Vec<u8>,
+        failure: MobileClipboardPlatformFailure,
+    ) -> Result<(), MobileClipboardError> {
+        self.finish_clipboard_write(request_id_bytes, Err(failure.into()))
     }
 
     pub fn snapshot(&self) -> Result<MobilePresenceSnapshot, MobilePresenceError> {
@@ -311,8 +402,60 @@ impl MobileTrustedPresenceAgent {
             .agent
             .lock()
             .map_err(|_| MobilePresenceError::StateUnavailable)?;
-        operation(agent.as_ref().ok_or(MobilePresenceError::Closed)?)
+        operation(agent.as_deref().ok_or(MobilePresenceError::Closed)?)
     }
+
+    fn agent_handle(&self) -> Result<Arc<TrustedPresenceAgent>, MobilePresenceError> {
+        self.agent
+            .lock()
+            .map_err(|_| MobilePresenceError::StateUnavailable)?
+            .as_ref()
+            .cloned()
+            .ok_or(MobilePresenceError::Closed)
+    }
+
+    fn finish_clipboard_read(
+        &self,
+        request_id_bytes: Vec<u8>,
+        result: Result<String, crosslab_agent::ClipboardPlatformError>,
+    ) -> Result<(), MobileClipboardError> {
+        let request_id = request_id(request_id_bytes)?;
+        let agent = self
+            .agent_handle()
+            .map_err(|_| MobileClipboardError::Closed)?;
+        let runtime = self
+            .clipboard_operation_runtime
+            .lock()
+            .map_err(|_| MobileClipboardError::StateUnavailable)?;
+        runtime
+            .block_on(agent.complete_clipboard_read(request_id, result))
+            .map_err(MobileClipboardError::from)
+    }
+
+    fn finish_clipboard_write(
+        &self,
+        request_id_bytes: Vec<u8>,
+        result: Result<(), crosslab_agent::ClipboardPlatformError>,
+    ) -> Result<(), MobileClipboardError> {
+        let request_id = request_id(request_id_bytes)?;
+        let agent = self
+            .agent_handle()
+            .map_err(|_| MobileClipboardError::Closed)?;
+        let runtime = self
+            .clipboard_operation_runtime
+            .lock()
+            .map_err(|_| MobileClipboardError::StateUnavailable)?;
+        runtime
+            .block_on(agent.complete_clipboard_write(request_id, result))
+            .map_err(MobileClipboardError::from)
+    }
+}
+
+fn blocking_runtime() -> Result<Runtime, MobilePresenceError> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .map_err(|_| MobilePresenceError::Thread)
 }
 
 fn to_mobile_discovery(
