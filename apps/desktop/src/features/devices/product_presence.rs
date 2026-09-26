@@ -2,6 +2,7 @@ use core::fmt;
 use std::{sync::Arc, thread, time::Duration};
 
 use crosslab_agent::{
+    ClipboardAvailability, ClipboardOperationError, ClipboardPlatformError, ClipboardRequest,
     PermissionSnapshot, PresenceAgentError, PresenceSnapshot, TrustedPresenceAgent,
     TrustedSessionRoute as AgentTrustedSessionRoute,
 };
@@ -44,10 +45,11 @@ impl DesktopProductPresenceController {
 
         let policy = LinuxPolicyStore::from_environment()?.load().await?;
         let signer = LinuxEd25519Signer::load_required(LinuxSigningSlot::LocalDevice).await?;
-        let agent = Arc::new(TrustedPresenceAgent::spawn_with_policy(
+        let agent = Arc::new(TrustedPresenceAgent::spawn_with_policy_and_clipboard(
             identity,
             Arc::new(signer),
             policy,
+            ClipboardAvailability::new(true, true),
         )?);
         let status = agent.subscribe_status();
         let discovery_agent = Arc::clone(&agent);
@@ -80,6 +82,39 @@ impl DesktopProductPresenceController {
 
     pub fn subscribe_permissions(&self) -> watch::Receiver<PermissionSnapshot> {
         self.agent.subscribe_permissions()
+    }
+
+    pub fn take_clipboard_requests(
+        &self,
+    ) -> Result<mpsc::Receiver<ClipboardRequest>, ClipboardOperationError> {
+        self.agent.take_clipboard_requests()
+    }
+
+    pub async fn send_clipboard_text(
+        &self,
+        text: String,
+    ) -> Result<(), ClipboardOperationError> {
+        self.agent.send_clipboard_text(text).await
+    }
+
+    pub async fn fetch_clipboard_text(&self) -> Result<String, ClipboardOperationError> {
+        self.agent.fetch_clipboard_text().await
+    }
+
+    pub async fn complete_clipboard_read(
+        &self,
+        request_id: crosslab_protocol::RequestId,
+        result: Result<String, ClipboardPlatformError>,
+    ) -> Result<(), ClipboardOperationError> {
+        self.agent.complete_clipboard_read(request_id, result).await
+    }
+
+    pub async fn complete_clipboard_write(
+        &self,
+        request_id: crosslab_protocol::RequestId,
+        result: Result<(), ClipboardPlatformError>,
+    ) -> Result<(), ClipboardOperationError> {
+        self.agent.complete_clipboard_write(request_id, result).await
     }
 
     pub fn disconnect(&self) -> Result<(), DesktopPresenceError> {
