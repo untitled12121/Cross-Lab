@@ -15,7 +15,8 @@ use tokio::runtime::Runtime;
 use crate::{
     MobileLifecycleState, MobileRuntimeSnapshot,
     clipboard::{
-        MobileClipboardError, MobileClipboardPlatformFailure, MobileClipboardRequest, request_id,
+        MobileClipboardError, MobileClipboardOperationResult, MobileClipboardPlatformFailure,
+        MobileClipboardRequest, request_id,
     },
     network::socket_addr,
     policy_store::{MobilePolicyStoreError, decode_policy_store},
@@ -295,30 +296,28 @@ impl MobileTrustedPresenceAgent {
         }
     }
 
-    pub fn send_clipboard_text(&self, text: String) -> Result<(), MobileClipboardError> {
-        let agent = self
-            .agent_handle()
-            .map_err(|_| MobileClipboardError::Closed)?;
-        let runtime = self
-            .clipboard_operation_runtime
-            .lock()
-            .map_err(|_| MobileClipboardError::StateUnavailable)?;
-        runtime
-            .block_on(agent.send_clipboard_text(text))
-            .map_err(MobileClipboardError::from)
+    pub fn send_clipboard_text(&self, text: String) -> Arc<MobileClipboardOperationResult> {
+        let Ok(agent) = self.agent_handle() else {
+            return Arc::new(MobileClipboardOperationResult::failed());
+        };
+        let Ok(runtime) = self.clipboard_operation_runtime.lock() else {
+            return Arc::new(MobileClipboardOperationResult::failed());
+        };
+        Arc::new(MobileClipboardOperationResult::sent(
+            runtime.block_on(agent.send_clipboard_text(text)),
+        ))
     }
 
-    pub fn fetch_clipboard_text(&self) -> Result<String, MobileClipboardError> {
-        let agent = self
-            .agent_handle()
-            .map_err(|_| MobileClipboardError::Closed)?;
-        let runtime = self
-            .clipboard_operation_runtime
-            .lock()
-            .map_err(|_| MobileClipboardError::StateUnavailable)?;
-        runtime
-            .block_on(agent.fetch_clipboard_text())
-            .map_err(MobileClipboardError::from)
+    pub fn fetch_clipboard_text(&self) -> Arc<MobileClipboardOperationResult> {
+        let Ok(agent) = self.agent_handle() else {
+            return Arc::new(MobileClipboardOperationResult::failed());
+        };
+        let Ok(runtime) = self.clipboard_operation_runtime.lock() else {
+            return Arc::new(MobileClipboardOperationResult::failed());
+        };
+        Arc::new(MobileClipboardOperationResult::fetched(
+            runtime.block_on(agent.fetch_clipboard_text()),
+        ))
     }
 
     pub fn complete_clipboard_read(
