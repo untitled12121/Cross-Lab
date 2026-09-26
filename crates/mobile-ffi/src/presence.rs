@@ -149,10 +149,7 @@ impl MobileTrustedPresenceAgent {
             identity,
             signer,
             policy,
-            ClipboardAvailability::new(
-                clipboard_read_available,
-                clipboard_write_available,
-            ),
+            ClipboardAvailability::new(clipboard_read_available, clipboard_write_available),
         )?;
         let status = agent.subscribe_status();
         let clipboard_requests = agent
