@@ -11,10 +11,10 @@ use crosslab_policy::{
 };
 use tokio::sync::watch;
 
-use crate::{ClipboardAvailability, ClipboardOperationError, ClipboardRequest};
 use super::{
     PresenceAgentError, PresencePhase, PresenceSnapshot, TrustedPresenceAgent, TrustedSessionRoute,
 };
+use crate::{ClipboardAvailability, ClipboardOperationError, ClipboardRequest};
 
 const WAIT: Duration = Duration::from_secs(8);
 
