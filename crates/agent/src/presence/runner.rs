@@ -360,7 +360,6 @@ struct DestinationReadyFileTransfer {
 #[derive(Clone, Copy)]
 struct ActiveInboundFileTransfer {
     transfer_id: TransferId,
-    resume_offset: u64,
 }
 
 struct TerminalReadyFileTransfer {
@@ -1490,8 +1489,10 @@ async fn send_file_transfer_chunk(
 ) -> Result<(), FileTransferChunkError> {
     let active = matches!(
         file_transfer.source.get(&stream.transfer_id()),
-        Some(SourceFileTransfer::Streaming { stream_id, .. })
-            if *stream_id == stream.stream_id()
+        Some(SourceFileTransfer::Streaming {
+            stream_id,
+            resume_offset,
+        }) if *stream_id == stream.stream_id() && *resume_offset == stream.resume_offset()
     );
     if !active {
         return Err(FileTransferChunkError::Closed(Some(chunk)));
@@ -1660,14 +1661,12 @@ async fn handle_file_transfer_result_event(
         Some(SourceFileTransfer::AwaitingResult { reply, .. }) => {
             let _ = reply.send(Ok(result));
         }
-        Some(SourceFileTransfer::Streaming {
-            stream_id,
-            resume_offset,
-        }) if result.outcome() != FileTransferTerminalOutcome::Completed => {
+        Some(SourceFileTransfer::Streaming { stream_id, .. })
+            if result.outcome() != FileTransferTerminalOutcome::Completed =>
+        {
             if let Some(connection) = connected.filter(|connection| !connection.reconnecting) {
                 let _ = connection.actor.cancel_outbound_stream(stream_id).await;
             }
-            let _ = resume_offset;
             file_transfer.cache_result(result);
         }
         Some(source @ SourceFileTransfer::Ready { .. })
@@ -1681,9 +1680,7 @@ async fn handle_file_transfer_result_event(
         Some(source @ SourceFileTransfer::Streaming { .. }) => {
             file_transfer.source.insert(transfer_id, source);
         }
-        None => {
-            file_transfer.cache_result(result);
-        }
+        None => {}
     }
 }
 
@@ -1872,7 +1869,6 @@ async fn handle_runtime_event(
                 stream_id,
                 ActiveInboundFileTransfer {
                     transfer_id: ready.transfer_id,
-                    resume_offset: ready.resume_offset,
                 },
             );
             let event = FileTransferDataEvent::Opened {

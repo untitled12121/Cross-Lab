@@ -23,12 +23,16 @@ use crate::{
     clipboard::{
         ClipboardAvailability, ClipboardOperationError, ClipboardPlatformError, ClipboardRequest,
     },
-    file_transfer::{FileTransferAvailability, FileTransferOperationError, FileTransferRequest},
+    file_transfer::{
+        FileTransferAvailability, FileTransferChunkError, FileTransferDataEvent,
+        FileTransferOperationError, FileTransferRequest, FileTransferSourceStream,
+    },
 };
 
 const COMMAND_CAPACITY: usize = 64;
 const CLIPBOARD_REQUEST_CAPACITY: usize = 8;
 const FILE_TRANSFER_REQUEST_CAPACITY: usize = 8;
+const FILE_TRANSFER_DATA_CAPACITY: usize = 8;
 
 pub struct TrustedPresenceAgent {
     discovery_instance: Arc<RwLock<String>>,
@@ -39,6 +43,7 @@ pub struct TrustedPresenceAgent {
     permissions: watch::Receiver<PermissionSnapshot>,
     clipboard_requests: Mutex<Option<mpsc::Receiver<ClipboardRequest>>>,
     file_transfer_requests: Mutex<Option<mpsc::Receiver<FileTransferRequest>>>,
+    file_transfer_data: Mutex<Option<mpsc::Receiver<FileTransferDataEvent>>>,
 }
 
 impl TrustedPresenceAgent {
@@ -116,6 +121,8 @@ impl TrustedPresenceAgent {
         let (clipboard_requests_tx, clipboard_requests) = mpsc::channel(CLIPBOARD_REQUEST_CAPACITY);
         let (file_transfer_requests_tx, file_transfer_requests) =
             mpsc::channel(FILE_TRANSFER_REQUEST_CAPACITY);
+        let (file_transfer_data_tx, file_transfer_data) =
+            mpsc::channel(FILE_TRANSFER_DATA_CAPACITY);
         let (startup_tx, startup_rx) = std_mpsc::sync_channel(1);
         let runner_discovery_instance = Arc::clone(&discovery_instance);
         thread::Builder::new()
@@ -168,6 +175,7 @@ impl TrustedPresenceAgent {
                             permissions_tx,
                             clipboard_requests_tx,
                             file_transfer_requests_tx,
+                            file_transfer_data_tx,
                             RuntimeAvailability::new(
                                 clipboard_availability,
                                 file_transfer_availability,
@@ -191,6 +199,7 @@ impl TrustedPresenceAgent {
             permissions,
             clipboard_requests: Mutex::new(Some(clipboard_requests)),
             file_transfer_requests: Mutex::new(Some(file_transfer_requests)),
+            file_transfer_data: Mutex::new(Some(file_transfer_data)),
         })
     }
 
@@ -311,6 +320,16 @@ impl TrustedPresenceAgent {
             .ok_or(FileTransferOperationError::Closed)
     }
 
+    pub fn take_file_transfer_data(
+        &self,
+    ) -> Result<mpsc::Receiver<FileTransferDataEvent>, FileTransferOperationError> {
+        self.file_transfer_data
+            .lock()
+            .map_err(|_| FileTransferOperationError::Closed)?
+            .take()
+            .ok_or(FileTransferOperationError::Closed)
+    }
+
     pub async fn send_file_offer(
         &self,
         offer: crosslab_protocol::FileTransferOffer,
@@ -355,6 +374,115 @@ impl TrustedPresenceAgent {
         self.command_tx
             .send(AgentCommand::FileTransferAlreadyComplete {
                 request_id,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| FileTransferOperationError::Closed)?;
+        reply_rx
+            .await
+            .map_err(|_| FileTransferOperationError::Closed)?
+    }
+
+    pub async fn open_file_transfer_stream(
+        &self,
+        transfer_id: crosslab_protocol::TransferId,
+    ) -> Result<FileTransferSourceStream, FileTransferOperationError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.command_tx
+            .send(AgentCommand::FileTransferOpen {
+                transfer_id,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| FileTransferOperationError::Closed)?;
+        reply_rx
+            .await
+            .map_err(|_| FileTransferOperationError::Closed)?
+    }
+
+    pub async fn send_file_transfer_chunk(
+        &self,
+        stream: FileTransferSourceStream,
+        chunk: Vec<u8>,
+    ) -> Result<(), FileTransferChunkError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        let command = AgentCommand::FileTransferChunk {
+            stream,
+            chunk,
+            reply: reply_tx,
+        };
+        if let Err(error) = self.command_tx.send(command).await {
+            let AgentCommand::FileTransferChunk { chunk, .. } = error.0 else {
+                unreachable!("file transfer chunk command is preserved on channel close")
+            };
+            return Err(FileTransferChunkError::Closed(Some(chunk)));
+        }
+        reply_rx
+            .await
+            .map_err(|_| FileTransferChunkError::Closed(None))?
+    }
+
+    pub async fn finish_file_transfer_stream(
+        &self,
+        stream: FileTransferSourceStream,
+    ) -> Result<crosslab_protocol::FileTransferResult, FileTransferOperationError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.command_tx
+            .send(AgentCommand::FileTransferFinish {
+                stream,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| FileTransferOperationError::Closed)?;
+        reply_rx
+            .await
+            .map_err(|_| FileTransferOperationError::Closed)?
+    }
+
+    pub async fn cancel_file_transfer_send(
+        &self,
+        stream: FileTransferSourceStream,
+    ) -> Result<crosslab_protocol::FileTransferResult, FileTransferOperationError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.command_tx
+            .send(AgentCommand::FileTransferCancelSend {
+                stream,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| FileTransferOperationError::Closed)?;
+        reply_rx
+            .await
+            .map_err(|_| FileTransferOperationError::Closed)?
+    }
+
+    pub async fn cancel_file_transfer_receive(
+        &self,
+        stream_id: crosslab_protocol::StreamId,
+    ) -> Result<(), FileTransferOperationError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.command_tx
+            .send(AgentCommand::FileTransferCancelReceive {
+                stream_id,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| FileTransferOperationError::Closed)?;
+        reply_rx
+            .await
+            .map_err(|_| FileTransferOperationError::Closed)?
+    }
+
+    pub async fn complete_file_transfer_result(
+        &self,
+        transfer_id: crosslab_protocol::TransferId,
+        outcome: crosslab_protocol::FileTransferTerminalOutcome,
+    ) -> Result<(), FileTransferOperationError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.command_tx
+            .send(AgentCommand::FileTransferTerminal {
+                transfer_id,
+                outcome,
                 reply: reply_tx,
             })
             .await
