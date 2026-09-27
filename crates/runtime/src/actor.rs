@@ -12,8 +12,7 @@ use tokio::{
 };
 
 use crate::{
-    NodeError, NodeEvent, RuntimeNode, RuntimeStatus, RuntimeStreamError,
-    command::RuntimeCommand,
+    NodeError, NodeEvent, RuntimeNode, RuntimeStatus, RuntimeStreamError, command::RuntimeCommand,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

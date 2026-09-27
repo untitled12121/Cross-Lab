@@ -315,13 +315,8 @@ impl Fixture {
             .negotiate_capabilities(
                 std::slice::from_ref(&local),
                 &CapabilityAdvertisement::new(vec![
-                    CapabilityAdvertisementEntry::new(
-                        capability.clone(),
-                        version,
-                        version,
-                        true,
-                    )
-                    .unwrap(),
+                    CapabilityAdvertisementEntry::new(capability.clone(), version, version, true)
+                        .unwrap(),
                 ])
                 .unwrap(),
             )
@@ -375,7 +370,11 @@ impl Fixture {
         .unwrap();
         node.register_stream_operation(operation).unwrap();
 
-        (RuntimeActorSession::new(node, self.peer_trust), transport, open)
+        (
+            RuntimeActorSession::new(node, self.peer_trust),
+            transport,
+            open,
+        )
     }
 }
 
