@@ -332,7 +332,7 @@ impl TrustedPresenceAgent {
         &self,
         request_id: crosslab_protocol::RequestId,
         resume_offset: u64,
-    ) -> Result<crosslab_policy::OperationId, FileTransferOperationError> {
+    ) -> Result<(), FileTransferOperationError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.command_tx
             .send(AgentCommand::FileTransferReady {

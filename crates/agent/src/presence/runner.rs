@@ -131,7 +131,7 @@ pub(super) enum AgentCommand {
     FileTransferReady {
         request_id: RequestId,
         resume_offset: u64,
-        reply: oneshot::Sender<Result<OperationId, FileTransferOperationError>>,
+        reply: oneshot::Sender<Result<(), FileTransferOperationError>>,
     },
     FileTransferAlreadyComplete {
         request_id: RequestId,
@@ -1139,7 +1139,7 @@ async fn complete_file_transfer_ready(
     file_transfer: &mut FileTransferRuntimeState,
     request_id: RequestId,
     resume_offset: u64,
-) -> Result<OperationId, FileTransferOperationError> {
+) -> Result<(), FileTransferOperationError> {
     let request = file_transfer
         .inbound
         .get(&request_id)
@@ -1190,7 +1190,7 @@ async fn complete_file_transfer_ready(
             deadline: Instant::now() + FILE_TRANSFER_OPERATION_LIFETIME,
         },
     );
-    Ok(operation_id)
+    Ok(())
 }
 
 async fn complete_file_transfer_already_complete(

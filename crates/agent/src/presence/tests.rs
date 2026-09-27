@@ -201,22 +201,29 @@ async fn file_transfer_ready_mints_fresh_runtime_authority() {
         .await
         .expect("first offer should arrive")
         .expect("file transfer request channel should remain open");
-    let first_operation = right
+    right
         .complete_file_transfer_ready(
             first_request.request_id(),
             crosslab_protocol::FILE_TRANSFER_CHECKPOINT_BYTES,
         )
         .await
         .unwrap();
-    assert!(matches!(
-        first.await.unwrap(),
+    let first_operation = match first.await.unwrap() {
         crosslab_protocol::FileTransferAcceptance::Ready {
             resume_offset,
             operation_id,
             ..
-        } if resume_offset == crosslab_protocol::FILE_TRANSFER_CHECKPOINT_BYTES
-            && operation_id == first_operation
-    ));
+        } => {
+            assert_eq!(
+                resume_offset,
+                crosslab_protocol::FILE_TRANSFER_CHECKPOINT_BYTES
+            );
+            operation_id
+        }
+        crosslab_protocol::FileTransferAcceptance::AlreadyComplete { .. } => {
+            panic!("expected Ready acceptance")
+        }
+    };
 
     let second = left.send_file_offer(offer);
     tokio::pin!(second);
@@ -224,16 +231,17 @@ async fn file_transfer_ready_mints_fresh_runtime_authority() {
         .await
         .expect("second offer should arrive")
         .expect("file transfer request channel should remain open");
-    let second_operation = right
+    right
         .complete_file_transfer_ready(second_request.request_id(), 0)
         .await
         .unwrap();
+    let second_operation = match second.await.unwrap() {
+        crosslab_protocol::FileTransferAcceptance::Ready { operation_id, .. } => operation_id,
+        crosslab_protocol::FileTransferAcceptance::AlreadyComplete { .. } => {
+            panic!("expected Ready acceptance")
+        }
+    };
     assert_ne!(first_operation, second_operation);
-    assert!(matches!(
-        second.await.unwrap(),
-        crosslab_protocol::FileTransferAcceptance::Ready { operation_id, .. }
-            if operation_id == second_operation
-    ));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
