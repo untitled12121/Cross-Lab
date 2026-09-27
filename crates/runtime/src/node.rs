@@ -192,10 +192,10 @@ impl<'a> RuntimeNode<'a> {
         let operation =
             AuthorizedOperation::issue(grant, created_at.ticks(), expires_at.ticks(), use_policy)
                 .map_err(|error| {
-                    NodeError::Stream(RuntimeStreamError::Admission(
-                        StreamAdmissionError::Operation(error),
-                    ))
-                })?;
+                NodeError::Stream(RuntimeStreamError::Admission(
+                    StreamAdmissionError::Operation(error),
+                ))
+            })?;
         let operation_id = operation.id();
         self.register_stream_operation(operation)?;
         Ok(operation_id)
