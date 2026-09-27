@@ -184,18 +184,21 @@ impl FileTransferChunkError {
 
 impl fmt::Debug for FileTransferChunkError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let (name, len) = match self {
-            Self::Backpressure(chunk) => ("Backpressure", Some(chunk.len())),
-            Self::TooLarge(chunk) => ("TooLarge", Some(chunk.len())),
-            Self::Closed(chunk) => ("Closed", chunk.as_ref().map(Vec::len)),
-        };
-        formatter
-            .debug_struct(name)
-            .field(
-                "chunk",
-                &len.map(|len| format_args!("[REDACTED; {len} bytes]")),
-            )
-            .finish()
+        match self {
+            Self::Backpressure(chunk) => formatter
+                .debug_tuple("Backpressure")
+                .field(&format_args!("[REDACTED; {} bytes]", chunk.len()))
+                .finish(),
+            Self::TooLarge(chunk) => formatter
+                .debug_tuple("TooLarge")
+                .field(&format_args!("[REDACTED; {} bytes]", chunk.len()))
+                .finish(),
+            Self::Closed(Some(chunk)) => formatter
+                .debug_tuple("Closed")
+                .field(&format_args!("[REDACTED; {} bytes]", chunk.len()))
+                .finish(),
+            Self::Closed(None) => formatter.debug_tuple("Closed").field(&"[UNAVAILABLE]").finish(),
+        }
     }
 }
 
