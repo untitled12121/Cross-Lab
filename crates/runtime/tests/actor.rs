@@ -80,8 +80,16 @@ impl TestTransport {
         self.outbound.lock().unwrap().chunks.clone()
     }
 
+    fn opening_count(&self) -> usize {
+        self.outbound.lock().unwrap().opening_frames.len()
+    }
+
     fn finish_count(&self) -> usize {
         self.outbound.lock().unwrap().finished
+    }
+
+    fn cancel_count(&self) -> usize {
+        self.outbound.lock().unwrap().cancelled
     }
 }
 
@@ -677,6 +685,22 @@ fn data_stream_commands_preserve_chunk_ownership_under_backpressure() {
             actor.finish_data_stream(stream_id).await,
             Err(RuntimeActorError::StreamRejected)
         );
+
+        let second_id = StreamId::from_bytes([0xa4; 16]);
+        let second = DataStreamOpen::new(
+            open.session_id(),
+            second_id,
+            open.operation_id(),
+            open.capability_id().clone(),
+            open.capability_version(),
+            open.operation_name().clone(),
+            StreamDirection::SourceToDestination,
+            0,
+        );
+        assert_eq!(actor.open_data_stream(second).await.unwrap(), second_id);
+        actor.cancel_outbound_stream(second_id).await.unwrap();
+        assert_eq!(transport.opening_count(), 2);
+        assert_eq!(transport.cancel_count(), 1);
 
         actor.stop().await.unwrap();
     });
