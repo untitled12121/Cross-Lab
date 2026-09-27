@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     num::NonZeroUsize,
     sync::{Arc, Mutex},
     time::Duration,
@@ -7,8 +8,8 @@ use std::{
 use crosslab_core::{
     ChannelBinding, ConnectionMetadata, ControlReceiveError, ControlSendError, IncomingUniStream,
     LogicalSession, SessionActivation, SessionAuthRole, SessionAuthTranscriptV1,
-    SessionHandshakeSide, SessionState, StreamAcceptError, StreamOpenError, TransportConnection,
-    TransportSecurityClass,
+    SessionHandshakeSide, SessionState, StreamAcceptError, StreamOpenError, StreamReceiveError,
+    TransportConnection, TransportReceiveStream, TransportSecurityClass,
 };
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
@@ -16,12 +17,14 @@ use crosslab_identity::{
     OwnerRootRecord,
 };
 use crosslab_policy::{
-    CapabilityId, NetworkClass, OperationName, PairingTrustTransition, PolicyState, RuleEffect,
-    TransitionId, TrustRecord, TrustState, TrustTransition,
+    AuthorizationContext, AuthorizedOperation, CapabilityId, CapabilityVersion,
+    CapabilityVersionRange, LocalCapability, NetworkClass, OperationName, PairingTrustTransition,
+    PolicyState, RuleEffect, TransitionId, TrustRecord, TrustState, TrustTransition, UsePolicy,
 };
 use crosslab_protocol::{
-    ControlEnvelope, EnvelopeBody, FeatureSet, ProtocolRange, ProtocolVersion, SessionClose,
-    SessionCloseReason, encode_control_envelope,
+    CapabilityAdvertisement, CapabilityAdvertisementEntry, ControlEnvelope, DataStreamOpen,
+    EnvelopeBody, FeatureSet, ProtocolRange, ProtocolVersion, SessionClose, SessionCloseReason,
+    StreamDirection, StreamId, encode_control_envelope, encode_data_stream_open,
 };
 use crosslab_runtime::{
     ConnectivityState, RuntimeActor, RuntimeActorConfig, RuntimeActorError, RuntimeActorSession,
@@ -32,6 +35,7 @@ use crosslab_runtime::{
 struct TestTransport {
     closed: Arc<Mutex<bool>>,
     inbound: Arc<Mutex<Vec<Vec<u8>>>>,
+    incoming_streams: Arc<Mutex<VecDeque<IncomingUniStream>>>,
     binding: ChannelBinding,
     metadata: ConnectionMetadata,
 }
@@ -41,6 +45,7 @@ impl TestTransport {
         Self {
             closed: Arc::new(Mutex::new(false)),
             inbound: Arc::new(Mutex::new(Vec::new())),
+            incoming_streams: Arc::new(Mutex::new(VecDeque::new())),
             binding: ChannelBinding::new("actor-test-binding", binding.to_vec()),
             metadata: ConnectionMetadata::new(None, None, Some(false)),
         }
@@ -48,6 +53,38 @@ impl TestTransport {
 
     fn push_inbound(&self, frame: Vec<u8>) {
         self.inbound.lock().unwrap().push(frame);
+    }
+
+    fn push_incoming_stream(&self, opening_frame: Vec<u8>, chunks: Vec<Vec<u8>>) {
+        self.incoming_streams
+            .lock()
+            .unwrap()
+            .push_back(IncomingUniStream::new(
+                opening_frame,
+                Box::new(TestReceiveStream {
+                    chunks: chunks.into(),
+                    cancelled: false,
+                }),
+            ));
+    }
+}
+
+struct TestReceiveStream {
+    chunks: VecDeque<Vec<u8>>,
+    cancelled: bool,
+}
+
+impl TransportReceiveStream for TestReceiveStream {
+    fn try_receive_chunk(&mut self) -> Result<Vec<u8>, StreamReceiveError> {
+        if self.cancelled {
+            return Err(StreamReceiveError::Cancelled);
+        }
+        self.chunks.pop_front().ok_or(StreamReceiveError::Finished)
+    }
+
+    fn cancel(&mut self) {
+        self.cancelled = true;
+        self.chunks.clear();
     }
 }
 
@@ -92,7 +129,14 @@ impl TransportConnection for TestTransport {
     }
 
     fn try_accept_uni_stream(&self) -> Result<IncomingUniStream, StreamAcceptError> {
-        Err(StreamAcceptError::Closed)
+        if self.is_closed() {
+            return Err(StreamAcceptError::Closed);
+        }
+        self.incoming_streams
+            .lock()
+            .unwrap()
+            .pop_front()
+            .ok_or(StreamAcceptError::Empty)
     }
 
     fn close(&self) {
@@ -190,12 +234,7 @@ impl Fixture {
         trust
     }
 
-    fn actor_session(
-        &self,
-        binding: [u8; 32],
-        nonce: u8,
-    ) -> (RuntimeActorSession, Arc<TestTransport>) {
-        let transport = Arc::new(TestTransport::new(binding));
+    fn logical_session(&self, transport: &TestTransport, nonce: u8) -> LogicalSession {
         let ranges = [ProtocolRange::new(1, 0, 0).unwrap()];
         let features = FeatureSet::new(&[], &[]).unwrap();
         let initiator = SessionHandshakeSide::new(&self.local_credential, &ranges, &features);
@@ -234,6 +273,16 @@ impl Fixture {
                 &responder_proof,
             ))
             .unwrap();
+        session
+    }
+
+    fn actor_session(
+        &self,
+        binding: [u8; 32],
+        nonce: u8,
+    ) -> (RuntimeActorSession, Arc<TestTransport>) {
+        let transport = Arc::new(TestTransport::new(binding));
+        let session = self.logical_session(&transport, nonce);
         let node = RuntimeNode::new_owned(
             session,
             Arc::clone(&transport),
@@ -246,7 +295,89 @@ impl Fixture {
 
         (RuntimeActorSession::new(node, self.peer_trust), transport)
     }
-}
+
+    fn stream_actor_session(
+        &self,
+        binding: [u8; 32],
+        nonce: u8,
+    ) -> (RuntimeActorSession, Arc<TestTransport>, DataStreamOpen) {
+        let transport = Arc::new(TestTransport::new(binding));
+        let mut session = self.logical_session(&transport, nonce);
+        let capability = CapabilityId::parse("files.transfer").unwrap();
+        let version = CapabilityVersion::new(2, 0);
+        let operation_name = OperationName::parse("receive").unwrap();
+        let local = LocalCapability::new(
+            capability.clone(),
+            CapabilityVersionRange::new(2, 0, 0).unwrap(),
+            true,
+        );
+        session
+            .negotiate_capabilities(
+                std::slice::from_ref(&local),
+                &CapabilityAdvertisement::new(vec![
+                    CapabilityAdvertisementEntry::new(
+                        capability.clone(),
+                        version,
+                        version,
+                        true,
+                    )
+                    .unwrap(),
+                ])
+                .unwrap(),
+            )
+            .unwrap();
+
+        let mut policy = PolicyState::new();
+        policy
+            .set_rule_effect(
+                self.peer_trust.device_id(),
+                capability.clone(),
+                operation_name.clone(),
+                RuleEffect::Allow,
+            )
+            .unwrap();
+        let context = session.context().unwrap();
+        let grant = policy
+            .evaluate(&AuthorizationContext::new(
+                self.peer_trust.device_id(),
+                context.local_device_id(),
+                context.session_id(),
+                capability.clone(),
+                version,
+                operation_name.clone(),
+                self.peer_trust.state(),
+                self.peer_trust.trust_revision(),
+                local.clone(),
+                NetworkClass::Local,
+            ))
+            .into_grant()
+            .unwrap();
+        let operation =
+            AuthorizedOperation::issue(grant, 0, u64::MAX, UsePolicy::SingleStream).unwrap();
+        let open = DataStreamOpen::new(
+            context.session_id(),
+            StreamId::from_bytes([0xa1; 16]),
+            operation.id(),
+            capability,
+            version,
+            operation_name,
+            StreamDirection::SourceToDestination,
+            0,
+        );
+        let mut node = RuntimeNode::new_owned(
+            session,
+            Arc::clone(&transport),
+            policy,
+            vec![local],
+            NetworkClass::Local,
+            NonZeroUsize::new(4).unwrap(),
+        )
+        .unwrap();
+        node.register_stream_operation(operation).unwrap();
+
+        (RuntimeActorSession::new(node, self.peer_trust), transport, open)
+    }
+}}
 
 fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
@@ -352,6 +483,54 @@ fn control_readiness_drives_inbound_events_without_polling() {
             crosslab_runtime::NodeEvent::SessionClosed(SessionCloseReason::Normal)
         ));
         assert!(transport.is_closed());
+    });
+}
+
+#[test]
+fn stream_readiness_drives_inbound_stream_events_without_polling() {
+    runtime().block_on(async {
+        let fixture = Fixture::new();
+        let (session, transport, open) = fixture.stream_actor_session([0x9b; 32], 0x9c);
+        let (ready_tx, ready_rx) = tokio::sync::watch::channel(0_u64);
+        let mut actor = RuntimeActor::new(config(4));
+        actor.start(session.with_stream_ready(ready_rx)).unwrap();
+        let mut events = actor.take_events().unwrap();
+
+        transport.push_incoming_stream(
+            encode_data_stream_open(&open).unwrap(),
+            vec![b"private-stream-payload".to_vec()],
+        );
+        ready_tx.send_replace(1);
+
+        let opened = tokio::time::timeout(Duration::from_secs(1), events.recv())
+            .await
+            .expect("runtime actor should react to stream readiness")
+            .expect("runtime actor event channel should stay open");
+        let chunk = tokio::time::timeout(Duration::from_secs(1), events.recv())
+            .await
+            .expect("runtime actor should drain stream payload")
+            .expect("runtime actor event channel should stay open");
+        let finished = tokio::time::timeout(Duration::from_secs(1), events.recv())
+            .await
+            .expect("runtime actor should drain stream completion")
+            .expect("runtime actor event channel should stay open");
+
+        assert!(matches!(
+            opened,
+            crosslab_runtime::NodeEvent::Stream(crosslab_runtime::RuntimeStreamEvent::Opened(_))
+        ));
+        assert!(matches!(
+            chunk,
+            crosslab_runtime::NodeEvent::Stream(crosslab_runtime::RuntimeStreamEvent::Chunk(ref chunk))
+                if chunk.bytes() == b"private-stream-payload"
+        ));
+        assert!(!format!("{chunk:?}").contains("private-stream-payload"));
+        assert!(matches!(
+            finished,
+            crosslab_runtime::NodeEvent::Stream(crosslab_runtime::RuntimeStreamEvent::Finished(_))
+        ));
+
+        actor.stop().await.unwrap();
     });
 }
 

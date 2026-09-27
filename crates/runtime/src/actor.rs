@@ -1,6 +1,6 @@
-use std::{fmt, num::NonZeroUsize};
+use std::{fmt, future::pending, num::NonZeroUsize, time::Instant};
 
-use crosslab_core::ControlReceiveError;
+use crosslab_core::{ControlReceiveError, StreamAcceptError, StreamReceiveError};
 use crosslab_policy::{PolicyState, SessionId, TrustRecord};
 use crosslab_protocol::{
     CapabilityAdvertisement, ControlRequest, ControlResponseResult, RequestId,
@@ -11,7 +11,7 @@ use tokio::{
     task::JoinHandle,
 };
 
-use crate::{NodeError, NodeEvent, RuntimeNode, RuntimeStatus, command::RuntimeCommand};
+use crate::{\n    NodeError, NodeEvent, RuntimeNode, RuntimeStatus, RuntimeStreamError,\n    command::RuntimeCommand,\n};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RuntimeActorConfig {
@@ -66,6 +66,8 @@ pub struct RuntimeActorSession {
     peer_trust: TrustRecord,
     session_id: SessionId,
     control_ready: Option<watch::Receiver<u64>>,
+    stream_ready: Option<watch::Receiver<u64>>,
+    operation_started: Instant,
 }
 
 impl RuntimeActorSession {
@@ -80,11 +82,18 @@ impl RuntimeActorSession {
             peer_trust,
             session_id,
             control_ready: None,
+            stream_ready: None,
+            operation_started: Instant::now(),
         }
     }
 
     pub fn with_control_ready(mut self, control_ready: watch::Receiver<u64>) -> Self {
         self.control_ready = Some(control_ready);
+        self
+    }
+
+    pub fn with_stream_ready(mut self, stream_ready: watch::Receiver<u64>) -> Self {
+        self.stream_ready = Some(stream_ready);
         self
     }
 
@@ -149,8 +158,18 @@ impl RuntimeActorSession {
         self.node.receive_one(&self.peer_trust)
     }
 
+    fn receive_stream_one(&mut self) -> Result<NodeEvent, NodeError> {
+        let elapsed = self.operation_started.elapsed().as_millis();
+        let now = u64::try_from(elapsed).unwrap_or(u64::MAX);
+        self.node.receive_stream_one(&self.peer_trust, now)
+    }
+
     fn take_control_ready(&mut self) -> Option<watch::Receiver<u64>> {
         self.control_ready.take()
+    }
+
+    fn take_stream_ready(&mut self) -> Option<watch::Receiver<u64>> {
+        self.stream_ready.take()
     }
 
     fn shutdown(&mut self) {
@@ -374,6 +393,7 @@ impl Drop for RuntimeActor {
 enum ActorInput {
     Command(Option<RuntimeCommand>),
     ControlReady(bool),
+    StreamReady(bool),
 }
 
 async fn run_actor(
@@ -383,18 +403,18 @@ async fn run_actor(
     event_tx: mpsc::Sender<NodeEvent>,
 ) {
     let mut control_ready = session.take_control_ready();
-    if !drain_inbound(&mut session, &status_tx, &event_tx).await {
+    let mut stream_ready = session.take_stream_ready();
+    if !drain_inbound(&mut session, &status_tx, &event_tx).await
+        || !drain_streams(&mut session, &status_tx, &event_tx).await
+    {
         return;
     }
 
     loop {
-        let input = if let Some(ready) = control_ready.as_mut() {
-            tokio::select! {
-                command = command_rx.recv() => ActorInput::Command(command),
-                changed = ready.changed() => ActorInput::ControlReady(changed.is_ok()),
-            }
-        } else {
-            ActorInput::Command(command_rx.recv().await)
+        let input = tokio::select! {
+            command = command_rx.recv() => ActorInput::Command(command),
+            changed = wait_ready(&mut control_ready) => ActorInput::ControlReady(changed),
+            changed = wait_ready(&mut stream_ready) => ActorInput::StreamReady(changed),
         };
 
         match input {
@@ -441,14 +461,18 @@ async fn run_actor(
                         continue;
                     }
 
-                    let replacement_ready = replacement.take_control_ready();
+                    let replacement_control_ready = replacement.take_control_ready();
+                    let replacement_stream_ready = replacement.take_stream_ready();
                     session.shutdown();
                     session = replacement;
-                    control_ready = replacement_ready;
+                    control_ready = replacement_control_ready;
+                    stream_ready = replacement_stream_ready;
                     status_tx.send_replace(session.status());
                     let _ = reply.send(Ok(()));
 
-                    if !drain_inbound(&mut session, &status_tx, &event_tx).await {
+                    if !drain_inbound(&mut session, &status_tx, &event_tx).await
+                        || !drain_streams(&mut session, &status_tx, &event_tx).await
+                    {
                         return;
                     }
                 }
@@ -472,6 +496,18 @@ async fn run_actor(
                 }
             }
             ActorInput::ControlReady(false) => {
+                session.shutdown();
+                status_tx.send_replace(session.status());
+                return;
+            }
+            ActorInput::StreamReady(true) => {
+                if !drain_streams(&mut session, &status_tx, &event_tx).await {
+                    session.shutdown();
+                    status_tx.send_replace(session.status());
+                    return;
+                }
+            }
+            ActorInput::StreamReady(false) => {
                 session.shutdown();
                 status_tx.send_replace(session.status());
                 return;
@@ -516,6 +552,47 @@ async fn drain_inbound(
                 }
             }
         }
+    }
+}
+
+async fn drain_streams(
+    session: &mut RuntimeActorSession,
+    status_tx: &watch::Sender<RuntimeStatus>,
+    event_tx: &mpsc::Sender<NodeEvent>,
+) -> bool {
+    loop {
+        match session.receive_stream_one() {
+            Ok(event) => {
+                if event_tx.send(event).await.is_err() {
+                    session.shutdown();
+                    status_tx.send_replace(session.status());
+                    return false;
+                }
+            }
+            Err(NodeError::Stream(RuntimeStreamError::Accept(StreamAcceptError::Empty)))
+            | Err(NodeError::Stream(RuntimeStreamError::Receive(StreamReceiveError::Empty))) => {
+                return true;
+            }
+            Err(NodeError::Stream(RuntimeStreamError::Accept(StreamAcceptError::Closed))) => {
+                status_tx.send_replace(session.status());
+                return false;
+            }
+            Err(_) => {
+                let status = session.status();
+                let active = status.session_id().is_some();
+                status_tx.send_replace(status);
+                if !active {
+                    return false;
+                }
+            }
+        }
+    }
+}
+
+async fn wait_ready(ready: &mut Option<watch::Receiver<u64>>) -> bool {
+    match ready {
+        Some(ready) => ready.changed().await.is_ok(),
+        None => pending::<bool>().await,
     }
 }
 
