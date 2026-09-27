@@ -570,8 +570,11 @@ fn decode_entry(reader: &mut Reader<'_>) -> Result<FileTransferRetainedState, Fi
     match tag {
         PARTIAL_TAG => {
             let durable_offset = reader.u64()?;
-            let locator =
-                FileTransferLocalLocator::new(reader.bytes_u32(MAX_FILE_TRANSFER_LOCAL_LOCATOR_BYTES)?.to_vec())?;
+            let locator = FileTransferLocalLocator::new(
+                reader
+                    .bytes_u16(MAX_FILE_TRANSFER_LOCAL_LOCATOR_BYTES)?
+                    .to_vec(),
+            )?;
             Ok(FileTransferRetainedState::Partial(
                 FileTransferPartialState::new(identity, durable_offset, locator, updated_at)?,
             ))
@@ -634,15 +637,6 @@ impl<'a> Reader<'a> {
 
     fn bytes_u16(&mut self, max_len: usize) -> Result<&'a [u8], FileTransferStateError> {
         let len = usize::from(u16::from_be_bytes(self.array()?));
-        if len > max_len {
-            return Err(FileTransferStateError::MalformedSnapshot);
-        }
-        self.take(len)
-    }
-
-    fn bytes_u32(&mut self, max_len: usize) -> Result<&'a [u8], FileTransferStateError> {
-        let len = usize::try_from(u32::from_be_bytes(self.array()?))
-            .map_err(|_| FileTransferStateError::MalformedSnapshot)?;
         if len > max_len {
             return Err(FileTransferStateError::MalformedSnapshot);
         }
