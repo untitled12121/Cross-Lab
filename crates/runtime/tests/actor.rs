@@ -707,6 +707,45 @@ fn data_stream_commands_preserve_chunk_ownership_under_backpressure() {
 }
 
 #[test]
+fn stream_chunk_actor_queue_backpressure_returns_owned_buffer() {
+    runtime().block_on(async {
+        let fixture = Fixture::new();
+        let (session, transport, mut open) = fixture.stream_actor_session([0xa5; 32], 0xa6);
+        let stream_id = StreamId::from_bytes([0xa7; 16]);
+        open = DataStreamOpen::new(
+            open.session_id(),
+            stream_id,
+            open.operation_id(),
+            open.capability_id().clone(),
+            open.capability_version(),
+            open.operation_name().clone(),
+            StreamDirection::SourceToDestination,
+            0,
+        );
+        let mut actor = RuntimeActor::new(config(1));
+        actor.start(session).unwrap();
+        actor.open_data_stream(open).await.unwrap();
+
+        actor.try_network_lost().unwrap();
+        let chunk = b"queue-owned-file-chunk".to_vec();
+        let error = actor
+            .send_stream_chunk(stream_id, chunk.clone())
+            .await
+            .unwrap_err();
+
+        assert!(!format!("{error:?}").contains("queue-owned-file-chunk"));
+        assert!(matches!(
+            error,
+            RuntimeActorStreamSendError::QueueFull(returned) if returned == chunk
+        ));
+
+        drop(actor);
+        tokio::task::yield_now().await;
+        assert!(transport.is_closed());
+    });
+}
+
+#[test]
 fn event_subscription_commands_are_actor_owned_and_bounded() {
     runtime().block_on(async {
         let fixture = Fixture::new();
