@@ -795,8 +795,8 @@ async fn install_session(
     actor.start(actor_session).map_err(|_| ())?;
     if actor
         .send_capabilities(runtime_advertisement(
-            clipboard_availability,
-            file_transfer_availability,
+            availability.clipboard,
+            availability.file_transfer,
         ))
         .await
         .is_err()
