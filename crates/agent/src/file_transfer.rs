@@ -1,7 +1,15 @@
 mod integrity;
+mod retained;
 
 pub use integrity::{
     FileTransferHash, FileTransferHasher, FileTransferIntegrityError, FileTransferVerifier,
+};
+pub use retained::{
+    FileTransferCompletionTombstone, FileTransferIdentity, FileTransferLocalLocator,
+    FileTransferPartialState, FileTransferRecoveryAction, FileTransferRetainedState,
+    FileTransferStateError, FileTransferStateMatch, FileTransferStateSnapshot,
+    MAX_FILE_TRANSFER_LOCAL_LOCATOR_BYTES, MAX_FILE_TRANSFER_STATE_BYTES,
+    MAX_RETAINED_FILE_TRANSFERS,
 };
 
 use core::fmt;
