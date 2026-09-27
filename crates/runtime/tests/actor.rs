@@ -377,7 +377,7 @@ impl Fixture {
 
         (RuntimeActorSession::new(node, self.peer_trust), transport, open)
     }
-}}
+}
 
 fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
