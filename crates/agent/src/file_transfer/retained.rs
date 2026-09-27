@@ -331,7 +331,7 @@ impl FileTransferStateSnapshot {
             return Err(FileTransferStateError::IdentityMismatch);
         }
         Ok(Some(match entry {
-            FileTransferRetainedState::Partial(partial) => FileTransferStateMatch::Partial(partial)
+            FileTransferRetainedState::Partial(partial) => FileTransferStateMatch::Partial(partial),
             FileTransferRetainedState::Completed(completed) => {
                 FileTransferStateMatch::AlreadyComplete(completed)
             }
@@ -523,7 +523,7 @@ fn encode_entry(
             PARTIAL_TAG,
             partial.identity(),
             partial.updated_at_unix_secs(),
-        )
+        ),
         FileTransferRetainedState::Completed(completed) => (
             COMPLETED_TAG,
             completed.identity(),
