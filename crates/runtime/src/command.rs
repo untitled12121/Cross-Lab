@@ -6,8 +6,8 @@ use crosslab_policy::{
     UsePolicy,
 };
 use crosslab_protocol::{
-    CapabilityAdvertisement, ControlRequest, ControlResponseResult, DataStreamOpen, RequestId,
-    StreamId,
+    CapabilityAdvertisement, ControlRequest, ControlResponseResult, DataStreamOpen, Event,
+    RequestId, StreamId,
 };
 use tokio::sync::oneshot;
 
@@ -38,6 +38,10 @@ pub(crate) enum RuntimeCommand {
     },
     SendCancel {
         request_id: RequestId,
+        reply: oneshot::Sender<Result<(), RuntimeActorError>>,
+    },
+    SendEvent {
+        event: Event,
         reply: oneshot::Sender<Result<(), RuntimeActorError>>,
     },
     SubscribeEvent {

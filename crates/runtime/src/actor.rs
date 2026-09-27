@@ -13,8 +13,8 @@ use crosslab_policy::{
     SessionId, TrustRecord, UsePolicy,
 };
 use crosslab_protocol::{
-    CapabilityAdvertisement, ControlRequest, ControlResponseResult, DataStreamOpen, RequestId,
-    StreamId,
+    CapabilityAdvertisement, ControlRequest, ControlResponseResult, DataStreamOpen, Event,
+    RequestId, StreamId,
 };
 use tokio::{
     runtime::Handle,
@@ -214,6 +214,12 @@ impl RuntimeActorSession {
     fn send_cancel(&mut self, request_id: RequestId) -> Result<(), RuntimeActorError> {
         self.node
             .send_cancel(request_id)
+            .map_err(|_| RuntimeActorError::ControlRejected)
+    }
+
+    fn send_event(&mut self, event: Event) -> Result<(), RuntimeActorError> {
+        self.node
+            .send_event(event)
             .map_err(|_| RuntimeActorError::ControlRejected)
     }
 
@@ -492,6 +498,22 @@ impl RuntimeActor {
         command_tx
             .send(RuntimeCommand::SendCancel {
                 request_id,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| RuntimeActorError::ActorClosed)?;
+        reply_rx.await.map_err(|_| RuntimeActorError::ActorClosed)?
+    }
+
+    pub async fn send_event(&self, event: Event) -> Result<(), RuntimeActorError> {
+        let command_tx = self
+            .command_tx
+            .as_ref()
+            .ok_or(RuntimeActorError::NotRunning)?;
+        let (reply_tx, reply_rx) = oneshot::channel();
+        command_tx
+            .send(RuntimeCommand::SendEvent {
+                event,
                 reply: reply_tx,
             })
             .await
@@ -797,6 +819,9 @@ async fn run_actor(
                 }
                 RuntimeCommand::SendCancel { request_id, reply } => {
                     let _ = reply.send(session.send_cancel(request_id));
+                }
+                RuntimeCommand::SendEvent { event, reply } => {
+                    let _ = reply.send(session.send_event(event));
                 }
                 RuntimeCommand::SubscribeEvent {
                     subscription,
