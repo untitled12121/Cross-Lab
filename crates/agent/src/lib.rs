@@ -9,7 +9,8 @@ pub use clipboard::{
     ClipboardPlatformError, ClipboardRequest,
 };
 pub use file_transfer::{
-    FileTransferAvailability, FileTransferOperationError, FileTransferRequest,
+    FileTransferAvailability, FileTransferChunkError, FileTransferDataChunk, FileTransferDataEvent,
+    FileTransferOperationError, FileTransferRequest, FileTransferSourceStream,
 };
 pub use presence::{
     PermissionRule, PermissionSnapshot, PresenceAgentError, PresenceDiscoveryInfo, PresencePhase,
