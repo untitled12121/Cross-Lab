@@ -11,7 +11,10 @@ use crosslab_core::{MAX_SESSION_DISCOVERY_CANDIDATES, should_initiate_session};
 use crosslab_crypto::SigningProvider;
 use crosslab_identity::{DeviceCredential, DeviceId, OwnerAuthorityState};
 use crosslab_policy::{NetworkClass, PolicyState, TrustRecord};
-use crosslab_protocol::{FeatureSet, ProtocolRange, RequestId};
+use crosslab_protocol::{
+    CapabilityAdvertisement, FILE_TRANSFER_CAPABILITY_ID, FeatureSet, FileTransferAcceptance,
+    FileTransferOffer, ProtocolRange, RequestId,
+};
 use crosslab_runtime::{
     NodeEvent, RuntimeActor, RuntimeActorConfig, RuntimeActorSession, RuntimeNode,
 };
@@ -25,15 +28,30 @@ use tokio::{
 };
 
 use super::types::{PermissionSnapshot, PresencePhase, PresenceSnapshot, TrustedSessionRoute};
-use crate::clipboard::{
-    ClipboardAvailability, ClipboardKind, ClipboardOperationError, ClipboardPlatformError,
-    ClipboardRequest, advertisement as clipboard_advertisement,
-    capability_negotiated as clipboard_capability_negotiated, decode_inbound as decode_clipboard,
-    decode_response as decode_clipboard_response, internal_failure as clipboard_internal_failure,
-    local_capabilities as clipboard_local_capabilities,
-    read_completion as clipboard_read_completion, read_request as clipboard_read_request,
-    resource_failure as clipboard_resource_failure, write_completion as clipboard_write_completion,
-    write_request as clipboard_write_request,
+use crate::{
+    clipboard::{
+        ClipboardAvailability, ClipboardKind, ClipboardOperationError, ClipboardPlatformError,
+        ClipboardRequest, advertisement as clipboard_advertisement,
+        capability_negotiated as clipboard_capability_negotiated,
+        decode_inbound as decode_clipboard, decode_response as decode_clipboard_response,
+        internal_failure as clipboard_internal_failure,
+        local_capabilities as clipboard_local_capabilities,
+        read_completion as clipboard_read_completion, read_request as clipboard_read_request,
+        resource_failure as clipboard_resource_failure,
+        write_completion as clipboard_write_completion, write_request as clipboard_write_request,
+    },
+    file_transfer::{
+        FileTransferAvailability, FileTransferOperationError, FileTransferRequest,
+        advertisement as file_transfer_advertisement,
+        already_complete_response as file_transfer_already_complete_response,
+        capability_negotiated as file_transfer_capability_negotiated,
+        decode_inbound as decode_file_transfer, decode_response as decode_file_transfer_response,
+        internal_failure as file_transfer_internal_failure,
+        local_capabilities as file_transfer_local_capabilities,
+        offer_request as file_transfer_offer_request,
+        resource_failure as file_transfer_resource_failure,
+        result_subscription as file_transfer_result_subscription,
+    },
 };
 
 const RUNTIME_CAPACITY: usize = 8;
@@ -42,6 +60,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const ACCEPT_TIMEOUT: Duration = Duration::from_secs(30);
 const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
 const CLIPBOARD_OPERATION_TIMEOUT: Duration = Duration::from_secs(10);
+const FILE_TRANSFER_OFFER_TIMEOUT: Duration = Duration::from_secs(30);
 const RETRY_DELAYS: [Duration; 5] = [
     Duration::from_secs(1),
     Duration::from_secs(2),
@@ -101,6 +120,14 @@ pub(super) enum AgentCommand {
         result: Result<(), ClipboardPlatformError>,
         reply: oneshot::Sender<Result<(), ClipboardOperationError>>,
     },
+    FileTransferOffer {
+        offer: FileTransferOffer,
+        reply: oneshot::Sender<Result<FileTransferAcceptance, FileTransferOperationError>>,
+    },
+    FileTransferAlreadyComplete {
+        request_id: RequestId,
+        reply: oneshot::Sender<Result<(), FileTransferOperationError>>,
+    },
     Stop,
 }
 
@@ -111,6 +138,8 @@ pub(super) struct AgentChannels {
     permissions_tx: watch::Sender<PermissionSnapshot>,
     clipboard_requests_tx: mpsc::Sender<ClipboardRequest>,
     clipboard_availability: ClipboardAvailability,
+    file_transfer_requests_tx: mpsc::Sender<FileTransferRequest>,
+    file_transfer_availability: FileTransferAvailability,
 }
 
 impl AgentChannels {
@@ -121,6 +150,8 @@ impl AgentChannels {
         permissions_tx: watch::Sender<PermissionSnapshot>,
         clipboard_requests_tx: mpsc::Sender<ClipboardRequest>,
         clipboard_availability: ClipboardAvailability,
+        file_transfer_requests_tx: mpsc::Sender<FileTransferRequest>,
+        file_transfer_availability: FileTransferAvailability,
     ) -> Self {
         Self {
             policy_rx,
@@ -129,6 +160,8 @@ impl AgentChannels {
             permissions_tx,
             clipboard_requests_tx,
             clipboard_availability,
+            file_transfer_requests_tx,
+            file_transfer_availability,
         }
     }
 }
@@ -248,12 +281,51 @@ impl ClipboardRuntimeState {
     }
 }
 
+struct PendingFileOffer {
+    offer: FileTransferOffer,
+    deadline: Instant,
+    reply: oneshot::Sender<Result<FileTransferAcceptance, FileTransferOperationError>>,
+}
+
+struct FileTransferRuntimeState {
+    requests_tx: mpsc::Sender<FileTransferRequest>,
+    availability: FileTransferAvailability,
+    outgoing: BTreeMap<RequestId, PendingFileOffer>,
+    inbound: BTreeMap<RequestId, FileTransferRequest>,
+}
+
+impl FileTransferRuntimeState {
+    fn new(
+        requests_tx: mpsc::Sender<FileTransferRequest>,
+        availability: FileTransferAvailability,
+    ) -> Self {
+        Self {
+            requests_tx,
+            availability,
+            outgoing: BTreeMap::new(),
+            inbound: BTreeMap::new(),
+        }
+    }
+
+    fn cancel_all(&mut self, error: FileTransferOperationError) {
+        for (_, pending) in core::mem::take(&mut self.outgoing) {
+            let _ = pending.reply.send(Err(error));
+        }
+        self.inbound.clear();
+    }
+
+    fn next_deadline(&self) -> Option<Instant> {
+        self.outgoing.values().map(|pending| pending.deadline).min()
+    }
+}
+
 enum ConnectedEvent {
     Command(Option<AgentCommand>),
     PolicyChanged,
     PolicyClosed,
     Runtime(NodeEvent),
     ClipboardTimeout,
+    FileTransferTimeout,
     StatusChanged,
     TransportClosed,
 }
@@ -272,9 +344,13 @@ pub(super) async fn run_agent(
         permissions_tx,
         clipboard_requests_tx,
         clipboard_availability,
+        file_transfer_requests_tx,
+        file_transfer_availability,
     } = channels;
     let (connect_tx, mut connect_rx) = mpsc::channel(CONNECT_RESULT_CAPACITY);
     let mut clipboard = ClipboardRuntimeState::new(clipboard_requests_tx, clipboard_availability);
+    let mut file_transfer =
+        FileTransferRuntimeState::new(file_transfer_requests_tx, file_transfer_availability);
     let mut candidates = BTreeMap::<String, CandidateState>::new();
     let mut connected: Option<ConnectedRuntime> = None;
     let mut connecting_instance: Option<String> = None;
@@ -321,6 +397,7 @@ pub(super) async fn run_agent(
                         event.map_or(ConnectedEvent::TransportClosed, ConnectedEvent::Runtime)
                     }
                     _ = wait_retry(clipboard.next_deadline()) => ConnectedEvent::ClipboardTimeout,
+                    _ = wait_retry(file_transfer.next_deadline()) => ConnectedEvent::FileTransferTimeout,
                     _ = connection.closed.changed() => ConnectedEvent::TransportClosed
                 }
             };
@@ -336,6 +413,7 @@ pub(super) async fn run_agent(
                         &mut auto_connect,
                         &status_tx,
                         &mut clipboard,
+                        &mut file_transfer,
                     )
                     .await
                     {
@@ -351,24 +429,41 @@ pub(super) async fn run_agent(
                         &permissions_tx,
                         &status_tx,
                         &mut clipboard,
+                        &mut file_transfer,
                     )
                     .await;
                 }
                 ConnectedEvent::PolicyClosed => {
                     clipboard.cancel_all(ClipboardOperationError::Cancelled);
+                    file_transfer.cancel_all(FileTransferOperationError::Cancelled);
                     stop_connected(connected.take()).await;
                     server.close();
                     return;
                 }
                 ConnectedEvent::Runtime(event) => {
                     let session_closed = matches!(event, NodeEvent::SessionClosed(_));
-                    handle_runtime_event(event, &mut connected, &mut clipboard).await;
+                    handle_runtime_event(
+                        event,
+                        &mut connected,
+                        &mut clipboard,
+                        &mut file_transfer,
+                    )
+                    .await;
                     if session_closed {
-                        mark_transport_lost(&mut connected, &status_tx, &mut clipboard).await;
+                        mark_transport_lost(
+                            &mut connected,
+                            &status_tx,
+                            &mut clipboard,
+                            &mut file_transfer,
+                        )
+                        .await;
                     }
                 }
                 ConnectedEvent::ClipboardTimeout => {
                     expire_clipboard_operations(&mut connected, &mut clipboard).await;
+                }
+                ConnectedEvent::FileTransferTimeout => {
+                    expire_file_transfer_offers(&mut connected, &mut file_transfer).await;
                 }
                 ConnectedEvent::StatusChanged => {
                     if let Some(connection) = connected.as_ref() {
@@ -376,7 +471,13 @@ pub(super) async fn run_agent(
                     }
                 }
                 ConnectedEvent::TransportClosed => {
-                    mark_transport_lost(&mut connected, &status_tx, &mut clipboard).await;
+                    mark_transport_lost(
+                        &mut connected,
+                        &status_tx,
+                        &mut clipboard,
+                        &mut file_transfer,
+                    )
+                    .await;
                 }
             }
             continue;
@@ -402,6 +503,7 @@ pub(super) async fn run_agent(
                     &mut auto_connect,
                     &status_tx,
                     &mut clipboard,
+                    &mut file_transfer,
                 ).await {
                     server.close();
                     return;
@@ -421,6 +523,7 @@ pub(super) async fn run_agent(
                     &permissions_tx,
                     &status_tx,
                     &mut clipboard,
+                    &mut file_transfer,
                 ).await;
             }
             accepted = server.accept_authenticated(&auth, server_timeouts()),
@@ -435,6 +538,7 @@ pub(super) async fn run_agent(
                         &mut connected,
                         &status_tx,
                         clipboard.availability,
+                        file_transfer.availability,
                     ).await.is_err() {
                         publish_failure(&status_tx, connected.as_ref());
                     }
@@ -455,6 +559,7 @@ pub(super) async fn run_agent(
                         auto_connect,
                         &status_tx,
                         clipboard.availability,
+                        file_transfer.availability,
                     ).await;
                 }
             }
@@ -546,6 +651,7 @@ async fn handle_connect_result(
     auto_connect: bool,
     status_tx: &watch::Sender<PresenceSnapshot>,
     clipboard_availability: ClipboardAvailability,
+    file_transfer_availability: FileTransferAvailability,
 ) {
     if connecting_instance.as_deref() != Some(result.instance.as_str()) {
         return;
@@ -573,6 +679,7 @@ async fn handle_connect_result(
                 connected,
                 status_tx,
                 clipboard_availability,
+                file_transfer_availability,
             )
             .await
             .is_err()
@@ -604,6 +711,7 @@ async fn install_session(
     connected: &mut Option<ConnectedRuntime>,
     status_tx: &watch::Sender<PresenceSnapshot>,
     clipboard_availability: ClipboardAvailability,
+    file_transfer_availability: FileTransferAvailability,
 ) -> Result<(), ()> {
     let peer_id = session
         .session()
@@ -612,7 +720,14 @@ async fn install_session(
         .ok_or(())?;
     let peer_trust = security.peer_trust(peer_id).ok_or(())?;
     let (actor_session, closed) =
-        runtime_session(session, peer_trust, policy, clipboard_availability).ok_or(())?;
+        runtime_session(
+            session,
+            peer_trust,
+            policy,
+            clipboard_availability,
+            file_transfer_availability,
+        )
+        .ok_or(())?;
 
     if let Some(connection) = connected.as_mut()
         && connection.reconnecting
@@ -625,7 +740,10 @@ async fn install_session(
             .map_err(|_| ())?;
         connection
             .actor
-            .send_capabilities(clipboard_advertisement(clipboard_availability))
+            .send_capabilities(runtime_advertisement(
+                clipboard_availability,
+                file_transfer_availability,
+            ))
             .await
             .map_err(|_| ())?;
         connection.closed = closed;
@@ -643,7 +761,10 @@ async fn install_session(
     let mut actor = RuntimeActor::new(actor_config());
     actor.start(actor_session).map_err(|_| ())?;
     if actor
-        .send_capabilities(clipboard_advertisement(clipboard_availability))
+        .send_capabilities(runtime_advertisement(
+                clipboard_availability,
+                file_transfer_availability,
+            ))
         .await
         .is_err()
     {
@@ -670,8 +791,10 @@ async fn mark_transport_lost(
     connected: &mut Option<ConnectedRuntime>,
     status_tx: &watch::Sender<PresenceSnapshot>,
     clipboard: &mut ClipboardRuntimeState,
+    file_transfer: &mut FileTransferRuntimeState,
 ) {
     clipboard.cancel_all(ClipboardOperationError::Cancelled);
+    file_transfer.cancel_all(FileTransferOperationError::Cancelled);
     let Some(connection) = connected.as_mut() else {
         return;
     };
@@ -695,6 +818,7 @@ async fn handle_command(
     auto_connect: &mut bool,
     status_tx: &watch::Sender<PresenceSnapshot>,
     clipboard: &mut ClipboardRuntimeState,
+    file_transfer: &mut FileTransferRuntimeState,
 ) -> bool {
     match command {
         Some(AgentCommand::CandidateAvailable(route)) => {
@@ -708,7 +832,7 @@ async fn handle_command(
         Some(AgentCommand::NetworkLost) => {
             *network_available = false;
             candidates.clear();
-            mark_transport_lost(connected, status_tx, clipboard).await;
+            mark_transport_lost(connected, status_tx, clipboard, file_transfer).await;
             publish_waiting(status_tx, connected.as_ref(), false, *auto_connect);
             false
         }
@@ -721,6 +845,7 @@ async fn handle_command(
             *auto_connect = false;
             candidates.clear();
             clipboard.cancel_all(ClipboardOperationError::Cancelled);
+            file_transfer.cancel_all(FileTransferOperationError::Cancelled);
             stop_connected(connected.take()).await;
             status_tx.send_replace(PresenceSnapshot::new(PresencePhase::Paused, None));
             false
@@ -758,8 +883,23 @@ async fn handle_command(
             let _ = reply.send(outcome);
             false
         }
+        Some(AgentCommand::FileTransferOffer { offer, reply }) => {
+            start_file_transfer_offer(connected.as_ref(), file_transfer, offer, reply).await;
+            false
+        }
+        Some(AgentCommand::FileTransferAlreadyComplete { request_id, reply }) => {
+            let outcome = complete_file_transfer_already_complete(
+                connected.as_ref(),
+                file_transfer,
+                request_id,
+            )
+            .await;
+            let _ = reply.send(outcome);
+            false
+        }
         Some(AgentCommand::Stop) | None => {
             clipboard.cancel_all(ClipboardOperationError::Cancelled);
+            file_transfer.cancel_all(FileTransferOperationError::Cancelled);
             stop_connected(connected.take()).await;
             true
         }
@@ -899,38 +1039,167 @@ async fn complete_clipboard_write(
         .map_err(|_| ClipboardOperationError::Transport)
 }
 
+async fn start_file_transfer_offer(
+    connected: Option<&ConnectedRuntime>,
+    file_transfer: &mut FileTransferRuntimeState,
+    offer: FileTransferOffer,
+    reply: oneshot::Sender<Result<FileTransferAcceptance, FileTransferOperationError>>,
+) {
+    if file_transfer.outgoing.len() >= RUNTIME_CAPACITY {
+        let _ = reply.send(Err(FileTransferOperationError::ResourceLimit));
+        return;
+    }
+    let Some(connection) = connected.filter(|connection| !connection.reconnecting) else {
+        let _ = reply.send(Err(FileTransferOperationError::NotConnected));
+        return;
+    };
+    if !file_transfer_capability_negotiated(
+        connection.status.borrow().negotiated_capability_ids(),
+    ) {
+        let _ = reply.send(Err(FileTransferOperationError::NotNegotiated));
+        return;
+    }
+    if connection
+        .actor
+        .subscribe_event(file_transfer_result_subscription())
+        .await
+        .is_err()
+    {
+        let _ = reply.send(Err(FileTransferOperationError::Transport));
+        return;
+    }
+
+    let request_id = match RequestId::generate() {
+        Ok(request_id) => request_id,
+        Err(_) => {
+            let _ = reply.send(Err(FileTransferOperationError::Random));
+            return;
+        }
+    };
+    let request = match file_transfer_offer_request(request_id, &offer) {
+        Ok(request) => request,
+        Err(error) => {
+            let _ = reply.send(Err(error));
+            return;
+        }
+    };
+    if connection.actor.send_request(request).await.is_err() {
+        let _ = reply.send(Err(FileTransferOperationError::Transport));
+        return;
+    }
+
+    file_transfer.outgoing.insert(
+        request_id,
+        PendingFileOffer {
+            offer,
+            deadline: Instant::now() + FILE_TRANSFER_OFFER_TIMEOUT,
+            reply,
+        },
+    );
+}
+
+async fn complete_file_transfer_already_complete(
+    connected: Option<&ConnectedRuntime>,
+    file_transfer: &mut FileTransferRuntimeState,
+    request_id: RequestId,
+) -> Result<(), FileTransferOperationError> {
+    let request = file_transfer
+        .inbound
+        .remove(&request_id)
+        .ok_or(FileTransferOperationError::Cancelled)?;
+    let connection = connected
+        .filter(|connection| !connection.reconnecting)
+        .ok_or(FileTransferOperationError::Cancelled)?;
+    let response = file_transfer_already_complete_response(&request)?;
+    connection
+        .actor
+        .send_response(request_id, response)
+        .await
+        .map_err(|_| FileTransferOperationError::Transport)
+}
+
+async fn expire_file_transfer_offers(
+    connected: &mut Option<ConnectedRuntime>,
+    file_transfer: &mut FileTransferRuntimeState,
+) {
+    let now = Instant::now();
+    let expired = file_transfer
+        .outgoing
+        .iter()
+        .filter_map(|(request_id, pending)| (pending.deadline <= now).then_some(*request_id))
+        .collect::<Vec<_>>();
+
+    for request_id in expired {
+        let Some(pending) = file_transfer.outgoing.remove(&request_id) else {
+            continue;
+        };
+        if let Some(connection) = connected
+            .as_ref()
+            .filter(|connection| !connection.reconnecting)
+        {
+            let _ = connection.actor.send_cancel(request_id).await;
+        }
+        let _ = pending.reply.send(Err(FileTransferOperationError::TimedOut));
+    }
+}
+
 async fn handle_runtime_event(
     event: NodeEvent,
     connected: &mut Option<ConnectedRuntime>,
     clipboard: &mut ClipboardRuntimeState,
+    file_transfer: &mut FileTransferRuntimeState,
 ) {
     match event {
         NodeEvent::RequestDispatched(request) => {
             let request_id = request.request_id();
-            let result = match decode_clipboard(&request) {
-                Ok(platform_request) => {
-                    if clipboard.inbound.len() >= RUNTIME_CAPACITY {
-                        Some(clipboard_resource_failure())
-                    } else {
-                        let kind = match &platform_request {
-                            ClipboardRequest::Read { .. } => ClipboardKind::Read,
-                            ClipboardRequest::Write { .. } => ClipboardKind::Write,
-                        };
-                        match clipboard.requests_tx.try_send(platform_request) {
-                            Ok(()) => {
-                                clipboard.inbound.insert(request_id, kind);
-                                None
-                            }
-                            Err(mpsc::error::TrySendError::Full(_)) => {
-                                Some(clipboard_resource_failure())
-                            }
-                            Err(mpsc::error::TrySendError::Closed(_)) => {
-                                Some(clipboard_internal_failure())
+            let result = if request.capability_id().as_str() == FILE_TRANSFER_CAPABILITY_ID {
+                match decode_file_transfer(&request) {
+                    Ok(platform_request) => {
+                        if file_transfer.inbound.len() >= RUNTIME_CAPACITY {
+                            Some(file_transfer_resource_failure())
+                        } else {
+                            match file_transfer.requests_tx.try_send(platform_request.clone()) {
+                                Ok(()) => {
+                                    file_transfer.inbound.insert(request_id, platform_request);
+                                    None
+                                }
+                                Err(mpsc::error::TrySendError::Full(_)) => {
+                                    Some(file_transfer_resource_failure())
+                                }
+                                Err(mpsc::error::TrySendError::Closed(_)) => {
+                                    Some(file_transfer_internal_failure())
+                                }
                             }
                         }
                     }
+                    Err(result) => Some(result),
                 }
-                Err(result) => Some(result),
+            } else {
+                match decode_clipboard(&request) {
+                    Ok(platform_request) => {
+                        if clipboard.inbound.len() >= RUNTIME_CAPACITY {
+                            Some(clipboard_resource_failure())
+                        } else {
+                            let kind = match &platform_request {
+                                ClipboardRequest::Read { .. } => ClipboardKind::Read,
+                                ClipboardRequest::Write { .. } => ClipboardKind::Write,
+                            };
+                            match clipboard.requests_tx.try_send(platform_request) {
+                                Ok(()) => {
+                                    clipboard.inbound.insert(request_id, kind);
+                                    None
+                                }
+                                Err(mpsc::error::TrySendError::Full(_)) => {
+                                    Some(clipboard_resource_failure())
+                                }
+                                Err(mpsc::error::TrySendError::Closed(_)) => {
+                                    Some(clipboard_internal_failure())
+                                }
+                            }
+                        }
+                    }
+                    Err(result) => Some(result),
+                }
             };
 
             if let Some(result) = result
@@ -945,13 +1214,18 @@ async fn handle_runtime_event(
             if let Some(pending) = clipboard.outgoing.remove(&response.request_id()) {
                 let result = decode_clipboard_response(pending.kind(), response.result());
                 pending.finish(result);
+            } else if let Some(pending) = file_transfer.outgoing.remove(&response.request_id()) {
+                let result = decode_file_transfer_response(&pending.offer, response.result());
+                let _ = pending.reply.send(result);
             }
         }
         NodeEvent::RequestCancelled(request_id) => {
             clipboard.inbound.remove(&request_id);
+            file_transfer.inbound.remove(&request_id);
         }
         NodeEvent::SessionClosed(_) => {
             clipboard.cancel_all(ClipboardOperationError::Cancelled);
+            file_transfer.cancel_all(FileTransferOperationError::Cancelled);
         }
         NodeEvent::CapabilitiesUpdated
         | NodeEvent::Event(_)
@@ -992,6 +1266,7 @@ async fn apply_policy_update(
     permissions_tx: &watch::Sender<PermissionSnapshot>,
     status_tx: &watch::Sender<PresenceSnapshot>,
     clipboard: &mut ClipboardRuntimeState,
+    file_transfer: &mut FileTransferRuntimeState,
 ) {
     let next = policy_rx.borrow_and_update().clone();
     if *policy == next || next.revision() <= policy.revision() {
@@ -999,6 +1274,7 @@ async fn apply_policy_update(
     }
 
     clipboard.cancel_all(ClipboardOperationError::Cancelled);
+    file_transfer.cancel_all(FileTransferOperationError::Cancelled);
     let apply_failed = match connected.as_ref() {
         Some(connection) => connection.actor.replace_policy(next.clone()).await.is_err(),
         None => false,
@@ -1132,6 +1408,7 @@ fn runtime_session(
     peer_trust: TrustRecord,
     policy: &PolicyState,
     clipboard_availability: ClipboardAvailability,
+    file_transfer_availability: FileTransferAvailability,
 ) -> Option<(RuntimeActorSession, watch::Receiver<bool>)> {
     let (session, transport) = session.into_parts();
     let closed = transport.subscribe_closed();
@@ -1141,7 +1418,7 @@ fn runtime_session(
         session,
         Arc::new(transport),
         policy.clone(),
-        clipboard_local_capabilities(clipboard_availability),
+        runtime_local_capabilities(clipboard_availability, file_transfer_availability),
         NetworkClass::Local,
         NonZeroUsize::new(RUNTIME_CAPACITY)?,
     )
@@ -1152,6 +1429,27 @@ fn runtime_session(
             .with_stream_ready(stream_ready),
         closed,
     ))
+}
+
+fn runtime_local_capabilities(
+    clipboard_availability: ClipboardAvailability,
+    file_transfer_availability: FileTransferAvailability,
+) -> Vec<crosslab_policy::LocalCapability> {
+    let mut capabilities = clipboard_local_capabilities(clipboard_availability);
+    capabilities.extend(file_transfer_local_capabilities(file_transfer_availability));
+    capabilities
+}
+
+fn runtime_advertisement(
+    clipboard_availability: ClipboardAvailability,
+    file_transfer_availability: FileTransferAvailability,
+) -> CapabilityAdvertisement {
+    let clipboard = clipboard_advertisement(clipboard_availability);
+    let files = file_transfer_advertisement(file_transfer_availability);
+    let mut entries = Vec::with_capacity(clipboard.len() + files.len());
+    entries.extend_from_slice(clipboard.entries());
+    entries.extend_from_slice(files.entries());
+    CapabilityAdvertisement::new(entries).expect("product capability advertisement is bounded")
 }
 
 async fn stop_connected(connected: Option<ConnectedRuntime>) {
