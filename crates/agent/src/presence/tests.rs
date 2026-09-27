@@ -197,10 +197,15 @@ async fn file_transfer_ready_mints_fresh_runtime_authority() {
 
     let first = left.send_file_offer(offer.clone());
     tokio::pin!(first);
-    let first_request = tokio::time::timeout(WAIT, right_requests.recv())
-        .await
-        .expect("first offer should arrive")
-        .expect("file transfer request channel should remain open");
+    let first_request = tokio::time::timeout(WAIT, async {
+        tokio::select! {
+            result = &mut first => panic!("first file offer completed before peer request: {result:?}"),
+            request = right_requests.recv() => request,
+        }
+    })
+    .await
+    .expect("first offer should arrive")
+    .expect("file transfer request channel should remain open");
     right
         .complete_file_transfer_ready(
             first_request.request_id(),
@@ -227,10 +232,15 @@ async fn file_transfer_ready_mints_fresh_runtime_authority() {
 
     let second = left.send_file_offer(offer);
     tokio::pin!(second);
-    let second_request = tokio::time::timeout(WAIT, right_requests.recv())
-        .await
-        .expect("second offer should arrive")
-        .expect("file transfer request channel should remain open");
+    let second_request = tokio::time::timeout(WAIT, async {
+        tokio::select! {
+            result = &mut second => panic!("second file offer completed before peer request: {result:?}"),
+            request = right_requests.recv() => request,
+        }
+    })
+    .await
+    .expect("second offer should arrive")
+    .expect("file transfer request channel should remain open");
     right
         .complete_file_transfer_ready(second_request.request_id(), 0)
         .await
@@ -293,10 +303,15 @@ async fn file_transfer_unused_ready_authority_shares_inbound_capacity() {
         .unwrap();
         let send = left.send_file_offer(offer);
         tokio::pin!(send);
-        let request = tokio::time::timeout(WAIT, right_requests.recv())
-            .await
-            .expect("bounded offer should reach platform")
-            .expect("file transfer request channel should remain open");
+        let request = tokio::time::timeout(WAIT, async {
+            tokio::select! {
+                result = &mut send => panic!("bounded file offer completed before platform dispatch: {result:?}"),
+                request = right_requests.recv() => request,
+            }
+        })
+        .await
+        .expect("bounded offer should reach platform")
+        .expect("file transfer request channel should remain open");
         right
             .complete_file_transfer_ready(request.request_id(), 0)
             .await
@@ -400,10 +415,15 @@ async fn file_transfer_offer_is_bounded_correlated_and_cancelled_on_disconnect()
 
     let second = left.send_file_offer(offer);
     tokio::pin!(second);
-    let _ = tokio::time::timeout(WAIT, right_requests.recv())
-        .await
-        .expect("second file offer should arrive")
-        .expect("file transfer request channel should remain open");
+    let _ = tokio::time::timeout(WAIT, async {
+        tokio::select! {
+            result = &mut second => panic!("second file offer completed before peer request: {result:?}"),
+            request = right_requests.recv() => request,
+        }
+    })
+    .await
+    .expect("second file offer should arrive")
+    .expect("file transfer request channel should remain open");
     left.disconnect().unwrap();
     assert_eq!(second.await, Err(FileTransferOperationError::Cancelled));
 }
