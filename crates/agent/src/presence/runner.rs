@@ -1263,7 +1263,9 @@ async fn handle_runtime_event(
             let result = if request.capability_id().as_str() == FILE_TRANSFER_CAPABILITY_ID {
                 match decode_file_transfer(&request) {
                     Ok(platform_request) => {
-                        if file_transfer.inbound.len() >= RUNTIME_CAPACITY {
+                        if file_transfer.inbound.len() + file_transfer.ready.len()
+                            >= RUNTIME_CAPACITY
+                        {
                             Some(file_transfer_resource_failure())
                         } else {
                             match file_transfer.requests_tx.try_send(platform_request.clone()) {
