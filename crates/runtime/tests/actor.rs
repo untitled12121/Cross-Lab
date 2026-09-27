@@ -657,7 +657,7 @@ fn data_stream_commands_preserve_chunk_ownership_under_backpressure() {
         let mut actor = RuntimeActor::new(config(4));
         actor.start(session).unwrap();
 
-        let stream_id = actor.open_data_stream(open).await.unwrap();
+        let stream_id = actor.open_data_stream(open.clone()).await.unwrap();
         assert_eq!(stream_id, StreamId::from_bytes([0xa3; 16]));
 
         let chunk = b"private-file-chunk".to_vec();
