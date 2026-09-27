@@ -77,9 +77,9 @@ After ADR-0020 acceptance:
 - issue/register the destination `AuthorizedOperation` only after exact authorization — implemented on PR #67;
 - correlate bounded transfer state — control correlation implemented on PR #67; stream/data-plane correlation active on PR #68;
 - stream source hashing and payload with bounded buffers/backpressure — actor/data-plane streaming active on PR #68; BLAKE3 integrity state remains next;
-- verify final size/digest;
-- persist bounded partial-transfer metadata and verified checkpoint state;
-- expire abandoned partial transfers;
+- verify final size/digest — shared verifier active on PR #69;
+- persist bounded partial-transfer metadata and verified checkpoint state — shared retained-state codec/model active on PR #69; platform persistence remains Tasks 4/5;
+- expire abandoned partial transfers — bounded count/age pruning model active on PR #69; platform cleanup policy remains Tasks 4/5;
 - never retain payload bytes in logs/history.
 
 ## Task 4 — Linux platform adapter
