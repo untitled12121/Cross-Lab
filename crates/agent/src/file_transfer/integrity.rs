@@ -129,7 +129,8 @@ impl FileTransferVerifier {
     }
 
     pub fn update(&mut self, bytes: &[u8]) -> Result<(), FileTransferIntegrityError> {
-        let len = u64::try_from(bytes.len()).map_err(|_| FileTransferIntegrityError::SizeOverflow)?;
+        let len =
+            u64::try_from(bytes.len()).map_err(|_| FileTransferIntegrityError::SizeOverflow)?;
         let next = self
             .hasher
             .bytes_hashed()
