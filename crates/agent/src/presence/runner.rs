@@ -297,6 +297,7 @@ struct PendingFileOffer {
 }
 
 struct ReadyFileTransfer {
+    operation_id: OperationId,
     deadline: Instant,
 }
 
@@ -305,7 +306,7 @@ struct FileTransferRuntimeState {
     availability: FileTransferAvailability,
     outgoing: BTreeMap<RequestId, PendingFileOffer>,
     inbound: BTreeMap<RequestId, FileTransferRequest>,
-    ready: BTreeMap<OperationId, ReadyFileTransfer>,
+    ready: Vec<ReadyFileTransfer>,
 }
 
 impl FileTransferRuntimeState {
@@ -318,7 +319,7 @@ impl FileTransferRuntimeState {
             availability,
             outgoing: BTreeMap::new(),
             inbound: BTreeMap::new(),
-            ready: BTreeMap::new(),
+            ready: Vec::with_capacity(RUNTIME_CAPACITY),
         }
     }
 
@@ -334,7 +335,7 @@ impl FileTransferRuntimeState {
         self.outgoing
             .values()
             .map(|pending| pending.deadline)
-            .chain(self.ready.values().map(|ready| ready.deadline))
+            .chain(self.ready.iter().map(|ready| ready.deadline))
             .min()
     }
 }
@@ -1184,12 +1185,10 @@ async fn complete_file_transfer_ready(
     }
 
     file_transfer.inbound.remove(&request_id);
-    file_transfer.ready.insert(
+    file_transfer.ready.push(ReadyFileTransfer {
         operation_id,
-        ReadyFileTransfer {
-            deadline: Instant::now() + FILE_TRANSFER_OPERATION_LIFETIME,
-        },
-    );
+        deadline: Instant::now() + FILE_TRANSFER_OPERATION_LIFETIME,
+    });
     Ok(())
 }
 
@@ -1243,10 +1242,12 @@ async fn expire_file_transfer_offers(
     let expired_operations = file_transfer
         .ready
         .iter()
-        .filter_map(|(operation_id, ready)| (ready.deadline <= now).then_some(*operation_id))
+        .filter_map(|ready| (ready.deadline <= now).then_some(ready.operation_id))
         .collect::<Vec<_>>();
+    file_transfer
+        .ready
+        .retain(|ready| ready.deadline > now);
     for operation_id in expired_operations {
-        file_transfer.ready.remove(&operation_id);
         if let Some(connection) = connected
             .as_ref()
             .filter(|connection| !connection.reconnecting)
@@ -1341,7 +1342,9 @@ async fn handle_runtime_event(
             file_transfer.cancel_all(FileTransferOperationError::Cancelled);
         }
         NodeEvent::Stream(crosslab_runtime::RuntimeStreamEvent::Opened(stream)) => {
-            file_transfer.ready.remove(&stream.operation_id());
+            file_transfer
+                .ready
+                .retain(|ready| ready.operation_id != stream.operation_id());
         }
         NodeEvent::CapabilitiesUpdated
         | NodeEvent::Event(_)
