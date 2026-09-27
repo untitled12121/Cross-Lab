@@ -9,7 +9,8 @@ use crosslab_core::{
     ChannelBinding, ConnectionMetadata, ControlReceiveError, ControlSendError, EventSubscription,
     IncomingUniStream, LogicalSession, SessionActivation, SessionAuthRole, SessionAuthTranscriptV1,
     SessionHandshakeSide, SessionState, StreamAcceptError, StreamOpenError, StreamReceiveError,
-    TransportConnection, TransportReceiveStream, TransportSecurityClass,
+    StreamSendError, TransportConnection, TransportReceiveStream, TransportSecurityClass,
+    TransportSendStream,
 };
 use crosslab_crypto::SigningKey;
 use crosslab_identity::{
@@ -28,8 +29,8 @@ use crosslab_protocol::{
     encode_data_stream_open,
 };
 use crosslab_runtime::{
-    ConnectivityState, RuntimeActor, RuntimeActorConfig, RuntimeActorError, RuntimeActorSession,
-    RuntimeNode,
+    ConnectivityState, RuntimeActor, RuntimeActorConfig, RuntimeActorError,
+    RuntimeActorSession, RuntimeActorStreamSendError, RuntimeNode,
 };
 
 #[derive(Clone)]
@@ -37,6 +38,7 @@ struct TestTransport {
     closed: Arc<Mutex<bool>>,
     inbound: Arc<Mutex<Vec<Vec<u8>>>>,
     incoming_streams: Arc<Mutex<VecDeque<IncomingUniStream>>>,
+    outbound: Arc<Mutex<TestOutboundState>>,
     binding: ChannelBinding,
     metadata: ConnectionMetadata,
 }
@@ -47,6 +49,7 @@ impl TestTransport {
             closed: Arc::new(Mutex::new(false)),
             inbound: Arc::new(Mutex::new(Vec::new())),
             incoming_streams: Arc::new(Mutex::new(VecDeque::new())),
+            outbound: Arc::new(Mutex::new(TestOutboundState::default())),
             binding: ChannelBinding::new("actor-test-binding", binding.to_vec()),
             metadata: ConnectionMetadata::new(None, None, Some(false)),
         }
@@ -67,6 +70,61 @@ impl TestTransport {
                     cancelled: false,
                 }),
             ));
+    }
+
+    fn make_next_send_full(&self) {
+        self.outbound.lock().unwrap().full_next = true;
+    }
+
+    fn sent_chunks(&self) -> Vec<Vec<u8>> {
+        self.outbound.lock().unwrap().chunks.clone()
+    }
+
+    fn finish_count(&self) -> usize {
+        self.outbound.lock().unwrap().finished
+    }
+}
+
+#[derive(Default)]
+struct TestOutboundState {
+    opening_frames: Vec<Vec<u8>>,
+    chunks: Vec<Vec<u8>>,
+    full_next: bool,
+    finished: usize,
+    cancelled: usize,
+}
+
+struct TestSendStream {
+    state: Arc<Mutex<TestOutboundState>>,
+    closed: bool,
+}
+
+impl TransportSendStream for TestSendStream {
+    fn try_send_chunk(&mut self, chunk: Vec<u8>) -> Result<(), StreamSendError> {
+        if self.closed {
+            return Err(StreamSendError::Closed(chunk));
+        }
+        let mut state = self.state.lock().unwrap();
+        if state.full_next {
+            state.full_next = false;
+            return Err(StreamSendError::Full(chunk));
+        }
+        state.chunks.push(chunk);
+        Ok(())
+    }
+
+    fn finish(&mut self) {
+        if !self.closed {
+            self.state.lock().unwrap().finished += 1;
+            self.closed = true;
+        }
+    }
+
+    fn cancel(&mut self) {
+        if !self.closed {
+            self.state.lock().unwrap().cancelled += 1;
+            self.closed = true;
+        }
     }
 }
 
@@ -126,7 +184,18 @@ impl TransportConnection for TestTransport {
         &self,
         opening_frame: Vec<u8>,
     ) -> Result<Box<dyn crosslab_core::TransportSendStream>, StreamOpenError> {
-        Err(StreamOpenError::Closed(opening_frame))
+        if self.is_closed() {
+            return Err(StreamOpenError::Closed(opening_frame));
+        }
+        self.outbound
+            .lock()
+            .unwrap()
+            .opening_frames
+            .push(opening_frame);
+        Ok(Box::new(TestSendStream {
+            state: Arc::clone(&self.outbound),
+            closed: false,
+        }))
     }
 
     fn try_accept_uni_stream(&self) -> Result<IncomingUniStream, StreamAcceptError> {
@@ -556,6 +625,57 @@ fn stream_authority_commands_issue_and_cancel_exact_operation() {
         assert_eq!(
             actor.cancel_stream_operation(operation_id).await,
             Err(RuntimeActorError::OperationRejected)
+        );
+
+        actor.stop().await.unwrap();
+    });
+}
+
+#[test]
+fn data_stream_commands_preserve_chunk_ownership_under_backpressure() {
+    runtime().block_on(async {
+        let fixture = Fixture::new();
+        let (session, transport, mut open) = fixture.stream_actor_session([0xa1; 32], 0xa2);
+        open = DataStreamOpen::new(
+            open.session_id(),
+            StreamId::from_bytes([0xa3; 16]),
+            open.operation_id(),
+            open.capability_id().clone(),
+            open.capability_version(),
+            open.operation_name().clone(),
+            StreamDirection::SourceToDestination,
+            0,
+        );
+        let mut actor = RuntimeActor::new(config(4));
+        actor.start(session).unwrap();
+
+        let stream_id = actor.open_data_stream(open).await.unwrap();
+        assert_eq!(stream_id, StreamId::from_bytes([0xa3; 16]));
+
+        let chunk = b"private-file-chunk".to_vec();
+        transport.make_next_send_full();
+        let error = actor
+            .send_stream_chunk(stream_id, chunk.clone())
+            .await
+            .unwrap_err();
+        assert!(!format!("{error:?}").contains("private-file-chunk"));
+        assert!(matches!(
+            error,
+            RuntimeActorStreamSendError::Stream(StreamSendError::Full(returned))
+                if returned == chunk
+        ));
+
+        actor
+            .send_stream_chunk(stream_id, chunk.clone())
+            .await
+            .unwrap();
+        assert_eq!(transport.sent_chunks(), vec![chunk]);
+
+        actor.finish_data_stream(stream_id).await.unwrap();
+        assert_eq!(transport.finish_count(), 1);
+        assert_eq!(
+            actor.finish_data_stream(stream_id).await,
+            Err(RuntimeActorError::StreamRejected)
         );
 
         actor.stop().await.unwrap();

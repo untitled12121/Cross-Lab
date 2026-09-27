@@ -6,14 +6,15 @@ use std::{
 };
 
 use crosslab_core::{
-    ControlReceiveError, EventSubscription, StreamAcceptError, StreamReceiveError,
+    ControlReceiveError, EventSubscription, StreamAcceptError, StreamReceiveError, StreamSendError,
 };
 use crosslab_policy::{
     ApprovalInstant, CapabilityId, CapabilityVersion, OperationId, OperationName, PolicyState,
     SessionId, TrustRecord, UsePolicy,
 };
 use crosslab_protocol::{
-    CapabilityAdvertisement, ControlRequest, ControlResponseResult, RequestId,
+    CapabilityAdvertisement, ControlRequest, ControlResponseResult, DataStreamOpen, RequestId,
+    StreamId,
 };
 use tokio::{
     runtime::Handle,
@@ -53,6 +54,7 @@ pub enum RuntimeActorError {
     PolicyRejected,
     ControlRejected,
     OperationRejected,
+    StreamRejected,
 }
 
 impl fmt::Display for RuntimeActorError {
@@ -69,11 +71,58 @@ impl fmt::Display for RuntimeActorError {
             Self::PolicyRejected => "runtime actor rejected stale policy state",
             Self::ControlRejected => "runtime actor rejected control operation",
             Self::OperationRejected => "runtime actor rejected stream operation authority",
+            Self::StreamRejected => "runtime actor rejected data stream operation",
         })
     }
 }
 
 impl std::error::Error for RuntimeActorError {}
+
+pub enum RuntimeActorStreamSendError {
+    QueueFull(Vec<u8>),
+    Closed(Vec<u8>),
+    Stream(StreamSendError),
+    ActorClosed,
+}
+
+impl RuntimeActorStreamSendError {
+    pub fn into_chunk(self) -> Option<Vec<u8>> {
+        match self {
+            Self::QueueFull(chunk) | Self::Closed(chunk) => Some(chunk),
+            Self::Stream(error) => Some(error.into_chunk()),
+            Self::ActorClosed => None,
+        }
+    }
+}
+
+impl fmt::Debug for RuntimeActorStreamSendError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::QueueFull(chunk) => formatter
+                .debug_tuple("QueueFull")
+                .field(&format_args!("[REDACTED; {} bytes]", chunk.len()))
+                .finish(),
+            Self::Closed(chunk) => formatter
+                .debug_tuple("Closed")
+                .field(&format_args!("[REDACTED; {} bytes]", chunk.len()))
+                .finish(),
+            Self::Stream(error) => formatter.debug_tuple("Stream").field(error).finish(),
+            Self::ActorClosed => formatter.write_str("ActorClosed"),
+        }
+    }
+}
+
+impl fmt::Display for RuntimeActorStreamSendError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::QueueFull(_) => "runtime actor command queue is full",
+            Self::Closed(_) | Self::ActorClosed => "runtime actor is closed",
+            Self::Stream(_) => "runtime data stream rejected chunk",
+        })
+    }
+}
+
+impl std::error::Error for RuntimeActorStreamSendError {}
 
 pub struct RuntimeActorSession {
     node: RuntimeNode<'static>,
@@ -226,6 +275,38 @@ impl RuntimeActorSession {
         self.node
             .cancel_stream_operation(operation_id)
             .map_err(|_| RuntimeActorError::OperationRejected)
+    }
+
+    fn open_data_stream(&mut self, open: DataStreamOpen) -> Result<StreamId, RuntimeActorError> {
+        self.node
+            .open_data_stream(&open)
+            .map_err(|_| RuntimeActorError::StreamRejected)
+    }
+
+    fn send_stream_chunk(
+        &mut self,
+        stream_id: StreamId,
+        chunk: Vec<u8>,
+    ) -> Result<(), StreamSendError> {
+        self.node.try_send_stream_chunk(stream_id, chunk)
+    }
+
+    fn finish_data_stream(&mut self, stream_id: StreamId) -> Result<(), RuntimeActorError> {
+        self.node
+            .finish_data_stream(stream_id)
+            .map_err(|_| RuntimeActorError::StreamRejected)
+    }
+
+    fn cancel_outbound_stream(&mut self, stream_id: StreamId) -> Result<(), RuntimeActorError> {
+        self.node
+            .cancel_outbound_stream(stream_id)
+            .map_err(|_| RuntimeActorError::StreamRejected)
+    }
+
+    fn cancel_inbound_stream(&mut self, stream_id: StreamId) -> Result<(), RuntimeActorError> {
+        self.node
+            .cancel_inbound_stream(stream_id)
+            .map_err(|_| RuntimeActorError::StreamRejected)
     }
 
     fn receive_one(&mut self) -> Result<NodeEvent, NodeError> {
@@ -502,6 +583,115 @@ impl RuntimeActor {
         reply_rx.await.map_err(|_| RuntimeActorError::ActorClosed)?
     }
 
+    pub async fn open_data_stream(
+        &self,
+        open: DataStreamOpen,
+    ) -> Result<StreamId, RuntimeActorError> {
+        let command_tx = self
+            .command_tx
+            .as_ref()
+            .ok_or(RuntimeActorError::NotRunning)?;
+        let (reply_tx, reply_rx) = oneshot::channel();
+        command_tx
+            .send(RuntimeCommand::OpenDataStream {
+                open,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| RuntimeActorError::ActorClosed)?;
+        reply_rx.await.map_err(|_| RuntimeActorError::ActorClosed)?
+    }
+
+    pub async fn send_stream_chunk(
+        &self,
+        stream_id: StreamId,
+        chunk: Vec<u8>,
+    ) -> Result<(), RuntimeActorStreamSendError> {
+        let Some(command_tx) = self.command_tx.as_ref() else {
+            return Err(RuntimeActorStreamSendError::Closed(chunk));
+        };
+        let (reply_tx, reply_rx) = oneshot::channel();
+        let command = RuntimeCommand::SendStreamChunk {
+            stream_id,
+            chunk,
+            reply: reply_tx,
+        };
+        match command_tx.try_send(command) {
+            Ok(()) => {}
+            Err(mpsc::error::TrySendError::Full(command)) => {
+                let RuntimeCommand::SendStreamChunk { chunk, .. } = command else {
+                    unreachable!("stream chunk command is preserved on queue failure")
+                };
+                return Err(RuntimeActorStreamSendError::QueueFull(chunk));
+            }
+            Err(mpsc::error::TrySendError::Closed(command)) => {
+                let RuntimeCommand::SendStreamChunk { chunk, .. } = command else {
+                    unreachable!("stream chunk command is preserved on actor close")
+                };
+                return Err(RuntimeActorStreamSendError::Closed(chunk));
+            }
+        }
+        match reply_rx.await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(error)) => Err(RuntimeActorStreamSendError::Stream(error)),
+            Err(_) => Err(RuntimeActorStreamSendError::ActorClosed),
+        }
+    }
+
+    pub async fn finish_data_stream(&self, stream_id: StreamId) -> Result<(), RuntimeActorError> {
+        let command_tx = self
+            .command_tx
+            .as_ref()
+            .ok_or(RuntimeActorError::NotRunning)?;
+        let (reply_tx, reply_rx) = oneshot::channel();
+        command_tx
+            .send(RuntimeCommand::FinishDataStream {
+                stream_id,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| RuntimeActorError::ActorClosed)?;
+        reply_rx.await.map_err(|_| RuntimeActorError::ActorClosed)?
+    }
+
+    pub async fn cancel_outbound_stream(
+        &self,
+        stream_id: StreamId,
+    ) -> Result<(), RuntimeActorError> {
+        let command_tx = self
+            .command_tx
+            .as_ref()
+            .ok_or(RuntimeActorError::NotRunning)?;
+        let (reply_tx, reply_rx) = oneshot::channel();
+        command_tx
+            .send(RuntimeCommand::CancelOutboundStream {
+                stream_id,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| RuntimeActorError::ActorClosed)?;
+        reply_rx.await.map_err(|_| RuntimeActorError::ActorClosed)?
+    }
+
+    pub async fn cancel_inbound_stream(
+        &self,
+        stream_id: StreamId,
+    ) -> Result<(), RuntimeActorError> {
+        let command_tx = self
+            .command_tx
+            .as_ref()
+            .ok_or(RuntimeActorError::NotRunning)?;
+        let (reply_tx, reply_rx) = oneshot::channel();
+        command_tx
+            .send(RuntimeCommand::CancelInboundStream {
+                stream_id,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| RuntimeActorError::ActorClosed)?;
+        reply_rx.await.map_err(|_| RuntimeActorError::ActorClosed)?
+    }
+
     pub async fn reconnect(&self, session: RuntimeActorSession) -> Result<(), RuntimeActorError> {
         let command_tx = self
             .command_tx
@@ -641,6 +831,25 @@ async fn run_actor(
                     reply,
                 } => {
                     let _ = reply.send(session.cancel_stream_operation(operation_id));
+                }
+                RuntimeCommand::OpenDataStream { open, reply } => {
+                    let _ = reply.send(session.open_data_stream(open));
+                }
+                RuntimeCommand::SendStreamChunk {
+                    stream_id,
+                    chunk,
+                    reply,
+                } => {
+                    let _ = reply.send(session.send_stream_chunk(stream_id, chunk));
+                }
+                RuntimeCommand::FinishDataStream { stream_id, reply } => {
+                    let _ = reply.send(session.finish_data_stream(stream_id));
+                }
+                RuntimeCommand::CancelOutboundStream { stream_id, reply } => {
+                    let _ = reply.send(session.cancel_outbound_stream(stream_id));
+                }
+                RuntimeCommand::CancelInboundStream { stream_id, reply } => {
+                    let _ = reply.send(session.cancel_inbound_stream(stream_id));
                 }
                 RuntimeCommand::Reconnect {
                     session: replacement,
