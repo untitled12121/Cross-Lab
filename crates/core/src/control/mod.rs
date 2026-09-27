@@ -429,11 +429,11 @@ impl ControlDispatcher {
                 Err(ControlDispatchError::AuthorizationDenied(decision.reason()))
             }
             DecisionEffect::Ask => Err(ControlDispatchError::ApprovalRequired),
-            DecisionEffect::Allow => decision
-                .into_grant()
-                .ok_or(ControlDispatchError::AuthorizationDenied(
-                    DecisionReason::Allowed,
-                )),
+            DecisionEffect::Allow => Ok(
+                decision
+                    .into_grant()
+                    .expect("allow policy decision carries an authorization grant"),
+            ),
         }
     }
 

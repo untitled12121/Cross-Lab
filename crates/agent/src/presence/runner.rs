@@ -275,7 +275,6 @@ impl ClipboardRuntimeState {
             availability,
             outgoing: BTreeMap::new(),
             inbound: BTreeMap::new(),
-            ready: BTreeMap::new(),
         }
     }
 
@@ -319,6 +318,7 @@ impl FileTransferRuntimeState {
             availability,
             outgoing: BTreeMap::new(),
             inbound: BTreeMap::new(),
+            ready: BTreeMap::new(),
         }
     }
 
@@ -1143,6 +1143,7 @@ async fn complete_file_transfer_ready(
     let request = file_transfer
         .inbound
         .get(&request_id)
+        .cloned()
         .ok_or(FileTransferOperationError::Cancelled)?;
     request
         .offer()
@@ -1165,7 +1166,7 @@ async fn complete_file_transfer_ready(
         .await
         .map_err(|_| FileTransferOperationError::Cancelled)?;
 
-    let response = match file_transfer_ready_response(request, resume_offset, operation_id) {
+    let response = match file_transfer_ready_response(&request, resume_offset, operation_id) {
         Ok(response) => response,
         Err(error) => {
             let _ = connection.actor.cancel_stream_operation(operation_id).await;
@@ -1200,11 +1201,12 @@ async fn complete_file_transfer_already_complete(
     let request = file_transfer
         .inbound
         .get(&request_id)
+        .cloned()
         .ok_or(FileTransferOperationError::Cancelled)?;
     let connection = connected
         .filter(|connection| !connection.reconnecting)
         .ok_or(FileTransferOperationError::Cancelled)?;
-    let response = file_transfer_already_complete_response(request)?;
+    let response = file_transfer_already_complete_response(&request)?;
     connection
         .actor
         .send_response(request_id, response)
