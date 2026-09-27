@@ -23,9 +23,7 @@ use crate::{
     clipboard::{
         ClipboardAvailability, ClipboardOperationError, ClipboardPlatformError, ClipboardRequest,
     },
-    file_transfer::{
-        FileTransferAvailability, FileTransferOperationError, FileTransferRequest,
-    },
+    file_transfer::{FileTransferAvailability, FileTransferOperationError, FileTransferRequest},
 };
 
 const COMMAND_CAPACITY: usize = 64;

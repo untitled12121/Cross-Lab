@@ -731,18 +731,18 @@ async fn wait_capability_negotiated(
     tokio::time::timeout(WAIT, async {
         loop {
             let snapshot = status.borrow().clone();
-            if snapshot
-                .runtime()
-                .is_some_and(|runtime| {
-                    runtime
-                        .negotiated_capability_ids()
-                        .iter()
-                        .any(|id| id.as_str() == capability)
-                })
-            {
+            if snapshot.runtime().is_some_and(|runtime| {
+                runtime
+                    .negotiated_capability_ids()
+                    .iter()
+                    .any(|id| id.as_str() == capability)
+            }) {
                 return snapshot;
             }
-            status.changed().await.expect("presence channel should stay open");
+            status
+                .changed()
+                .await
+                .expect("presence channel should stay open");
         }
     })
     .await

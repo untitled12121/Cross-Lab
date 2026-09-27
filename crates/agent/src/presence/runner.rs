@@ -51,7 +51,8 @@ use crate::{
         decode_inbound as decode_file_transfer, decode_response as decode_file_transfer_response,
         internal_failure as file_transfer_internal_failure,
         local_capabilities as file_transfer_local_capabilities,
-        offer_request as file_transfer_offer_request, ready_response as file_transfer_ready_response,
+        offer_request as file_transfer_offer_request,
+        ready_response as file_transfer_ready_response,
         resource_failure as file_transfer_resource_failure,
         result_subscription as file_transfer_result_subscription,
     },
@@ -463,13 +464,8 @@ pub(super) async fn run_agent(
                 }
                 ConnectedEvent::Runtime(event) => {
                     let session_closed = matches!(event, NodeEvent::SessionClosed(_));
-                    handle_runtime_event(
-                        event,
-                        &mut connected,
-                        &mut clipboard,
-                        &mut file_transfer,
-                    )
-                    .await;
+                    handle_runtime_event(event, &mut connected, &mut clipboard, &mut file_transfer)
+                        .await;
                     if session_closed {
                         mark_transport_lost(
                             &mut connected,
@@ -741,15 +737,14 @@ async fn install_session(
         .map(|context| context.peer_device_id())
         .ok_or(())?;
     let peer_trust = security.peer_trust(peer_id).ok_or(())?;
-    let (actor_session, closed) =
-        runtime_session(
-            session,
-            peer_trust,
-            policy,
-            clipboard_availability,
-            file_transfer_availability,
-        )
-        .ok_or(())?;
+    let (actor_session, closed) = runtime_session(
+        session,
+        peer_trust,
+        policy,
+        clipboard_availability,
+        file_transfer_availability,
+    )
+    .ok_or(())?;
 
     if let Some(connection) = connected.as_mut()
         && connection.reconnecting
@@ -763,9 +758,9 @@ async fn install_session(
         connection
             .actor
             .send_capabilities(runtime_advertisement(
-                clipboard_availability,
-                file_transfer_availability,
-            ))
+            clipboard_availability,
+            file_transfer_availability,
+        ))
             .await
             .map_err(|_| ())?;
         connection.closed = closed;
@@ -1090,9 +1085,8 @@ async fn start_file_transfer_offer(
         let _ = reply.send(Err(FileTransferOperationError::NotConnected));
         return;
     };
-    if !file_transfer_capability_negotiated(
-        connection.status.borrow().negotiated_capability_ids(),
-    ) {
+    if !file_transfer_capability_negotiated(connection.status.borrow().negotiated_capability_ids())
+    {
         let _ = reply.send(Err(FileTransferOperationError::NotNegotiated));
         return;
     }
@@ -1236,7 +1230,9 @@ async fn expire_file_transfer_offers(
         {
             let _ = connection.actor.send_cancel(request_id).await;
         }
-        let _ = pending.reply.send(Err(FileTransferOperationError::TimedOut));
+        let _ = pending
+            .reply
+            .send(Err(FileTransferOperationError::TimedOut));
     }
 
     let expired_operations = file_transfer
@@ -1244,9 +1240,7 @@ async fn expire_file_transfer_offers(
         .iter()
         .filter_map(|ready| (ready.deadline <= now).then_some(ready.operation_id))
         .collect::<Vec<_>>();
-    file_transfer
-        .ready
-        .retain(|ready| ready.deadline > now);
+    file_transfer.ready.retain(|ready| ready.deadline > now);
     for operation_id in expired_operations {
         if let Some(connection) = connected
             .as_ref()

@@ -8,10 +8,9 @@ use crosslab_policy::{
 use crosslab_protocol::{
     CapabilityAdvertisement, CapabilityAdvertisementEntry, ControlRequest, ControlResponseResult,
     EventType, FILE_TRANSFER_CAPABILITY_ID, FILE_TRANSFER_RESULT_EVENT_TYPE,
-    FileTransferAcceptance, FileTransferOffer, FileTransferWireError,
-    ProtocolDiagnostic, ProtocolErrorCode, ProtocolFailure, RequestId, RetryClass,
-    decode_file_transfer_acceptance, decode_file_transfer_offer, encode_file_transfer_acceptance,
-    encode_file_transfer_offer,
+    FileTransferAcceptance, FileTransferOffer, FileTransferWireError, ProtocolDiagnostic,
+    ProtocolErrorCode, ProtocolFailure, RequestId, RetryClass, decode_file_transfer_acceptance,
+    decode_file_transfer_offer, encode_file_transfer_acceptance, encode_file_transfer_offer,
 };
 
 const OP_RECEIVE: &str = "receive";
@@ -81,13 +80,19 @@ impl fmt::Display for FileTransferOperationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NotConnected => formatter.write_str("file transfer peer is not connected"),
-            Self::NotNegotiated => formatter.write_str("file transfer capability is not negotiated"),
+            Self::NotNegotiated => {
+                formatter.write_str("file transfer capability is not negotiated")
+            }
             Self::InvalidResponse => formatter.write_str("file transfer response violates v2"),
             Self::InvalidResumeOffset => {
                 formatter.write_str("file transfer resume offset is invalid")
             }
-            Self::ResourceLimit => formatter.write_str("file transfer operation capacity is exhausted"),
-            Self::Random => formatter.write_str("file transfer request identifier generation failed"),
+            Self::ResourceLimit => {
+                formatter.write_str("file transfer operation capacity is exhausted")
+            }
+            Self::Random => {
+                formatter.write_str("file transfer request identifier generation failed")
+            }
             Self::TimedOut => formatter.write_str("file transfer offer timed out"),
             Self::Cancelled => formatter.write_str("file transfer offer was cancelled"),
             Self::Transport => formatter.write_str("file transfer control transport failed"),
@@ -140,7 +145,8 @@ pub(crate) fn offer_request(
     request_id: RequestId,
     offer: &FileTransferOffer,
 ) -> Result<ControlRequest, FileTransferOperationError> {
-    let body = encode_file_transfer_offer(offer).map_err(|_| FileTransferOperationError::InvalidResponse)?;
+    let body = encode_file_transfer_offer(offer)
+        .map_err(|_| FileTransferOperationError::InvalidResponse)?;
     Ok(ControlRequest::new(
         request_id,
         capability(),
@@ -217,10 +223,12 @@ pub(crate) fn decode_response(
     result: &ControlResponseResult,
 ) -> Result<FileTransferAcceptance, FileTransferOperationError> {
     match result {
-        ControlResponseResult::Error(error) => Err(FileTransferOperationError::Remote(error.code())),
+        ControlResponseResult::Error(error) => {
+            Err(FileTransferOperationError::Remote(error.code()))
+        }
         ControlResponseResult::Success(body) => {
-            let acceptance =
-                decode_file_transfer_acceptance(body).map_err(|_| FileTransferOperationError::InvalidResponse)?;
+            let acceptance = decode_file_transfer_acceptance(body)
+                .map_err(|_| FileTransferOperationError::InvalidResponse)?;
             acceptance
                 .validate_for_offer(offer)
                 .map_err(|_| FileTransferOperationError::InvalidResponse)?;
@@ -244,7 +252,8 @@ pub(crate) fn internal_failure() -> ControlResponseResult {
 }
 
 fn capability() -> CapabilityId {
-    CapabilityId::parse(FILE_TRANSFER_CAPABILITY_ID).expect("file transfer capability id is canonical")
+    CapabilityId::parse(FILE_TRANSFER_CAPABILITY_ID)
+        .expect("file transfer capability id is canonical")
 }
 
 fn operation() -> OperationName {
@@ -252,7 +261,8 @@ fn operation() -> OperationName {
 }
 
 fn result_event_type() -> EventType {
-    EventType::parse(FILE_TRANSFER_RESULT_EVENT_TYPE).expect("file transfer result event is canonical")
+    EventType::parse(FILE_TRANSFER_RESULT_EVENT_TYPE)
+        .expect("file transfer result event is canonical")
 }
 
 fn wire_failure(error: FileTransferWireError) -> ControlResponseResult {
@@ -274,9 +284,7 @@ fn failure(code: ProtocolErrorCode, diagnostic: &'static str) -> ControlResponse
 
 #[cfg(test)]
 mod tests {
-    use crosslab_protocol::{
-        FileTransferDigest, TransferId, encode_file_transfer_offer,
-    };
+    use crosslab_protocol::{FileTransferDigest, TransferId, encode_file_transfer_offer};
 
     use super::*;
 
