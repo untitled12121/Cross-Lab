@@ -193,14 +193,32 @@ impl RuntimeAvailability {
     }
 }
 
+pub(super) struct CapabilityChannels {
+    clipboard_requests_tx: mpsc::Sender<ClipboardRequest>,
+    file_transfer_requests_tx: mpsc::Sender<FileTransferRequest>,
+    file_transfer_data_tx: mpsc::Sender<FileTransferDataEvent>,
+}
+
+impl CapabilityChannels {
+    pub(super) fn new(
+        clipboard_requests_tx: mpsc::Sender<ClipboardRequest>,
+        file_transfer_requests_tx: mpsc::Sender<FileTransferRequest>,
+        file_transfer_data_tx: mpsc::Sender<FileTransferDataEvent>,
+    ) -> Self {
+        Self {
+            clipboard_requests_tx,
+            file_transfer_requests_tx,
+            file_transfer_data_tx,
+        }
+    }
+}
+
 pub(super) struct AgentChannels {
     policy_rx: watch::Receiver<PolicyState>,
     command_rx: mpsc::Receiver<AgentCommand>,
     status_tx: watch::Sender<PresenceSnapshot>,
     permissions_tx: watch::Sender<PermissionSnapshot>,
-    clipboard_requests_tx: mpsc::Sender<ClipboardRequest>,
-    file_transfer_requests_tx: mpsc::Sender<FileTransferRequest>,
-    file_transfer_data_tx: mpsc::Sender<FileTransferDataEvent>,
+    capabilities: CapabilityChannels,
     availability: RuntimeAvailability,
 }
 
@@ -210,9 +228,7 @@ impl AgentChannels {
         command_rx: mpsc::Receiver<AgentCommand>,
         status_tx: watch::Sender<PresenceSnapshot>,
         permissions_tx: watch::Sender<PermissionSnapshot>,
-        clipboard_requests_tx: mpsc::Sender<ClipboardRequest>,
-        file_transfer_requests_tx: mpsc::Sender<FileTransferRequest>,
-        file_transfer_data_tx: mpsc::Sender<FileTransferDataEvent>,
+        capabilities: CapabilityChannels,
         availability: RuntimeAvailability,
     ) -> Self {
         Self {
@@ -220,9 +236,7 @@ impl AgentChannels {
             command_rx,
             status_tx,
             permissions_tx,
-            clipboard_requests_tx,
-            file_transfer_requests_tx,
-            file_transfer_data_tx,
+            capabilities,
             availability,
         }
     }
@@ -499,11 +513,14 @@ pub(super) async fn run_agent(
         mut command_rx,
         status_tx,
         permissions_tx,
+        capabilities,
+        availability,
+    } = channels;
+    let CapabilityChannels {
         clipboard_requests_tx,
         file_transfer_requests_tx,
         file_transfer_data_tx,
-        availability,
-    } = channels;
+    } = capabilities;
     let (connect_tx, mut connect_rx) = mpsc::channel(CONNECT_RESULT_CAPACITY);
     let mut clipboard = ClipboardRuntimeState::new(clipboard_requests_tx, availability.clipboard);
     let mut file_transfer = FileTransferRuntimeState::new(
