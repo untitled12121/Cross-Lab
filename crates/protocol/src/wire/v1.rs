@@ -488,3 +488,71 @@ pub mod session_auth_bootstrap_v1 {
         Proof(super::SessionAuthProofV1),
     }
 }
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct FileTransferOfferV2 {
+    #[prost(uint32, tag = "1")]
+    pub profile_version: u32,
+    #[prost(bytes = "vec", tag = "2")]
+    pub transfer_id: Vec<u8>,
+    #[prost(string, tag = "3")]
+    pub display_name: String,
+    #[prost(uint64, tag = "4")]
+    pub file_size: u64,
+    #[prost(bytes = "vec", tag = "5")]
+    pub blake3_digest: Vec<u8>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct FileTransferReadyV2 {
+    #[prost(bytes = "vec", tag = "1")]
+    pub transfer_id: Vec<u8>,
+    #[prost(uint64, tag = "2")]
+    pub resume_offset: u64,
+    #[prost(bytes = "vec", tag = "3")]
+    pub operation_id: Vec<u8>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct FileTransferAlreadyCompleteV2 {
+    #[prost(bytes = "vec", tag = "1")]
+    pub transfer_id: Vec<u8>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct FileTransferAcceptanceV2 {
+    #[prost(uint32, tag = "1")]
+    pub profile_version: u32,
+    #[prost(oneof = "file_transfer_acceptance_v2::Result", tags = "2, 3")]
+    pub result: Option<file_transfer_acceptance_v2::Result>,
+}
+
+pub mod file_transfer_acceptance_v2 {
+    #[derive(Clone, PartialEq, prost::Oneof)]
+    pub enum Result {
+        #[prost(message, tag = "2")]
+        Ready(super::FileTransferReadyV2),
+        #[prost(message, tag = "3")]
+        AlreadyComplete(super::FileTransferAlreadyCompleteV2),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, prost::Enumeration)]
+#[repr(i32)]
+pub enum FileTransferTerminalOutcomeV2 {
+    Unspecified = 0,
+    Completed = 1,
+    Cancelled = 2,
+    IntegrityFailed = 3,
+    StorageFailed = 4,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct FileTransferResultV2 {
+    #[prost(uint32, tag = "1")]
+    pub profile_version: u32,
+    #[prost(bytes = "vec", tag = "2")]
+    pub transfer_id: Vec<u8>,
+    #[prost(enumeration = "FileTransferTerminalOutcomeV2", tag = "3")]
+    pub outcome: i32,
+}
