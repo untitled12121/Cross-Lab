@@ -432,23 +432,11 @@ impl FileTransferRuntimeState {
         self.completed_results.clear();
     }
 
-    fn source_capacity_used(&self) -> usize {
-        self.outgoing.len() + self.source.len()
-    }
-
     fn destination_capacity_used(&self) -> usize {
         self.inbound.len()
             + self.destination_ready.len()
             + self.inbound_streams.len()
             + self.terminal_ready.len()
-    }
-
-    fn has_source_transfer(&self, transfer_id: TransferId) -> bool {
-        self.source.contains_key(&transfer_id)
-            || self
-                .outgoing
-                .values()
-                .any(|pending| pending.offer.transfer_id() == transfer_id)
     }
 
     fn cache_result(&mut self, result: FileTransferResult) {
@@ -1292,12 +1280,8 @@ async fn start_file_transfer_offer(
     offer: FileTransferOffer,
     reply: oneshot::Sender<Result<FileTransferAcceptance, FileTransferOperationError>>,
 ) {
-    if file_transfer.source_capacity_used() >= RUNTIME_CAPACITY {
+    if file_transfer.outgoing.len() >= RUNTIME_CAPACITY {
         let _ = reply.send(Err(FileTransferOperationError::ResourceLimit));
-        return;
-    }
-    if file_transfer.has_source_transfer(offer.transfer_id()) {
-        let _ = reply.send(Err(FileTransferOperationError::AlreadyActive));
         return;
     }
     let Some(connection) = connected.filter(|connection| !connection.reconnecting) else {
@@ -1521,8 +1505,10 @@ async fn finish_file_transfer_stream(
 
     let active = matches!(
         file_transfer.source.get(&stream.transfer_id()),
-        Some(SourceFileTransfer::Streaming { stream_id, .. })
-            if *stream_id == stream.stream_id()
+        Some(SourceFileTransfer::Streaming {
+            stream_id,
+            resume_offset,
+        }) if *stream_id == stream.stream_id() && *resume_offset == stream.resume_offset()
     );
     if !active {
         let _ = reply.send(Err(FileTransferOperationError::InvalidStream));
@@ -1825,21 +1811,27 @@ async fn handle_runtime_event(
                 let result = decode_clipboard_response(pending.kind(), response.result());
                 pending.finish(result);
             } else if let Some(pending) = file_transfer.outgoing.remove(&response.request_id()) {
-                let result = decode_file_transfer_response(&pending.offer, response.result());
+                let mut result = decode_file_transfer_response(&pending.offer, response.result());
                 if let Ok(FileTransferAcceptance::Ready {
                     transfer_id,
                     resume_offset,
                     operation_id,
                 }) = result.as_ref()
                 {
-                    file_transfer.source.insert(
-                        *transfer_id,
-                        SourceFileTransfer::Ready {
-                            operation_id: *operation_id,
-                            resume_offset: *resume_offset,
-                            deadline: Instant::now() + FILE_TRANSFER_OPERATION_LIFETIME,
-                        },
-                    );
+                    if file_transfer.source.contains_key(transfer_id)
+                        || file_transfer.source.len() < RUNTIME_CAPACITY
+                    {
+                        file_transfer.source.insert(
+                            *transfer_id,
+                            SourceFileTransfer::Ready {
+                                operation_id: *operation_id,
+                                resume_offset: *resume_offset,
+                                deadline: Instant::now() + FILE_TRANSFER_OPERATION_LIFETIME,
+                            },
+                        );
+                    } else {
+                        result = Err(FileTransferOperationError::ResourceLimit);
+                    }
                 }
                 let _ = pending.reply.send(result);
             }

@@ -255,6 +255,147 @@ async fn file_transfer_ready_mints_fresh_runtime_authority() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn file_transfer_data_plane_correlates_bytes_and_terminal_result() {
+    let (left_state, right_state) = reciprocal_identities();
+    let left_device_id = left_state.local_credential().device_id();
+    let left_signer = Arc::new(SigningKey::from_secret_bytes([0x74; 32]));
+    let right_signer = Arc::new(SigningKey::from_secret_bytes([0x75; 32]));
+    let mut right_policy = PolicyState::new();
+    right_policy
+        .set_rule_effect(
+            left_device_id,
+            CapabilityId::parse("files.transfer").unwrap(),
+            OperationName::parse("receive").unwrap(),
+            RuleEffect::Allow,
+        )
+        .unwrap();
+
+    let left = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
+        left_state,
+        left_signer,
+        PolicyState::new(),
+        ClipboardAvailability::default(),
+        FileTransferAvailability::new(true),
+    )
+    .unwrap();
+    let right = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
+        right_state,
+        right_signer,
+        right_policy,
+        ClipboardAvailability::default(),
+        FileTransferAvailability::new(true),
+    )
+    .unwrap();
+    let mut right_requests = right.take_file_transfer_requests().unwrap();
+    let mut right_data = right.take_file_transfer_data().unwrap();
+
+    left.candidate_available(route_for(&right)).unwrap();
+    right.candidate_available(route_for(&left)).unwrap();
+    let mut left_status = left.subscribe_status();
+    wait_capability_negotiated(&mut left_status, "files.transfer").await;
+
+    let offer = crosslab_protocol::FileTransferOffer::new(
+        crosslab_protocol::TransferId::from_bytes([0xb8; 32]),
+        "stream.bin".into(),
+        18,
+        crosslab_protocol::FileTransferDigest::from_bytes([0xb9; 32]),
+    )
+    .unwrap();
+    let transfer_id = offer.transfer_id();
+
+    let offer_result = left.send_file_offer(offer);
+    tokio::pin!(offer_result);
+    let request = tokio::time::timeout(WAIT, async {
+        tokio::select! {
+            result = &mut offer_result => panic!("offer completed before destination request: {result:?}"),
+            request = right_requests.recv() => request,
+        }
+    })
+    .await
+    .expect("file offer should reach destination")
+    .expect("file request channel should remain open");
+    right
+        .complete_file_transfer_ready(request.request_id(), 0)
+        .await
+        .unwrap();
+    assert!(matches!(
+        offer_result.await.unwrap(),
+        crosslab_protocol::FileTransferAcceptance::Ready {
+            transfer_id: received,
+            resume_offset: 0,
+            ..
+        } if received == transfer_id
+    ));
+
+    let stream = left.open_file_transfer_stream(transfer_id).await.unwrap();
+    let opened = tokio::time::timeout(WAIT, right_data.recv())
+        .await
+        .expect("destination should observe stream open")
+        .expect("file data channel should remain open");
+    assert!(matches!(
+        opened,
+        crate::FileTransferDataEvent::Opened {
+            transfer_id: received,
+            stream_id,
+            resume_offset: 0,
+        } if received == transfer_id && stream_id == stream.stream_id()
+    ));
+
+    let payload = b"private-file-bytes".to_vec();
+    left.send_file_transfer_chunk(stream, payload.clone())
+        .await
+        .unwrap();
+    let chunk = tokio::time::timeout(WAIT, right_data.recv())
+        .await
+        .expect("destination should receive file chunk")
+        .expect("file data channel should remain open");
+    assert!(matches!(
+        chunk,
+        crate::FileTransferDataEvent::Chunk(ref chunk)
+            if chunk.transfer_id() == transfer_id
+                && chunk.stream_id() == stream.stream_id()
+                && chunk.bytes() == payload
+    ));
+    assert!(!format!("{chunk:?}").contains("private-file-bytes"));
+
+    let finish = left.finish_file_transfer_stream(stream);
+    tokio::pin!(finish);
+    let finished = tokio::time::timeout(WAIT, async {
+        tokio::select! {
+            result = &mut finish => panic!("source completed before destination terminal result: {result:?}"),
+            event = right_data.recv() => event,
+        }
+    })
+    .await
+    .expect("destination should observe stream finish")
+    .expect("file data channel should remain open");
+    assert!(matches!(
+        finished,
+        crate::FileTransferDataEvent::Finished {
+            transfer_id: received,
+            stream_id,
+        } if received == transfer_id && stream_id == stream.stream_id()
+    ));
+
+    right
+        .complete_file_transfer_result(
+            transfer_id,
+            crosslab_protocol::FileTransferTerminalOutcome::Completed,
+        )
+        .await
+        .unwrap();
+    let result = tokio::time::timeout(WAIT, &mut finish)
+        .await
+        .expect("source should receive terminal result")
+        .unwrap();
+    assert_eq!(result.transfer_id(), transfer_id);
+    assert_eq!(
+        result.outcome(),
+        crosslab_protocol::FileTransferTerminalOutcome::Completed
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn file_transfer_unused_ready_authority_shares_inbound_capacity() {
     let (left_state, right_state) = reciprocal_identities();
     let left_device_id = left_state.local_credential().device_id();
