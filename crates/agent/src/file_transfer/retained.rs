@@ -364,7 +364,7 @@ impl FileTransferStateSnapshot {
             }
             self.entries.remove(position);
         } else if self.entries.len() >= MAX_RETAINED_FILE_TRANSFERS {
-            self.entries.remove(0);
+            return Err(FileTransferStateError::TooManyEntries);
         }
         self.entries
             .push(FileTransferRetainedState::Partial(partial));
@@ -386,7 +386,7 @@ impl FileTransferStateSnapshot {
             }
             self.entries.remove(position);
         } else if self.entries.len() >= MAX_RETAINED_FILE_TRANSFERS {
-            self.entries.remove(0);
+            return Err(FileTransferStateError::TooManyEntries);
         }
         self.entries
             .push(FileTransferRetainedState::Completed(completed));
@@ -537,14 +537,18 @@ fn encode_entry(
     encoded.push(tag);
     encoded.extend_from_slice(&identity.transfer_id().to_bytes());
     encoded.extend_from_slice(identity.source_device_id().as_bytes());
-    push_bytes(encoded, identity.offer().display_name().as_bytes(), u16::MAX as usize)?;
+    push_u16_bytes(
+        encoded,
+        identity.offer().display_name().as_bytes(),
+        MAX_FILE_TRANSFER_DISPLAY_NAME_BYTES,
+    )?;
     encoded.extend_from_slice(&identity.offer().file_size().to_be_bytes());
     encoded.extend_from_slice(&identity.offer().digest().to_bytes());
     encoded.extend_from_slice(&updated_at.to_be_bytes());
 
     if let FileTransferRetainedState::Partial(partial) = entry {
         encoded.extend_from_slice(&partial.durable_offset().to_be_bytes());
-        push_bytes(
+        push_u16_bytes(
             encoded,
             partial.locator().bytes(),
             MAX_FILE_TRANSFER_LOCAL_LOCATOR_BYTES,
@@ -586,7 +590,7 @@ fn decode_entry(reader: &mut Reader<'_>) -> Result<FileTransferRetainedState, Fi
     }
 }
 
-fn push_bytes(
+fn push_u16_bytes(
     encoded: &mut Vec<u8>,
     bytes: &[u8],
     max_len: usize,
@@ -594,15 +598,9 @@ fn push_bytes(
     if bytes.len() > max_len {
         return Err(FileTransferStateError::SnapshotTooLarge);
     }
-    if max_len <= u16::MAX as usize {
-        let len =
-            u16::try_from(bytes.len()).map_err(|_| FileTransferStateError::SnapshotTooLarge)?;
-        encoded.extend_from_slice(&len.to_be_bytes());
-    } else {
-        let len =
-            u32::try_from(bytes.len()).map_err(|_| FileTransferStateError::SnapshotTooLarge)?;
-        encoded.extend_from_slice(&len.to_be_bytes());
-    }
+    let len =
+        u16::try_from(bytes.len()).map_err(|_| FileTransferStateError::SnapshotTooLarge)?;
+    encoded.extend_from_slice(&len.to_be_bytes());
     encoded.extend_from_slice(bytes);
     Ok(())
 }
@@ -784,7 +782,7 @@ mod tests {
         let rendered = format!("{:?}", decoded.entries()[0]);
         assert!(!rendered.contains("/private/platform/partial"));
         assert!(!rendered.contains("resume.bin"));
-        assert!(rendered.contains("[REDACTED; 26 bytes]"));
+        assert!(rendered.contains("[REDACTED; 25 bytes]"));
 
         let mut corrupted = encoded;
         *corrupted.last_mut().unwrap() ^= 0xff;
@@ -797,7 +795,7 @@ mod tests {
     #[test]
     fn retained_state_is_count_bounded_and_prunable() {
         let mut state = FileTransferStateSnapshot::default();
-        for index in 0..=MAX_RETAINED_FILE_TRANSFERS {
+        for index in 0..MAX_RETAINED_FILE_TRANSFERS {
             let transfer = u8::try_from(index + 1).unwrap();
             state
                 .upsert_partial(
@@ -813,14 +811,16 @@ mod tests {
         }
 
         assert_eq!(state.len(), MAX_RETAINED_FILE_TRANSFERS);
-        assert!(state
-            .find(DeviceId::from_bytes([0x55; 32]), &offer(1, 1))
-            .unwrap()
-            .is_none());
+        let extra = FileTransferPartialState::new(identity(65, 0x55, 65), 0, locator(), 65).unwrap();
+        assert_eq!(
+            state.upsert_partial(extra.clone()),
+            Err(FileTransferStateError::TooManyEntries)
+        );
 
         let removed = state.prune_expired(100, 50);
         assert!(removed > 0);
-        assert!(state.len() < MAX_RETAINED_FILE_TRANSFERS);
+        state.upsert_partial(extra).unwrap();
+        assert!(state.len() <= MAX_RETAINED_FILE_TRANSFERS);
     }
 
     #[test]
