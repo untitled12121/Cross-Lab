@@ -1,6 +1,7 @@
 use core::fmt;
 use std::collections::BTreeSet;
 
+use crosslab_crypto::blake3_256;
 use crosslab_identity::DeviceId;
 use crosslab_protocol::{
     FileTransferDigest, FileTransferOffer, TransferId, MAX_FILE_TRANSFER_DISPLAY_NAME_BYTES,
@@ -432,12 +433,12 @@ impl FileTransferStateSnapshot {
             u32::try_from(payload.len()).map_err(|_| FileTransferStateError::SnapshotTooLarge)?;
         let entry_count = u16::try_from(self.entries.len())
             .map_err(|_| FileTransferStateError::TooManyEntries)?;
-        let digest = blake3::hash(&payload);
+        let digest = blake3_256(&payload);
         let mut encoded = Vec::with_capacity(STATE_HEADER_BYTES + payload.len());
         encoded.extend_from_slice(&STATE_SCHEMA_VERSION.to_be_bytes());
         encoded.extend_from_slice(&entry_count.to_be_bytes());
         encoded.extend_from_slice(&payload_len.to_be_bytes());
-        encoded.extend_from_slice(digest.as_bytes());
+        encoded.extend_from_slice(&digest);
         encoded.extend_from_slice(&payload);
         Ok(encoded)
     }
@@ -469,7 +470,7 @@ impl FileTransferStateSnapshot {
         }
         let expected_digest: [u8; 32] = copy_array(&encoded[8..40]);
         let payload = &encoded[STATE_HEADER_BYTES..];
-        if blake3::hash(payload).as_bytes() != &expected_digest {
+        if blake3_256(payload) != expected_digest {
             return Err(FileTransferStateError::SnapshotDigestMismatch);
         }
 

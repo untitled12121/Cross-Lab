@@ -6,6 +6,28 @@ pub fn blake3_256(input: &[u8]) -> [u8; 32] {
     *blake3::hash(input).as_bytes()
 }
 
+pub struct Blake3Hasher(blake3::Hasher);
+
+impl Blake3Hasher {
+    pub fn new() -> Self {
+        Self(blake3::Hasher::new())
+    }
+
+    pub fn update(&mut self, input: &[u8]) {
+        self.0.update(input);
+    }
+
+    pub fn finalize(self) -> [u8; 32] {
+        *self.0.finalize().as_bytes()
+    }
+}
+
+impl Default for Blake3Hasher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub fn signed_object_digest(
     transcript_digest: [u8; 32],
     algorithm: SignatureAlgorithm,

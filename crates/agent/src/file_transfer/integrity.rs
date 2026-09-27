@@ -1,5 +1,6 @@
 use core::fmt;
 
+use crosslab_crypto::Blake3Hasher;
 use crosslab_protocol::{
     FileTransferDigest, FileTransferOffer, FileTransferProfileError, TransferId,
 };
@@ -58,14 +59,14 @@ impl fmt::Debug for FileTransferHash {
 }
 
 pub struct FileTransferHasher {
-    hasher: blake3::Hasher,
+    hasher: Blake3Hasher,
     bytes_hashed: u64,
 }
 
 impl FileTransferHasher {
     pub fn new() -> Self {
         Self {
-            hasher: blake3::Hasher::new(),
+            hasher: Blake3Hasher::new(),
             bytes_hashed: 0,
         }
     }
@@ -87,7 +88,7 @@ impl FileTransferHasher {
     pub fn finish(self) -> FileTransferHash {
         FileTransferHash {
             file_size: self.bytes_hashed,
-            digest: FileTransferDigest::from_bytes(*self.hasher.finalize().as_bytes()),
+            digest: FileTransferDigest::from_bytes(self.hasher.finalize()),
         }
     }
 }
@@ -167,12 +168,12 @@ mod tests {
     use super::*;
 
     fn offer(bytes: &[u8]) -> FileTransferOffer {
-        let hash = blake3::hash(bytes);
+        let hash = crosslab_crypto::blake3_256(bytes);
         FileTransferOffer::new(
             TransferId::from_bytes([0x31; 32]),
             "payload.bin".into(),
             bytes.len() as u64,
-            FileTransferDigest::from_bytes(*hash.as_bytes()),
+            FileTransferDigest::from_bytes(hash),
         )
         .unwrap()
     }
@@ -187,7 +188,7 @@ mod tests {
         assert_eq!(result.file_size(), 11);
         assert_eq!(
             result.digest().to_bytes(),
-            *blake3::hash(b"hello world").as_bytes()
+            crosslab_crypto::blake3_256(b"hello world")
         );
 
         let offer = result
@@ -242,7 +243,10 @@ mod tests {
 
         let rendered = format!("{verifier:?}");
         assert!(!rendered.contains("private"));
-        assert!(!rendered.contains(&format!("{:?}", blake3::hash(b"private payload").as_bytes())));
+        assert!(!rendered.contains(&format!(
+            "{:?}",
+            crosslab_crypto::blake3_256(b"private payload")
+        )));
         assert!(rendered.contains("[REDACTED; 32 bytes]"));
     }
 }
