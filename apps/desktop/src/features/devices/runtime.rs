@@ -377,6 +377,8 @@ fn runtime_session(
 ) -> Option<(RuntimeActorSession, watch::Receiver<bool>)> {
     let (session, transport) = session.into_parts();
     let closed = transport.subscribe_closed();
+    let control_ready = transport.subscribe_control_ready();
+    let stream_ready = transport.subscribe_stream_ready();
     let node = RuntimeNode::new_owned(
         session,
         Arc::new(transport),
@@ -387,7 +389,12 @@ fn runtime_session(
     )
     .ok()?;
 
-    Some((RuntimeActorSession::new(node, peer_trust), closed))
+    Some((
+        RuntimeActorSession::new(node, peer_trust)
+            .with_control_ready(control_ready)
+            .with_stream_ready(stream_ready),
+        closed,
+    ))
 }
 
 #[cfg(feature = "development-provisioning")]

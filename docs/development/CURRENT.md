@@ -10,13 +10,13 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 
 ## Canonical Baseline
 
-- Current `main` after PR #63: `225617f4d1dd281d1fedeb6b3e312feea4a4352c`.
+- Current `main` after PR #65: `06d6e70cb200c31b82782a387a44d34837a7dc3f`.
 - PR #49 — Linux Add Device QR invitation UI + Android CameraX/ML Kit scanner: merged as `445bbf32178dff94f339fc1ae80447967f5da215`; exact-head CI `35533414673` green on `7d3176ffd4387d3e29982ae5fe641249d6d33445`.
 - PR #50 — shared product pairing coordinator + durable reciprocal trust persistence: merged as `3af825e6f78bef4512168f587f452c1b0267b6a7`; exact-head CI `35567548228` and Fuzz Smoke `35567548208` green on `ec59f99f7c09898aa2533d8b40bd4e980fa2b022`.
 - PR #51 — ADR-0016 LAN discovery profile + versioned product-pairing wire + provisional Quinn pairing channel: merged as `cf2add350ffa60056d74ac57b0a187a0297d8777`; exact-head CI `35593397861` and Fuzz Smoke `35593397844` green on `2702cc0c926cf044c65aef0376f573aaedae8c6f`.
 - PR #52 — bounded DNS-SD discovery adapters: merged as `2881a8cb042207bf55a1ede9f2dc61f30ccd4eb9`; exact-head CI `35598750651` green on `2ef9ab362fb9fa59d7693662ec8de2f65e5031af`.
 - PR #53 — product pairing network/platform lifecycle: merged as `9453b0e7f3e67578c79615acb1034c849a82603d`; implementation head `cc099fd7bf3335f51f54d4e09f2d002ab136e4e0` and documentation head `c5570add764ac1e223b08bdb63737abd3b182a25` both passed the full Rust + Android gate (`35641211049` / `35643137494`).
-- Master Architecture revision 2.9 governs the accepted ADR-0018 text clipboard profile and ADR-0019 owner-policy-store boundary in addition to the established pairing/trusted-session architecture.
+- Master Architecture revision 2.10 governs accepted ADR-0020 resumable single-file transfer v2 in addition to the established pairing, trusted-session, clipboard, and owner-policy-store architecture.
 - Physical-evidence continuation branch: `m10-task10-real-device-evidence`.
 - M10 evidence protocol: `docs/research/M10-platform-evidence.md`.
 - Product pairing implementation plan: `docs/superpowers/plans/2026-09-20-product-add-device-pairing.md`.
@@ -29,9 +29,10 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 - PR #61 — Linux GPUI + Android ClipboardManager product adapters/UI: merged as `61ae275356201245a7dcac95d11bd598d2c3045e`; exact head `11c8b46732facd2c881ee6963f46a9248da0cba6` passed full Rust + Android CI `36244041548`.
 - PR #62 — protocol-neutral authorized data-stream runtime foundation: merged as `e338d10911ccdb908bc495150f048503086c0ce2`; exact implementation head `e663909443d208c712ccb7f6e1e74fb8dab26ab8` passed full Rust + Android CI `36258390585`.
 - PR #63 — file-transfer foundation checkpoint + revised ADR-0020 review: merged as `225617f4d1dd281d1fedeb6b3e312feea4a4352c`; exact head `4c6116f29beb923e324caf00341965021882b3bb` passed full Rust + Android CI `36267234275`.
-- ADR-0020 owner-approved as revised on 2026-09-26; acceptance is being recorded in the Master Architecture before payload implementation.
-- Active Phase 2 implementation branch: none until the ADR-0020 owner decision.
-- ADR-0018 and ADR-0019 are accepted and implemented. ADR-0020 is a proposed resumable single-file transfer v2 profile; it is not an accepted compatibility surface until owner approval.
+- PR #64 — ADR-0020 acceptance + Master Architecture revision 2.10: merged as `464e7caac23f607f9e9d1346d5fe07ebcb6805ba`.
+- PR #65 — exact bounded `files.transfer` v2 payload contract and protocol spec: merged as `06d6e70cb200c31b82782a387a44d34837a7dc3f`; exact head `b4845decaee6d8bcdb5b6509a26c9ea8410b6023` passed full CI `36284858974` and Fuzz Smoke `36284858982`.
+- Active Phase 2 implementation branch: `phase2-runtime-stream-readiness`.
+- ADR-0018, ADR-0019, and ADR-0020 are accepted. Clipboard is implemented; file transfer is in Task 3 shared-runtime implementation.
 
 ## Implemented M10 Product Path
 
@@ -104,13 +105,13 @@ Owner approval on 2026-09-25 unblocked implementation. PR #58 merged the shared 
 
 PR #59 completed the persist-before-apply permission-edit boundary. PR #60 then added the shared ADR-0018 clipboard runtime with bounded UTF-8 payloads, capability negotiation, session-local request correlation, and cancellation across policy/reconnect/disconnect/shutdown. PR #61 completed the Linux GPUI and Android ClipboardManager adapters plus explicit Send/Fetch product controls without background clipboard monitoring or plaintext history.
 
-Clipboard is complete for the Phase 2 MVP software slice. PR #62 completed the protocol-neutral authorized data-stream runtime foundation by reusing the existing `AuthorizedOperation`, `StreamAdmission`, `DataStreamOpenV1`, bounded Quinn stream, and fresh-session authority model. ADR-0020 is owner-approved as revised. The protocol-neutral foundation remains unchanged; the next implementation slice may now add the exact v2 offer/accept/result codecs and transfer state defined by the accepted profile.
+Clipboard is complete for the Phase 2 MVP software slice. PR #62 completed the protocol-neutral authorized data-stream runtime foundation by reusing the existing `AuthorizedOperation`, `StreamAdmission`, `DataStreamOpenV1`, bounded Quinn stream, and fresh-session authority model. PR #65 then implemented the accepted v2 offer/accept/result payload contract, strict bounds/identity validation, privacy-safe debug behavior, and focused protocol specification. The active `phase2-runtime-stream-readiness` slice is wiring Quinn stream readiness through `RuntimeActor` with a local monotonic operation clock before transfer-specific authority/state is added.
 
 Continue in small verified vertical slices:
 
 - per-device permissions/capability-control foundation — implemented on PR #56;
 - clipboard — implemented on PR #60 + PR #61;
-- resumable file transfer — protocol-neutral stream foundation implemented on PR #62; ADR-0020 accepted; shared v2 runtime is next;
+- resumable file transfer — protocol-neutral stream foundation implemented on PR #62; ADR-0020 accepted on PR #64; v2 payload contract implemented on PR #65; shared runtime integration is active;
 - notifications;
 - privacy-conscious audit/history;
 - revocation/device removal;
@@ -129,19 +130,19 @@ Phase 3 adaptive networking does not begin until Phase 2 is complete.
 
 ## Exact Next Task
 
-1. merge the ADR-0020 acceptance checkpoint after exact-head CI;
-2. create the next feature branch from that accepted architecture baseline;
-3. implement Task 3 shared `files.transfer` v2 runtime in small verified slices: bounded offer/accept/result codecs, exact authorization + fresh `OperationId`, bounded transfer correlation/state, streaming BLAKE3/integrity handling, durable checkpoint/tombstone abstractions, and lifecycle cancellation;
-4. then implement Linux native file adapter/UI and Android SAF/ContentResolver adapter/UI without peer path authority or whole-file buffering;
-5. preserve exact default deny, bounded streaming/backpressure, fresh authority on reconnect, non-clobbering publication, and no file-content/path logging;
-6. then continue through notifications, privacy-conscious audit/history, and revocation/device removal;
+1. finish `phase2-runtime-stream-readiness` by validating event-driven inbound data-stream draining across RuntimeActor, production presence, development paths, and Quinn integration tests;
+2. update this handoff with exact-head verification, merge the slice, and branch from the new main;
+3. implement the next Task 3 slice: exact `files.transfer/receive` capability registration, bounded transfer correlation, local authorization-to-fresh-`OperationId` issuance, result-event subscription, and lifecycle cancellation;
+4. then add bounded streaming BLAKE3/integrity handling plus durable checkpoint/tombstone abstractions before platform filesystem adapters;
+5. preserve exact default deny, fresh authority on reconnect, bounded queues/backpressure, no peer path authority, and no file-content/path logging;
+6. then implement Linux native file adapter/UI and Android SAF/ContentResolver adapter/UI;
 7. keep M10 physical evidence separately pending until owner hardware is available;
 8. stop before Phase 3.
 
 ## Resume Procedure
 
 1. verify `main`, active feature/evidence branches, open PRs, exact-head CI, and recent commits;
-2. read Master Architecture revision 2.9, this file, active plans, and relevant ADRs/specifications;
+2. read Master Architecture revision 2.10, this file, active plans, and relevant ADRs/specifications;
 3. inspect existing code and relevant uploaded research before adding adapters/dependencies;
 4. reuse existing pairing/session/policy/currentness boundaries rather than duplicating security semantics;
 5. work in small verifiable milestones, run full relevant gates, commit/push, and update this file;

@@ -1,6 +1,6 @@
 # Phase 2 Resumable File Transfer
 
-**Status:** Active — Task 1 implemented; ADR-0020 accepted; Task 3 ready
+**Status:** Active — Task 1 implemented; ADR-0020 accepted; PR #65 payload contract merged; Task 3 runtime integration active
 **Date:** 2026-09-26
 **Base:** PR #61 merged as `61ae275356201245a7dcac95d11bd598d2c3045e`  
 **Foundation:** PR #62 merged as `e338d10911ccdb908bc495150f048503086c0ce2`; exact implementation head `e663909443d208c712ccb7f6e1e74fb8dab26ab8` passed full Rust + Android CI `36258390585`.
@@ -69,9 +69,11 @@ Any incompatible change to ADR-0020 now requires a new capability profile/versio
 
 ## Task 3 — Shared transfer capability runtime — Active
 
+PR #65 implemented the accepted bounded offer/accept/result payload contract and focused protocol specification. The active runtime-readiness slice now connects Quinn's existing bounded stream-ready signal to RuntimeActor before transfer-specific authority/state is added.
+
 After ADR-0020 acceptance:
 
-- implement exact bounded offer/accept codecs;
+- implement exact bounded offer/accept codecs — implemented on PR #65;
 - issue/register the destination `AuthorizedOperation` only after exact authorization;
 - correlate bounded transfer state;
 - stream source hashing and payload with bounded buffers/backpressure;
