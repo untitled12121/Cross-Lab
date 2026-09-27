@@ -98,6 +98,8 @@ pub(crate) struct OutgoingUniDriver {
     state: Arc<SendState>,
     outbound: mpsc::Receiver<Vec<u8>>,
     cancel_rx: watch::Receiver<bool>,
+    // Keep the watch open so dropping a normally finished handle cannot look like cancellation.
+    _cancel_tx: watch::Sender<bool>,
     max_chunk_bytes: usize,
 }
 
@@ -109,6 +111,7 @@ pub(crate) fn new_outgoing_uni_stream(
     let state = Arc::new(SendState::new());
     let (outbound, outbound_rx) = mpsc::channel(chunk_capacity);
     let (cancel_tx, cancel_rx) = watch::channel(false);
+    let driver_cancel_tx = cancel_tx.clone();
 
     (
         QuicSendStream {
@@ -122,6 +125,7 @@ pub(crate) fn new_outgoing_uni_stream(
             state,
             outbound: outbound_rx,
             cancel_rx,
+            _cancel_tx: driver_cancel_tx,
             max_chunk_bytes,
         },
     )

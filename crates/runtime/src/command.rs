@@ -1,4 +1,4 @@
-use crosslab_core::EventSubscription;
+use crosslab_core::{EventSubscription, StreamSendError};
 use std::time::Duration;
 
 use crosslab_policy::{
@@ -6,7 +6,8 @@ use crosslab_policy::{
     UsePolicy,
 };
 use crosslab_protocol::{
-    CapabilityAdvertisement, ControlRequest, ControlResponseResult, RequestId,
+    CapabilityAdvertisement, ControlRequest, ControlResponseResult, DataStreamOpen, Event,
+    RequestId, StreamId,
 };
 use tokio::sync::oneshot;
 
@@ -39,6 +40,10 @@ pub(crate) enum RuntimeCommand {
         request_id: RequestId,
         reply: oneshot::Sender<Result<(), RuntimeActorError>>,
     },
+    SendEvent {
+        event: Event,
+        reply: oneshot::Sender<Result<(), RuntimeActorError>>,
+    },
     SubscribeEvent {
         subscription: EventSubscription,
         reply: oneshot::Sender<Result<bool, RuntimeActorError>>,
@@ -57,6 +62,27 @@ pub(crate) enum RuntimeCommand {
     },
     CancelStreamOperation {
         operation_id: OperationId,
+        reply: oneshot::Sender<Result<(), RuntimeActorError>>,
+    },
+    OpenDataStream {
+        open: DataStreamOpen,
+        reply: oneshot::Sender<Result<StreamId, RuntimeActorError>>,
+    },
+    SendStreamChunk {
+        stream_id: StreamId,
+        chunk: Vec<u8>,
+        reply: oneshot::Sender<Result<(), StreamSendError>>,
+    },
+    FinishDataStream {
+        stream_id: StreamId,
+        reply: oneshot::Sender<Result<(), RuntimeActorError>>,
+    },
+    CancelOutboundStream {
+        stream_id: StreamId,
+        reply: oneshot::Sender<Result<(), RuntimeActorError>>,
+    },
+    CancelInboundStream {
+        stream_id: StreamId,
         reply: oneshot::Sender<Result<(), RuntimeActorError>>,
     },
     Reconnect {

@@ -1,17 +1,20 @@
 use core::fmt;
 
-use crosslab_core::EventSubscription;
+use crosslab_core::{EventSubscription, StreamSendError};
 use crosslab_policy::{
     CapabilityId, CapabilityVersion, CapabilityVersionRange, LocalCapability, OperationId,
-    OperationName,
+    OperationName, SessionId,
 };
 use crosslab_protocol::{
     CapabilityAdvertisement, CapabilityAdvertisementEntry, ControlRequest, ControlResponseResult,
-    EventType, FILE_TRANSFER_CAPABILITY_ID, FILE_TRANSFER_RESULT_EVENT_TYPE,
-    FileTransferAcceptance, FileTransferOffer, FileTransferWireError, ProtocolDiagnostic,
-    ProtocolErrorCode, ProtocolFailure, RequestId, RetryClass, decode_file_transfer_acceptance,
-    decode_file_transfer_offer, encode_file_transfer_acceptance, encode_file_transfer_offer,
+    DataStreamOpen, Event, EventId, EventScope, EventType, FILE_TRANSFER_CAPABILITY_ID,
+    FILE_TRANSFER_RESULT_EVENT_TYPE, FileTransferAcceptance, FileTransferOffer, FileTransferResult,
+    FileTransferTerminalOutcome, FileTransferWireError, ProtocolDiagnostic, ProtocolErrorCode,
+    ProtocolFailure, RequestId, RetryClass, StreamDirection, StreamId,
+    decode_file_transfer_acceptance, decode_file_transfer_offer, decode_file_transfer_result,
+    encode_file_transfer_acceptance, encode_file_transfer_offer, encode_file_transfer_result,
 };
+use crosslab_runtime::RuntimeActorStreamSendError;
 
 const OP_RECEIVE: &str = "receive";
 const VERSION: CapabilityVersion = CapabilityVersion::new(2, 0);
@@ -62,12 +65,167 @@ impl fmt::Debug for FileTransferRequest {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FileTransferSourceStream {
+    transfer_id: crosslab_protocol::TransferId,
+    stream_id: StreamId,
+    resume_offset: u64,
+}
+
+impl FileTransferSourceStream {
+    pub(crate) const fn new(
+        transfer_id: crosslab_protocol::TransferId,
+        stream_id: StreamId,
+        resume_offset: u64,
+    ) -> Self {
+        Self {
+            transfer_id,
+            stream_id,
+            resume_offset,
+        }
+    }
+
+    pub const fn transfer_id(self) -> crosslab_protocol::TransferId {
+        self.transfer_id
+    }
+
+    pub const fn stream_id(self) -> StreamId {
+        self.stream_id
+    }
+
+    pub const fn resume_offset(self) -> u64 {
+        self.resume_offset
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct FileTransferDataChunk {
+    transfer_id: crosslab_protocol::TransferId,
+    stream_id: StreamId,
+    bytes: Vec<u8>,
+}
+
+impl FileTransferDataChunk {
+    pub(crate) fn new(
+        transfer_id: crosslab_protocol::TransferId,
+        stream_id: StreamId,
+        bytes: Vec<u8>,
+    ) -> Self {
+        Self {
+            transfer_id,
+            stream_id,
+            bytes,
+        }
+    }
+
+    pub const fn transfer_id(&self) -> crosslab_protocol::TransferId {
+        self.transfer_id
+    }
+
+    pub const fn stream_id(&self) -> StreamId {
+        self.stream_id
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.bytes
+    }
+}
+
+impl fmt::Debug for FileTransferDataChunk {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("FileTransferDataChunk")
+            .field("transfer_id", &self.transfer_id)
+            .field("stream_id", &self.stream_id)
+            .field(
+                "bytes",
+                &format_args!("[REDACTED; {} bytes]", self.bytes.len()),
+            )
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FileTransferDataEvent {
+    Opened {
+        transfer_id: crosslab_protocol::TransferId,
+        stream_id: StreamId,
+        resume_offset: u64,
+    },
+    Chunk(FileTransferDataChunk),
+    Finished {
+        transfer_id: crosslab_protocol::TransferId,
+        stream_id: StreamId,
+    },
+    Cancelled {
+        transfer_id: crosslab_protocol::TransferId,
+        stream_id: StreamId,
+    },
+}
+
+#[derive(PartialEq, Eq)]
+pub enum FileTransferChunkError {
+    Backpressure(Vec<u8>),
+    TooLarge(Vec<u8>),
+    Closed(Option<Vec<u8>>),
+}
+
+impl FileTransferChunkError {
+    pub fn into_chunk(self) -> Option<Vec<u8>> {
+        match self {
+            Self::Backpressure(chunk) | Self::TooLarge(chunk) => Some(chunk),
+            Self::Closed(chunk) => chunk,
+        }
+    }
+}
+
+impl fmt::Debug for FileTransferChunkError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Backpressure(chunk) => formatter
+                .debug_tuple("Backpressure")
+                .field(&format_args!("[REDACTED; {} bytes]", chunk.len()))
+                .finish(),
+            Self::TooLarge(chunk) => formatter
+                .debug_tuple("TooLarge")
+                .field(&format_args!("[REDACTED; {} bytes]", chunk.len()))
+                .finish(),
+            Self::Closed(Some(chunk)) => formatter
+                .debug_tuple("Closed")
+                .field(&format_args!("[REDACTED; {} bytes]", chunk.len()))
+                .finish(),
+            Self::Closed(None) => formatter
+                .debug_tuple("Closed")
+                .field(&"[UNAVAILABLE]")
+                .finish(),
+        }
+    }
+}
+
+impl fmt::Display for FileTransferChunkError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Backpressure(_) => "file transfer data path is applying backpressure",
+            Self::TooLarge(_) => "file transfer chunk exceeds the transport limit",
+            Self::Closed(_) => "file transfer data stream is closed",
+        })
+    }
+}
+
+impl std::error::Error for FileTransferChunkError {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileTransferOperationError {
     NotConnected,
     NotNegotiated,
     InvalidResponse,
     InvalidResumeOffset,
     ResourceLimit,
+    AlreadyActive,
+    InvalidStream,
     Random,
     TimedOut,
     Cancelled,
@@ -90,6 +248,8 @@ impl fmt::Display for FileTransferOperationError {
             Self::ResourceLimit => {
                 formatter.write_str("file transfer operation capacity is exhausted")
             }
+            Self::AlreadyActive => formatter.write_str("file transfer is already active"),
+            Self::InvalidStream => formatter.write_str("file transfer stream is not active"),
             Self::Random => {
                 formatter.write_str("file transfer request identifier generation failed")
             }
@@ -133,6 +293,75 @@ pub(crate) fn advertisement(availability: FileTransferAvailability) -> Capabilit
 
 pub(crate) fn result_subscription() -> EventSubscription {
     EventSubscription::new(capability(), result_event_type())
+}
+
+pub(crate) fn source_stream_open(
+    session_id: SessionId,
+    stream_id: StreamId,
+    operation_id: OperationId,
+) -> DataStreamOpen {
+    DataStreamOpen::new(
+        session_id,
+        stream_id,
+        operation_id,
+        capability(),
+        VERSION,
+        operation(),
+        StreamDirection::SourceToDestination,
+        0,
+    )
+}
+
+pub(crate) fn terminal_result_event(
+    result: FileTransferResult,
+) -> Result<Event, FileTransferOperationError> {
+    let event_id = EventId::generate().map_err(|_| FileTransferOperationError::Random)?;
+    let body = encode_file_transfer_result(result)
+        .map_err(|_| FileTransferOperationError::InvalidResponse)?;
+    Event::capability(event_id, capability(), result_event_type(), body)
+        .map_err(|_| FileTransferOperationError::InvalidResponse)
+}
+
+pub(crate) fn decode_terminal_result_event(
+    event: &Event,
+) -> Result<Option<FileTransferResult>, FileTransferOperationError> {
+    let EventScope::Capability(capability_id) = event.scope() else {
+        return Ok(None);
+    };
+    if capability_id.as_str() != FILE_TRANSFER_CAPABILITY_ID
+        || event.event_type().as_str() != FILE_TRANSFER_RESULT_EVENT_TYPE
+    {
+        return Ok(None);
+    }
+    decode_file_transfer_result(event.body())
+        .map(Some)
+        .map_err(|_| FileTransferOperationError::InvalidResponse)
+}
+
+pub(crate) fn terminal_result(
+    transfer_id: crosslab_protocol::TransferId,
+    outcome: FileTransferTerminalOutcome,
+) -> FileTransferResult {
+    FileTransferResult::new(transfer_id, outcome)
+}
+
+pub(crate) fn map_chunk_error(error: RuntimeActorStreamSendError) -> FileTransferChunkError {
+    match error {
+        RuntimeActorStreamSendError::QueueFull(chunk) => {
+            FileTransferChunkError::Backpressure(chunk)
+        }
+        RuntimeActorStreamSendError::Closed(chunk) => FileTransferChunkError::Closed(Some(chunk)),
+        RuntimeActorStreamSendError::ActorClosed => FileTransferChunkError::Closed(None),
+        RuntimeActorStreamSendError::Stream(StreamSendError::Full(chunk)) => {
+            FileTransferChunkError::Backpressure(chunk)
+        }
+        RuntimeActorStreamSendError::Stream(StreamSendError::TooLarge(chunk)) => {
+            FileTransferChunkError::TooLarge(chunk)
+        }
+        RuntimeActorStreamSendError::Stream(StreamSendError::Closed(chunk)) => {
+            FileTransferChunkError::Closed(Some(chunk))
+        }
+    }
 }
 
 pub(crate) fn capability_negotiated(negotiated: &[CapabilityId]) -> bool {
@@ -368,6 +597,46 @@ mod tests {
             ready_response(&request, 1, operation_id),
             Err(FileTransferOperationError::InvalidResumeOffset)
         );
+    }
+
+    #[test]
+    fn source_stream_open_uses_exact_v2_authority_shape() {
+        let session_id = SessionId::from_bytes([0x4a; 32]);
+        let stream_id = StreamId::from_bytes([0x4b; 16]);
+        let operation_id = OperationId::from_bytes([0x4c; 32]);
+        let open = source_stream_open(session_id, stream_id, operation_id);
+
+        assert_eq!(open.session_id(), session_id);
+        assert_eq!(open.stream_id(), stream_id);
+        assert_eq!(open.operation_id(), operation_id);
+        assert_eq!(open.capability_id().as_str(), FILE_TRANSFER_CAPABILITY_ID);
+        assert_eq!(open.capability_version(), VERSION);
+        assert_eq!(open.operation_name().as_str(), OP_RECEIVE);
+        assert_eq!(open.direction(), StreamDirection::SourceToDestination);
+        assert_eq!(open.stream_index(), 0);
+    }
+
+    #[test]
+    fn terminal_result_event_round_trips_exact_namespace() {
+        let result = FileTransferResult::new(
+            offer().transfer_id(),
+            FileTransferTerminalOutcome::Completed,
+        );
+        let event = terminal_result_event(result).unwrap();
+
+        assert_eq!(decode_terminal_result_event(&event).unwrap(), Some(result));
+        assert!(!format!("{event:?}").contains("example.txt"));
+    }
+
+    #[test]
+    fn chunk_errors_preserve_bytes_without_debug_disclosure() {
+        let payload = b"private-file-chunk".to_vec();
+        let error = map_chunk_error(RuntimeActorStreamSendError::Stream(StreamSendError::Full(
+            payload.clone(),
+        )));
+
+        assert!(!format!("{error:?}").contains("private-file-chunk"));
+        assert_eq!(error.into_chunk(), Some(payload));
     }
 
     #[test]

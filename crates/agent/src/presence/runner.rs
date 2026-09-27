@@ -16,10 +16,12 @@ use crosslab_policy::{
 };
 use crosslab_protocol::{
     CapabilityAdvertisement, FILE_TRANSFER_CAPABILITY_ID, FeatureSet, FileTransferAcceptance,
-    FileTransferOffer, ProtocolRange, RequestId,
+    FileTransferOffer, FileTransferResult, FileTransferTerminalOutcome, ProtocolRange, RequestId,
+    StreamId, TransferId,
 };
 use crosslab_runtime::{
     NodeEvent, RuntimeActor, RuntimeActorConfig, RuntimeActorSession, RuntimeNode,
+    RuntimeStreamEvent,
 };
 use crosslab_transport_quic::{
     AuthenticatedQuicSession, QuicSessionAuthConfig, QuicSessionError, QuicSessionTimeouts,
@@ -44,17 +46,23 @@ use crate::{
         write_completion as clipboard_write_completion, write_request as clipboard_write_request,
     },
     file_transfer::{
-        FileTransferAvailability, FileTransferOperationError, FileTransferRequest,
-        advertisement as file_transfer_advertisement,
+        FileTransferAvailability, FileTransferChunkError, FileTransferDataChunk,
+        FileTransferDataEvent, FileTransferOperationError, FileTransferRequest,
+        FileTransferSourceStream, advertisement as file_transfer_advertisement,
         already_complete_response as file_transfer_already_complete_response,
         capability_negotiated as file_transfer_capability_negotiated,
         decode_inbound as decode_file_transfer, decode_response as decode_file_transfer_response,
+        decode_terminal_result_event as decode_file_transfer_terminal_result,
         internal_failure as file_transfer_internal_failure,
         local_capabilities as file_transfer_local_capabilities,
+        map_chunk_error as map_file_transfer_chunk_error,
         offer_request as file_transfer_offer_request,
         ready_response as file_transfer_ready_response,
         resource_failure as file_transfer_resource_failure,
         result_subscription as file_transfer_result_subscription,
+        source_stream_open as file_transfer_source_stream_open,
+        terminal_result as file_transfer_terminal_result,
+        terminal_result_event as file_transfer_terminal_result_event,
     },
 };
 
@@ -138,6 +146,32 @@ pub(super) enum AgentCommand {
         request_id: RequestId,
         reply: oneshot::Sender<Result<(), FileTransferOperationError>>,
     },
+    FileTransferOpen {
+        transfer_id: TransferId,
+        reply: oneshot::Sender<Result<FileTransferSourceStream, FileTransferOperationError>>,
+    },
+    FileTransferChunk {
+        stream: FileTransferSourceStream,
+        chunk: Vec<u8>,
+        reply: oneshot::Sender<Result<(), FileTransferChunkError>>,
+    },
+    FileTransferFinish {
+        stream: FileTransferSourceStream,
+        reply: oneshot::Sender<Result<FileTransferResult, FileTransferOperationError>>,
+    },
+    FileTransferCancelSend {
+        stream: FileTransferSourceStream,
+        reply: oneshot::Sender<Result<FileTransferResult, FileTransferOperationError>>,
+    },
+    FileTransferCancelReceive {
+        stream_id: StreamId,
+        reply: oneshot::Sender<Result<(), FileTransferOperationError>>,
+    },
+    FileTransferTerminal {
+        transfer_id: TransferId,
+        outcome: FileTransferTerminalOutcome,
+        reply: oneshot::Sender<Result<(), FileTransferOperationError>>,
+    },
     Stop,
 }
 
@@ -159,13 +193,32 @@ impl RuntimeAvailability {
     }
 }
 
+pub(super) struct CapabilityChannels {
+    clipboard_requests_tx: mpsc::Sender<ClipboardRequest>,
+    file_transfer_requests_tx: mpsc::Sender<FileTransferRequest>,
+    file_transfer_data_tx: mpsc::Sender<FileTransferDataEvent>,
+}
+
+impl CapabilityChannels {
+    pub(super) fn new(
+        clipboard_requests_tx: mpsc::Sender<ClipboardRequest>,
+        file_transfer_requests_tx: mpsc::Sender<FileTransferRequest>,
+        file_transfer_data_tx: mpsc::Sender<FileTransferDataEvent>,
+    ) -> Self {
+        Self {
+            clipboard_requests_tx,
+            file_transfer_requests_tx,
+            file_transfer_data_tx,
+        }
+    }
+}
+
 pub(super) struct AgentChannels {
     policy_rx: watch::Receiver<PolicyState>,
     command_rx: mpsc::Receiver<AgentCommand>,
     status_tx: watch::Sender<PresenceSnapshot>,
     permissions_tx: watch::Sender<PermissionSnapshot>,
-    clipboard_requests_tx: mpsc::Sender<ClipboardRequest>,
-    file_transfer_requests_tx: mpsc::Sender<FileTransferRequest>,
+    capabilities: CapabilityChannels,
     availability: RuntimeAvailability,
 }
 
@@ -175,8 +228,7 @@ impl AgentChannels {
         command_rx: mpsc::Receiver<AgentCommand>,
         status_tx: watch::Sender<PresenceSnapshot>,
         permissions_tx: watch::Sender<PermissionSnapshot>,
-        clipboard_requests_tx: mpsc::Sender<ClipboardRequest>,
-        file_transfer_requests_tx: mpsc::Sender<FileTransferRequest>,
+        capabilities: CapabilityChannels,
         availability: RuntimeAvailability,
     ) -> Self {
         Self {
@@ -184,8 +236,7 @@ impl AgentChannels {
             command_rx,
             status_tx,
             permissions_tx,
-            clipboard_requests_tx,
-            file_transfer_requests_tx,
+            capabilities,
             availability,
         }
     }
@@ -312,30 +363,69 @@ struct PendingFileOffer {
     reply: oneshot::Sender<Result<FileTransferAcceptance, FileTransferOperationError>>,
 }
 
-struct ReadyFileTransfer {
+struct DestinationReadyFileTransfer {
+    transfer_id: TransferId,
     operation_id: OperationId,
+    resume_offset: u64,
     deadline: Instant,
+}
+
+#[derive(Clone, Copy)]
+struct ActiveInboundFileTransfer {
+    transfer_id: TransferId,
+}
+
+struct TerminalReadyFileTransfer {
+    transfer_id: TransferId,
+    deadline: Instant,
+}
+
+enum SourceFileTransfer {
+    Ready {
+        operation_id: OperationId,
+        resume_offset: u64,
+        deadline: Instant,
+    },
+    Streaming {
+        stream_id: StreamId,
+        resume_offset: u64,
+    },
+    AwaitingResult {
+        deadline: Instant,
+        reply: oneshot::Sender<Result<FileTransferResult, FileTransferOperationError>>,
+    },
 }
 
 struct FileTransferRuntimeState {
     requests_tx: mpsc::Sender<FileTransferRequest>,
+    data_tx: mpsc::Sender<FileTransferDataEvent>,
     availability: FileTransferAvailability,
     outgoing: BTreeMap<RequestId, PendingFileOffer>,
     inbound: BTreeMap<RequestId, FileTransferRequest>,
-    ready: Vec<ReadyFileTransfer>,
+    destination_ready: Vec<DestinationReadyFileTransfer>,
+    inbound_streams: BTreeMap<StreamId, ActiveInboundFileTransfer>,
+    terminal_ready: Vec<TerminalReadyFileTransfer>,
+    source: BTreeMap<TransferId, SourceFileTransfer>,
+    completed_results: Vec<FileTransferResult>,
 }
 
 impl FileTransferRuntimeState {
     fn new(
         requests_tx: mpsc::Sender<FileTransferRequest>,
+        data_tx: mpsc::Sender<FileTransferDataEvent>,
         availability: FileTransferAvailability,
     ) -> Self {
         Self {
             requests_tx,
+            data_tx,
             availability,
             outgoing: BTreeMap::new(),
             inbound: BTreeMap::new(),
-            ready: Vec::with_capacity(RUNTIME_CAPACITY),
+            destination_ready: Vec::with_capacity(RUNTIME_CAPACITY),
+            inbound_streams: BTreeMap::new(),
+            terminal_ready: Vec::with_capacity(RUNTIME_CAPACITY),
+            source: BTreeMap::new(),
+            completed_results: Vec::with_capacity(RUNTIME_CAPACITY),
         }
     }
 
@@ -343,15 +433,59 @@ impl FileTransferRuntimeState {
         for (_, pending) in core::mem::take(&mut self.outgoing) {
             let _ = pending.reply.send(Err(error));
         }
+        for (_, source) in core::mem::take(&mut self.source) {
+            if let SourceFileTransfer::AwaitingResult { reply, .. } = source {
+                let _ = reply.send(Err(error));
+            }
+        }
         self.inbound.clear();
-        self.ready.clear();
+        self.destination_ready.clear();
+        self.inbound_streams.clear();
+        self.terminal_ready.clear();
+        self.completed_results.clear();
+    }
+
+    fn destination_capacity_used(&self) -> usize {
+        self.inbound.len()
+            + self.destination_ready.len()
+            + self.inbound_streams.len()
+            + self.terminal_ready.len()
+    }
+
+    fn cache_result(&mut self, result: FileTransferResult) {
+        if self
+            .completed_results
+            .iter()
+            .any(|current| current.transfer_id() == result.transfer_id())
+        {
+            return;
+        }
+        if self.completed_results.len() >= RUNTIME_CAPACITY {
+            self.completed_results.remove(0);
+        }
+        self.completed_results.push(result);
+    }
+
+    fn take_cached_result(&mut self, transfer_id: TransferId) -> Option<FileTransferResult> {
+        let position = self
+            .completed_results
+            .iter()
+            .position(|result| result.transfer_id() == transfer_id)?;
+        Some(self.completed_results.remove(position))
     }
 
     fn next_deadline(&self) -> Option<Instant> {
+        let source_deadlines = self.source.values().filter_map(|source| match source {
+            SourceFileTransfer::Ready { deadline, .. }
+            | SourceFileTransfer::AwaitingResult { deadline, .. } => Some(*deadline),
+            SourceFileTransfer::Streaming { .. } => None,
+        });
         self.outgoing
             .values()
             .map(|pending| pending.deadline)
-            .chain(self.ready.iter().map(|ready| ready.deadline))
+            .chain(self.destination_ready.iter().map(|ready| ready.deadline))
+            .chain(self.terminal_ready.iter().map(|terminal| terminal.deadline))
+            .chain(source_deadlines)
             .min()
     }
 }
@@ -379,14 +513,21 @@ pub(super) async fn run_agent(
         mut command_rx,
         status_tx,
         permissions_tx,
-        clipboard_requests_tx,
-        file_transfer_requests_tx,
+        capabilities,
         availability,
     } = channels;
+    let CapabilityChannels {
+        clipboard_requests_tx,
+        file_transfer_requests_tx,
+        file_transfer_data_tx,
+    } = capabilities;
     let (connect_tx, mut connect_rx) = mpsc::channel(CONNECT_RESULT_CAPACITY);
     let mut clipboard = ClipboardRuntimeState::new(clipboard_requests_tx, availability.clipboard);
-    let mut file_transfer =
-        FileTransferRuntimeState::new(file_transfer_requests_tx, availability.file_transfer);
+    let mut file_transfer = FileTransferRuntimeState::new(
+        file_transfer_requests_tx,
+        file_transfer_data_tx,
+        availability.file_transfer,
+    );
     let mut candidates = BTreeMap::<String, CandidateState>::new();
     let mut connected: Option<ConnectedRuntime> = None;
     let mut connecting_instance: Option<String> = None;
@@ -944,6 +1085,53 @@ async fn handle_command(
             let _ = reply.send(outcome);
             false
         }
+        Some(AgentCommand::FileTransferOpen { transfer_id, reply }) => {
+            let outcome =
+                open_file_transfer_stream(connected.as_ref(), file_transfer, transfer_id).await;
+            let _ = reply.send(outcome);
+            false
+        }
+        Some(AgentCommand::FileTransferChunk {
+            stream,
+            chunk,
+            reply,
+        }) => {
+            let outcome =
+                send_file_transfer_chunk(connected.as_ref(), file_transfer, stream, chunk).await;
+            let _ = reply.send(outcome);
+            false
+        }
+        Some(AgentCommand::FileTransferFinish { stream, reply }) => {
+            finish_file_transfer_stream(connected.as_ref(), file_transfer, stream, false, reply)
+                .await;
+            false
+        }
+        Some(AgentCommand::FileTransferCancelSend { stream, reply }) => {
+            finish_file_transfer_stream(connected.as_ref(), file_transfer, stream, true, reply)
+                .await;
+            false
+        }
+        Some(AgentCommand::FileTransferCancelReceive { stream_id, reply }) => {
+            let outcome =
+                cancel_file_transfer_receive(connected.as_ref(), file_transfer, stream_id).await;
+            let _ = reply.send(outcome);
+            false
+        }
+        Some(AgentCommand::FileTransferTerminal {
+            transfer_id,
+            outcome,
+            reply,
+        }) => {
+            let result = complete_file_transfer_terminal(
+                connected.as_ref(),
+                file_transfer,
+                transfer_id,
+                outcome,
+            )
+            .await;
+            let _ = reply.send(result);
+            false
+        }
         Some(AgentCommand::Stop) | None => {
             clipboard.cancel_all(ClipboardOperationError::Cancelled);
             file_transfer.cancel_all(FileTransferOperationError::Cancelled);
@@ -1096,6 +1284,18 @@ async fn start_file_transfer_offer(
         let _ = reply.send(Err(FileTransferOperationError::ResourceLimit));
         return;
     }
+    if file_transfer
+        .outgoing
+        .values()
+        .any(|pending| pending.offer.transfer_id() == offer.transfer_id())
+        || matches!(
+            file_transfer.source.get(&offer.transfer_id()),
+            Some(SourceFileTransfer::Streaming { .. } | SourceFileTransfer::AwaitingResult { .. })
+        )
+    {
+        let _ = reply.send(Err(FileTransferOperationError::AlreadyActive));
+        return;
+    }
     let Some(connection) = connected.filter(|connection| !connection.reconnecting) else {
         let _ = reply.send(Err(FileTransferOperationError::NotConnected));
         return;
@@ -1133,6 +1333,14 @@ async fn start_file_transfer_offer(
         let _ = reply.send(Err(FileTransferOperationError::Transport));
         return;
     }
+
+    if matches!(
+        file_transfer.source.get(&offer.transfer_id()),
+        Some(SourceFileTransfer::Ready { .. })
+    ) {
+        file_transfer.source.remove(&offer.transfer_id());
+    }
+    let _ = file_transfer.take_cached_result(offer.transfer_id());
 
     file_transfer.outgoing.insert(
         request_id,
@@ -1194,10 +1402,14 @@ async fn complete_file_transfer_ready(
     }
 
     file_transfer.inbound.remove(&request_id);
-    file_transfer.ready.push(ReadyFileTransfer {
-        operation_id,
-        deadline: Instant::now() + FILE_TRANSFER_OPERATION_LIFETIME,
-    });
+    file_transfer
+        .destination_ready
+        .push(DestinationReadyFileTransfer {
+            transfer_id: request.offer().transfer_id(),
+            operation_id,
+            resume_offset,
+            deadline: Instant::now() + FILE_TRANSFER_OPERATION_LIFETIME,
+        });
     Ok(())
 }
 
@@ -1222,6 +1434,266 @@ async fn complete_file_transfer_already_complete(
         .map_err(|_| FileTransferOperationError::Transport)?;
     file_transfer.inbound.remove(&request_id);
     Ok(())
+}
+
+async fn open_file_transfer_stream(
+    connected: Option<&ConnectedRuntime>,
+    file_transfer: &mut FileTransferRuntimeState,
+    transfer_id: TransferId,
+) -> Result<FileTransferSourceStream, FileTransferOperationError> {
+    let (operation_id, resume_offset, deadline) = match file_transfer.source.get(&transfer_id) {
+        Some(SourceFileTransfer::Ready {
+            operation_id,
+            resume_offset,
+            deadline,
+        }) => (*operation_id, *resume_offset, *deadline),
+        Some(_) => return Err(FileTransferOperationError::AlreadyActive),
+        None => return Err(FileTransferOperationError::InvalidStream),
+    };
+    if deadline <= Instant::now() {
+        file_transfer.source.remove(&transfer_id);
+        return Err(FileTransferOperationError::TimedOut);
+    }
+
+    let connection = connected
+        .filter(|connection| !connection.reconnecting)
+        .ok_or(FileTransferOperationError::NotConnected)?;
+    let session_id = connection
+        .status
+        .borrow()
+        .session_id()
+        .ok_or(FileTransferOperationError::NotConnected)?;
+    let stream_id = StreamId::generate().map_err(|_| FileTransferOperationError::Random)?;
+    let open = file_transfer_source_stream_open(session_id, stream_id, operation_id);
+    connection
+        .actor
+        .open_data_stream(open)
+        .await
+        .map_err(|_| FileTransferOperationError::Transport)?;
+
+    file_transfer.source.insert(
+        transfer_id,
+        SourceFileTransfer::Streaming {
+            stream_id,
+            resume_offset,
+        },
+    );
+    Ok(FileTransferSourceStream::new(
+        transfer_id,
+        stream_id,
+        resume_offset,
+    ))
+}
+
+async fn send_file_transfer_chunk(
+    connected: Option<&ConnectedRuntime>,
+    file_transfer: &FileTransferRuntimeState,
+    stream: FileTransferSourceStream,
+    chunk: Vec<u8>,
+) -> Result<(), FileTransferChunkError> {
+    let active = matches!(
+        file_transfer.source.get(&stream.transfer_id()),
+        Some(SourceFileTransfer::Streaming {
+            stream_id,
+            resume_offset,
+        }) if *stream_id == stream.stream_id() && *resume_offset == stream.resume_offset()
+    );
+    if !active {
+        return Err(FileTransferChunkError::Closed(Some(chunk)));
+    }
+    let Some(connection) = connected.filter(|connection| !connection.reconnecting) else {
+        return Err(FileTransferChunkError::Closed(Some(chunk)));
+    };
+    connection
+        .actor
+        .send_stream_chunk(stream.stream_id(), chunk)
+        .await
+        .map_err(map_file_transfer_chunk_error)
+}
+
+async fn finish_file_transfer_stream(
+    connected: Option<&ConnectedRuntime>,
+    file_transfer: &mut FileTransferRuntimeState,
+    stream: FileTransferSourceStream,
+    cancel: bool,
+    reply: oneshot::Sender<Result<FileTransferResult, FileTransferOperationError>>,
+) {
+    if let Some(result) = file_transfer.take_cached_result(stream.transfer_id()) {
+        let _ = reply.send(Ok(result));
+        return;
+    }
+
+    let active = matches!(
+        file_transfer.source.get(&stream.transfer_id()),
+        Some(SourceFileTransfer::Streaming {
+            stream_id,
+            resume_offset,
+        }) if *stream_id == stream.stream_id() && *resume_offset == stream.resume_offset()
+    );
+    if !active {
+        let _ = reply.send(Err(FileTransferOperationError::InvalidStream));
+        return;
+    }
+    let Some(connection) = connected.filter(|connection| !connection.reconnecting) else {
+        let _ = reply.send(Err(FileTransferOperationError::NotConnected));
+        return;
+    };
+
+    let operation = if cancel {
+        connection
+            .actor
+            .cancel_outbound_stream(stream.stream_id())
+            .await
+    } else {
+        connection
+            .actor
+            .finish_data_stream(stream.stream_id())
+            .await
+    };
+    if operation.is_err() {
+        file_transfer.source.remove(&stream.transfer_id());
+        let _ = reply.send(Err(FileTransferOperationError::Transport));
+        return;
+    }
+
+    file_transfer.source.insert(
+        stream.transfer_id(),
+        SourceFileTransfer::AwaitingResult {
+            deadline: Instant::now() + FILE_TRANSFER_OFFER_TIMEOUT,
+            reply,
+        },
+    );
+}
+
+async fn cancel_file_transfer_receive(
+    connected: Option<&ConnectedRuntime>,
+    file_transfer: &mut FileTransferRuntimeState,
+    stream_id: StreamId,
+) -> Result<(), FileTransferOperationError> {
+    let active = file_transfer
+        .inbound_streams
+        .get(&stream_id)
+        .copied()
+        .ok_or(FileTransferOperationError::InvalidStream)?;
+    let connection = connected
+        .filter(|connection| !connection.reconnecting)
+        .ok_or(FileTransferOperationError::NotConnected)?;
+    connection
+        .actor
+        .cancel_inbound_stream(stream_id)
+        .await
+        .map_err(|_| FileTransferOperationError::Transport)?;
+    file_transfer.inbound_streams.remove(&stream_id);
+    remember_terminal_ready(file_transfer, active.transfer_id);
+    Ok(())
+}
+
+async fn complete_file_transfer_terminal(
+    connected: Option<&ConnectedRuntime>,
+    file_transfer: &mut FileTransferRuntimeState,
+    transfer_id: TransferId,
+    outcome: FileTransferTerminalOutcome,
+) -> Result<(), FileTransferOperationError> {
+    let position = file_transfer
+        .terminal_ready
+        .iter()
+        .position(|terminal| terminal.transfer_id == transfer_id)
+        .ok_or(FileTransferOperationError::InvalidStream)?;
+    let connection = connected
+        .filter(|connection| !connection.reconnecting)
+        .ok_or(FileTransferOperationError::NotConnected)?;
+    send_file_transfer_terminal(connection, transfer_id, outcome).await?;
+    file_transfer.terminal_ready.remove(position);
+    Ok(())
+}
+
+async fn send_file_transfer_terminal(
+    connection: &ConnectedRuntime,
+    transfer_id: TransferId,
+    outcome: FileTransferTerminalOutcome,
+) -> Result<(), FileTransferOperationError> {
+    let event =
+        file_transfer_terminal_result_event(file_transfer_terminal_result(transfer_id, outcome))?;
+    connection
+        .actor
+        .send_event(event)
+        .await
+        .map_err(|_| FileTransferOperationError::Transport)
+}
+
+fn remember_terminal_ready(file_transfer: &mut FileTransferRuntimeState, transfer_id: TransferId) {
+    if file_transfer
+        .terminal_ready
+        .iter()
+        .any(|terminal| terminal.transfer_id == transfer_id)
+    {
+        return;
+    }
+    if file_transfer.terminal_ready.len() >= RUNTIME_CAPACITY {
+        file_transfer.terminal_ready.remove(0);
+    }
+    file_transfer
+        .terminal_ready
+        .push(TerminalReadyFileTransfer {
+            transfer_id,
+            deadline: Instant::now() + FILE_TRANSFER_OFFER_TIMEOUT,
+        });
+}
+
+async fn fail_inbound_file_transfer(
+    connected: Option<&ConnectedRuntime>,
+    file_transfer: &mut FileTransferRuntimeState,
+    stream_id: StreamId,
+    transfer_id: TransferId,
+    outcome: FileTransferTerminalOutcome,
+) {
+    file_transfer.inbound_streams.remove(&stream_id);
+    if let Some(connection) = connected.filter(|connection| !connection.reconnecting) {
+        let _ = connection.actor.cancel_inbound_stream(stream_id).await;
+        let _ = send_file_transfer_terminal(connection, transfer_id, outcome).await;
+    }
+}
+
+async fn handle_file_transfer_result_event(
+    event: &crosslab_protocol::Event,
+    connected: Option<&ConnectedRuntime>,
+    file_transfer: &mut FileTransferRuntimeState,
+) {
+    let result = match decode_file_transfer_terminal_result(event) {
+        Ok(Some(result)) => result,
+        Ok(None) => return,
+        Err(_) => {
+            file_transfer.cancel_all(FileTransferOperationError::InvalidResponse);
+            return;
+        }
+    };
+    let transfer_id = result.transfer_id();
+
+    match file_transfer.source.remove(&transfer_id) {
+        Some(SourceFileTransfer::AwaitingResult { reply, .. }) => {
+            let _ = reply.send(Ok(result));
+        }
+        Some(SourceFileTransfer::Streaming { stream_id, .. })
+            if result.outcome() != FileTransferTerminalOutcome::Completed =>
+        {
+            if let Some(connection) = connected.filter(|connection| !connection.reconnecting) {
+                let _ = connection.actor.cancel_outbound_stream(stream_id).await;
+            }
+            file_transfer.cache_result(result);
+        }
+        Some(source @ SourceFileTransfer::Ready { .. })
+            if result.outcome() == FileTransferTerminalOutcome::Completed =>
+        {
+            file_transfer.source.insert(transfer_id, source);
+        }
+        Some(SourceFileTransfer::Ready { .. }) => {
+            file_transfer.cache_result(result);
+        }
+        Some(source @ SourceFileTransfer::Streaming { .. }) => {
+            file_transfer.source.insert(transfer_id, source);
+        }
+        None => {}
+    }
 }
 
 async fn expire_file_transfer_offers(
@@ -1251,11 +1723,13 @@ async fn expire_file_transfer_offers(
     }
 
     let expired_operations = file_transfer
-        .ready
+        .destination_ready
         .iter()
         .filter_map(|ready| (ready.deadline <= now).then_some(ready.operation_id))
         .collect::<Vec<_>>();
-    file_transfer.ready.retain(|ready| ready.deadline > now);
+    file_transfer
+        .destination_ready
+        .retain(|ready| ready.deadline > now);
     for operation_id in expired_operations {
         if let Some(connection) = connected
             .as_ref()
@@ -1264,6 +1738,31 @@ async fn expire_file_transfer_offers(
             let _ = connection.actor.cancel_stream_operation(operation_id).await;
         }
     }
+
+    let expired_source = file_transfer
+        .source
+        .iter()
+        .filter_map(|(transfer_id, source)| match source {
+            SourceFileTransfer::Ready { deadline, .. }
+            | SourceFileTransfer::AwaitingResult { deadline, .. }
+                if *deadline <= now =>
+            {
+                Some(*transfer_id)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    for transfer_id in expired_source {
+        if let Some(SourceFileTransfer::AwaitingResult { reply, .. }) =
+            file_transfer.source.remove(&transfer_id)
+        {
+            let _ = reply.send(Err(FileTransferOperationError::TimedOut));
+        }
+    }
+
+    file_transfer
+        .terminal_ready
+        .retain(|terminal| terminal.deadline > now);
 }
 
 async fn handle_runtime_event(
@@ -1278,9 +1777,7 @@ async fn handle_runtime_event(
             let result = if request.capability_id().as_str() == FILE_TRANSFER_CAPABILITY_ID {
                 match decode_file_transfer(&request) {
                     Ok(platform_request) => {
-                        if file_transfer.inbound.len() + file_transfer.ready.len()
-                            >= RUNTIME_CAPACITY
-                        {
+                        if file_transfer.destination_capacity_used() >= RUNTIME_CAPACITY {
                             Some(file_transfer_resource_failure())
                         } else {
                             match file_transfer.requests_tx.try_send(platform_request.clone()) {
@@ -1340,7 +1837,28 @@ async fn handle_runtime_event(
                 let result = decode_clipboard_response(pending.kind(), response.result());
                 pending.finish(result);
             } else if let Some(pending) = file_transfer.outgoing.remove(&response.request_id()) {
-                let result = decode_file_transfer_response(&pending.offer, response.result());
+                let mut result = decode_file_transfer_response(&pending.offer, response.result());
+                if let Ok(FileTransferAcceptance::Ready {
+                    transfer_id,
+                    resume_offset,
+                    operation_id,
+                }) = result.as_ref()
+                {
+                    if file_transfer.source.contains_key(transfer_id)
+                        || file_transfer.source.len() < RUNTIME_CAPACITY
+                    {
+                        file_transfer.source.insert(
+                            *transfer_id,
+                            SourceFileTransfer::Ready {
+                                operation_id: *operation_id,
+                                resume_offset: *resume_offset,
+                                deadline: Instant::now() + FILE_TRANSFER_OPERATION_LIFETIME,
+                            },
+                        );
+                    } else {
+                        result = Err(FileTransferOperationError::ResourceLimit);
+                    }
+                }
                 let _ = pending.reply.send(result);
             }
         }
@@ -1352,15 +1870,115 @@ async fn handle_runtime_event(
             clipboard.cancel_all(ClipboardOperationError::Cancelled);
             file_transfer.cancel_all(FileTransferOperationError::Cancelled);
         }
-        NodeEvent::Stream(crosslab_runtime::RuntimeStreamEvent::Opened(stream)) => {
-            file_transfer
-                .ready
-                .retain(|ready| ready.operation_id != stream.operation_id());
+        NodeEvent::Event(event) => {
+            handle_file_transfer_result_event(&event, connected.as_ref(), file_transfer).await;
         }
-        NodeEvent::CapabilitiesUpdated
-        | NodeEvent::Event(_)
-        | NodeEvent::ProtocolFailure(_)
-        | NodeEvent::Stream(_) => {}
+        NodeEvent::Stream(RuntimeStreamEvent::Opened(stream)) => {
+            let Some(position) = file_transfer
+                .destination_ready
+                .iter()
+                .position(|ready| ready.operation_id == stream.operation_id())
+            else {
+                return;
+            };
+            let ready = file_transfer.destination_ready.remove(position);
+            let stream_id = stream.stream_id();
+            file_transfer.inbound_streams.insert(
+                stream_id,
+                ActiveInboundFileTransfer {
+                    transfer_id: ready.transfer_id,
+                },
+            );
+            let event = FileTransferDataEvent::Opened {
+                transfer_id: ready.transfer_id,
+                stream_id,
+                resume_offset: ready.resume_offset,
+            };
+            if file_transfer.data_tx.try_send(event).is_err() {
+                fail_inbound_file_transfer(
+                    connected.as_ref(),
+                    file_transfer,
+                    stream_id,
+                    ready.transfer_id,
+                    FileTransferTerminalOutcome::StorageFailed,
+                )
+                .await;
+            }
+        }
+        NodeEvent::Stream(RuntimeStreamEvent::Chunk(chunk)) => {
+            let stream_id = chunk.stream_id();
+            let Some(active) = file_transfer.inbound_streams.get(&stream_id).copied() else {
+                return;
+            };
+            let event = FileTransferDataEvent::Chunk(FileTransferDataChunk::new(
+                active.transfer_id,
+                stream_id,
+                chunk.into_bytes(),
+            ));
+            if file_transfer.data_tx.try_send(event).is_err() {
+                fail_inbound_file_transfer(
+                    connected.as_ref(),
+                    file_transfer,
+                    stream_id,
+                    active.transfer_id,
+                    FileTransferTerminalOutcome::StorageFailed,
+                )
+                .await;
+            }
+        }
+        NodeEvent::Stream(RuntimeStreamEvent::Finished(stream_id)) => {
+            let Some(active) = file_transfer.inbound_streams.remove(&stream_id) else {
+                return;
+            };
+            remember_terminal_ready(file_transfer, active.transfer_id);
+            let event = FileTransferDataEvent::Finished {
+                transfer_id: active.transfer_id,
+                stream_id,
+            };
+            if file_transfer.data_tx.try_send(event).is_err() {
+                file_transfer
+                    .terminal_ready
+                    .retain(|terminal| terminal.transfer_id != active.transfer_id);
+                if let Some(connection) = connected
+                    .as_ref()
+                    .filter(|connection| !connection.reconnecting)
+                {
+                    let _ = send_file_transfer_terminal(
+                        connection,
+                        active.transfer_id,
+                        FileTransferTerminalOutcome::StorageFailed,
+                    )
+                    .await;
+                }
+            }
+        }
+        NodeEvent::Stream(RuntimeStreamEvent::Cancelled(stream_id)) => {
+            let Some(active) = file_transfer.inbound_streams.remove(&stream_id) else {
+                return;
+            };
+            remember_terminal_ready(file_transfer, active.transfer_id);
+            let event = FileTransferDataEvent::Cancelled {
+                transfer_id: active.transfer_id,
+                stream_id,
+            };
+            if file_transfer.data_tx.try_send(event).is_err() {
+                file_transfer
+                    .terminal_ready
+                    .retain(|terminal| terminal.transfer_id != active.transfer_id);
+                if let Some(connection) = connected
+                    .as_ref()
+                    .filter(|connection| !connection.reconnecting)
+                {
+                    let _ = send_file_transfer_terminal(
+                        connection,
+                        active.transfer_id,
+                        FileTransferTerminalOutcome::Cancelled,
+                    )
+                    .await;
+                }
+            }
+        }
+        NodeEvent::CapabilitiesUpdated | NodeEvent::ProtocolFailure(_) => {}
     }
 }
 

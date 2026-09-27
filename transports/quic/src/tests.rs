@@ -289,6 +289,29 @@ async fn uni_stream_signals_open_chunk_and_finish_without_polling() {
 }
 
 #[tokio::test]
+async fn normal_uni_stream_finish_never_degrades_to_cancel() {
+    let pair = promoted_loopback_transport_pair_with_config(QuicTransportConfig::default()).await;
+
+    for index in 0_u8..16 {
+        let mut send = pair.client.try_open_uni_stream(vec![index]).unwrap();
+        send.try_send_chunk(vec![index.wrapping_add(1)]).unwrap();
+        send.finish();
+
+        let incoming = eventually_accept(&pair.server).await;
+        assert_eq!(incoming.opening_frame(), &[index]);
+        let (_, mut recv) = incoming.into_parts();
+        assert_eq!(
+            eventually_receive_chunk(recv.as_mut()).await,
+            vec![index.wrapping_add(1)]
+        );
+        eventually_finished(recv.as_mut()).await;
+    }
+
+    pair.client.shutdown().await;
+    pair.server.shutdown().await;
+}
+
+#[tokio::test]
 async fn uni_stream_open_saturation_preserves_opening_frame() {
     let config = QuicTransportConfig::default();
     let pair = promoted_loopback_transport_pair_with_config(config).await;
