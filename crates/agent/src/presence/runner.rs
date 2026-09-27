@@ -16,10 +16,12 @@ use crosslab_policy::{
 };
 use crosslab_protocol::{
     CapabilityAdvertisement, FILE_TRANSFER_CAPABILITY_ID, FeatureSet, FileTransferAcceptance,
-    FileTransferOffer, ProtocolRange, RequestId,
+    FileTransferOffer, FileTransferResult, FileTransferTerminalOutcome, ProtocolRange, RequestId,
+    StreamId, TransferId,
 };
 use crosslab_runtime::{
     NodeEvent, RuntimeActor, RuntimeActorConfig, RuntimeActorSession, RuntimeNode,
+    RuntimeStreamEvent,
 };
 use crosslab_transport_quic::{
     AuthenticatedQuicSession, QuicSessionAuthConfig, QuicSessionError, QuicSessionTimeouts,
@@ -44,17 +46,24 @@ use crate::{
         write_completion as clipboard_write_completion, write_request as clipboard_write_request,
     },
     file_transfer::{
-        FileTransferAvailability, FileTransferOperationError, FileTransferRequest,
-        advertisement as file_transfer_advertisement,
+        FileTransferAvailability, FileTransferChunkError, FileTransferDataChunk,
+        FileTransferDataEvent, FileTransferOperationError, FileTransferRequest,
+        FileTransferSourceStream, advertisement as file_transfer_advertisement,
         already_complete_response as file_transfer_already_complete_response,
         capability_negotiated as file_transfer_capability_negotiated,
-        decode_inbound as decode_file_transfer, decode_response as decode_file_transfer_response,
+        decode_inbound as decode_file_transfer,
+        decode_response as decode_file_transfer_response,
+        decode_terminal_result_event as decode_file_transfer_terminal_result,
         internal_failure as file_transfer_internal_failure,
         local_capabilities as file_transfer_local_capabilities,
+        map_chunk_error as map_file_transfer_chunk_error,
         offer_request as file_transfer_offer_request,
         ready_response as file_transfer_ready_response,
         resource_failure as file_transfer_resource_failure,
         result_subscription as file_transfer_result_subscription,
+        source_stream_open as file_transfer_source_stream_open,
+        terminal_result as file_transfer_terminal_result,
+        terminal_result_event as file_transfer_terminal_result_event,
     },
 };
 
@@ -138,6 +147,32 @@ pub(super) enum AgentCommand {
         request_id: RequestId,
         reply: oneshot::Sender<Result<(), FileTransferOperationError>>,
     },
+    FileTransferOpen {
+        transfer_id: TransferId,
+        reply: oneshot::Sender<Result<FileTransferSourceStream, FileTransferOperationError>>,
+    },
+    FileTransferChunk {
+        stream: FileTransferSourceStream,
+        chunk: Vec<u8>,
+        reply: oneshot::Sender<Result<(), FileTransferChunkError>>,
+    },
+    FileTransferFinish {
+        stream: FileTransferSourceStream,
+        reply: oneshot::Sender<Result<FileTransferResult, FileTransferOperationError>>,
+    },
+    FileTransferCancelSend {
+        stream: FileTransferSourceStream,
+        reply: oneshot::Sender<Result<FileTransferResult, FileTransferOperationError>>,
+    },
+    FileTransferCancelReceive {
+        stream_id: StreamId,
+        reply: oneshot::Sender<Result<(), FileTransferOperationError>>,
+    },
+    FileTransferTerminal {
+        transfer_id: TransferId,
+        outcome: FileTransferTerminalOutcome,
+        reply: oneshot::Sender<Result<(), FileTransferOperationError>>,
+    },
     Stop,
 }
 
@@ -166,6 +201,7 @@ pub(super) struct AgentChannels {
     permissions_tx: watch::Sender<PermissionSnapshot>,
     clipboard_requests_tx: mpsc::Sender<ClipboardRequest>,
     file_transfer_requests_tx: mpsc::Sender<FileTransferRequest>,
+    file_transfer_data_tx: mpsc::Sender<FileTransferDataEvent>,
     availability: RuntimeAvailability,
 }
 
@@ -177,6 +213,7 @@ impl AgentChannels {
         permissions_tx: watch::Sender<PermissionSnapshot>,
         clipboard_requests_tx: mpsc::Sender<ClipboardRequest>,
         file_transfer_requests_tx: mpsc::Sender<FileTransferRequest>,
+        file_transfer_data_tx: mpsc::Sender<FileTransferDataEvent>,
         availability: RuntimeAvailability,
     ) -> Self {
         Self {
@@ -186,6 +223,7 @@ impl AgentChannels {
             permissions_tx,
             clipboard_requests_tx,
             file_transfer_requests_tx,
+            file_transfer_data_tx,
             availability,
         }
     }
@@ -312,30 +350,65 @@ struct PendingFileOffer {
     reply: oneshot::Sender<Result<FileTransferAcceptance, FileTransferOperationError>>,
 }
 
-struct ReadyFileTransfer {
+struct DestinationReadyFileTransfer {
+    transfer_id: TransferId,
     operation_id: OperationId,
+    resume_offset: u64,
     deadline: Instant,
+}
+
+#[derive(Clone, Copy)]
+struct ActiveInboundFileTransfer {
+    transfer_id: TransferId,
+    resume_offset: u64,
+}
+
+enum SourceFileTransfer {
+    Ready {
+        operation_id: OperationId,
+        resume_offset: u64,
+        deadline: Instant,
+    },
+    Streaming {
+        stream_id: StreamId,
+        resume_offset: u64,
+    },
+    AwaitingResult {
+        deadline: Instant,
+        reply: oneshot::Sender<Result<FileTransferResult, FileTransferOperationError>>,
+    },
 }
 
 struct FileTransferRuntimeState {
     requests_tx: mpsc::Sender<FileTransferRequest>,
+    data_tx: mpsc::Sender<FileTransferDataEvent>,
     availability: FileTransferAvailability,
     outgoing: BTreeMap<RequestId, PendingFileOffer>,
     inbound: BTreeMap<RequestId, FileTransferRequest>,
-    ready: Vec<ReadyFileTransfer>,
+    destination_ready: Vec<DestinationReadyFileTransfer>,
+    inbound_streams: BTreeMap<StreamId, ActiveInboundFileTransfer>,
+    terminal_ready: Vec<TransferId>,
+    source: BTreeMap<TransferId, SourceFileTransfer>,
+    completed_results: Vec<FileTransferResult>,
 }
 
 impl FileTransferRuntimeState {
     fn new(
         requests_tx: mpsc::Sender<FileTransferRequest>,
+        data_tx: mpsc::Sender<FileTransferDataEvent>,
         availability: FileTransferAvailability,
     ) -> Self {
         Self {
             requests_tx,
+            data_tx,
             availability,
             outgoing: BTreeMap::new(),
             inbound: BTreeMap::new(),
-            ready: Vec::with_capacity(RUNTIME_CAPACITY),
+            destination_ready: Vec::with_capacity(RUNTIME_CAPACITY),
+            inbound_streams: BTreeMap::new(),
+            terminal_ready: Vec::with_capacity(RUNTIME_CAPACITY),
+            source: BTreeMap::new(),
+            completed_results: Vec::with_capacity(RUNTIME_CAPACITY),
         }
     }
 
@@ -343,15 +416,74 @@ impl FileTransferRuntimeState {
         for (_, pending) in core::mem::take(&mut self.outgoing) {
             let _ = pending.reply.send(Err(error));
         }
+        for (_, source) in core::mem::take(&mut self.source) {
+            if let SourceFileTransfer::AwaitingResult { reply, .. } = source {
+                let _ = reply.send(Err(error));
+            }
+        }
         self.inbound.clear();
-        self.ready.clear();
+        self.destination_ready.clear();
+        self.inbound_streams.clear();
+        self.terminal_ready.clear();
+        self.completed_results.clear();
+    }
+
+    fn source_capacity_used(&self) -> usize {
+        self.outgoing.len() + self.source.len()
+    }
+
+    fn destination_capacity_used(&self) -> usize {
+        self.inbound.len()
+            + self.destination_ready.len()
+            + self.inbound_streams.len()
+            + self.terminal_ready.len()
+    }
+
+    fn has_source_transfer(&self, transfer_id: TransferId) -> bool {
+        self.source.contains_key(&transfer_id)
+            || self
+                .outgoing
+                .values()
+                .any(|pending| pending.offer.transfer_id() == transfer_id)
+    }
+
+    fn cache_result(&mut self, result: FileTransferResult) {
+        if self
+            .completed_results
+            .iter()
+            .any(|current| current.transfer_id() == result.transfer_id())
+        {
+            return;
+        }
+        if self.completed_results.len() >= RUNTIME_CAPACITY {
+            self.completed_results.remove(0);
+        }
+        self.completed_results.push(result);
+    }
+
+    fn take_cached_result(&mut self, transfer_id: TransferId) -> Option<FileTransferResult> {
+        let position = self
+            .completed_results
+            .iter()
+            .position(|result| result.transfer_id() == transfer_id)?;
+        Some(self.completed_results.remove(position))
     }
 
     fn next_deadline(&self) -> Option<Instant> {
+        let source_deadlines = self.source.values().filter_map(|source| match source {
+            SourceFileTransfer::Ready { deadline, .. }
+            | SourceFileTransfer::AwaitingResult { deadline, .. } => Some(*deadline),
+            SourceFileTransfer::Streaming { .. } => None,
+        });
         self.outgoing
             .values()
             .map(|pending| pending.deadline)
-            .chain(self.ready.iter().map(|ready| ready.deadline))
+            .chain(
+                self.destination_ready
+                    .iter()
+                    .map(|ready| ready.deadline),
+            )
+            .chain(source_deadlines)
             .min()
     }
 }
@@ -381,12 +513,16 @@ pub(super) async fn run_agent(
         permissions_tx,
         clipboard_requests_tx,
         file_transfer_requests_tx,
+        file_transfer_data_tx,
         availability,
     } = channels;
     let (connect_tx, mut connect_rx) = mpsc::channel(CONNECT_RESULT_CAPACITY);
     let mut clipboard = ClipboardRuntimeState::new(clipboard_requests_tx, availability.clipboard);
-    let mut file_transfer =
-        FileTransferRuntimeState::new(file_transfer_requests_tx, availability.file_transfer);
+    let mut file_transfer = FileTransferRuntimeState::new(
+        file_transfer_requests_tx,
+        file_transfer_data_tx,
+        availability.file_transfer,
+    );
     let mut candidates = BTreeMap::<String, CandidateState>::new();
     let mut connected: Option<ConnectedRuntime> = None;
     let mut connecting_instance: Option<String> = None;
