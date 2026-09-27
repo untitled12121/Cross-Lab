@@ -69,7 +69,7 @@ Any incompatible change to ADR-0020 now requires a new capability profile/versio
 
 ## Task 3 — Shared transfer capability runtime — Active
 
-PR #65 implemented the accepted bounded offer/accept/result payload contract and focused protocol specification. PR #66 then connected Quinn's existing bounded stream-ready signal to `RuntimeActor` with a monotonic session-local operation clock. The active `phase2-file-transfer-control-runtime` milestone adds exact v2 capability registration, bounded offer/accept correlation, result subscription before the offer, default-disabled product availability, and fresh destination `SingleStream` authority minted only after current exact authorization. Unused `Ready` authority is bounded and expires locally.
+PR #65 implemented the accepted bounded offer/accept/result payload contract and focused protocol specification. PR #66 then connected Quinn's existing bounded stream-ready signal to `RuntimeActor` with a monotonic session-local operation clock. The active `phase2-file-transfer-control-runtime` milestone adds exact v2 capability registration, bounded offer/accept correlation, result subscription before the offer, default-disabled product availability, and fresh destination `SingleStream` authority minted only after current exact authorization. Pending inbound offers and unused `Ready` authority share one hard runtime-capacity budget; unused authority also expires locally.
 
 After ADR-0020 acceptance:
 
