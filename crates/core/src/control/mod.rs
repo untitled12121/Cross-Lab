@@ -4,8 +4,9 @@ use std::{
 };
 
 use crosslab_policy::{
-    ApprovalInstant, AuthorizationContext, CapabilityId, DecisionEffect, DecisionReason,
-    LocalCapability, NetworkClass, PolicyState, TrustRecord, TrustState,
+    ApprovalInstant, AuthorizationContext, AuthorizationGrant, CapabilityId, CapabilityVersion,
+    DecisionEffect, DecisionReason, LocalCapability, NetworkClass, OperationName, PolicyState,
+    TrustRecord, TrustState,
 };
 use crosslab_protocol::{
     ControlEnvelope, ControlRequest, ControlResponse, ControlSequence, EnvelopeBody, Event,
@@ -311,14 +312,11 @@ impl ControlDispatcher {
         network_class: NetworkClass,
         local_time: ApprovalInstant,
     ) -> Result<InboundControl, ControlDispatchError> {
-        let negotiated = context
-            .negotiated_capabilities()
-            .iter()
-            .find(|capability| capability.capability_id() == request.capability_id())
-            .ok_or(ControlDispatchError::CapabilityUnsupported)?;
-        if negotiated.version() != request.capability_version() {
-            return Err(ControlDispatchError::CapabilityVersionIncompatible);
-        }
+        self.validate_negotiated_capability(
+            context,
+            request.capability_id(),
+            request.capability_version(),
+        )?;
 
         if self.inbound_requests.contains(&request.request_id())
             || self.completed_inbound.contains(&request.request_id())
@@ -326,14 +324,89 @@ impl ControlDispatcher {
             return Err(ControlDispatchError::DuplicateRequest);
         }
 
+        let _ = self.authorize_local_operation(
+            context,
+            request.capability_id(),
+            request.capability_version(),
+            request.operation_name(),
+            policy,
+            local_capabilities,
+            peer_trust,
+            network_class,
+            local_time,
+        )?;
+
+        self.reserve_inbound_slot()?;
+        self.inbound_requests.insert(request.request_id());
+        Ok(InboundControl::Request(request.clone()))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn authorize_operation(
+        &self,
+        context: &SessionContext,
+        capability_id: &CapabilityId,
+        capability_version: CapabilityVersion,
+        operation: &OperationName,
+        policy: &PolicyState,
+        local_capabilities: &[LocalCapability],
+        peer_trust: &TrustRecord,
+        network_class: NetworkClass,
+        local_time: ApprovalInstant,
+    ) -> Result<AuthorizationGrant, ControlDispatchError> {
+        self.validate_peer_trust(context, peer_trust)?;
+        self.validate_negotiated_capability(context, capability_id, capability_version)?;
+        self.authorize_local_operation(
+            context,
+            capability_id,
+            capability_version,
+            operation,
+            policy,
+            local_capabilities,
+            peer_trust,
+            network_class,
+            local_time,
+        )
+    }
+
+    fn validate_negotiated_capability(
+        &self,
+        context: &SessionContext,
+        capability_id: &CapabilityId,
+        capability_version: CapabilityVersion,
+    ) -> Result<(), ControlDispatchError> {
+        let negotiated = context
+            .negotiated_capabilities()
+            .iter()
+            .find(|capability| capability.capability_id() == capability_id)
+            .ok_or(ControlDispatchError::CapabilityUnsupported)?;
+        if negotiated.version() != capability_version {
+            return Err(ControlDispatchError::CapabilityVersionIncompatible);
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn authorize_local_operation(
+        &self,
+        context: &SessionContext,
+        capability_id: &CapabilityId,
+        capability_version: CapabilityVersion,
+        operation: &OperationName,
+        policy: &PolicyState,
+        local_capabilities: &[LocalCapability],
+        peer_trust: &TrustRecord,
+        network_class: NetworkClass,
+        local_time: ApprovalInstant,
+    ) -> Result<AuthorizationGrant, ControlDispatchError> {
         let local = local_capabilities
             .iter()
-            .find(|capability| capability.capability_id() == request.capability_id())
+            .find(|capability| capability.capability_id() == capability_id)
             .ok_or(ControlDispatchError::CapabilityUnsupported)?;
         if !local.runtime_available() {
             return Err(ControlDispatchError::CapabilityUnsupported);
         }
-        if !local.supports(request.capability_version()) {
+        if !local.supports(capability_version) {
             return Err(ControlDispatchError::CapabilityVersionIncompatible);
         }
 
@@ -341,9 +414,9 @@ impl ControlDispatcher {
             context.peer_device_id(),
             context.local_device_id(),
             context.session_id(),
-            request.capability_id().clone(),
-            request.capability_version(),
-            request.operation_name().clone(),
+            capability_id.clone(),
+            capability_version,
+            operation.clone(),
             peer_trust.state(),
             peer_trust.trust_revision(),
             local.clone(),
@@ -353,15 +426,15 @@ impl ControlDispatcher {
         let decision = policy.evaluate(&authorization);
         match decision.effect() {
             DecisionEffect::Deny => {
-                return Err(ControlDispatchError::AuthorizationDenied(decision.reason()));
+                Err(ControlDispatchError::AuthorizationDenied(decision.reason()))
             }
-            DecisionEffect::Ask => return Err(ControlDispatchError::ApprovalRequired),
-            DecisionEffect::Allow => {}
+            DecisionEffect::Ask => Err(ControlDispatchError::ApprovalRequired),
+            DecisionEffect::Allow => decision
+                .into_grant()
+                .ok_or(ControlDispatchError::AuthorizationDenied(
+                    DecisionReason::Allowed,
+                )),
         }
-
-        self.reserve_inbound_slot()?;
-        self.inbound_requests.insert(request.request_id());
-        Ok(InboundControl::Request(request.clone()))
     }
 
     fn reserve_inbound_slot(&mut self) -> Result<(), ControlDispatchError> {
