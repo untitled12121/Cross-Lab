@@ -7,8 +7,7 @@ use std::{
 
 use crosslab_core::{
     ChannelBinding, ConnectionMetadata, ControlReceiveError, ControlSendError, EventSubscription,
-    IncomingUniStream,
-    LogicalSession, SessionActivation, SessionAuthRole, SessionAuthTranscriptV1,
+    IncomingUniStream, LogicalSession, SessionActivation, SessionAuthRole, SessionAuthTranscriptV1,
     SessionHandshakeSide, SessionState, StreamAcceptError, StreamOpenError, StreamReceiveError,
     TransportConnection, TransportReceiveStream, TransportSecurityClass,
 };

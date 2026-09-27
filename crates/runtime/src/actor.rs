@@ -5,7 +5,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crosslab_core::{ControlReceiveError, EventSubscription, StreamAcceptError, StreamReceiveError};
+use crosslab_core::{
+    ControlReceiveError, EventSubscription, StreamAcceptError, StreamReceiveError,
+};
 use crosslab_policy::{
     ApprovalInstant, CapabilityId, CapabilityVersion, OperationId, OperationName, PolicyState,
     SessionId, TrustRecord, UsePolicy,

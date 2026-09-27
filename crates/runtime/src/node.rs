@@ -3,8 +3,7 @@ use std::{num::NonZeroUsize, sync::Arc};
 use crosslab_core::{
     ControlDispatchError, ControlDispatcher, ControlReceiveError, ControlSendError,
     EventSubscription, InboundControl, LogicalSession, SessionError, SessionState,
-    StreamAcceptError, StreamAdmissionError, StreamOpenError, StreamSendError,
-    TransportConnection,
+    StreamAcceptError, StreamAdmissionError, StreamOpenError, StreamSendError, TransportConnection,
 };
 use crosslab_identity::OwnerAuthorityState;
 use crosslab_policy::{
@@ -190,17 +189,13 @@ impl<'a> RuntimeNode<'a> {
                 created_at,
             )
             .map_err(NodeError::Dispatch)?;
-        let operation = AuthorizedOperation::issue(
-            grant,
-            created_at.ticks(),
-            expires_at.ticks(),
-            use_policy,
-        )
-        .map_err(|error| {
-            NodeError::Stream(RuntimeStreamError::Admission(
-                StreamAdmissionError::Operation(error),
-            ))
-        })?;
+        let operation =
+            AuthorizedOperation::issue(grant, created_at.ticks(), expires_at.ticks(), use_policy)
+                .map_err(|error| {
+                    NodeError::Stream(RuntimeStreamError::Admission(
+                        StreamAdmissionError::Operation(error),
+                    ))
+                })?;
         let operation_id = operation.id();
         self.register_stream_operation(operation)?;
         Ok(operation_id)
