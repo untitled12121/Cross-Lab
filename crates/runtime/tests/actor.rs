@@ -6,8 +6,8 @@ use std::{
 };
 
 use crosslab_core::{
-    ChannelBinding, ConnectionMetadata, ControlReceiveError, ControlSendError, IncomingUniStream,
-    LogicalSession, SessionActivation, SessionAuthRole, SessionAuthTranscriptV1,
+    ChannelBinding, ConnectionMetadata, ControlReceiveError, ControlSendError, EventSubscription,
+    IncomingUniStream, LogicalSession, SessionActivation, SessionAuthRole, SessionAuthTranscriptV1,
     SessionHandshakeSide, SessionState, StreamAcceptError, StreamOpenError, StreamReceiveError,
     TransportConnection, TransportReceiveStream, TransportSecurityClass,
 };
@@ -23,8 +23,9 @@ use crosslab_policy::{
 };
 use crosslab_protocol::{
     CapabilityAdvertisement, CapabilityAdvertisementEntry, ControlEnvelope, DataStreamOpen,
-    EnvelopeBody, FeatureSet, ProtocolRange, ProtocolVersion, SessionClose, SessionCloseReason,
-    StreamDirection, StreamId, encode_control_envelope, encode_data_stream_open,
+    EnvelopeBody, EventType, FeatureSet, ProtocolRange, ProtocolVersion, SessionClose,
+    SessionCloseReason, StreamDirection, StreamId, encode_control_envelope,
+    encode_data_stream_open,
 };
 use crosslab_runtime::{
     ConnectivityState, RuntimeActor, RuntimeActorConfig, RuntimeActorError, RuntimeActorSession,
@@ -528,6 +529,56 @@ fn stream_readiness_drives_inbound_stream_events_without_polling() {
             finished,
             crosslab_runtime::NodeEvent::Stream(crosslab_runtime::RuntimeStreamEvent::Finished(_))
         ));
+
+        actor.stop().await.unwrap();
+    });
+}
+
+#[test]
+fn stream_authority_commands_issue_and_cancel_exact_operation() {
+    runtime().block_on(async {
+        let fixture = Fixture::new();
+        let (session, _, _) = fixture.stream_actor_session([0x9f; 32], 0xa0);
+        let mut actor = RuntimeActor::new(config(4));
+        actor.start(session).unwrap();
+
+        let operation_id = actor
+            .issue_stream_operation(
+                CapabilityId::parse("files.transfer").unwrap(),
+                CapabilityVersion::new(2, 0),
+                OperationName::parse("receive").unwrap(),
+                Duration::from_secs(30),
+                UsePolicy::SingleStream,
+            )
+            .await
+            .unwrap();
+        actor.cancel_stream_operation(operation_id).await.unwrap();
+        assert_eq!(
+            actor.cancel_stream_operation(operation_id).await,
+            Err(RuntimeActorError::OperationRejected)
+        );
+
+        actor.stop().await.unwrap();
+    });
+}
+
+#[test]
+fn event_subscription_commands_are_actor_owned_and_bounded() {
+    runtime().block_on(async {
+        let fixture = Fixture::new();
+        let (session, _) = fixture.actor_session([0x9d; 32], 0x9e);
+        let mut actor = RuntimeActor::new(config(1));
+        actor.start(session).unwrap();
+
+        let subscription = EventSubscription::new(
+            CapabilityId::parse("files.transfer").unwrap(),
+            EventType::parse("files.transfer.result").unwrap(),
+        );
+
+        assert!(actor.subscribe_event(subscription.clone()).await.unwrap());
+        assert!(!actor.subscribe_event(subscription.clone()).await.unwrap());
+        assert!(actor.unsubscribe_event(subscription.clone()).await.unwrap());
+        assert!(!actor.unsubscribe_event(subscription).await.unwrap());
 
         actor.stop().await.unwrap();
     });

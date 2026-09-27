@@ -16,7 +16,7 @@ use crosslab_identity::{
     OwnerRootRecord, RootSuccessor,
 };
 use crosslab_policy::{
-    AuthorizationContext, AuthorizedOperation, CapabilityId, CapabilityVersion,
+    ApprovalInstant, AuthorizationContext, AuthorizedOperation, CapabilityId, CapabilityVersion,
     CapabilityVersionRange, LocalCapability, NetworkClass, OperationName, PairingTrustTransition,
     PolicyState, RuleEffect, TransitionId, TrustRecord, TrustState, TrustTransition, UsePolicy,
 };
@@ -659,6 +659,90 @@ fn stream_policy_and_operation(
     let grant = policy.evaluate(&authorization).into_grant().unwrap();
     let operation = AuthorizedOperation::issue(grant, 10, 20, UsePolicy::SingleStream).unwrap();
     (policy, operation)
+}
+
+#[test]
+fn runtime_issues_and_cancels_exact_stream_authority() {
+    let fixture = Fixture::new();
+    let transport = TestTransport::new([0x7d; 32]);
+    let mut session = fixture.active_session(&transport);
+    activate_files_capability(&mut session);
+    let (policy, _) = stream_policy_and_operation(&fixture, &session);
+    let session_id = session.context().unwrap().session_id();
+    let mut runtime = RuntimeNode::new(
+        session,
+        &transport,
+        policy,
+        vec![files_local_capability()],
+        NetworkClass::Local,
+        NonZeroUsize::new(4).unwrap(),
+    )
+    .unwrap();
+
+    let operation_id = runtime
+        .issue_stream_operation(
+            &fixture.peer_trust,
+            files_capability(),
+            CapabilityVersion::new(1, 0),
+            receive_operation(),
+            ApprovalInstant::from_ticks(10),
+            ApprovalInstant::from_ticks(20),
+            UsePolicy::SingleStream,
+        )
+        .unwrap();
+    runtime.cancel_stream_operation(operation_id).unwrap();
+
+    let open = DataStreamOpen::new(
+        session_id,
+        StreamId::from_bytes([0x7e; 16]),
+        operation_id,
+        files_capability(),
+        CapabilityVersion::new(1, 0),
+        receive_operation(),
+        StreamDirection::SourceToDestination,
+        0,
+    );
+    transport.push_incoming_stream(encode_data_stream_open(&open).unwrap(), Vec::new());
+    assert!(matches!(
+        runtime.receive_stream_one(&fixture.peer_trust, 11),
+        Err(NodeError::Stream(crate::RuntimeStreamError::Admission(
+            crosslab_core::StreamAdmissionError::OperationNotFound
+        )))
+    ));
+}
+
+#[test]
+fn runtime_refuses_stream_authority_without_exact_allow() {
+    let fixture = Fixture::new();
+    let transport = TestTransport::new([0x7f; 32]);
+    let mut session = fixture.active_session(&transport);
+    activate_files_capability(&mut session);
+    let mut runtime = RuntimeNode::new(
+        session,
+        &transport,
+        PolicyState::new(),
+        vec![files_local_capability()],
+        NetworkClass::Local,
+        NonZeroUsize::new(4).unwrap(),
+    )
+    .unwrap();
+
+    assert!(matches!(
+        runtime.issue_stream_operation(
+            &fixture.peer_trust,
+            files_capability(),
+            CapabilityVersion::new(1, 0),
+            receive_operation(),
+            ApprovalInstant::from_ticks(10),
+            ApprovalInstant::from_ticks(20),
+            UsePolicy::SingleStream,
+        ),
+        Err(NodeError::Dispatch(
+            crosslab_core::ControlDispatchError::AuthorizationDenied(
+                crosslab_policy::DecisionReason::NoMatchingRule
+            )
+        ))
+    ));
 }
 
 #[test]

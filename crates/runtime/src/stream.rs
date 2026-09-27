@@ -6,7 +6,7 @@ use crosslab_core::{
     StreamAdmissionError, StreamOpenError, StreamReceiveError, StreamSendError,
     TransportConnection, TransportReceiveStream, TransportSendStream,
 };
-use crosslab_policy::{AuthorizedOperation, PolicyState, TrustRecord};
+use crosslab_policy::{AuthorizedOperation, OperationId, PolicyState, TrustRecord};
 use crosslab_protocol::{
     DataStreamOpen, ProtocolWireError, StreamId, decode_data_stream_open, encode_data_stream_open,
 };
@@ -287,6 +287,14 @@ impl RuntimeStreams {
         let mut inbound = self.inbound.remove(position);
         inbound.stream.cancel();
         self.admission.cancel_stream(stream_id)?;
+        Ok(())
+    }
+
+    pub(crate) fn cancel_operation(
+        &mut self,
+        operation_id: OperationId,
+    ) -> Result<(), RuntimeStreamError> {
+        self.admission.cancel_operation(operation_id)?;
         Ok(())
     }
 

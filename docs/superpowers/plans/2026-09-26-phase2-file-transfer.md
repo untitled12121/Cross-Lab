@@ -1,6 +1,6 @@
 # Phase 2 Resumable File Transfer
 
-**Status:** Active — Task 1 implemented; ADR-0020 accepted; PR #65 payload contract merged; Task 3 runtime integration active
+**Status:** Active — Task 1 implemented; ADR-0020 accepted; PR #65 payload contract + PR #66 actor stream readiness merged; Task 3 control/authorization runtime active
 **Date:** 2026-09-26
 **Base:** PR #61 merged as `61ae275356201245a7dcac95d11bd598d2c3045e`  
 **Foundation:** PR #62 merged as `e338d10911ccdb908bc495150f048503086c0ce2`; exact implementation head `e663909443d208c712ccb7f6e1e74fb8dab26ab8` passed full Rust + Android CI `36258390585`.
@@ -69,13 +69,13 @@ Any incompatible change to ADR-0020 now requires a new capability profile/versio
 
 ## Task 3 — Shared transfer capability runtime — Active
 
-PR #65 implemented the accepted bounded offer/accept/result payload contract and focused protocol specification. The active runtime-readiness slice now connects Quinn's existing bounded stream-ready signal to RuntimeActor before transfer-specific authority/state is added.
+PR #65 implemented the accepted bounded offer/accept/result payload contract and focused protocol specification. PR #66 then connected Quinn's existing bounded stream-ready signal to `RuntimeActor` with a monotonic session-local operation clock. The active `phase2-file-transfer-control-runtime` milestone adds exact v2 capability registration, bounded offer/accept correlation, result subscription before the offer, default-disabled product availability, and fresh destination `SingleStream` authority minted only after current exact authorization. Pending inbound offers and unused `Ready` authority share one hard runtime-capacity budget; unused authority also expires locally.
 
 After ADR-0020 acceptance:
 
 - implement exact bounded offer/accept codecs — implemented on PR #65;
-- issue/register the destination `AuthorizedOperation` only after exact authorization;
-- correlate bounded transfer state;
+- issue/register the destination `AuthorizedOperation` only after exact authorization — active control-runtime milestone;
+- correlate bounded transfer state — offer/accept and unused-`Ready` authority correlation active;
 - stream source hashing and payload with bounded buffers/backpressure;
 - verify final size/digest;
 - persist bounded partial-transfer metadata and verified checkpoint state;

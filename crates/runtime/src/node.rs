@@ -3,12 +3,12 @@ use std::{num::NonZeroUsize, sync::Arc};
 use crosslab_core::{
     ControlDispatchError, ControlDispatcher, ControlReceiveError, ControlSendError,
     EventSubscription, InboundControl, LogicalSession, SessionError, SessionState,
-    StreamAcceptError, StreamOpenError, StreamSendError, TransportConnection,
+    StreamAcceptError, StreamAdmissionError, StreamOpenError, StreamSendError, TransportConnection,
 };
 use crosslab_identity::OwnerAuthorityState;
 use crosslab_policy::{
-    ApprovalInstant, AuthorizedOperation, DecisionReason, LocalCapability, NetworkClass,
-    PolicyState, TrustRecord,
+    ApprovalInstant, AuthorizedOperation, CapabilityId, CapabilityVersion, DecisionReason,
+    LocalCapability, NetworkClass, OperationId, OperationName, PolicyState, TrustRecord, UsePolicy,
 };
 use crosslab_protocol::{
     CancelRequest, CapabilityAdvertisement, ControlRequest, ControlResponse, ControlResponseResult,
@@ -154,6 +154,56 @@ impl<'a> RuntimeNode<'a> {
     ) -> Result<(), NodeError> {
         self.streams
             .register_operation(&self.session, operation)
+            .map_err(NodeError::Stream)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn issue_stream_operation(
+        &mut self,
+        peer_trust: &TrustRecord,
+        capability_id: CapabilityId,
+        capability_version: CapabilityVersion,
+        operation: OperationName,
+        created_at: ApprovalInstant,
+        expires_at: ApprovalInstant,
+        use_policy: UsePolicy,
+    ) -> Result<OperationId, NodeError> {
+        if self.session.state() != SessionState::Active {
+            return Err(NodeError::Session(SessionError::InvalidState));
+        }
+        let context = self
+            .session
+            .context()
+            .ok_or(NodeError::Session(SessionError::InvalidState))?;
+        let grant = self
+            .dispatcher
+            .authorize_operation(
+                context,
+                &capability_id,
+                capability_version,
+                &operation,
+                &self.policy,
+                &self.local_capabilities,
+                peer_trust,
+                self.network_class,
+                created_at,
+            )
+            .map_err(NodeError::Dispatch)?;
+        let operation =
+            AuthorizedOperation::issue(grant, created_at.ticks(), expires_at.ticks(), use_policy)
+                .map_err(|error| {
+                NodeError::Stream(RuntimeStreamError::Admission(
+                    StreamAdmissionError::Operation(error),
+                ))
+            })?;
+        let operation_id = operation.id();
+        self.register_stream_operation(operation)?;
+        Ok(operation_id)
+    }
+
+    pub fn cancel_stream_operation(&mut self, operation_id: OperationId) -> Result<(), NodeError> {
+        self.streams
+            .cancel_operation(operation_id)
             .map_err(NodeError::Stream)
     }
 

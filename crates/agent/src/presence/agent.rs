@@ -13,18 +13,22 @@ use crosslab_transport_quic::{QuicTransportConfig, TrustedSessionQuicServer};
 use tokio::sync::{mpsc, oneshot, watch};
 
 use super::{
-    runner::{AgentChannels, AgentCommand, AgentSecurity, run_agent},
+    runner::{AgentChannels, AgentCommand, AgentSecurity, RuntimeAvailability, run_agent},
     types::{
         PermissionSnapshot, PresenceAgentError, PresenceDiscoveryInfo, PresencePhase,
         PresenceSnapshot, TrustedSessionRoute,
     },
 };
-use crate::clipboard::{
-    ClipboardAvailability, ClipboardOperationError, ClipboardPlatformError, ClipboardRequest,
+use crate::{
+    clipboard::{
+        ClipboardAvailability, ClipboardOperationError, ClipboardPlatformError, ClipboardRequest,
+    },
+    file_transfer::{FileTransferAvailability, FileTransferOperationError, FileTransferRequest},
 };
 
 const COMMAND_CAPACITY: usize = 64;
 const CLIPBOARD_REQUEST_CAPACITY: usize = 8;
+const FILE_TRANSFER_REQUEST_CAPACITY: usize = 8;
 
 pub struct TrustedPresenceAgent {
     discovery_instance: Arc<RwLock<String>>,
@@ -34,6 +38,7 @@ pub struct TrustedPresenceAgent {
     status: watch::Receiver<PresenceSnapshot>,
     permissions: watch::Receiver<PermissionSnapshot>,
     clipboard_requests: Mutex<Option<mpsc::Receiver<ClipboardRequest>>>,
+    file_transfer_requests: Mutex<Option<mpsc::Receiver<FileTransferRequest>>>,
 }
 
 impl TrustedPresenceAgent {
@@ -62,6 +67,22 @@ impl TrustedPresenceAgent {
         signer: Arc<dyn SigningProvider + Send + Sync>,
         policy: PolicyState,
         clipboard_availability: ClipboardAvailability,
+    ) -> Result<Self, PresenceAgentError> {
+        Self::spawn_with_policy_and_capabilities(
+            identity,
+            signer,
+            policy,
+            clipboard_availability,
+            FileTransferAvailability::default(),
+        )
+    }
+
+    pub fn spawn_with_policy_and_capabilities(
+        identity: ProductIdentityState,
+        signer: Arc<dyn SigningProvider + Send + Sync>,
+        policy: PolicyState,
+        clipboard_availability: ClipboardAvailability,
+        file_transfer_availability: FileTransferAvailability,
     ) -> Result<Self, PresenceAgentError> {
         identity
             .validate_local_device_provider(signer.as_ref())
@@ -93,6 +114,8 @@ impl TrustedPresenceAgent {
         let (permissions_tx, permissions) =
             watch::channel(PermissionSnapshot::from_policy(&policy));
         let (clipboard_requests_tx, clipboard_requests) = mpsc::channel(CLIPBOARD_REQUEST_CAPACITY);
+        let (file_transfer_requests_tx, file_transfer_requests) =
+            mpsc::channel(FILE_TRANSFER_REQUEST_CAPACITY);
         let (startup_tx, startup_rx) = std_mpsc::sync_channel(1);
         let runner_discovery_instance = Arc::clone(&discovery_instance);
         thread::Builder::new()
@@ -144,7 +167,11 @@ impl TrustedPresenceAgent {
                             status_tx,
                             permissions_tx,
                             clipboard_requests_tx,
-                            clipboard_availability,
+                            file_transfer_requests_tx,
+                            RuntimeAvailability::new(
+                                clipboard_availability,
+                                file_transfer_availability,
+                            ),
                         ),
                     )
                     .await;
@@ -163,6 +190,7 @@ impl TrustedPresenceAgent {
             status,
             permissions,
             clipboard_requests: Mutex::new(Some(clipboard_requests)),
+            file_transfer_requests: Mutex::new(Some(file_transfer_requests)),
         })
     }
 
@@ -271,6 +299,69 @@ impl TrustedPresenceAgent {
             .map_err(|_| ClipboardOperationError::Closed)?
             .take()
             .ok_or(ClipboardOperationError::Closed)
+    }
+
+    pub fn take_file_transfer_requests(
+        &self,
+    ) -> Result<mpsc::Receiver<FileTransferRequest>, FileTransferOperationError> {
+        self.file_transfer_requests
+            .lock()
+            .map_err(|_| FileTransferOperationError::Closed)?
+            .take()
+            .ok_or(FileTransferOperationError::Closed)
+    }
+
+    pub async fn send_file_offer(
+        &self,
+        offer: crosslab_protocol::FileTransferOffer,
+    ) -> Result<crosslab_protocol::FileTransferAcceptance, FileTransferOperationError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.command_tx
+            .send(AgentCommand::FileTransferOffer {
+                offer,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| FileTransferOperationError::Closed)?;
+        reply_rx
+            .await
+            .map_err(|_| FileTransferOperationError::Closed)?
+    }
+
+    pub async fn complete_file_transfer_ready(
+        &self,
+        request_id: crosslab_protocol::RequestId,
+        resume_offset: u64,
+    ) -> Result<(), FileTransferOperationError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.command_tx
+            .send(AgentCommand::FileTransferReady {
+                request_id,
+                resume_offset,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| FileTransferOperationError::Closed)?;
+        reply_rx
+            .await
+            .map_err(|_| FileTransferOperationError::Closed)?
+    }
+
+    pub async fn complete_file_transfer_already_complete(
+        &self,
+        request_id: crosslab_protocol::RequestId,
+    ) -> Result<(), FileTransferOperationError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.command_tx
+            .send(AgentCommand::FileTransferAlreadyComplete {
+                request_id,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| FileTransferOperationError::Closed)?;
+        reply_rx
+            .await
+            .map_err(|_| FileTransferOperationError::Closed)?
     }
 
     pub async fn send_clipboard_text(&self, text: String) -> Result<(), ClipboardOperationError> {

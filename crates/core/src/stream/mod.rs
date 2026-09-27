@@ -43,6 +43,7 @@ pub enum StreamAdmissionError {
     DuplicateStreamIndex,
     InvalidStreamIndex,
     StreamNotFound,
+    OperationInUse,
     ResourceLimit,
     Operation(OperationError),
 }
@@ -63,6 +64,7 @@ impl fmt::Display for StreamAdmissionError {
             Self::DuplicateStreamIndex => "operation stream index is already used",
             Self::InvalidStreamIndex => "operation stream index is outside its use policy",
             Self::StreamNotFound => "admitted data stream is not active",
+            Self::OperationInUse => "authorized operation already has an active data stream",
             Self::ResourceLimit => "stream admission state capacity is exhausted",
             Self::Operation(_) => "authorized operation rejected the data stream",
         })
@@ -228,6 +230,27 @@ impl StreamAdmission {
 
     pub fn cancel_stream(&mut self, stream_id: StreamId) -> Result<(), StreamAdmissionError> {
         self.finish_stream_inner(stream_id)
+    }
+
+    pub fn cancel_operation(
+        &mut self,
+        operation_id: OperationId,
+    ) -> Result<(), StreamAdmissionError> {
+        if self
+            .active_streams
+            .iter()
+            .any(|stream| stream.operation_id == operation_id)
+        {
+            return Err(StreamAdmissionError::OperationInUse);
+        }
+        let position = self
+            .operations
+            .iter()
+            .position(|registered| registered.operation.id() == operation_id)
+            .ok_or(StreamAdmissionError::OperationNotFound)?;
+        self.operations[position].operation.cancel();
+        self.operations.remove(position);
+        Ok(())
     }
 
     pub fn cancel_all(&mut self) {
