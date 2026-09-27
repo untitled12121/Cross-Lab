@@ -7,7 +7,10 @@ mod pairing;
 mod status;
 mod stream;
 
-pub use actor::{RuntimeActor, RuntimeActorConfig, RuntimeActorError, RuntimeActorSession};
+pub use actor::{
+    RuntimeActor, RuntimeActorConfig, RuntimeActorError, RuntimeActorSession,
+    RuntimeActorStreamSendError,
+};
 pub use node::{NodeError, NodeEvent, RuntimeNode};
 pub use pairing::{
     ProductPairingCommit, ProductPairingError, ProductPairingExchangeState, ProductPairingInviter,
