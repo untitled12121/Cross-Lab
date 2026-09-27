@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use crosslab_crypto::blake3_256;
 use crosslab_identity::DeviceId;
 use crosslab_protocol::{
-    FileTransferDigest, FileTransferOffer, TransferId, MAX_FILE_TRANSFER_DISPLAY_NAME_BYTES,
+    FileTransferDigest, FileTransferOffer, MAX_FILE_TRANSFER_DISPLAY_NAME_BYTES, TransferId,
 };
 
 pub const MAX_RETAINED_FILE_TRANSFERS: usize = 64;
@@ -199,9 +199,7 @@ impl FileTransferPartialState {
             return Err(FileTransferStateError::PartialShorterThanCheckpoint);
         }
         if partial_file_len > self.durable_offset {
-            return Ok(FileTransferRecoveryAction::TruncateTo(
-                self.durable_offset,
-            ));
+            return Ok(FileTransferRecoveryAction::TruncateTo(self.durable_offset));
         }
         Ok(FileTransferRecoveryAction::Keep)
     }
@@ -297,9 +295,7 @@ pub struct FileTransferStateSnapshot {
 }
 
 impl FileTransferStateSnapshot {
-    pub fn new(
-        entries: Vec<FileTransferRetainedState>,
-    ) -> Result<Self, FileTransferStateError> {
+    pub fn new(entries: Vec<FileTransferRetainedState>) -> Result<Self, FileTransferStateError> {
         if entries.len() > MAX_RETAINED_FILE_TRANSFERS {
             return Err(FileTransferStateError::TooManyEntries);
         }
@@ -335,9 +331,7 @@ impl FileTransferStateSnapshot {
             return Err(FileTransferStateError::IdentityMismatch);
         }
         Ok(Some(match entry {
-            FileTransferRetainedState::Partial(partial) => {
-                FileTransferStateMatch::Partial(partial)
-            }
+            FileTransferRetainedState::Partial(partial) => FileTransferStateMatch::Partial(partial)
             FileTransferRetainedState::Completed(completed) => {
                 FileTransferStateMatch::AlreadyComplete(completed)
             }
@@ -459,9 +453,8 @@ impl FileTransferStateSnapshot {
         if entry_count > MAX_RETAINED_FILE_TRANSFERS {
             return Err(FileTransferStateError::TooManyEntries);
         }
-        let payload_len =
-            usize::try_from(u32::from_be_bytes(copy_array(&encoded[4..8])))
-                .map_err(|_| FileTransferStateError::MalformedSnapshot)?;
+        let payload_len = usize::try_from(u32::from_be_bytes(copy_array(&encoded[4..8])))
+            .map_err(|_| FileTransferStateError::MalformedSnapshot)?;
         let expected_len = STATE_HEADER_BYTES
             .checked_add(payload_len)
             .ok_or(FileTransferStateError::MalformedSnapshot)?;
@@ -526,9 +519,11 @@ fn encode_entry(
     entry: &FileTransferRetainedState,
 ) -> Result<(), FileTransferStateError> {
     let (tag, identity, updated_at) = match entry {
-        FileTransferRetainedState::Partial(partial) => {
-            (PARTIAL_TAG, partial.identity(), partial.updated_at_unix_secs())
-        }
+        FileTransferRetainedState::Partial(partial) => (
+            PARTIAL_TAG,
+            partial.identity(),
+            partial.updated_at_unix_secs(),
+        )
         FileTransferRetainedState::Completed(completed) => (
             COMPLETED_TAG,
             completed.identity(),
@@ -558,13 +553,16 @@ fn encode_entry(
     Ok(())
 }
 
-fn decode_entry(reader: &mut Reader<'_>) -> Result<FileTransferRetainedState, FileTransferStateError> {
+fn decode_entry(
+    reader: &mut Reader<'_>,
+) -> Result<FileTransferRetainedState, FileTransferStateError> {
     let tag = reader.u8()?;
     let transfer_id = TransferId::from_bytes(reader.array()?);
     let source_device_id = DeviceId::from_bytes(reader.array()?);
-    let display_name = core::str::from_utf8(reader.bytes_u16(MAX_FILE_TRANSFER_DISPLAY_NAME_BYTES)?)
-        .map_err(|_| FileTransferStateError::InvalidOffer)?
-        .to_owned();
+    let display_name =
+        core::str::from_utf8(reader.bytes_u16(MAX_FILE_TRANSFER_DISPLAY_NAME_BYTES)?)
+            .map_err(|_| FileTransferStateError::InvalidOffer)?
+            .to_owned();
     let file_size = reader.u64()?;
     let digest = FileTransferDigest::from_bytes(reader.array()?);
     let updated_at = reader.u64()?;
@@ -599,8 +597,7 @@ fn push_u16_bytes(
     if bytes.len() > max_len {
         return Err(FileTransferStateError::SnapshotTooLarge);
     }
-    let len =
-        u16::try_from(bytes.len()).map_err(|_| FileTransferStateError::SnapshotTooLarge)?;
+    let len = u16::try_from(bytes.len()).map_err(|_| FileTransferStateError::SnapshotTooLarge)?;
     encoded.extend_from_slice(&len.to_be_bytes());
     encoded.extend_from_slice(bytes);
     Ok(())
@@ -724,8 +721,7 @@ mod tests {
 
     #[test]
     fn retained_identity_rejects_changed_source_or_offer() {
-        let partial =
-            FileTransferPartialState::new(identity(4, 5, 6), 0, locator(), 10).unwrap();
+        let partial = FileTransferPartialState::new(identity(4, 5, 6), 0, locator(), 10).unwrap();
         let mut state = FileTransferStateSnapshot::default();
         state.upsert_partial(partial).unwrap();
 
@@ -746,8 +742,7 @@ mod tests {
     #[test]
     fn completion_tombstone_is_idempotent_and_cannot_downgrade() {
         let id = identity(9, 10, 11);
-        let partial =
-            FileTransferPartialState::new(id.clone(), 0, locator(), 20).unwrap();
+        let partial = FileTransferPartialState::new(id.clone(), 0, locator(), 20).unwrap();
         let completed = FileTransferCompletionTombstone::new(id.clone(), 21);
         let mut state = FileTransferStateSnapshot::default();
         state.upsert_partial(partial.clone()).unwrap();
@@ -768,8 +763,7 @@ mod tests {
     fn state_snapshot_round_trips_and_redacts_local_locator() {
         let partial =
             FileTransferPartialState::new(identity(12, 13, 14), 0, locator(), 100).unwrap();
-        let completed =
-            FileTransferCompletionTombstone::new(identity(15, 16, 17), 101);
+        let completed = FileTransferCompletionTombstone::new(identity(15, 16, 17), 101);
         let state = FileTransferStateSnapshot::new(vec![
             FileTransferRetainedState::Partial(partial),
             FileTransferRetainedState::Completed(completed),
@@ -812,7 +806,8 @@ mod tests {
         }
 
         assert_eq!(state.len(), MAX_RETAINED_FILE_TRANSFERS);
-        let extra = FileTransferPartialState::new(identity(65, 0x55, 65), 0, locator(), 65).unwrap();
+        let extra =
+            FileTransferPartialState::new(identity(65, 0x55, 65), 0, locator(), 65).unwrap();
         assert_eq!(
             state.upsert_partial(extra.clone()),
             Err(FileTransferStateError::TooManyEntries)
@@ -826,8 +821,7 @@ mod tests {
 
     #[test]
     fn snapshot_rejects_duplicate_transfer_ids_and_oversized_locator() {
-        let partial =
-            FileTransferPartialState::new(identity(22, 23, 24), 0, locator(), 1).unwrap();
+        let partial = FileTransferPartialState::new(identity(22, 23, 24), 0, locator(), 1).unwrap();
         assert_eq!(
             FileTransferStateSnapshot::new(vec![
                 FileTransferRetainedState::Partial(partial.clone()),
