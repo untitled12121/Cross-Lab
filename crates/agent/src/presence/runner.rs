@@ -686,8 +686,7 @@ async fn handle_connect_result(
     network_available: bool,
     auto_connect: bool,
     status_tx: &watch::Sender<PresenceSnapshot>,
-    clipboard_availability: ClipboardAvailability,
-    file_transfer_availability: FileTransferAvailability,
+    availability: RuntimeAvailability,
 ) {
     if connecting_instance.as_deref() != Some(result.instance.as_str()) {
         return;
@@ -714,10 +713,7 @@ async fn handle_connect_result(
                 policy,
                 connected,
                 status_tx,
-                RuntimeAvailability::new(
-                    clipboard_availability,
-                    file_transfer_availability,
-                ),
+                availability,
             )
             .await
             .is_err()
