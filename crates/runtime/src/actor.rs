@@ -1,7 +1,15 @@
-use std::{fmt, future::pending, num::NonZeroUsize, time::Instant};
+use std::{
+    fmt,
+    future::pending,
+    num::NonZeroUsize,
+    time::{Duration, Instant},
+};
 
 use crosslab_core::{ControlReceiveError, EventSubscription, StreamAcceptError, StreamReceiveError};
-use crosslab_policy::{ApprovalInstant, PolicyState, SessionId, TrustRecord};
+use crosslab_policy::{
+    ApprovalInstant, CapabilityId, CapabilityVersion, OperationId, OperationName, PolicyState,
+    SessionId, TrustRecord, UsePolicy,
+};
 use crosslab_protocol::{
     CapabilityAdvertisement, ControlRequest, ControlResponseResult, RequestId,
 };
@@ -42,6 +50,7 @@ pub enum RuntimeActorError {
     PeerRevocationRejected,
     PolicyRejected,
     ControlRejected,
+    OperationRejected,
 }
 
 impl fmt::Display for RuntimeActorError {
@@ -57,6 +66,7 @@ impl fmt::Display for RuntimeActorError {
             Self::PeerRevocationRejected => "runtime actor rejected peer revocation",
             Self::PolicyRejected => "runtime actor rejected stale policy state",
             Self::ControlRejected => "runtime actor rejected control operation",
+            Self::OperationRejected => "runtime actor rejected stream operation authority",
         })
     }
 }
@@ -179,16 +189,51 @@ impl RuntimeActorSession {
         u64::try_from(elapsed).unwrap_or(u64::MAX)
     }
 
+    fn issue_stream_operation(
+        &mut self,
+        capability_id: CapabilityId,
+        capability_version: CapabilityVersion,
+        operation: OperationName,
+        lifetime: Duration,
+        use_policy: UsePolicy,
+    ) -> Result<OperationId, RuntimeActorError> {
+        let now = self.now_ticks();
+        let lifetime = u64::try_from(lifetime.as_millis()).unwrap_or(u64::MAX);
+        let expires_at = now
+            .checked_add(lifetime)
+            .filter(|expires_at| *expires_at > now)
+            .ok_or(RuntimeActorError::OperationRejected)?;
+        let peer_trust = self.peer_trust;
+        self.node
+            .issue_stream_operation(
+                &peer_trust,
+                capability_id,
+                capability_version,
+                operation,
+                ApprovalInstant::from_ticks(now),
+                ApprovalInstant::from_ticks(expires_at),
+                use_policy,
+            )
+            .map_err(|_| RuntimeActorError::OperationRejected)
+    }
+
+    fn cancel_stream_operation(
+        &mut self,
+        operation_id: OperationId,
+    ) -> Result<(), RuntimeActorError> {
+        self.node
+            .cancel_stream_operation(operation_id)
+            .map_err(|_| RuntimeActorError::OperationRejected)
+    }
+
     fn receive_one(&mut self) -> Result<NodeEvent, NodeError> {
-        self.node.receive_one_at(
-            &self.peer_trust,
-            ApprovalInstant::from_ticks(self.now_ticks()),
-        )
+        let now = ApprovalInstant::from_ticks(self.now_ticks());
+        self.node.receive_one_at(&self.peer_trust, now)
     }
 
     fn receive_stream_one(&mut self) -> Result<NodeEvent, NodeError> {
-        self.node
-            .receive_stream_one(&self.peer_trust, self.now_ticks())
+        let now = self.now_ticks();
+        self.node.receive_stream_one(&self.peer_trust, now)
     }
 
     fn take_control_ready(&mut self) -> Option<watch::Receiver<u64>> {
@@ -409,6 +454,52 @@ impl RuntimeActor {
         reply_rx.await.map_err(|_| RuntimeActorError::ActorClosed)?
     }
 
+    pub async fn issue_stream_operation(
+        &self,
+        capability_id: CapabilityId,
+        capability_version: CapabilityVersion,
+        operation: OperationName,
+        lifetime: Duration,
+        use_policy: UsePolicy,
+    ) -> Result<OperationId, RuntimeActorError> {
+        let command_tx = self
+            .command_tx
+            .as_ref()
+            .ok_or(RuntimeActorError::NotRunning)?;
+        let (reply_tx, reply_rx) = oneshot::channel();
+        command_tx
+            .send(RuntimeCommand::IssueStreamOperation {
+                capability_id,
+                capability_version,
+                operation,
+                lifetime,
+                use_policy,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| RuntimeActorError::ActorClosed)?;
+        reply_rx.await.map_err(|_| RuntimeActorError::ActorClosed)?
+    }
+
+    pub async fn cancel_stream_operation(
+        &self,
+        operation_id: OperationId,
+    ) -> Result<(), RuntimeActorError> {
+        let command_tx = self
+            .command_tx
+            .as_ref()
+            .ok_or(RuntimeActorError::NotRunning)?;
+        let (reply_tx, reply_rx) = oneshot::channel();
+        command_tx
+            .send(RuntimeCommand::CancelStreamOperation {
+                operation_id,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| RuntimeActorError::ActorClosed)?;
+        reply_rx.await.map_err(|_| RuntimeActorError::ActorClosed)?
+    }
+
     pub async fn reconnect(&self, session: RuntimeActorSession) -> Result<(), RuntimeActorError> {
         let command_tx = self
             .command_tx
@@ -526,6 +617,28 @@ async fn run_actor(
                     reply,
                 } => {
                     let _ = reply.send(session.unsubscribe_event(&subscription));
+                }
+                RuntimeCommand::IssueStreamOperation {
+                    capability_id,
+                    capability_version,
+                    operation,
+                    lifetime,
+                    use_policy,
+                    reply,
+                } => {
+                    let _ = reply.send(session.issue_stream_operation(
+                        capability_id,
+                        capability_version,
+                        operation,
+                        lifetime,
+                        use_policy,
+                    ));
+                }
+                RuntimeCommand::CancelStreamOperation {
+                    operation_id,
+                    reply,
+                } => {
+                    let _ = reply.send(session.cancel_stream_operation(operation_id));
                 }
                 RuntimeCommand::Reconnect {
                     session: replacement,

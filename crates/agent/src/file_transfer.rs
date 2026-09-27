@@ -2,7 +2,8 @@ use core::fmt;
 
 use crosslab_core::EventSubscription;
 use crosslab_policy::{
-    CapabilityId, CapabilityVersion, CapabilityVersionRange, LocalCapability, OperationName,
+    CapabilityId, CapabilityVersion, CapabilityVersionRange, LocalCapability, OperationId,
+    OperationName,
 };
 use crosslab_protocol::{
     CapabilityAdvertisement, CapabilityAdvertisementEntry, ControlRequest, ControlResponseResult,
@@ -66,6 +67,7 @@ pub enum FileTransferOperationError {
     NotConnected,
     NotNegotiated,
     InvalidResponse,
+    InvalidResumeOffset,
     ResourceLimit,
     Random,
     TimedOut,
@@ -81,6 +83,9 @@ impl fmt::Display for FileTransferOperationError {
             Self::NotConnected => formatter.write_str("file transfer peer is not connected"),
             Self::NotNegotiated => formatter.write_str("file transfer capability is not negotiated"),
             Self::InvalidResponse => formatter.write_str("file transfer response violates v2"),
+            Self::InvalidResumeOffset => {
+                formatter.write_str("file transfer resume offset is invalid")
+            }
             Self::ResourceLimit => formatter.write_str("file transfer operation capacity is exhausted"),
             Self::Random => formatter.write_str("file transfer request identifier generation failed"),
             Self::TimedOut => formatter.write_str("file transfer offer timed out"),
@@ -177,6 +182,25 @@ pub(crate) fn decode_inbound(
     })
 }
 
+pub(crate) fn ready_response(
+    request: &FileTransferRequest,
+    resume_offset: u64,
+    operation_id: OperationId,
+) -> Result<ControlResponseResult, FileTransferOperationError> {
+    request
+        .offer
+        .validate_resume_offset(resume_offset)
+        .map_err(|_| FileTransferOperationError::InvalidResumeOffset)?;
+    let acceptance = FileTransferAcceptance::Ready {
+        transfer_id: request.offer.transfer_id(),
+        resume_offset,
+        operation_id,
+    };
+    let body = encode_file_transfer_acceptance(&acceptance)
+        .map_err(|_| FileTransferOperationError::InvalidResponse)?;
+    Ok(ControlResponseResult::Success(body))
+}
+
 pub(crate) fn already_complete_response(
     request: &FileTransferRequest,
 ) -> Result<ControlResponseResult, FileTransferOperationError> {
@@ -267,7 +291,7 @@ mod tests {
     }
 
     #[test]
-    fn receive_capability_is_disabled_by_default() {
+    fn file_transfer_capability_is_disabled_by_default() {
         assert!(local_capabilities(FileTransferAvailability::default()).is_empty());
         assert!(advertisement(FileTransferAvailability::default()).is_empty());
     }
@@ -301,6 +325,41 @@ mod tests {
             ControlResponseResult::Error(error)
                 if error.code() == ProtocolErrorCode::OperationMismatch
         ));
+    }
+
+    #[test]
+    fn ready_response_validates_resume_checkpoint() {
+        let request = FileTransferRequest {
+            request_id: RequestId::from_bytes([0x46; 16]),
+            offer: FileTransferOffer::new(
+                TransferId::from_bytes([0x47; 32]),
+                "checkpoint.bin".into(),
+                crosslab_protocol::FILE_TRANSFER_CHECKPOINT_BYTES + 9,
+                FileTransferDigest::from_bytes([0x48; 32]),
+            )
+            .unwrap(),
+        };
+        let operation_id = OperationId::from_bytes([0x49; 32]);
+
+        let response = ready_response(
+            &request,
+            crosslab_protocol::FILE_TRANSFER_CHECKPOINT_BYTES,
+            operation_id,
+        )
+        .unwrap();
+        assert!(matches!(
+            decode_response(request.offer(), &response).unwrap(),
+            FileTransferAcceptance::Ready {
+                resume_offset,
+                operation_id: received,
+                ..
+            } if resume_offset == crosslab_protocol::FILE_TRANSFER_CHECKPOINT_BYTES
+                && received == operation_id
+        ));
+        assert_eq!(
+            ready_response(&request, 1, operation_id),
+            Err(FileTransferOperationError::InvalidResumeOffset)
+        );
     }
 
     #[test]

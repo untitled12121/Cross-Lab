@@ -10,7 +10,10 @@ use std::{
 use crosslab_core::{MAX_SESSION_DISCOVERY_CANDIDATES, should_initiate_session};
 use crosslab_crypto::SigningProvider;
 use crosslab_identity::{DeviceCredential, DeviceId, OwnerAuthorityState};
-use crosslab_policy::{NetworkClass, PolicyState, TrustRecord};
+use crosslab_policy::{
+    CapabilityId, CapabilityVersion, NetworkClass, OperationId, OperationName, PolicyState,
+    TrustRecord, UsePolicy,
+};
 use crosslab_protocol::{
     CapabilityAdvertisement, FILE_TRANSFER_CAPABILITY_ID, FeatureSet, FileTransferAcceptance,
     FileTransferOffer, ProtocolRange, RequestId,
@@ -48,7 +51,7 @@ use crate::{
         decode_inbound as decode_file_transfer, decode_response as decode_file_transfer_response,
         internal_failure as file_transfer_internal_failure,
         local_capabilities as file_transfer_local_capabilities,
-        offer_request as file_transfer_offer_request,
+        offer_request as file_transfer_offer_request, ready_response as file_transfer_ready_response,
         resource_failure as file_transfer_resource_failure,
         result_subscription as file_transfer_result_subscription,
     },
@@ -61,6 +64,7 @@ const ACCEPT_TIMEOUT: Duration = Duration::from_secs(30);
 const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
 const CLIPBOARD_OPERATION_TIMEOUT: Duration = Duration::from_secs(10);
 const FILE_TRANSFER_OFFER_TIMEOUT: Duration = Duration::from_secs(30);
+const FILE_TRANSFER_OPERATION_LIFETIME: Duration = Duration::from_secs(30);
 const RETRY_DELAYS: [Duration; 5] = [
     Duration::from_secs(1),
     Duration::from_secs(2),
@@ -123,6 +127,11 @@ pub(super) enum AgentCommand {
     FileTransferOffer {
         offer: FileTransferOffer,
         reply: oneshot::Sender<Result<FileTransferAcceptance, FileTransferOperationError>>,
+    },
+    FileTransferReady {
+        request_id: RequestId,
+        resume_offset: u64,
+        reply: oneshot::Sender<Result<OperationId, FileTransferOperationError>>,
     },
     FileTransferAlreadyComplete {
         request_id: RequestId,
@@ -266,6 +275,7 @@ impl ClipboardRuntimeState {
             availability,
             outgoing: BTreeMap::new(),
             inbound: BTreeMap::new(),
+            ready: BTreeMap::new(),
         }
     }
 
@@ -287,11 +297,16 @@ struct PendingFileOffer {
     reply: oneshot::Sender<Result<FileTransferAcceptance, FileTransferOperationError>>,
 }
 
+struct ReadyFileTransfer {
+    deadline: Instant,
+}
+
 struct FileTransferRuntimeState {
     requests_tx: mpsc::Sender<FileTransferRequest>,
     availability: FileTransferAvailability,
     outgoing: BTreeMap<RequestId, PendingFileOffer>,
     inbound: BTreeMap<RequestId, FileTransferRequest>,
+    ready: BTreeMap<OperationId, ReadyFileTransfer>,
 }
 
 impl FileTransferRuntimeState {
@@ -312,10 +327,15 @@ impl FileTransferRuntimeState {
             let _ = pending.reply.send(Err(error));
         }
         self.inbound.clear();
+        self.ready.clear();
     }
 
     fn next_deadline(&self) -> Option<Instant> {
-        self.outgoing.values().map(|pending| pending.deadline).min()
+        self.outgoing
+            .values()
+            .map(|pending| pending.deadline)
+            .chain(self.ready.values().map(|ready| ready.deadline))
+            .min()
     }
 }
 
@@ -888,6 +908,21 @@ async fn handle_command(
             start_file_transfer_offer(connected.as_ref(), file_transfer, offer, reply).await;
             false
         }
+        Some(AgentCommand::FileTransferReady {
+            request_id,
+            resume_offset,
+            reply,
+        }) => {
+            let outcome = complete_file_transfer_ready(
+                connected.as_ref(),
+                file_transfer,
+                request_id,
+                resume_offset,
+            )
+            .await;
+            let _ = reply.send(outcome);
+            false
+        }
         Some(AgentCommand::FileTransferAlreadyComplete { request_id, reply }) => {
             let outcome = complete_file_transfer_already_complete(
                 connected.as_ref(),
@@ -1099,6 +1134,64 @@ async fn start_file_transfer_offer(
     );
 }
 
+async fn complete_file_transfer_ready(
+    connected: Option<&ConnectedRuntime>,
+    file_transfer: &mut FileTransferRuntimeState,
+    request_id: RequestId,
+    resume_offset: u64,
+) -> Result<OperationId, FileTransferOperationError> {
+    let request = file_transfer
+        .inbound
+        .get(&request_id)
+        .ok_or(FileTransferOperationError::Cancelled)?;
+    request
+        .offer()
+        .validate_resume_offset(resume_offset)
+        .map_err(|_| FileTransferOperationError::InvalidResumeOffset)?;
+    let connection = connected
+        .filter(|connection| !connection.reconnecting)
+        .ok_or(FileTransferOperationError::Cancelled)?;
+
+    let operation_id = connection
+        .actor
+        .issue_stream_operation(
+            CapabilityId::parse(FILE_TRANSFER_CAPABILITY_ID)
+                .expect("file transfer capability id is canonical"),
+            CapabilityVersion::new(2, 0),
+            OperationName::parse("receive").expect("file transfer receive operation is canonical"),
+            FILE_TRANSFER_OPERATION_LIFETIME,
+            UsePolicy::SingleStream,
+        )
+        .await
+        .map_err(|_| FileTransferOperationError::Cancelled)?;
+
+    let response = match file_transfer_ready_response(request, resume_offset, operation_id) {
+        Ok(response) => response,
+        Err(error) => {
+            let _ = connection.actor.cancel_stream_operation(operation_id).await;
+            return Err(error);
+        }
+    };
+    if connection
+        .actor
+        .send_response(request_id, response)
+        .await
+        .is_err()
+    {
+        let _ = connection.actor.cancel_stream_operation(operation_id).await;
+        return Err(FileTransferOperationError::Transport);
+    }
+
+    file_transfer.inbound.remove(&request_id);
+    file_transfer.ready.insert(
+        operation_id,
+        ReadyFileTransfer {
+            deadline: Instant::now() + FILE_TRANSFER_OPERATION_LIFETIME,
+        },
+    );
+    Ok(operation_id)
+}
+
 async fn complete_file_transfer_already_complete(
     connected: Option<&ConnectedRuntime>,
     file_transfer: &mut FileTransferRuntimeState,
@@ -1106,17 +1199,19 @@ async fn complete_file_transfer_already_complete(
 ) -> Result<(), FileTransferOperationError> {
     let request = file_transfer
         .inbound
-        .remove(&request_id)
+        .get(&request_id)
         .ok_or(FileTransferOperationError::Cancelled)?;
     let connection = connected
         .filter(|connection| !connection.reconnecting)
         .ok_or(FileTransferOperationError::Cancelled)?;
-    let response = file_transfer_already_complete_response(&request)?;
+    let response = file_transfer_already_complete_response(request)?;
     connection
         .actor
         .send_response(request_id, response)
         .await
-        .map_err(|_| FileTransferOperationError::Transport)
+        .map_err(|_| FileTransferOperationError::Transport)?;
+    file_transfer.inbound.remove(&request_id);
+    Ok(())
 }
 
 async fn expire_file_transfer_offers(
@@ -1141,6 +1236,21 @@ async fn expire_file_transfer_offers(
             let _ = connection.actor.send_cancel(request_id).await;
         }
         let _ = pending.reply.send(Err(FileTransferOperationError::TimedOut));
+    }
+
+    let expired_operations = file_transfer
+        .ready
+        .iter()
+        .filter_map(|(operation_id, ready)| (ready.deadline <= now).then_some(*operation_id))
+        .collect::<Vec<_>>();
+    for operation_id in expired_operations {
+        file_transfer.ready.remove(&operation_id);
+        if let Some(connection) = connected
+            .as_ref()
+            .filter(|connection| !connection.reconnecting)
+        {
+            let _ = connection.actor.cancel_stream_operation(operation_id).await;
+        }
     }
 }
 
@@ -1227,6 +1337,9 @@ async fn handle_runtime_event(
         NodeEvent::SessionClosed(_) => {
             clipboard.cancel_all(ClipboardOperationError::Cancelled);
             file_transfer.cancel_all(FileTransferOperationError::Cancelled);
+        }
+        NodeEvent::Stream(crosslab_runtime::RuntimeStreamEvent::Opened(stream)) => {
+            file_transfer.ready.remove(&stream.operation_id());
         }
         NodeEvent::CapabilitiesUpdated
         | NodeEvent::Event(_)

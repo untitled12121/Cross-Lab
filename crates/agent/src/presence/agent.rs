@@ -328,6 +328,25 @@ impl TrustedPresenceAgent {
             .map_err(|_| FileTransferOperationError::Closed)?
     }
 
+    pub async fn complete_file_transfer_ready(
+        &self,
+        request_id: crosslab_protocol::RequestId,
+        resume_offset: u64,
+    ) -> Result<crosslab_policy::OperationId, FileTransferOperationError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.command_tx
+            .send(AgentCommand::FileTransferReady {
+                request_id,
+                resume_offset,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| FileTransferOperationError::Closed)?;
+        reply_rx
+            .await
+            .map_err(|_| FileTransferOperationError::Closed)?
+    }
+
     pub async fn complete_file_transfer_already_complete(
         &self,
         request_id: crosslab_protocol::RequestId,
