@@ -758,9 +758,9 @@ async fn install_session(
         connection
             .actor
             .send_capabilities(runtime_advertisement(
-            clipboard_availability,
-            file_transfer_availability,
-        ))
+                clipboard_availability,
+                file_transfer_availability,
+            ))
             .await
             .map_err(|_| ())?;
         connection.closed = closed;
@@ -779,9 +779,9 @@ async fn install_session(
     actor.start(actor_session).map_err(|_| ())?;
     if actor
         .send_capabilities(runtime_advertisement(
-                clipboard_availability,
-                file_transfer_availability,
-            ))
+            clipboard_availability,
+            file_transfer_availability,
+        ))
         .await
         .is_err()
     {
