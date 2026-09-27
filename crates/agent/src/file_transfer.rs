@@ -323,7 +323,7 @@ mod tests {
             capability(),
             VERSION,
             OperationName::parse("send").unwrap(),
-            RetryClass::Retryable,
+            RetryClass::Idempotent,
             body,
         );
 
