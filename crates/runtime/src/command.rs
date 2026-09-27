@@ -1,3 +1,4 @@
+use crosslab_core::EventSubscription;
 use crosslab_policy::{PolicyState, TrustRecord};
 use crosslab_protocol::{
     CapabilityAdvertisement, ControlRequest, ControlResponseResult, RequestId,
@@ -32,6 +33,14 @@ pub(crate) enum RuntimeCommand {
     SendCancel {
         request_id: RequestId,
         reply: oneshot::Sender<Result<(), RuntimeActorError>>,
+    },
+    SubscribeEvent {
+        subscription: EventSubscription,
+        reply: oneshot::Sender<Result<bool, RuntimeActorError>>,
+    },
+    UnsubscribeEvent {
+        subscription: EventSubscription,
+        reply: oneshot::Sender<Result<bool, RuntimeActorError>>,
     },
     Reconnect {
         session: Box<RuntimeActorSession>,

@@ -1,7 +1,7 @@
 use std::{fmt, future::pending, num::NonZeroUsize, time::Instant};
 
-use crosslab_core::{ControlReceiveError, StreamAcceptError, StreamReceiveError};
-use crosslab_policy::{PolicyState, SessionId, TrustRecord};
+use crosslab_core::{ControlReceiveError, EventSubscription, StreamAcceptError, StreamReceiveError};
+use crosslab_policy::{ApprovalInstant, PolicyState, SessionId, TrustRecord};
 use crosslab_protocol::{
     CapabilityAdvertisement, ControlRequest, ControlResponseResult, RequestId,
 };
@@ -156,14 +156,39 @@ impl RuntimeActorSession {
             .map_err(|_| RuntimeActorError::ControlRejected)
     }
 
+    fn subscribe_event(
+        &mut self,
+        subscription: EventSubscription,
+    ) -> Result<bool, RuntimeActorError> {
+        self.node
+            .subscribe_event(subscription)
+            .map_err(|_| RuntimeActorError::ControlRejected)
+    }
+
+    fn unsubscribe_event(
+        &mut self,
+        subscription: &EventSubscription,
+    ) -> Result<bool, RuntimeActorError> {
+        self.node
+            .unsubscribe_event(subscription)
+            .map_err(|_| RuntimeActorError::ControlRejected)
+    }
+
+    fn now_ticks(&self) -> u64 {
+        let elapsed = self.operation_started.elapsed().as_millis();
+        u64::try_from(elapsed).unwrap_or(u64::MAX)
+    }
+
     fn receive_one(&mut self) -> Result<NodeEvent, NodeError> {
-        self.node.receive_one(&self.peer_trust)
+        self.node.receive_one_at(
+            &self.peer_trust,
+            ApprovalInstant::from_ticks(self.now_ticks()),
+        )
     }
 
     fn receive_stream_one(&mut self) -> Result<NodeEvent, NodeError> {
-        let elapsed = self.operation_started.elapsed().as_millis();
-        let now = u64::try_from(elapsed).unwrap_or(u64::MAX);
-        self.node.receive_stream_one(&self.peer_trust, now)
+        self.node
+            .receive_stream_one(&self.peer_trust, self.now_ticks())
     }
 
     fn take_control_ready(&mut self) -> Option<watch::Receiver<u64>> {
@@ -346,6 +371,44 @@ impl RuntimeActor {
         reply_rx.await.map_err(|_| RuntimeActorError::ActorClosed)?
     }
 
+    pub async fn subscribe_event(
+        &self,
+        subscription: EventSubscription,
+    ) -> Result<bool, RuntimeActorError> {
+        let command_tx = self
+            .command_tx
+            .as_ref()
+            .ok_or(RuntimeActorError::NotRunning)?;
+        let (reply_tx, reply_rx) = oneshot::channel();
+        command_tx
+            .send(RuntimeCommand::SubscribeEvent {
+                subscription,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| RuntimeActorError::ActorClosed)?;
+        reply_rx.await.map_err(|_| RuntimeActorError::ActorClosed)?
+    }
+
+    pub async fn unsubscribe_event(
+        &self,
+        subscription: EventSubscription,
+    ) -> Result<bool, RuntimeActorError> {
+        let command_tx = self
+            .command_tx
+            .as_ref()
+            .ok_or(RuntimeActorError::NotRunning)?;
+        let (reply_tx, reply_rx) = oneshot::channel();
+        command_tx
+            .send(RuntimeCommand::UnsubscribeEvent {
+                subscription,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| RuntimeActorError::ActorClosed)?;
+        reply_rx.await.map_err(|_| RuntimeActorError::ActorClosed)?
+    }
+
     pub async fn reconnect(&self, session: RuntimeActorSession) -> Result<(), RuntimeActorError> {
         let command_tx = self
             .command_tx
@@ -451,6 +514,18 @@ async fn run_actor(
                 }
                 RuntimeCommand::SendCancel { request_id, reply } => {
                     let _ = reply.send(session.send_cancel(request_id));
+                }
+                RuntimeCommand::SubscribeEvent {
+                    subscription,
+                    reply,
+                } => {
+                    let _ = reply.send(session.subscribe_event(subscription));
+                }
+                RuntimeCommand::UnsubscribeEvent {
+                    subscription,
+                    reply,
+                } => {
+                    let _ = reply.send(session.unsubscribe_event(&subscription));
                 }
                 RuntimeCommand::Reconnect {
                     session: replacement,

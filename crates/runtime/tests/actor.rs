@@ -6,7 +6,8 @@ use std::{
 };
 
 use crosslab_core::{
-    ChannelBinding, ConnectionMetadata, ControlReceiveError, ControlSendError, IncomingUniStream,
+    ChannelBinding, ConnectionMetadata, ControlReceiveError, ControlSendError, EventSubscription,
+    IncomingUniStream,
     LogicalSession, SessionActivation, SessionAuthRole, SessionAuthTranscriptV1,
     SessionHandshakeSide, SessionState, StreamAcceptError, StreamOpenError, StreamReceiveError,
     TransportConnection, TransportReceiveStream, TransportSecurityClass,
@@ -23,8 +24,9 @@ use crosslab_policy::{
 };
 use crosslab_protocol::{
     CapabilityAdvertisement, CapabilityAdvertisementEntry, ControlEnvelope, DataStreamOpen,
-    EnvelopeBody, FeatureSet, ProtocolRange, ProtocolVersion, SessionClose, SessionCloseReason,
-    StreamDirection, StreamId, encode_control_envelope, encode_data_stream_open,
+    EnvelopeBody, EventType, FeatureSet, ProtocolRange, ProtocolVersion, SessionClose,
+    SessionCloseReason, StreamDirection, StreamId, encode_control_envelope,
+    encode_data_stream_open,
 };
 use crosslab_runtime::{
     ConnectivityState, RuntimeActor, RuntimeActorConfig, RuntimeActorError, RuntimeActorSession,
@@ -528,6 +530,28 @@ fn stream_readiness_drives_inbound_stream_events_without_polling() {
             finished,
             crosslab_runtime::NodeEvent::Stream(crosslab_runtime::RuntimeStreamEvent::Finished(_))
         ));
+
+        actor.stop().await.unwrap();
+    });
+}
+
+#[test]
+fn event_subscription_commands_are_actor_owned_and_bounded() {
+    runtime().block_on(async {
+        let fixture = Fixture::new();
+        let (session, _) = fixture.actor_session([0x9d; 32], 0x9e);
+        let mut actor = RuntimeActor::new(config(1));
+        actor.start(session).unwrap();
+
+        let subscription = EventSubscription::new(
+            CapabilityId::parse("files.transfer").unwrap(),
+            EventType::parse("files.transfer.result").unwrap(),
+        );
+
+        assert!(actor.subscribe_event(subscription.clone()).await.unwrap());
+        assert!(!actor.subscribe_event(subscription.clone()).await.unwrap());
+        assert!(actor.unsubscribe_event(subscription.clone()).await.unwrap());
+        assert!(!actor.unsubscribe_event(subscription).await.unwrap());
 
         actor.stop().await.unwrap();
     });
