@@ -1,3 +1,9 @@
+mod integrity;
+
+pub use integrity::{
+    FileTransferHash, FileTransferHasher, FileTransferIntegrityError, FileTransferVerifier,
+};
+
 use core::fmt;
 
 use crosslab_core::{EventSubscription, StreamSendError};

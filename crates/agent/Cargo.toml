@@ -11,6 +11,7 @@ publish = false
 workspace = true
 
 [dependencies]
+blake3.workspace = true
 crosslab-core = { path = "../core" }
 crosslab-crypto = { path = "../crypto" }
 crosslab-identity = { path = "../identity" }

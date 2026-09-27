@@ -10,7 +10,8 @@ pub use clipboard::{
 };
 pub use file_transfer::{
     FileTransferAvailability, FileTransferChunkError, FileTransferDataChunk, FileTransferDataEvent,
-    FileTransferOperationError, FileTransferRequest, FileTransferSourceStream,
+    FileTransferHash, FileTransferHasher, FileTransferIntegrityError, FileTransferOperationError,
+    FileTransferRequest, FileTransferSourceStream, FileTransferVerifier,
 };
 pub use presence::{
     PermissionRule, PermissionSnapshot, PresenceAgentError, PresenceDiscoveryInfo, PresencePhase,
