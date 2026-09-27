@@ -283,7 +283,7 @@ impl fmt::Debug for FileTransferRetainedState {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileTransferStateMatch<'a> {
     Partial(&'a FileTransferPartialState),
     AlreadyComplete(&'a FileTransferCompletionTombstone),
