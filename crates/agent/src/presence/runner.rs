@@ -772,7 +772,10 @@ async fn install_session(
             .map_err(|_| ())?;
         connection
             .actor
-            .send_capabilities(runtime_advertisement(availability.clipboard, availability.file_transfer))
+            .send_capabilities(runtime_advertisement(
+                availability.clipboard,
+                availability.file_transfer,
+            ))
             .await
             .map_err(|_| ())?;
         connection.closed = closed;
