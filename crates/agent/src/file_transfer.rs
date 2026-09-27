@@ -6,11 +6,11 @@ use crosslab_policy::{
 };
 use crosslab_protocol::{
     CapabilityAdvertisement, CapabilityAdvertisementEntry, ControlRequest, ControlResponseResult,
-    Event, EventScope, EventType, FILE_TRANSFER_CAPABILITY_ID, FILE_TRANSFER_RESULT_EVENT_TYPE,
-    FileTransferAcceptance, FileTransferOffer, FileTransferResult, FileTransferWireError,
+    EventType, FILE_TRANSFER_CAPABILITY_ID, FILE_TRANSFER_RESULT_EVENT_TYPE,
+    FileTransferAcceptance, FileTransferOffer, FileTransferWireError,
     ProtocolDiagnostic, ProtocolErrorCode, ProtocolFailure, RequestId, RetryClass,
-    decode_file_transfer_acceptance, decode_file_transfer_offer, decode_file_transfer_result,
-    encode_file_transfer_acceptance, encode_file_transfer_offer,
+    decode_file_transfer_acceptance, decode_file_transfer_offer, encode_file_transfer_acceptance,
+    encode_file_transfer_offer,
 };
 
 const OP_RECEIVE: &str = "receive";
@@ -18,16 +18,16 @@ const VERSION: CapabilityVersion = CapabilityVersion::new(2, 0);
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FileTransferAvailability {
-    receive: bool,
+    enabled: bool,
 }
 
 impl FileTransferAvailability {
-    pub const fn new(receive: bool) -> Self {
-        Self { receive }
+    pub const fn new(enabled: bool) -> Self {
+        Self { enabled }
     }
 
-    pub const fn receive(self) -> bool {
-        self.receive
+    pub const fn enabled(self) -> bool {
+        self.enabled
     }
 }
 
@@ -99,7 +99,7 @@ impl fmt::Display for FileTransferOperationError {
 impl std::error::Error for FileTransferOperationError {}
 
 pub(crate) fn local_capabilities(availability: FileTransferAvailability) -> Vec<LocalCapability> {
-    if !availability.receive {
+    if !availability.enabled {
         return Vec::new();
     }
     vec![LocalCapability::new(
@@ -110,7 +110,7 @@ pub(crate) fn local_capabilities(availability: FileTransferAvailability) -> Vec<
 }
 
 pub(crate) fn advertisement(availability: FileTransferAvailability) -> CapabilityAdvertisement {
-    let entries = if availability.receive {
+    let entries = if availability.enabled {
         vec![
             CapabilityAdvertisementEntry::new(capability(), VERSION, VERSION, true)
                 .expect("file transfer v2 advertisement is valid"),
@@ -203,18 +203,6 @@ pub(crate) fn decode_response(
             Ok(acceptance)
         }
     }
-}
-
-pub(crate) fn decode_result_event(event: &Event) -> Option<FileTransferResult> {
-    let EventScope::Capability(capability_id) = event.scope() else {
-        return None;
-    };
-    if capability_id.as_str() != FILE_TRANSFER_CAPABILITY_ID
-        || event.event_type().as_str() != FILE_TRANSFER_RESULT_EVENT_TYPE
-    {
-        return None;
-    }
-    decode_file_transfer_result(event.body()).ok()
 }
 
 pub(crate) fn resource_failure() -> ControlResponseResult {

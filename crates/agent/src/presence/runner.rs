@@ -512,6 +512,7 @@ pub(super) async fn run_agent(
             changed = policy_rx.changed() => {
                 if changed.is_err() {
                     clipboard.cancel_all(ClipboardOperationError::Cancelled);
+                    file_transfer.cancel_all(FileTransferOperationError::Cancelled);
                     stop_connected(connected.take()).await;
                     server.close();
                     return;
