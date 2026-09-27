@@ -61,6 +61,7 @@ impl fmt::Debug for FileTransferDigest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileTransferProfileError {
     InvalidDisplayName,
+    TransferIdMismatch,
     InvalidResumeOffset,
 }
 
@@ -68,6 +69,7 @@ impl fmt::Display for FileTransferProfileError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::InvalidDisplayName => "file transfer display name is invalid",
+            Self::TransferIdMismatch => "file transfer response belongs to a different transfer",
             Self::InvalidResumeOffset => "file transfer resume offset is invalid",
         })
     }
@@ -142,7 +144,7 @@ impl fmt::Debug for FileTransferOffer {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum FileTransferAcceptance {
     Ready {
         transfer_id: TransferId,
@@ -158,6 +160,40 @@ impl FileTransferAcceptance {
     pub const fn transfer_id(&self) -> TransferId {
         match self {
             Self::Ready { transfer_id, .. } | Self::AlreadyComplete { transfer_id } => *transfer_id,
+        }
+    }
+
+    pub fn validate_for_offer(
+        &self,
+        offer: &FileTransferOffer,
+    ) -> Result<(), FileTransferProfileError> {
+        if self.transfer_id() != offer.transfer_id() {
+            return Err(FileTransferProfileError::TransferIdMismatch);
+        }
+        if let Self::Ready { resume_offset, .. } = self {
+            offer.validate_resume_offset(*resume_offset)?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Debug for FileTransferAcceptance {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Ready {
+                transfer_id,
+                resume_offset,
+                ..
+            } => formatter
+                .debug_struct("Ready")
+                .field("transfer_id", transfer_id)
+                .field("resume_offset", resume_offset)
+                .field("operation_id", &"[REDACTED; 32 bytes]")
+                .finish(),
+            Self::AlreadyComplete { transfer_id } => formatter
+                .debug_struct("AlreadyComplete")
+                .field("transfer_id", transfer_id)
+                .finish(),
         }
     }
 }
@@ -195,7 +231,8 @@ impl FileTransferResult {
 
 pub const fn valid_resume_offset(resume_offset: u64, file_size: u64) -> bool {
     resume_offset <= file_size
-        && (resume_offset == file_size || resume_offset % FILE_TRANSFER_CHECKPOINT_BYTES == 0)
+        && (resume_offset == file_size
+            || resume_offset.is_multiple_of(FILE_TRANSFER_CHECKPOINT_BYTES))
 }
 
 fn valid_display_name(value: &str) -> bool {

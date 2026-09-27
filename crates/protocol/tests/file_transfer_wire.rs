@@ -99,6 +99,54 @@ fn ready_and_already_complete_round_trip() {
 }
 
 #[test]
+fn acceptance_validation_binds_offer_identity_and_checkpoint() {
+    let offer = FileTransferOffer::new(
+        transfer_id(),
+        "a.txt".into(),
+        FILE_TRANSFER_CHECKPOINT_BYTES + 13,
+        digest(),
+    )
+    .unwrap();
+    let valid = FileTransferAcceptance::Ready {
+        transfer_id: transfer_id(),
+        resume_offset: FILE_TRANSFER_CHECKPOINT_BYTES,
+        operation_id: OperationId::from_bytes([0x33; 32]),
+    };
+    let wrong_transfer = FileTransferAcceptance::AlreadyComplete {
+        transfer_id: TransferId::from_bytes([0x44; 32]),
+    };
+    let invalid_offset = FileTransferAcceptance::Ready {
+        transfer_id: transfer_id(),
+        resume_offset: 1,
+        operation_id: OperationId::from_bytes([0x33; 32]),
+    };
+
+    assert_eq!(valid.validate_for_offer(&offer), Ok(()));
+    assert_eq!(
+        wrong_transfer.validate_for_offer(&offer),
+        Err(FileTransferProfileError::TransferIdMismatch)
+    );
+    assert_eq!(
+        invalid_offset.validate_for_offer(&offer),
+        Err(FileTransferProfileError::InvalidResumeOffset)
+    );
+}
+
+#[test]
+fn acceptance_debug_redacts_operation_authority() {
+    let acceptance = FileTransferAcceptance::Ready {
+        transfer_id: transfer_id(),
+        resume_offset: 0,
+        operation_id: OperationId::from_bytes([0x33; 32]),
+    };
+
+    let rendered = format!("{acceptance:?}");
+
+    assert!(!rendered.contains("51, 51"));
+    assert!(rendered.contains("[REDACTED; 32 bytes]"));
+}
+
+#[test]
 fn terminal_results_round_trip_and_reject_unknown_outcomes() {
     for outcome in [
         FileTransferTerminalOutcome::Completed,
