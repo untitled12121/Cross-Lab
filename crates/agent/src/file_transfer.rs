@@ -197,7 +197,10 @@ impl fmt::Debug for FileTransferChunkError {
                 .debug_tuple("Closed")
                 .field(&format_args!("[REDACTED; {} bytes]", chunk.len()))
                 .finish(),
-            Self::Closed(None) => formatter.debug_tuple("Closed").field(&"[UNAVAILABLE]").finish(),
+            Self::Closed(None) => formatter
+                .debug_tuple("Closed")
+                .field(&"[UNAVAILABLE]")
+                .finish(),
         }
     }
 }
@@ -628,9 +631,9 @@ mod tests {
     #[test]
     fn chunk_errors_preserve_bytes_without_debug_disclosure() {
         let payload = b"private-file-chunk".to_vec();
-        let error = map_chunk_error(RuntimeActorStreamSendError::Stream(
-            StreamSendError::Full(payload.clone()),
-        ));
+        let error = map_chunk_error(RuntimeActorStreamSendError::Stream(StreamSendError::Full(
+            payload.clone(),
+        )));
 
         assert!(!format!("{error:?}").contains("private-file-chunk"));
         assert_eq!(error.into_chunk(), Some(payload));

@@ -29,8 +29,8 @@ use crosslab_protocol::{
     encode_data_stream_open,
 };
 use crosslab_runtime::{
-    ConnectivityState, RuntimeActor, RuntimeActorConfig, RuntimeActorError,
-    RuntimeActorSession, RuntimeActorStreamSendError, RuntimeNode,
+    ConnectivityState, RuntimeActor, RuntimeActorConfig, RuntimeActorError, RuntimeActorSession,
+    RuntimeActorStreamSendError, RuntimeNode,
 };
 
 #[derive(Clone)]

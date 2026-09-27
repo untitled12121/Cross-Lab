@@ -51,8 +51,7 @@ use crate::{
         FileTransferSourceStream, advertisement as file_transfer_advertisement,
         already_complete_response as file_transfer_already_complete_response,
         capability_negotiated as file_transfer_capability_negotiated,
-        decode_inbound as decode_file_transfer,
-        decode_response as decode_file_transfer_response,
+        decode_inbound as decode_file_transfer, decode_response as decode_file_transfer_response,
         decode_terminal_result_event as decode_file_transfer_terminal_result,
         internal_failure as file_transfer_internal_failure,
         local_capabilities as file_transfer_local_capabilities,
@@ -470,11 +469,7 @@ impl FileTransferRuntimeState {
         self.outgoing
             .values()
             .map(|pending| pending.deadline)
-            .chain(
-                self.destination_ready
-                    .iter()
-                    .map(|ready| ready.deadline),
-            )
+            .chain(self.destination_ready.iter().map(|ready| ready.deadline))
             .chain(self.terminal_ready.iter().map(|terminal| terminal.deadline))
             .chain(source_deadlines)
             .min()
@@ -1090,25 +1085,13 @@ async fn handle_command(
             false
         }
         Some(AgentCommand::FileTransferFinish { stream, reply }) => {
-            finish_file_transfer_stream(
-                connected.as_ref(),
-                file_transfer,
-                stream,
-                false,
-                reply,
-            )
-            .await;
+            finish_file_transfer_stream(connected.as_ref(), file_transfer, stream, false, reply)
+                .await;
             false
         }
         Some(AgentCommand::FileTransferCancelSend { stream, reply }) => {
-            finish_file_transfer_stream(
-                connected.as_ref(),
-                file_transfer,
-                stream,
-                true,
-                reply,
-            )
-            .await;
+            finish_file_transfer_stream(connected.as_ref(), file_transfer, stream, true, reply)
+                .await;
             false
         }
         Some(AgentCommand::FileTransferCancelReceive { stream_id, reply }) => {
@@ -1284,6 +1267,18 @@ async fn start_file_transfer_offer(
         let _ = reply.send(Err(FileTransferOperationError::ResourceLimit));
         return;
     }
+    if file_transfer
+        .outgoing
+        .values()
+        .any(|pending| pending.offer.transfer_id() == offer.transfer_id())
+        || matches!(
+            file_transfer.source.get(&offer.transfer_id()),
+            Some(SourceFileTransfer::Streaming { .. } | SourceFileTransfer::AwaitingResult { .. })
+        )
+    {
+        let _ = reply.send(Err(FileTransferOperationError::AlreadyActive));
+        return;
+    }
     let Some(connection) = connected.filter(|connection| !connection.reconnecting) else {
         let _ = reply.send(Err(FileTransferOperationError::NotConnected));
         return;
@@ -1321,6 +1316,14 @@ async fn start_file_transfer_offer(
         let _ = reply.send(Err(FileTransferOperationError::Transport));
         return;
     }
+
+    if matches!(
+        file_transfer.source.get(&offer.transfer_id()),
+        Some(SourceFileTransfer::Ready { .. })
+    ) {
+        file_transfer.source.remove(&offer.transfer_id());
+    }
+    let _ = file_transfer.take_cached_result(offer.transfer_id());
 
     file_transfer.outgoing.insert(
         request_id,
@@ -1520,9 +1523,15 @@ async fn finish_file_transfer_stream(
     };
 
     let operation = if cancel {
-        connection.actor.cancel_outbound_stream(stream.stream_id()).await
+        connection
+            .actor
+            .cancel_outbound_stream(stream.stream_id())
+            .await
     } else {
-        connection.actor.finish_data_stream(stream.stream_id()).await
+        connection
+            .actor
+            .finish_data_stream(stream.stream_id())
+            .await
     };
     if operation.is_err() {
         file_transfer.source.remove(&stream.transfer_id());
@@ -1586,10 +1595,8 @@ async fn send_file_transfer_terminal(
     transfer_id: TransferId,
     outcome: FileTransferTerminalOutcome,
 ) -> Result<(), FileTransferOperationError> {
-    let event = file_transfer_terminal_result_event(file_transfer_terminal_result(
-        transfer_id,
-        outcome,
-    ))?;
+    let event =
+        file_transfer_terminal_result_event(file_transfer_terminal_result(transfer_id, outcome))?;
     connection
         .actor
         .send_event(event)
@@ -1608,10 +1615,12 @@ fn remember_terminal_ready(file_transfer: &mut FileTransferRuntimeState, transfe
     if file_transfer.terminal_ready.len() >= RUNTIME_CAPACITY {
         file_transfer.terminal_ready.remove(0);
     }
-    file_transfer.terminal_ready.push(TerminalReadyFileTransfer {
-        transfer_id,
-        deadline: Instant::now() + FILE_TRANSFER_OFFER_TIMEOUT,
-    });
+    file_transfer
+        .terminal_ready
+        .push(TerminalReadyFileTransfer {
+            transfer_id,
+            deadline: Instant::now() + FILE_TRANSFER_OFFER_TIMEOUT,
+        });
 }
 
 async fn fail_inbound_file_transfer(
