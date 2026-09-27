@@ -141,15 +141,32 @@ pub(super) enum AgentCommand {
     Stop,
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct RuntimeAvailability {
+    clipboard: ClipboardAvailability,
+    file_transfer: FileTransferAvailability,
+}
+
+impl RuntimeAvailability {
+    pub(super) const fn new(
+        clipboard: ClipboardAvailability,
+        file_transfer: FileTransferAvailability,
+    ) -> Self {
+        Self {
+            clipboard,
+            file_transfer,
+        }
+    }
+}
+
 pub(super) struct AgentChannels {
     policy_rx: watch::Receiver<PolicyState>,
     command_rx: mpsc::Receiver<AgentCommand>,
     status_tx: watch::Sender<PresenceSnapshot>,
     permissions_tx: watch::Sender<PermissionSnapshot>,
     clipboard_requests_tx: mpsc::Sender<ClipboardRequest>,
-    clipboard_availability: ClipboardAvailability,
     file_transfer_requests_tx: mpsc::Sender<FileTransferRequest>,
-    file_transfer_availability: FileTransferAvailability,
+    availability: RuntimeAvailability,
 }
 
 impl AgentChannels {
@@ -159,9 +176,8 @@ impl AgentChannels {
         status_tx: watch::Sender<PresenceSnapshot>,
         permissions_tx: watch::Sender<PermissionSnapshot>,
         clipboard_requests_tx: mpsc::Sender<ClipboardRequest>,
-        clipboard_availability: ClipboardAvailability,
         file_transfer_requests_tx: mpsc::Sender<FileTransferRequest>,
-        file_transfer_availability: FileTransferAvailability,
+        availability: RuntimeAvailability,
     ) -> Self {
         Self {
             policy_rx,
@@ -169,9 +185,8 @@ impl AgentChannels {
             status_tx,
             permissions_tx,
             clipboard_requests_tx,
-            clipboard_availability,
             file_transfer_requests_tx,
-            file_transfer_availability,
+            availability,
         }
     }
 }
@@ -365,14 +380,13 @@ pub(super) async fn run_agent(
         status_tx,
         permissions_tx,
         clipboard_requests_tx,
-        clipboard_availability,
         file_transfer_requests_tx,
-        file_transfer_availability,
+        availability,
     } = channels;
     let (connect_tx, mut connect_rx) = mpsc::channel(CONNECT_RESULT_CAPACITY);
-    let mut clipboard = ClipboardRuntimeState::new(clipboard_requests_tx, clipboard_availability);
+    let mut clipboard = ClipboardRuntimeState::new(clipboard_requests_tx, availability.clipboard);
     let mut file_transfer =
-        FileTransferRuntimeState::new(file_transfer_requests_tx, file_transfer_availability);
+        FileTransferRuntimeState::new(file_transfer_requests_tx, availability.file_transfer);
     let mut candidates = BTreeMap::<String, CandidateState>::new();
     let mut connected: Option<ConnectedRuntime> = None;
     let mut connecting_instance: Option<String> = None;
@@ -555,8 +569,10 @@ pub(super) async fn run_agent(
                         &policy,
                         &mut connected,
                         &status_tx,
-                        clipboard.availability,
-                        file_transfer.availability,
+                        RuntimeAvailability::new(
+                            clipboard.availability,
+                            file_transfer.availability,
+                        ),
                     ).await.is_err() {
                         publish_failure(&status_tx, connected.as_ref());
                     }
@@ -576,8 +592,10 @@ pub(super) async fn run_agent(
                         network_available,
                         auto_connect,
                         &status_tx,
-                        clipboard.availability,
-                        file_transfer.availability,
+                        RuntimeAvailability::new(
+                            clipboard.availability,
+                            file_transfer.availability,
+                        ),
                     ).await;
                 }
             }
@@ -696,8 +714,10 @@ async fn handle_connect_result(
                 policy,
                 connected,
                 status_tx,
-                clipboard_availability,
-                file_transfer_availability,
+                RuntimeAvailability::new(
+                    clipboard_availability,
+                    file_transfer_availability,
+                ),
             )
             .await
             .is_err()
@@ -728,8 +748,7 @@ async fn install_session(
     policy: &PolicyState,
     connected: &mut Option<ConnectedRuntime>,
     status_tx: &watch::Sender<PresenceSnapshot>,
-    clipboard_availability: ClipboardAvailability,
-    file_transfer_availability: FileTransferAvailability,
+    availability: RuntimeAvailability,
 ) -> Result<(), ()> {
     let peer_id = session
         .session()
@@ -741,8 +760,8 @@ async fn install_session(
         session,
         peer_trust,
         policy,
-        clipboard_availability,
-        file_transfer_availability,
+        availability.clipboard,
+        availability.file_transfer,
     )
     .ok_or(())?;
 
@@ -757,10 +776,7 @@ async fn install_session(
             .map_err(|_| ())?;
         connection
             .actor
-            .send_capabilities(runtime_advertisement(
-                clipboard_availability,
-                file_transfer_availability,
-            ))
+            .send_capabilities(runtime_advertisement(availability.clipboard, availability.file_transfer))
             .await
             .map_err(|_| ())?;
         connection.closed = closed;

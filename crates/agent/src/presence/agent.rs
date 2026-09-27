@@ -13,7 +13,9 @@ use crosslab_transport_quic::{QuicTransportConfig, TrustedSessionQuicServer};
 use tokio::sync::{mpsc, oneshot, watch};
 
 use super::{
-    runner::{AgentChannels, AgentCommand, AgentSecurity, run_agent},
+    runner::{
+        AgentChannels, AgentCommand, AgentSecurity, RuntimeAvailability, run_agent,
+    },
     types::{
         PermissionSnapshot, PresenceAgentError, PresenceDiscoveryInfo, PresencePhase,
         PresenceSnapshot, TrustedSessionRoute,
@@ -167,9 +169,11 @@ impl TrustedPresenceAgent {
                             status_tx,
                             permissions_tx,
                             clipboard_requests_tx,
-                            clipboard_availability,
                             file_transfer_requests_tx,
-                            file_transfer_availability,
+                            RuntimeAvailability::new(
+                                clipboard_availability,
+                                file_transfer_availability,
+                            ),
                         ),
                     )
                     .await;
