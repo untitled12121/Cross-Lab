@@ -9,6 +9,5 @@ pub use linux::{
     LinuxFileTransferStateStore, LinuxIncomingFileTransfer, LinuxPreparedFileSource,
 };
 
-
 #[cfg(target_os = "linux")]
 pub(crate) use linux::{LinuxFileTransferWorkerError, LinuxFileTransferWorkerHandle};
