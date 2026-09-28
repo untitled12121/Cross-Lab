@@ -21,7 +21,7 @@ use super::{
 
 #[derive(Debug)]
 pub enum LinuxFileTransferRecovery {
-    Ready(LinuxFileTransferReceiver),
+    Ready(Box<LinuxFileTransferReceiver>),
     AlreadyComplete,
 }
 
@@ -152,13 +152,13 @@ impl LinuxFileTransferReceiver {
         }
         file.seek(SeekFrom::Start(partial.durable_offset()))?;
 
-        Ok(LinuxFileTransferRecovery::Ready(Self {
+        Ok(LinuxFileTransferRecovery::Ready(Box::new(Self {
             file,
             locator,
             offset: partial.durable_offset(),
             partial,
             store,
-        }))
+        })))
     }
 
     pub const fn offset(&self) -> u64 {
