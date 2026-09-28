@@ -148,9 +148,13 @@ mod tests {
 
         store.commit(&snapshot).unwrap();
         assert_eq!(store.load().unwrap(), snapshot);
-        assert_eq!(fs::metadata(&store.path).unwrap().mode() & 0o077, 0);
+        assert_eq!(fs::metadata(&store.path).unwrap().permissions().mode() & 0o077, 0);
         assert_eq!(
-            fs::metadata(store.path.parent().unwrap()).unwrap().mode() & 0o077,
+            fs::metadata(store.path.parent().unwrap())
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o077,
             0
         );
         assert!(!format!("{store:?}").contains(root.to_string_lossy().as_ref()));
