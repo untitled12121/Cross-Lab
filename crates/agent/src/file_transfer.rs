@@ -15,6 +15,7 @@ pub use retained::{
 use core::fmt;
 
 use crosslab_core::{EventSubscription, StreamSendError};
+use crosslab_identity::DeviceId;
 use crosslab_policy::{
     CapabilityId, CapabilityVersion, CapabilityVersionRange, LocalCapability, OperationId,
     OperationName, SessionId,
@@ -51,12 +52,17 @@ impl FileTransferAvailability {
 #[derive(Clone, PartialEq, Eq)]
 pub struct FileTransferRequest {
     request_id: RequestId,
+    source_device_id: DeviceId,
     offer: FileTransferOffer,
 }
 
 impl FileTransferRequest {
     pub const fn request_id(&self) -> RequestId {
         self.request_id
+    }
+
+    pub const fn source_device_id(&self) -> DeviceId {
+        self.source_device_id
     }
 
     pub const fn offer(&self) -> &FileTransferOffer {
@@ -73,6 +79,7 @@ impl fmt::Debug for FileTransferRequest {
         formatter
             .debug_struct("FileTransferRequest")
             .field("request_id", &self.request_id)
+            .field("source_device_id", &self.source_device_id)
             .field("offer", &self.offer)
             .finish()
     }
@@ -402,6 +409,7 @@ pub(crate) fn offer_request(
 
 pub(crate) fn decode_inbound(
     request: &ControlRequest,
+    source_device_id: DeviceId,
 ) -> Result<FileTransferRequest, ControlResponseResult> {
     if request.capability_id().as_str() != FILE_TRANSFER_CAPABILITY_ID {
         return Err(failure(
@@ -427,6 +435,7 @@ pub(crate) fn decode_inbound(
     let offer = decode_file_transfer_offer(request.body()).map_err(wire_failure)?;
     Ok(FileTransferRequest {
         request_id: request.request_id(),
+        source_device_id,
         offer,
     })
 }
