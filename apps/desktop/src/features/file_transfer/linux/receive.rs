@@ -8,8 +8,8 @@ use std::{
 
 use crosslab_agent::{
     FileTransferCompletionTombstone, FileTransferIdentity, FileTransferIntegrityError,
-    FileTransferPartialState, FileTransferRecoveryAction, FileTransferStateMatch,
-    FileTransferStateSnapshot, FileTransferVerifier,
+    FileTransferPartialState, FileTransferRecoveryAction, FileTransferStateError,
+    FileTransferStateMatch, FileTransferStateSnapshot, FileTransferVerifier,
 };
 use crosslab_identity::DeviceId;
 use crosslab_protocol::{FILE_TRANSFER_CHECKPOINT_BYTES, FileTransferOffer};
@@ -250,7 +250,14 @@ impl LinuxFileTransferReceiver {
             self.partial.identity().source_device_id(),
             self.partial.identity().offer(),
         )? {
-            Some(FileTransferStateMatch::Partial(_)) => Ok(snapshot),
+            Some(FileTransferStateMatch::Partial(current))
+                if current.durable_offset() == self.partial.durable_offset() =>
+            {
+                Ok(snapshot)
+            }
+            Some(FileTransferStateMatch::Partial(_)) => {
+                Err(FileTransferStateError::CheckpointRegression.into())
+            }
             Some(FileTransferStateMatch::AlreadyComplete(_)) => {
                 Err(LinuxFileTransferError::AlreadyComplete)
             }
