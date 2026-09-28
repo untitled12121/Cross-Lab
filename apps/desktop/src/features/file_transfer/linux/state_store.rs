@@ -119,9 +119,7 @@ mod tests {
     };
     use crosslab_crypto::{blake3_256, random_bytes};
     use crosslab_identity::DeviceId;
-    use crosslab_protocol::{
-        FileTransferDigest, FileTransferOffer, TransferId,
-    };
+    use crosslab_protocol::{FileTransferDigest, FileTransferOffer, TransferId};
 
     use super::super::LinuxFileTransferLocator;
     use super::*;
@@ -144,10 +142,9 @@ mod tests {
             10,
         )
         .unwrap();
-        let snapshot = FileTransferStateSnapshot::new(vec![
-            FileTransferRetainedState::Partial(partial),
-        ])
-        .unwrap();
+        let snapshot =
+            FileTransferStateSnapshot::new(vec![FileTransferRetainedState::Partial(partial)])
+                .unwrap();
 
         store.commit(&snapshot).unwrap();
         assert_eq!(store.load().unwrap(), snapshot);
@@ -166,11 +163,7 @@ mod tests {
         let root = test_root("oversized");
         fs::create_dir_all(&root).unwrap();
         let store = LinuxFileTransferStateStore::for_test(root.join("state-v1.bin"));
-        fs::write(
-            &store.path,
-            vec![0_u8; MAX_FILE_TRANSFER_STATE_BYTES + 1],
-        )
-        .unwrap();
+        fs::write(&store.path, vec![0_u8; MAX_FILE_TRANSFER_STATE_BYTES + 1]).unwrap();
 
         assert!(matches!(
             store.load(),
