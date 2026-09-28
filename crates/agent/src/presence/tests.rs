@@ -543,6 +543,7 @@ async fn file_transfer_offer_is_bounded_correlated_and_cancelled_on_disconnect()
     .expect("file offer should arrive")
     .expect("file transfer request channel should remain open");
 
+    assert_eq!(inbound.source_device_id(), left_device_id);
     assert_eq!(inbound.offer(), &offer);
     right
         .complete_file_transfer_already_complete(inbound.request_id())
