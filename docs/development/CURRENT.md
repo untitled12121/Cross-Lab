@@ -10,7 +10,7 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 
 ## Canonical Baseline
 
-- Current `main` after PR #67: `f051ac0060d9086018480cd9009b74246e8e14cf`.
+- Current `main` after PR #68: `d8ef1901253f8363411a713b8955bd045e72dfe8`.
 - PR #49 — Linux Add Device QR invitation UI + Android CameraX/ML Kit scanner: merged as `445bbf32178dff94f339fc1ae80447967f5da215`; exact-head CI `35533414673` green on `7d3176ffd4387d3e29982ae5fe641249d6d33445`.
 - PR #50 — shared product pairing coordinator + durable reciprocal trust persistence: merged as `3af825e6f78bef4512168f587f452c1b0267b6a7`; exact-head CI `35567548228` and Fuzz Smoke `35567548208` green on `ec59f99f7c09898aa2533d8b40bd4e980fa2b022`.
 - PR #51 — ADR-0016 LAN discovery profile + versioned product-pairing wire + provisional Quinn pairing channel: merged as `cf2add350ffa60056d74ac57b0a187a0297d8777`; exact-head CI `35593397861` and Fuzz Smoke `35593397844` green on `2702cc0c926cf044c65aef0376f573aaedae8c6f`.
@@ -33,7 +33,8 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 - PR #65 — exact bounded `files.transfer` v2 payload contract and protocol spec: merged as `06d6e70cb200c31b82782a387a44d34837a7dc3f`; exact head `b4845decaee6d8bcdb5b6509a26c9ea8410b6023` passed full CI `36284858974` and Fuzz Smoke `36284858982`.
 - PR #66 — event-driven runtime data-stream readiness: merged as `4311722a5c1737ee6fd886c5b7945f777e48b165`; exact head `42e23a6e2128b8d513a3190a2766809388c28b92` passed full Rust + Android CI `36287858429`.
 - PR #67 — `files.transfer` v2 control/authorization runtime: merged as `f051ac0060d9086018480cd9009b74246e8e14cf`; exact head `54f7f90eb70eba6409a4409fa1adf24c202337be` passed full Rust + Android CI `36328477626`.
-- Active Phase 2 implementation branch / PR: `phase2-file-transfer-data-plane` / #68.
+- PR #68 — `files.transfer` v2 data-plane runtime: merged as `d8ef1901253f8363411a713b8955bd045e72dfe8`; exact head `45f14d3ff523ef4eee5268e8d81c9469be8f58de` passed full Rust + Android CI `36340407398`.
+- Active Phase 2 implementation branch / PR: `phase2-file-transfer-integrity-state` / #69.
 - ADR-0018, ADR-0019, and ADR-0020 are accepted. Clipboard is implemented; file transfer is in Task 3 shared-runtime implementation.
 
 ## Implemented M10 Product Path
@@ -107,13 +108,13 @@ Owner approval on 2026-09-25 unblocked implementation. PR #58 merged the shared 
 
 PR #59 completed the persist-before-apply permission-edit boundary. PR #60 then added the shared ADR-0018 clipboard runtime with bounded UTF-8 payloads, capability negotiation, session-local request correlation, and cancellation across policy/reconnect/disconnect/shutdown. PR #61 completed the Linux GPUI and Android ClipboardManager adapters plus explicit Send/Fetch product controls without background clipboard monitoring or plaintext history.
 
-Clipboard is complete for the Phase 2 MVP software slice. PR #62 completed the protocol-neutral authorized data-stream runtime foundation, PR #65 implemented the accepted v2 offer/accept/result payload contract, and PR #66 completed event-driven data-stream draining through `RuntimeActor`. PR #67 then completed exact v2 capability registration, bounded offer/accept correlation, result subscription-before-offer ordering, default-disabled production availability, fresh destination `SingleStream` authority after current policy/trust/session authorization, shared hard capacity for pending/unused authority, and lifecycle/expiry cancellation. The active PR #68 data-plane slice adds actor-owned open/send/finish/cancel stream commands with ownership-preserving backpressure, destination stream-to-`TransferId` correlation, terminal `files.transfer.result` handling, and a Quinn-backed end-to-end runtime test. It still excludes filesystem adapters, hashing/checkpoint persistence, and platform paths.
+Clipboard is complete for the Phase 2 MVP software slice. PR #62 completed the protocol-neutral authorized data-stream runtime foundation, PR #65 implemented the accepted v2 offer/accept/result payload contract, PR #66 completed event-driven data-stream draining through `RuntimeActor`, PR #67 completed exact v2 control/authorization runtime, and PR #68 completed the actor-owned source/destination data plane with ownership-preserving backpressure, terminal result handling, and Quinn-backed end-to-end coverage. Active PR #69 adds streaming BLAKE3 preparation/verification plus bounded retained partial/checkpoint/tombstone capability state. Filesystem I/O, platform paths/URIs, final publication, and product UI remain platform-adapter work.
 
 Continue in small verified vertical slices:
 
 - per-device permissions/capability-control foundation — implemented on PR #56;
 - clipboard — implemented on PR #60 + PR #61;
-- resumable file transfer — protocol-neutral stream foundation on PR #62; ADR-0020 accepted on PR #64; v2 payload contract on PR #65; event-driven actor streams on PR #66; control/authorization runtime on PR #67; data-plane runtime active on PR #68;
+- resumable file transfer — protocol-neutral stream foundation on PR #62; ADR-0020 accepted on PR #64; v2 payload contract on PR #65; event-driven actor streams on PR #66; control/authorization runtime on PR #67; data-plane runtime on PR #68; integrity/checkpoint retained state active on PR #69;
 - notifications;
 - privacy-conscious audit/history;
 - revocation/device removal;
@@ -132,11 +133,11 @@ Phase 3 adaptive networking does not begin until Phase 2 is complete.
 
 ## Exact Next Task
 
-1. finish PR #68 (`phase2-file-transfer-data-plane`) by passing the full exact-head Rust + Android gate and fixing only verified failures;
-2. preserve the current milestone boundary: actor-owned stream open/send/finish/cancel, ownership-preserving backpressure, destination stream correlation, terminal result handling, and Quinn-backed runtime coverage; no filesystem adapter, path authority, whole-file buffering, hashing, or checkpoint persistence in this PR;
-3. after merge, branch from the new `main` and implement the next Task 3 slice: bounded streaming BLAKE3 integrity state plus durable 1 MiB partial-checkpoint/completion-tombstone capability abstractions, reusing the existing pinned `blake3` dependency and Cross-Lab durable-store patterns without coupling to identity/policy stores;
-4. require final exact size + BLAKE3 verification before completion, roll back/ignore bytes beyond the last durable checkpoint, fail closed on inconsistent partial metadata, and keep retained state free of session/`OperationId` authority;
-5. then implement Linux native file adapter/UI and Android SAF/ContentResolver adapter/UI without peer path authority or whole-file buffering;
+1. finish PR #69 (`phase2-file-transfer-integrity-state`) with the full exact-head Rust + Android gate and fix only verified failures;
+2. preserve this milestone boundary: bounded streaming BLAKE3 source hashing, exact destination size/digest verification, exact source+offer retained identity, 1 MiB durable checkpoint rules, fail-closed recovery, bounded tombstones/retention, opaque redacted local locators, and a shared local snapshot codec; no filesystem I/O, platform paths/URIs, publication, or UI in this PR;
+3. after merge, implement the Linux native file adapter in a separate verified slice: owner-controlled source/save selection, private partial target, bounded I/O/backpressure, crash-safe state persistence, fsync-before-checkpoint advancement, exact verification, and non-clobbering final publication;
+4. then implement the Android SAF/ContentResolver adapter with explicit URI grants, app-lifecycle recovery, the same checkpoint/integrity rules, and no broad storage privilege;
+5. then expose the explicit Send/receive/resume/progress/cancel/retry product UI on Linux GPUI and Android Compose;
 6. keep M10 physical evidence separately pending until owner hardware is available;
 7. stop before Phase 3.
 
