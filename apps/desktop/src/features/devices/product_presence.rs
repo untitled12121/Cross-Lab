@@ -11,7 +11,8 @@ use std::{
 
 use crosslab_agent::{
     ClipboardAvailability, ClipboardOperationError, ClipboardPlatformError, ClipboardRequest,
-    PermissionSnapshot, PresenceAgentError, PresenceSnapshot, TrustedPresenceAgent,
+    FileTransferAvailability, PermissionSnapshot, PresenceAgentError, PresenceSnapshot,
+    TrustedPresenceAgent,
     TrustedSessionRoute as AgentTrustedSessionRoute,
 };
 use crosslab_identity_store::{ProductIdentityError, ProductIdentityState};
@@ -62,20 +63,16 @@ impl DesktopProductPresenceController {
 
         let policy = LinuxPolicyStore::from_environment()?.load().await?;
         let signer = LinuxEd25519Signer::load_required(LinuxSigningSlot::LocalDevice).await?;
-        let agent = Arc::new(TrustedPresenceAgent::spawn_with_policy_and_clipboard(
+        let agent = Arc::new(TrustedPresenceAgent::spawn_with_policy_and_capabilities(
             identity,
             Arc::new(signer),
             policy,
             ClipboardAvailability::new(true, true),
+            FileTransferAvailability::new(true),
         )?);
         let status = agent.subscribe_status();
         let (file_transfer, file_transfer_offers, file_transfer_statuses) =
-            match LinuxFileTransferWorkerHandle::start(Arc::clone(&agent)) {
-                Ok((worker, offers, statuses)) => {
-                    (Some(worker), Some(offers), Some(statuses))
-                }
-                Err(_) => (None, None, None),
-            };
+            LinuxFileTransferWorkerHandle::start(Arc::clone(&agent))?;
         let discovery_agent = Arc::clone(&agent);
         let (control_tx, control_rx) = mpsc::channel(CONTROL_CAPACITY);
 
@@ -97,9 +94,9 @@ impl DesktopProductPresenceController {
             agent,
             status,
             control_tx,
-            file_transfer,
-            file_transfer_offers: Mutex::new(file_transfer_offers),
-            file_transfer_statuses: Mutex::new(file_transfer_statuses),
+            file_transfer: Some(file_transfer),
+            file_transfer_offers: Mutex::new(Some(file_transfer_offers)),
+            file_transfer_statuses: Mutex::new(Some(file_transfer_statuses)),
             file_transfer_send_active: Arc::new(AtomicBool::new(false)),
         }))
     }
