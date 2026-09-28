@@ -10,7 +10,7 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 
 ## Canonical Baseline
 
-- Current `main` after PR #69: `0a9d9562bfe35f3fcbd4dc9dd717f247ba0da7a1`.
+- Current `main` after PR #70: `eb32d79c94418ce46d70f8f91e05ec521f3ad504`.
 - PR #49 — Linux Add Device QR invitation UI + Android CameraX/ML Kit scanner: merged as `445bbf32178dff94f339fc1ae80447967f5da215`; exact-head CI `35533414673` green on `7d3176ffd4387d3e29982ae5fe641249d6d33445`.
 - PR #50 — shared product pairing coordinator + durable reciprocal trust persistence: merged as `3af825e6f78bef4512168f587f452c1b0267b6a7`; exact-head CI `35567548228` and Fuzz Smoke `35567548208` green on `ec59f99f7c09898aa2533d8b40bd4e980fa2b022`.
 - PR #51 — ADR-0016 LAN discovery profile + versioned product-pairing wire + provisional Quinn pairing channel: merged as `cf2add350ffa60056d74ac57b0a187a0297d8777`; exact-head CI `35593397861` and Fuzz Smoke `35593397844` green on `2702cc0c926cf044c65aef0376f573aaedae8c6f`.
@@ -35,7 +35,8 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 - PR #67 — `files.transfer` v2 control/authorization runtime: merged as `f051ac0060d9086018480cd9009b74246e8e14cf`; exact head `54f7f90eb70eba6409a4409fa1adf24c202337be` passed full Rust + Android CI `36328477626`.
 - PR #68 — `files.transfer` v2 data-plane runtime: merged as `d8ef1901253f8363411a713b8955bd045e72dfe8`; exact head `45f14d3ff523ef4eee5268e8d81c9469be8f58de` passed full Rust + Android CI `36340407398`.
 - PR #69 — streaming BLAKE3 integrity + bounded retained transfer state: merged as `0a9d9562bfe35f3fcbd4dc9dd717f247ba0da7a1`; exact head `c5fbab50aaa64e86475e20a1fca2527d195fa5ab` passed full Rust + Android CI `36383403790`.
-- Active Phase 2 implementation branch / PR: `phase2-linux-file-transfer-storage` / #70.
+- PR #70 — Linux file-transfer storage/source adapter: merged as `eb32d79c94418ce46d70f8f91e05ec521f3ad504`; exact head `e653883b90ca7af4faddc6a635b9ccabdfb56779` passed full Rust + Android CI `36393985966`.
+- Active Phase 2 implementation branch / PR: `phase2-linux-file-transfer-receive` / #71.
 - ADR-0018, ADR-0019, and ADR-0020 are accepted. Clipboard is implemented; file transfer is in Task 4 Linux platform-adapter implementation.
 
 ## Implemented M10 Product Path
@@ -109,13 +110,13 @@ Owner approval on 2026-09-25 unblocked implementation. PR #58 merged the shared 
 
 PR #59 completed the persist-before-apply permission-edit boundary. PR #60 then added the shared ADR-0018 clipboard runtime with bounded UTF-8 payloads, capability negotiation, session-local request correlation, and cancellation across policy/reconnect/disconnect/shutdown. PR #61 completed the Linux GPUI and Android ClipboardManager adapters plus explicit Send/Fetch product controls without background clipboard monitoring or plaintext history.
 
-Clipboard is complete for the Phase 2 MVP software slice. PR #62 completed the protocol-neutral authorized data-stream runtime foundation, PR #65 implemented the accepted v2 offer/accept/result payload contract, PR #66 completed event-driven data-stream draining through `RuntimeActor`, PR #67 completed exact v2 control/authorization runtime, PR #68 completed the actor-owned source/destination data plane, and PR #69 completed streaming BLAKE3 integrity plus bounded retained partial/checkpoint/tombstone state. Active PR #70 starts the Linux platform adapter with private crash-safe retained-state persistence, opaque local path locators, and bounded source hashing/resume readers. Production file-transfer availability remains disabled until the Linux receive/service path consumes both bounded queues.
+Clipboard is complete for the Phase 2 MVP software slice. PR #62 completed the protocol-neutral authorized data-stream runtime foundation, PR #65 implemented the accepted v2 offer/accept/result payload contract, PR #66 completed event-driven data-stream draining through `RuntimeActor`, PR #67 completed exact v2 control/authorization runtime, PR #68 completed the actor-owned source/destination data plane, and PR #69 completed streaming BLAKE3 integrity plus bounded retained partial/checkpoint/tombstone state. PR #70 completed the first Linux platform-adapter slice with private crash-safe retained-state persistence, opaque local path locators, and bounded source hashing/resume readers. Active PR #71 adds private receive partials, durable 1 MiB checkpoint ordering, restart truncation, exact final integrity verification, completion tombstones, crash-safe publication recovery, and atomic non-clobber publication. Production file-transfer availability remains disabled until the Linux service consumes both bounded agent queues.
 
 Continue in small verified vertical slices:
 
 - per-device permissions/capability-control foundation — implemented on PR #56;
 - clipboard — implemented on PR #60 + PR #61;
-- resumable file transfer — protocol-neutral stream foundation on PR #62; ADR-0020 accepted on PR #64; v2 payload contract on PR #65; event-driven actor streams on PR #66; control/authorization runtime on PR #67; data-plane runtime on PR #68; integrity/checkpoint retained state on PR #69; Linux storage/source adapter active on PR #70;
+- resumable file transfer — protocol-neutral stream foundation on PR #62; ADR-0020 accepted on PR #64; v2 payload contract on PR #65; event-driven actor streams on PR #66; control/authorization runtime on PR #67; data-plane runtime on PR #68; integrity/checkpoint retained state on PR #69; Linux storage/source adapter on PR #70; Linux receive/publication adapter active on PR #71;
 - notifications;
 - privacy-conscious audit/history;
 - revocation/device removal;
@@ -134,12 +135,12 @@ Phase 3 adaptive networking does not begin until Phase 2 is complete.
 
 ## Exact Next Task
 
-1. finish PR #70 Linux storage/source sub-slice: private bounded retained-state persistence, opaque destination/partial locators, source identity checks, full BLAKE3 preparation, and 64 KiB resume readers;
-2. after exact-head CI, merge #70 and branch from the new `main`;
-3. implement the Linux receive/publication sub-slice: owner-selected destination, private adjacent partial, durable 1 MiB checkpoint ordering, restart truncation/fail-closed recovery, exact size/digest verification, and atomic non-clobber publication;
-4. then wire the Linux product service/native GPUI path prompts and enable `FileTransferAvailability` only when request/data queues are actively consumed;
-5. implement the Android SAF/ContentResolver adapter with the same accepted resume/integrity semantics;
-6. finish product UI states for send/receive/progress/cancel/retry/resume without path/content logging;
+1. finish PR #71 (`phase2-linux-file-transfer-receive`) with the full exact-head Rust + Android gate and fix only verified failures;
+2. preserve this sub-slice boundary: private adjacent partial targets, bounded 64 KiB writes, fsync-before-durable 1 MiB checkpoint advancement, restart truncation/fail-closed recovery, exact final size/BLAKE3 verification, durable completion tombstones, and atomic non-clobber publication; keep production `files.transfer` disabled and do not add GPUI prompts in this PR;
+3. after merge, wire the Linux product service to consume both bounded file-transfer request/data queues, bind retained identity to the authenticated source device, and enable `FileTransferAvailability` only while that service is active;
+4. then add explicit native source/save selection and the Linux GPUI Send/receive/resume/progress/cancel/retry flow;
+5. implement the Android SAF/ContentResolver adapter with the same accepted resume/integrity semantics and no broad storage privilege;
+6. finish the matching Android Compose product flow;
 7. keep M10 physical evidence separately pending until owner hardware is available;
 8. stop before Phase 3.
 

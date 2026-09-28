@@ -1,6 +1,6 @@
 # Phase 2 Resumable File Transfer
 
-**Status:** Active — Task 1 implemented; ADR-0020 accepted; PR #65-#69 shared runtime complete; PR #70 Linux storage/source adapter active
+**Status:** Active — Task 1 implemented; ADR-0020 accepted; PR #65-#69 shared runtime complete; PR #70 Linux storage/source merged; PR #71 Linux receive/publication active
 **Date:** 2026-09-26
 **Base:** PR #61 merged as `61ae275356201245a7dcac95d11bd598d2c3045e`  
 **Foundation:** PR #62 merged as `e338d10911ccdb908bc495150f048503086c0ce2`; exact implementation head `e663909443d208c712ccb7f6e1e74fb8dab26ab8` passed full Rust + Android CI `36258390585`.
@@ -84,7 +84,7 @@ After ADR-0020 acceptance:
 
 ## Task 4 — Linux platform adapter — Active
 
-PR #70 starts the platform slice with a private atomic retained-state store, opaque/redacted Linux path locators, symlink-safe source opening checks, full streaming BLAKE3 preparation, and bounded 64 KiB resume reads. Product capability advertisement remains disabled until the receive/service path is installed.
+PR #70 completed the first platform slice with a private atomic retained-state store, opaque/redacted Linux path locators, symlink-safe source opening checks, full streaming BLAKE3 preparation, and bounded 64 KiB resume reads. PR #71 adds private adjacent receive partials, fsync-before-durable 1 MiB checkpoint advancement, restart truncation/fail-closed recovery, exact whole-file BLAKE3 verification, completion tombstones, crash recovery across publication, and atomic non-clobber publication. Product capability advertisement remains disabled until the request/data service path is installed.
 
 - explicit native file selection/save destination;
 - no peer-supplied path authority;
