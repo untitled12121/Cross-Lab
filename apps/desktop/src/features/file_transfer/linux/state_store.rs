@@ -13,6 +13,7 @@ use crosslab_agent::{
 
 use super::LinuxFileTransferError;
 
+#[derive(Clone)]
 pub struct LinuxFileTransferStateStore {
     path: PathBuf,
 }
