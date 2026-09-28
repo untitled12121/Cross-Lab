@@ -102,7 +102,7 @@ impl LinuxFileTransferReceiver {
         offer: FileTransferOffer,
         now_unix_secs: u64,
     ) -> Result<LinuxFileTransferRecovery, LinuxFileTransferError> {
-        let mut snapshot = store.load()?;
+        let snapshot = store.load()?;
         let partial = match snapshot.find(source_device_id, &offer)? {
             Some(FileTransferStateMatch::AlreadyComplete(_)) => {
                 return Ok(LinuxFileTransferRecovery::AlreadyComplete);
@@ -242,7 +242,7 @@ impl LinuxFileTransferReceiver {
 
         let partial_path = self.locator.partial_path().to_path_buf();
         let parent = partial_path.parent().map(Path::to_path_buf);
-        drop(fs::remove_file(&partial_path));
+        let _ = fs::remove_file(&partial_path);
         if let Some(parent) = parent {
             let _ = File::open(parent).and_then(|directory| directory.sync_all());
         }
