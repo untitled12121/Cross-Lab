@@ -26,6 +26,7 @@ pub use source::{
 };
 pub use state_store::LinuxFileTransferStateStore;
 pub(crate) use sender::LinuxFileTransferSendStartError;
+pub use worker::{LinuxFileTransferReceiveFailure, LinuxFileTransferReceiveStatus};
 pub(crate) use worker::{LinuxFileTransferWorkerError, LinuxFileTransferWorkerHandle};
 
 #[derive(Debug)]

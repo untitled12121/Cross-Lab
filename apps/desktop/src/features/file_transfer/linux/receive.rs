@@ -169,6 +169,10 @@ impl LinuxFileTransferReceiver {
         self.partial.durable_offset()
     }
 
+    pub fn total_bytes(&self) -> u64 {
+        self.partial.identity().offer().file_size()
+    }
+
     pub fn write_chunk(
         &mut self,
         bytes: &[u8],

@@ -20,8 +20,8 @@ use tokio::sync::{mpsc, watch};
 
 use crate::features::{
     file_transfer::{
-        LinuxFileTransferSendHandle, LinuxFileTransferSendStartError, LinuxFileTransferSendToken,
-        LinuxFileTransferWorkerError,
+        LinuxFileTransferReceiveStatus, LinuxFileTransferSendHandle,
+        LinuxFileTransferSendStartError, LinuxFileTransferSendToken, LinuxFileTransferWorkerError,
         LinuxFileTransferWorkerHandle, LinuxIncomingFileTransfer,
     },
     identity_store::{
@@ -44,6 +44,7 @@ pub struct DesktopProductPresenceController {
     control_tx: mpsc::Sender<DiscoveryControl>,
     file_transfer: Option<LinuxFileTransferWorkerHandle>,
     file_transfer_offers: Mutex<Option<mpsc::Receiver<LinuxIncomingFileTransfer>>>,
+    file_transfer_statuses: Mutex<Option<mpsc::Receiver<LinuxFileTransferReceiveStatus>>>,
     file_transfer_send_active: Arc<AtomicBool>,
 }
 
@@ -68,10 +69,12 @@ impl DesktopProductPresenceController {
             ClipboardAvailability::new(true, true),
         )?);
         let status = agent.subscribe_status();
-        let (file_transfer, file_transfer_offers) =
+        let (file_transfer, file_transfer_offers, file_transfer_statuses) =
             match LinuxFileTransferWorkerHandle::start(Arc::clone(&agent)) {
-                Ok((worker, offers)) => (Some(worker), Some(offers)),
-                Err(_) => (None, None),
+                Ok((worker, offers, statuses)) => {
+                    (Some(worker), Some(offers), Some(statuses))
+                }
+                Err(_) => (None, None, None),
             };
         let discovery_agent = Arc::clone(&agent);
         let (control_tx, control_rx) = mpsc::channel(CONTROL_CAPACITY);
@@ -96,6 +99,7 @@ impl DesktopProductPresenceController {
             control_tx,
             file_transfer,
             file_transfer_offers: Mutex::new(file_transfer_offers),
+            file_transfer_statuses: Mutex::new(file_transfer_statuses),
             file_transfer_send_active: Arc::new(AtomicBool::new(false)),
         }))
     }
@@ -124,6 +128,16 @@ impl DesktopProductPresenceController {
             .ok_or(DesktopPresenceError::FileTransferUnavailable)
     }
 
+    pub fn take_file_transfer_statuses(
+        &self,
+    ) -> Result<mpsc::Receiver<LinuxFileTransferReceiveStatus>, DesktopPresenceError> {
+        self.file_transfer_statuses
+            .lock()
+            .map_err(|_| DesktopPresenceError::FileTransferUnavailable)?
+            .take()
+            .ok_or(DesktopPresenceError::FileTransferUnavailable)
+    }
+
     pub async fn accept_file_transfer_destination(
         &self,
         incoming: LinuxIncomingFileTransfer,
@@ -134,6 +148,18 @@ impl DesktopProductPresenceController {
             .as_ref()
             .ok_or(DesktopPresenceError::FileTransferUnavailable)?;
         worker.accept_destination(incoming, final_path).await?;
+        Ok(())
+    }
+
+    pub async fn cancel_file_transfer_receive(
+        &self,
+        transfer_id: crosslab_protocol::TransferId,
+    ) -> Result<(), DesktopPresenceError> {
+        let worker = self
+            .file_transfer
+            .as_ref()
+            .ok_or(DesktopPresenceError::FileTransferUnavailable)?;
+        worker.cancel_receive(transfer_id).await?;
         Ok(())
     }
 

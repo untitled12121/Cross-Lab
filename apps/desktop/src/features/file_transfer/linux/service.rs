@@ -180,6 +180,29 @@ impl LinuxFileTransferService {
         self.active.remove(&transfer_id).is_some()
     }
 
+    pub fn transfer_progress(&self, transfer_id: TransferId) -> Option<(u64, u64)> {
+        self.active.get(&transfer_id).map(|active| {
+            (active.receiver.offset(), active.receiver.total_bytes())
+        })
+    }
+
+    pub fn cancel_receive(
+        &mut self,
+        transfer_id: TransferId,
+    ) -> Result<(StreamId, u64, u64), LinuxFileTransferError> {
+        let active = self
+            .active
+            .get(&transfer_id)
+            .ok_or(LinuxFileTransferError::InvalidStream)?;
+        let stream_id = active
+            .stream_id
+            .ok_or(LinuxFileTransferError::InvalidStream)?;
+        let received_bytes = active.receiver.offset();
+        let total_bytes = active.receiver.total_bytes();
+        self.active.remove(&transfer_id);
+        Ok((stream_id, received_bytes, total_bytes))
+    }
+
     pub fn handle_data(
         &mut self,
         event: FileTransferDataEvent,
