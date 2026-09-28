@@ -76,7 +76,7 @@ impl LinuxFileTransferWorkerHandle {
         ),
         LinuxFileTransferWorkerError,
     > {
-        let service = LinuxFileTransferService::from_environment()?;
+        let service = LinuxFileTransferService::from_environment(unix_now_secs())?;
         let requests = agent.take_file_transfer_requests()?;
         let data = agent.take_file_transfer_data()?;
         let (command_tx, command_rx) = mpsc::channel(FILE_TRANSFER_SERVICE_CAPACITY);
