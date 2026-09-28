@@ -1775,7 +1775,14 @@ async fn handle_runtime_event(
         NodeEvent::RequestDispatched(request) => {
             let request_id = request.request_id();
             let result = if request.capability_id().as_str() == FILE_TRANSFER_CAPABILITY_ID {
-                match decode_file_transfer(&request) {
+                let Some(source_device_id) = connected
+                    .as_ref()
+                    .filter(|connection| !connection.reconnecting)
+                    .map(|connection| connection.peer_id)
+                else {
+                    return;
+                };
+                match decode_file_transfer(&request, source_device_id) {
                     Ok(platform_request) => {
                         if file_transfer.destination_capacity_used() >= RUNTIME_CAPACITY {
                             Some(file_transfer_resource_failure())
