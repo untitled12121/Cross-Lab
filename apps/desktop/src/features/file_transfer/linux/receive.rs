@@ -52,15 +52,13 @@ impl LinuxFileTransferReceiver {
             None => {}
         }
 
-        let locator =
-            LinuxFileTransferLocator::for_destination(final_path, offer.transfer_id())?;
+        let locator = LinuxFileTransferLocator::for_destination(final_path, offer.transfer_id())?;
         if path_exists(locator.final_path())? {
             return Err(LinuxFileTransferError::DestinationExists);
         }
 
         let identity = FileTransferIdentity::new(source_device_id, offer);
-        let partial =
-            FileTransferPartialState::new(identity, 0, locator.encode()?, now_unix_secs)?;
+        let partial = FileTransferPartialState::new(identity, 0, locator.encode()?, now_unix_secs)?;
         snapshot.upsert_partial(partial.clone())?;
 
         let file = match OpenOptions::new()
@@ -115,8 +113,7 @@ impl LinuxFileTransferReceiver {
             Some(FileTransferStateMatch::Partial(partial)) => partial.clone(),
             None => return Err(LinuxFileTransferError::RetainedStateMissing),
         };
-        let locator =
-            LinuxFileTransferLocator::decode(partial.locator(), offer.transfer_id())?;
+        let locator = LinuxFileTransferLocator::decode(partial.locator(), offer.transfer_id())?;
         let partial_exists = path_exists(locator.partial_path())?;
         let final_exists = path_exists(locator.final_path())?;
 
@@ -289,7 +286,10 @@ impl fmt::Debug for LinuxFileTransferReceiver {
             .debug_struct("LinuxFileTransferReceiver")
             .field("offset", &self.offset)
             .field("durable_offset", &self.partial.durable_offset())
-            .field("expected_size", &self.partial.identity().offer().file_size())
+            .field(
+                "expected_size",
+                &self.partial.identity().offer().file_size(),
+            )
             .field("locator", &self.locator)
             .finish()
     }
@@ -347,10 +347,7 @@ fn open_existing_final(path: &Path) -> Result<File, LinuxFileTransferError> {
     Ok(file)
 }
 
-fn verify_file(
-    file: &mut File,
-    offer: &FileTransferOffer,
-) -> Result<(), LinuxFileTransferError> {
+fn verify_file(file: &mut File, offer: &FileTransferOffer) -> Result<(), LinuxFileTransferError> {
     file.seek(SeekFrom::Start(0))?;
     let mut verifier = FileTransferVerifier::new(offer);
     let mut buffer = vec![0_u8; FILE_TRANSFER_IO_CHUNK_BYTES];
@@ -416,8 +413,7 @@ mod tests {
             offer.clone(),
             12,
         )
-        .unwrap()
-        else {
+        .unwrap() else {
             panic!("expected resumable receive");
         };
         assert_eq!(receiver.offset(), FILE_TRANSFER_CHECKPOINT_BYTES);
