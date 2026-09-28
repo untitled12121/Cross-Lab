@@ -1,11 +1,20 @@
 #[cfg(target_os = "linux")]
-use std::sync::Arc;
+use std::{collections::VecDeque, env, path::PathBuf, sync::Arc};
 
 #[cfg(target_os = "linux")]
 use crosslab_agent::{ClipboardPlatformError, ClipboardRequest};
+#[cfg(target_os = "linux")]
+use crosslab_protocol::TransferId;
 
 #[cfg(target_os = "linux")]
-use crate::features::devices::DesktopProductPresenceController;
+use crate::features::{
+    devices::DesktopProductPresenceController,
+    file_transfer::{
+        LinuxFileTransferReceiveFailure, LinuxFileTransferReceiveStatus,
+        LinuxFileTransferSendFailure, LinuxFileTransferSendHandle, LinuxFileTransferSendStatus,
+        LinuxFileTransferSendToken, LinuxIncomingFileTransfer,
+    },
+};
 #[cfg(feature = "development-provisioning")]
 use crate::features::devices::TrustDisplay;
 use crate::{
@@ -16,11 +25,17 @@ use crate::{
             ConnectivityDisplay, DesktopRuntimeController, DevicesFeatureState, PresenceDisplay,
             SessionDisplay,
         },
+        file_transfer::{
+            FileTransferFailure, FileTransferFeatureState, FileTransferStage,
+        },
         owner::OwnerFeatureState,
         pairing::{DesktopPairingInvitation, DesktopPairingStage, load_existing_product_identity},
     },
     pages::control_center::{
-        _components::{clipboard_panel, devices_content, owner_content, pairing_invitation_panel},
+        _components::{
+            clipboard_panel, devices_content, file_transfer_panel, owner_content,
+            pairing_invitation_panel,
+        },
         layout::control_center_layout,
     },
 };
@@ -29,6 +44,8 @@ use gpui_kit::{
     ClipboardItem, Context, InteractiveElement as _, IntoElement, ParentElement as _, Render,
     Styled as _, Window, base::Button, component::theme::ActiveTheme as _, div, px,
 };
+#[cfg(target_os = "linux")]
+use gpui_kit::PathPromptOptions;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Section {
@@ -40,12 +57,27 @@ pub struct ControlCenterPage {
     section: Section,
     devices: DevicesFeatureState,
     clipboard: ClipboardFeatureState,
+    file_transfer: FileTransferFeatureState,
     owner: OwnerFeatureState,
     runtime: DesktopRuntimeController,
     #[cfg(target_os = "linux")]
     product_presence: Option<Arc<DesktopProductPresenceController>>,
     #[cfg(target_os = "linux")]
     presence_starting: bool,
+    #[cfg(target_os = "linux")]
+    pending_file_transfers: VecDeque<LinuxIncomingFileTransfer>,
+    #[cfg(target_os = "linux")]
+    file_transfer_send: Option<LinuxFileTransferSendHandle>,
+    #[cfg(target_os = "linux")]
+    file_transfer_retry: Option<LinuxFileTransferSendToken>,
+    #[cfg(target_os = "linux")]
+    file_transfer_send_generation: u64,
+    #[cfg(target_os = "linux")]
+    active_receive_transfer: Option<TransferId>,
+    #[cfg(target_os = "linux")]
+    file_transfer_send_dialog_open: bool,
+    #[cfg(target_os = "linux")]
+    file_transfer_receive_dialog_open: bool,
     pairing_invitation: Option<DesktopPairingInvitation>,
     pairing_generation: u64,
     pairing_busy: bool,
@@ -113,12 +145,27 @@ impl ControlCenterPage {
             section: Section::Devices,
             devices,
             clipboard: ClipboardFeatureState::new(),
+            file_transfer: FileTransferFeatureState::new(),
             owner,
             runtime,
             #[cfg(target_os = "linux")]
             product_presence: None,
             #[cfg(target_os = "linux")]
             presence_starting: false,
+            #[cfg(target_os = "linux")]
+            pending_file_transfers: VecDeque::new(),
+            #[cfg(target_os = "linux")]
+            file_transfer_send: None,
+            #[cfg(target_os = "linux")]
+            file_transfer_retry: None,
+            #[cfg(target_os = "linux")]
+            file_transfer_send_generation: 0,
+            #[cfg(target_os = "linux")]
+            active_receive_transfer: None,
+            #[cfg(target_os = "linux")]
+            file_transfer_send_dialog_open: false,
+            #[cfg(target_os = "linux")]
+            file_transfer_receive_dialog_open: false,
             pairing_invitation: None,
             pairing_generation: 0,
             pairing_busy: false,
@@ -147,6 +194,7 @@ impl ControlCenterPage {
                     let _ = this.update(cx, |page, cx| {
                         page.presence_starting = false;
                         page.clipboard.set_available(false);
+                        page.file_transfer.set_available(false);
                         cx.notify();
                     });
                     return;
@@ -155,6 +203,7 @@ impl ControlCenterPage {
                     let _ = this.update(cx, |page, cx| {
                         page.presence_starting = false;
                         page.clipboard.set_available(false);
+                        page.file_transfer.set_available(false);
                         page.notice = Some(error.to_string());
                         cx.notify();
                     });
@@ -177,6 +226,32 @@ impl ControlCenterPage {
                     return;
                 }
             };
+            let mut file_transfer_offers = match controller.take_file_transfer_offers() {
+                Ok(offers) => offers,
+                Err(error) => {
+                    let _ = this.update(cx, |page, cx| {
+                        page.presence_starting = false;
+                        page.clipboard.set_available(false);
+                        page.file_transfer.set_available(false);
+                        page.notice = Some(error.to_string());
+                        cx.notify();
+                    });
+                    return;
+                }
+            };
+            let mut file_transfer_statuses = match controller.take_file_transfer_statuses() {
+                Ok(statuses) => statuses,
+                Err(error) => {
+                    let _ = this.update(cx, |page, cx| {
+                        page.presence_starting = false;
+                        page.clipboard.set_available(false);
+                        page.file_transfer.set_available(false);
+                        page.notice = Some(error.to_string());
+                        cx.notify();
+                    });
+                    return;
+                }
+            };
             let initial = status.borrow().clone();
             let initial_permissions = permissions.borrow().clone();
             if this
@@ -185,6 +260,7 @@ impl ControlCenterPage {
                     page.devices.update_presence(&initial);
                     page.devices.update_permissions(&initial_permissions);
                     page.clipboard.set_available(true);
+                    page.file_transfer.set_available(true);
                     if let Some(runtime) = initial.runtime() {
                         page.owner.update_runtime(runtime);
                     }
@@ -259,6 +335,42 @@ impl ControlCenterPage {
                                 }
                                 let _ = controller.complete_clipboard_write(request_id, Ok(())).await;
                             }
+                        }
+                    }
+                    incoming = file_transfer_offers.recv() => {
+                        let Some(incoming) = incoming else {
+                            let _ = this.update(cx, |page, cx| {
+                                page.file_transfer.set_available(false);
+                                cx.notify();
+                            });
+                            return;
+                        };
+                        if this
+                            .update(cx, move |page, cx| {
+                                page.enqueue_file_transfer(incoming);
+                                cx.notify();
+                            })
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                    transfer_status = file_transfer_statuses.recv() => {
+                        let Some(transfer_status) = transfer_status else {
+                            let _ = this.update(cx, |page, cx| {
+                                page.file_transfer.set_available(false);
+                                cx.notify();
+                            });
+                            return;
+                        };
+                        if this
+                            .update(cx, move |page, cx| {
+                                page.apply_receive_status(transfer_status);
+                                cx.notify();
+                            })
+                            .is_err()
+                        {
+                            return;
                         }
                     }
                 }
@@ -480,6 +592,385 @@ impl ControlCenterPage {
             },
         )
         .detach();
+    }
+
+    #[cfg(target_os = "linux")]
+    fn enqueue_file_transfer(&mut self, incoming: LinuxIncomingFileTransfer) {
+        self.pending_file_transfers.push_back(incoming);
+        self.surface_next_file_transfer();
+    }
+
+    #[cfg(target_os = "linux")]
+    fn surface_next_file_transfer(&mut self) {
+        if self.file_transfer.receive().active() {
+            return;
+        }
+        if let Some(incoming) = self.pending_file_transfers.front() {
+            self.file_transfer.incoming_offer(
+                incoming.offer().display_name().to_owned(),
+                incoming.offer().file_size(),
+            );
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn choose_file_to_send(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.file_transfer_send_dialog_open || self.file_transfer.send().active() {
+            return;
+        }
+        let Some(controller) = self.product_presence.as_ref().map(Arc::clone) else {
+            self.file_transfer
+                .send_failed(0, 0, FileTransferFailure::NotConnected);
+            cx.notify();
+            return;
+        };
+
+        self.file_transfer_send_dialog_open = true;
+        let receiver = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("Select a file to send".into()),
+        });
+        let view = cx.entity();
+
+        cx.spawn_in(window, async move |_, window| {
+            let path = receiver.await.ok()?.ok()??.into_iter().next();
+            view.update_in(window, move |page, _, cx| {
+                page.file_transfer_send_dialog_open = false;
+                if let Some(path) = path {
+                    page.start_file_transfer_send(controller, path, cx);
+                } else {
+                    cx.notify();
+                }
+            })
+            .ok()
+        })
+        .detach();
+    }
+
+    #[cfg(target_os = "linux")]
+    fn start_file_transfer_send(
+        &mut self,
+        controller: Arc<DesktopProductPresenceController>,
+        path: PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        let display_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("Selected file")
+            .to_owned();
+        self.file_transfer.begin_send(display_name);
+
+        match controller.start_file_transfer_send(path) {
+            Ok(handle) => self.track_file_transfer_send(handle, cx),
+            Err(error) => {
+                self.file_transfer
+                    .send_failed(0, 0, FileTransferFailure::Failed);
+                self.notice = Some(error.to_string());
+                cx.notify();
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn retry_file_transfer_send(&mut self, cx: &mut Context<Self>) {
+        let Some(controller) = self.product_presence.as_ref().map(Arc::clone) else {
+            return;
+        };
+        let Some(token) = self.file_transfer_retry.clone() else {
+            return;
+        };
+        let display_name = self
+            .file_transfer
+            .send()
+            .display_name()
+            .unwrap_or("Selected file")
+            .to_owned();
+        self.file_transfer.begin_send(display_name);
+
+        match controller.retry_file_transfer_send(token) {
+            Ok(handle) => self.track_file_transfer_send(handle, cx),
+            Err(error) => {
+                self.file_transfer
+                    .send_failed(0, 0, FileTransferFailure::Failed);
+                self.notice = Some(error.to_string());
+                cx.notify();
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn track_file_transfer_send(
+        &mut self,
+        handle: LinuxFileTransferSendHandle,
+        cx: &mut Context<Self>,
+    ) {
+        self.file_transfer_send_generation = self.file_transfer_send_generation.wrapping_add(1);
+        let generation = self.file_transfer_send_generation;
+        self.file_transfer_retry = Some(handle.retry_token());
+        let mut status = handle.subscribe_status();
+        self.file_transfer_send = Some(handle);
+        cx.notify();
+
+        cx.spawn(async move |this, cx| {
+            while status.changed().await.is_ok() {
+                let next = *status.borrow_and_update();
+                if this
+                    .update(cx, |page, cx| {
+                        if page.file_transfer_send_generation != generation {
+                            return;
+                        }
+                        page.apply_send_status(next);
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        })
+        .detach();
+    }
+
+    #[cfg(target_os = "linux")]
+    fn cancel_file_transfer_send(&mut self, cx: &mut Context<Self>) {
+        if let Some(handle) = self.file_transfer_send.as_ref() {
+            handle.cancel();
+            self.notice = Some("Cancelling file transfer…".to_owned());
+            cx.notify();
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn choose_file_transfer_destination(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.file_transfer_receive_dialog_open {
+            return;
+        }
+        let Some(incoming) = self.pending_file_transfers.front().cloned() else {
+            return;
+        };
+        let Some(controller) = self.product_presence.as_ref().map(Arc::clone) else {
+            return;
+        };
+
+        let directory = env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/"));
+        let receiver =
+            cx.prompt_for_new_path(&directory, Some(incoming.offer().display_name()));
+        self.file_transfer_receive_dialog_open = true;
+        let view = cx.entity();
+
+        cx.spawn_in(window, async move |_, window| {
+            let path = receiver.await.ok().into_iter().flatten().flatten().next();
+            view.update_in(window, move |page, _, cx| {
+                page.file_transfer_receive_dialog_open = false;
+                if let Some(path) = path {
+                    page.accept_file_transfer_destination(
+                        controller,
+                        incoming,
+                        path,
+                        cx,
+                    );
+                } else {
+                    cx.notify();
+                }
+            })
+            .ok()
+        })
+        .detach();
+    }
+
+    #[cfg(target_os = "linux")]
+    fn accept_file_transfer_destination(
+        &mut self,
+        controller: Arc<DesktopProductPresenceController>,
+        incoming: LinuxIncomingFileTransfer,
+        path: PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        let transfer_id = incoming.offer().transfer_id();
+        if self
+            .pending_file_transfers
+            .front()
+            .is_none_or(|pending| pending.offer().transfer_id() != transfer_id)
+        {
+            return;
+        }
+        self.pending_file_transfers.pop_front();
+        self.file_transfer_receive_dialog_open = true;
+        cx.notify();
+
+        cx.spawn(async move |this, cx| {
+            let result = controller
+                .accept_file_transfer_destination(incoming.clone(), path)
+                .await;
+            let _ = this.update(cx, |page, cx| {
+                page.file_transfer_receive_dialog_open = false;
+                match result {
+                    Ok(()) => {}
+                    Err(error) => {
+                        page.pending_file_transfers.push_front(incoming);
+                        page.file_transfer.receive_failed(
+                            0,
+                            page.file_transfer.receive().total_bytes(),
+                            FileTransferFailure::Storage,
+                        );
+                        page.notice = Some(error.to_string());
+                    }
+                }
+                page.surface_next_file_transfer();
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    #[cfg(target_os = "linux")]
+    fn cancel_file_transfer_receive(&mut self, cx: &mut Context<Self>) {
+        let Some(transfer_id) = self.active_receive_transfer else {
+            return;
+        };
+        let Some(controller) = self.product_presence.as_ref().map(Arc::clone) else {
+            return;
+        };
+        self.notice = Some("Cancelling incoming file transfer…".to_owned());
+        cx.notify();
+
+        cx.spawn(async move |this, cx| {
+            let result = controller.cancel_file_transfer_receive(transfer_id).await;
+            let _ = this.update(cx, |page, cx| {
+                if let Err(error) = result {
+                    page.notice = Some(error.to_string());
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    #[cfg(target_os = "linux")]
+    fn apply_send_status(&mut self, status: LinuxFileTransferSendStatus) {
+        match status {
+            LinuxFileTransferSendStatus::Preparing => {
+                let display_name = self
+                    .file_transfer
+                    .send()
+                    .display_name()
+                    .unwrap_or("Selected file")
+                    .to_owned();
+                self.file_transfer.begin_send(display_name);
+            }
+            LinuxFileTransferSendStatus::WaitingForPeer { total_bytes } => {
+                self.file_transfer.send_waiting(total_bytes);
+            }
+            LinuxFileTransferSendStatus::Transferring {
+                transferred_bytes,
+                total_bytes,
+            } => self
+                .file_transfer
+                .send_progress(transferred_bytes, total_bytes),
+            LinuxFileTransferSendStatus::Completed { total_bytes } => {
+                self.file_transfer.send_completed(total_bytes, false);
+                self.notice = None;
+            }
+            LinuxFileTransferSendStatus::AlreadyComplete { total_bytes } => {
+                self.file_transfer.send_completed(total_bytes, true);
+                self.notice = None;
+            }
+            LinuxFileTransferSendStatus::Cancelled {
+                transferred_bytes,
+                total_bytes,
+            } => self
+                .file_transfer
+                .send_cancelled(transferred_bytes, total_bytes),
+            LinuxFileTransferSendStatus::Failed {
+                transferred_bytes,
+                total_bytes,
+                failure,
+            } => self.file_transfer.send_failed(
+                transferred_bytes,
+                total_bytes,
+                map_send_failure(failure),
+            ),
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn apply_receive_status(&mut self, status: LinuxFileTransferReceiveStatus) {
+        match status {
+            LinuxFileTransferReceiveStatus::Ready {
+                transfer_id,
+                resume_offset,
+                total_bytes,
+            } => {
+                self.active_receive_transfer = Some(transfer_id);
+                self.file_transfer.receive_ready(resume_offset, total_bytes);
+            }
+            LinuxFileTransferReceiveStatus::Receiving {
+                transfer_id,
+                received_bytes,
+                total_bytes,
+            } => {
+                self.active_receive_transfer = Some(transfer_id);
+                self.file_transfer
+                    .receive_progress(received_bytes, total_bytes);
+            }
+            LinuxFileTransferReceiveStatus::Completed {
+                transfer_id,
+                total_bytes,
+            } => {
+                if self.active_receive_transfer == Some(transfer_id) {
+                    self.active_receive_transfer = None;
+                }
+                self.file_transfer.receive_completed(total_bytes, false);
+                self.surface_next_file_transfer();
+            }
+            LinuxFileTransferReceiveStatus::AlreadyComplete {
+                transfer_id,
+                total_bytes,
+            } => {
+                if self.active_receive_transfer == Some(transfer_id) {
+                    self.active_receive_transfer = None;
+                }
+                self.file_transfer.receive_completed(total_bytes, true);
+                self.surface_next_file_transfer();
+            }
+            LinuxFileTransferReceiveStatus::Cancelled {
+                transfer_id,
+                received_bytes,
+                total_bytes,
+            } => {
+                if self.active_receive_transfer == Some(transfer_id) {
+                    self.active_receive_transfer = None;
+                }
+                self.file_transfer
+                    .receive_cancelled(received_bytes, total_bytes);
+                self.surface_next_file_transfer();
+            }
+            LinuxFileTransferReceiveStatus::Failed {
+                transfer_id,
+                received_bytes,
+                total_bytes,
+                failure,
+            } => {
+                if self.active_receive_transfer == Some(transfer_id) {
+                    self.active_receive_transfer = None;
+                }
+                self.file_transfer.receive_failed(
+                    received_bytes,
+                    total_bytes,
+                    map_receive_failure(failure),
+                );
+                self.surface_next_file_transfer();
+            }
+        }
     }
 
     fn revoke_peer(&mut self, cx: &mut Context<Self>) {
@@ -764,6 +1255,128 @@ impl Render for ControlCenterPage {
         #[cfg(not(target_os = "linux"))]
         let clipboard_controls = None;
 
+        #[cfg(target_os = "linux")]
+        let file_transfer_controls = self.devices.current().map(|device| {
+            let negotiated = device
+                .capability_ids()
+                .iter()
+                .any(|id| id == "files.transfer");
+            let session_ready = device.connectivity() == ConnectivityDisplay::Connected
+                && device.session() == SessionDisplay::Active;
+            let send_active = self.file_transfer.send().active();
+            let receive_stage = self.file_transfer.receive().stage();
+            let send_can_retry = matches!(
+                self.file_transfer.send().stage(),
+                FileTransferStage::Cancelled | FileTransferStage::Failed
+            ) && self.file_transfer_retry.is_some();
+            let enabled = self.file_transfer.available() && session_ready && negotiated;
+
+            let mut transfer_actions = div()
+                .flex()
+                .items_center()
+                .gap(px(appearance.spacing.sm))
+                .child(
+                    Button::new("file-transfer-send")
+                        .accessibility_label("Select a local file to send to this device")
+                        .disabled(
+                            !enabled
+                                || send_active
+                                || self.file_transfer_send_dialog_open,
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.choose_file_to_send(window, cx);
+                        }))
+                        .h(px(appearance.metrics.control_height_default))
+                        .px(px(appearance.spacing.lg))
+                        .border_1()
+                        .border_color(theme.border)
+                        .bg(theme.secondary)
+                        .text_color(theme.secondary_foreground)
+                        .focus_visible(|style| style.border_color(theme.ring))
+                        .child("Send file"),
+                );
+
+            if send_active {
+                transfer_actions = transfer_actions.child(
+                    Button::new("file-transfer-cancel-send")
+                        .accessibility_label("Cancel the outgoing file transfer")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.cancel_file_transfer_send(cx);
+                        }))
+                        .h(px(appearance.metrics.control_height_default))
+                        .px(px(appearance.spacing.lg))
+                        .border_1()
+                        .border_color(theme.border)
+                        .bg(theme.secondary)
+                        .text_color(theme.secondary_foreground)
+                        .focus_visible(|style| style.border_color(theme.ring))
+                        .child("Cancel send"),
+                );
+            } else if send_can_retry {
+                transfer_actions = transfer_actions.child(
+                    Button::new("file-transfer-retry-send")
+                        .accessibility_label("Retry and resume the outgoing file transfer")
+                        .disabled(!enabled)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.retry_file_transfer_send(cx);
+                        }))
+                        .h(px(appearance.metrics.control_height_default))
+                        .px(px(appearance.spacing.lg))
+                        .border_1()
+                        .border_color(theme.border)
+                        .bg(theme.secondary)
+                        .text_color(theme.secondary_foreground)
+                        .focus_visible(|style| style.border_color(theme.ring))
+                        .child("Retry / resume"),
+                );
+            }
+
+            if receive_stage == FileTransferStage::AwaitingDestination {
+                transfer_actions = transfer_actions.child(
+                    Button::new("file-transfer-save")
+                        .accessibility_label("Choose where to save the incoming file")
+                        .disabled(!enabled || self.file_transfer_receive_dialog_open)
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.choose_file_transfer_destination(window, cx);
+                        }))
+                        .h(px(appearance.metrics.control_height_default))
+                        .px(px(appearance.spacing.lg))
+                        .border_1()
+                        .border_color(theme.border)
+                        .bg(theme.accent)
+                        .text_color(theme.accent_foreground)
+                        .focus_visible(|style| style.border_color(theme.ring))
+                        .child("Save as…"),
+                );
+            } else if receive_stage == FileTransferStage::Transferring {
+                transfer_actions = transfer_actions.child(
+                    Button::new("file-transfer-cancel-receive")
+                        .accessibility_label("Cancel the incoming file transfer")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.cancel_file_transfer_receive(cx);
+                        }))
+                        .h(px(appearance.metrics.control_height_default))
+                        .px(px(appearance.spacing.lg))
+                        .border_1()
+                        .border_color(theme.border)
+                        .bg(theme.secondary)
+                        .text_color(theme.secondary_foreground)
+                        .focus_visible(|style| style.border_color(theme.ring))
+                        .child("Cancel receive"),
+                );
+            }
+
+            file_transfer_panel(
+                device,
+                &self.devices.current_permissions(),
+                &self.file_transfer,
+                transfer_actions,
+                cx,
+            )
+        });
+        #[cfg(not(target_os = "linux"))]
+        let file_transfer_controls = None;
+
         let pairing_panel = self
             .pairing_invitation
             .as_ref()
@@ -775,6 +1388,7 @@ impl Render for ControlCenterPage {
                 Some(actions),
                 pairing_panel,
                 clipboard_controls,
+                file_transfer_controls,
                 self.notice.as_deref(),
                 cx,
             ),
@@ -782,5 +1396,29 @@ impl Render for ControlCenterPage {
         };
 
         control_center_layout(navigation, content, cx)
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn map_send_failure(failure: LinuxFileTransferSendFailure) -> FileTransferFailure {
+    match failure {
+        LinuxFileTransferSendFailure::Source => FileTransferFailure::Source,
+        LinuxFileTransferSendFailure::NotConnected => FileTransferFailure::NotConnected,
+        LinuxFileTransferSendFailure::NotNegotiated => FileTransferFailure::NotNegotiated,
+        LinuxFileTransferSendFailure::Denied => FileTransferFailure::Denied,
+        LinuxFileTransferSendFailure::ResourceLimit => FileTransferFailure::ResourceLimit,
+        LinuxFileTransferSendFailure::TimedOut => FileTransferFailure::TimedOut,
+        LinuxFileTransferSendFailure::RemoteIntegrity => FileTransferFailure::Integrity,
+        LinuxFileTransferSendFailure::RemoteStorage => FileTransferFailure::Storage,
+        LinuxFileTransferSendFailure::Failed => FileTransferFailure::Failed,
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn map_receive_failure(failure: LinuxFileTransferReceiveFailure) -> FileTransferFailure {
+    match failure {
+        LinuxFileTransferReceiveFailure::Connection => FileTransferFailure::Connection,
+        LinuxFileTransferReceiveFailure::Integrity => FileTransferFailure::Integrity,
+        LinuxFileTransferReceiveFailure::Storage => FileTransferFailure::Storage,
     }
 }
