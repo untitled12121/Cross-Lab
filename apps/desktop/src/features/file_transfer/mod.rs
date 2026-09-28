@@ -4,5 +4,6 @@ mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::{
     FILE_TRANSFER_IO_CHUNK_BYTES, LinuxFileTransferError, LinuxFileTransferLocator,
-    LinuxFileTransferSourceReader, LinuxFileTransferStateStore, LinuxPreparedFileSource,
+    LinuxFileTransferReceiver, LinuxFileTransferRecovery, LinuxFileTransferSourceReader,
+    LinuxFileTransferStateStore, LinuxPreparedFileSource,
 };
