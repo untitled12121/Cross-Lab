@@ -77,9 +77,18 @@ impl LinuxFileTransferReceiver {
             Err(error) => return Err(error.into()),
         };
 
+        let prepare_result = file
+            .sync_all()
+            .map_err(LinuxFileTransferError::from)
+            .and_then(|()| sync_parent(locator.partial_path()));
+        if let Err(error) = prepare_result {
+            drop(file);
+            cleanup_uncommitted_partial(locator.partial_path());
+            return Err(error);
+        }
         if let Err(error) = store.commit(&snapshot) {
             drop(file);
-            let _ = fs::remove_file(locator.partial_path());
+            cleanup_uncommitted_partial(locator.partial_path());
             return Err(error);
         }
 
@@ -352,6 +361,12 @@ fn sync_parent(path: &Path) -> Result<(), LinuxFileTransferError> {
     let parent = path.parent().ok_or(LinuxFileTransferError::InvalidPath)?;
     File::open(parent)?.sync_all()?;
     Ok(())
+}
+
+fn cleanup_uncommitted_partial(path: &Path) {
+    if fs::remove_file(path).is_ok() {
+        let _ = sync_parent(path);
+    }
 }
 
 #[cfg(test)]
