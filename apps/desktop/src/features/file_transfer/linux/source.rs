@@ -20,10 +20,7 @@ pub struct LinuxPreparedFileSource {
 }
 
 impl LinuxPreparedFileSource {
-    pub fn prepare(
-        path: PathBuf,
-        transfer_id: TransferId,
-    ) -> Result<Self, LinuxFileTransferError> {
+    pub fn prepare(path: PathBuf, transfer_id: TransferId) -> Result<Self, LinuxFileTransferError> {
         let display_name = source_display_name(&path)?;
         let (mut file, fingerprint) = open_regular_source(&path)?;
         let mut hasher = FileTransferHasher::new();
@@ -109,8 +106,8 @@ impl LinuxFileTransferSourceReader {
         let remaining = self.expected.len - self.offset;
         let chunk_bound =
             u64::try_from(FILE_TRANSFER_IO_CHUNK_BYTES).expect("transfer chunk bound fits u64");
-        let capacity = usize::try_from(remaining.min(chunk_bound))
-            .expect("bounded transfer chunk fits usize");
+        let capacity =
+            usize::try_from(remaining.min(chunk_bound)).expect("bounded transfer chunk fits usize");
         let mut chunk = vec![0_u8; capacity];
         let read = self.file.read(&mut chunk)?;
         if read == 0 {
