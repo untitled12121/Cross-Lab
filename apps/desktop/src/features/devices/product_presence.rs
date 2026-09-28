@@ -20,7 +20,8 @@ use tokio::sync::{mpsc, watch};
 
 use crate::features::{
     file_transfer::{
-        LinuxFileTransferSendHandle, LinuxFileTransferSendStartError, LinuxFileTransferWorkerError,
+        LinuxFileTransferSendHandle, LinuxFileTransferSendStartError, LinuxFileTransferSendToken,
+        LinuxFileTransferWorkerError,
         LinuxFileTransferWorkerHandle, LinuxIncomingFileTransfer,
     },
     identity_store::{
@@ -151,9 +152,37 @@ impl DesktopProductPresenceController {
             return Err(DesktopPresenceError::FileTransferBusy);
         }
 
-        match LinuxFileTransferSendHandle::start(
+        match LinuxFileTransferSendHandle::new(
             Arc::clone(&self.agent),
             path,
+            Arc::clone(&self.file_transfer_send_active),
+        ) {
+            Ok(handle) => Ok(handle),
+            Err(error) => {
+                self.file_transfer_send_active.store(false, Ordering::Release);
+                Err(error.into())
+            }
+        }
+    }
+
+    pub fn retry_file_transfer_send(
+        &self,
+        token: LinuxFileTransferSendToken,
+    ) -> Result<LinuxFileTransferSendHandle, DesktopPresenceError> {
+        if self.file_transfer.is_none() {
+            return Err(DesktopPresenceError::FileTransferUnavailable);
+        }
+        if self
+            .file_transfer_send_active
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return Err(DesktopPresenceError::FileTransferBusy);
+        }
+
+        match LinuxFileTransferSendHandle::retry(
+            Arc::clone(&self.agent),
+            token,
             Arc::clone(&self.file_transfer_send_active),
         ) {
             Ok(handle) => Ok(handle),
