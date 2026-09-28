@@ -1,8 +1,6 @@
 use std::{collections::BTreeMap, path::PathBuf};
 
-use crosslab_agent::{
-    FileTransferDataEvent, FileTransferIntegrityError, FileTransferStateMatch,
-};
+use crosslab_agent::{FileTransferDataEvent, FileTransferIntegrityError, FileTransferStateMatch};
 use crosslab_identity::DeviceId;
 use crosslab_protocol::{
     FileTransferOffer, FileTransferTerminalOutcome, RequestId, StreamId, TransferId,
@@ -344,7 +342,7 @@ mod tests {
 
     use crosslab_agent::FileTransferStateError;
     use crosslab_crypto::{blake3_256, random_bytes};
-    use crosslab_protocol::{FileTransferDigest, FILE_TRANSFER_CHECKPOINT_BYTES};
+    use crosslab_protocol::{FILE_TRANSFER_CHECKPOINT_BYTES, FileTransferDigest};
 
     use super::*;
 
@@ -356,17 +354,11 @@ mod tests {
         let final_path = root.join("received.bin");
         let source = DeviceId::from_bytes([0x31; 32]);
         let offer = test_offer(0x32, b"payload");
-        let mut service = LinuxFileTransferService::for_test(
-            LinuxFileTransferStateStore::for_test(state_path),
-        );
+        let mut service =
+            LinuxFileTransferService::for_test(LinuxFileTransferStateStore::for_test(state_path));
 
         let action = service
-            .handle_request(
-                RequestId::from_bytes([0x33; 16]),
-                source,
-                offer.clone(),
-                10,
-            )
+            .handle_request(RequestId::from_bytes([0x33; 16]), source, offer.clone(), 10)
             .unwrap();
         let LinuxFileTransferRequestAction::ChooseDestination(incoming) = action else {
             panic!("fresh transfer should require owner destination");
@@ -375,7 +367,9 @@ mod tests {
         assert_eq!(incoming.offer(), &offer);
         assert!(!final_path.exists());
 
-        let action = service.accept_destination(incoming, final_path, 11).unwrap();
+        let action = service
+            .accept_destination(incoming, final_path, 11)
+            .unwrap();
         assert!(matches!(
             action,
             LinuxFileTransferRequestAction::Ready {
@@ -466,12 +460,7 @@ mod tests {
                 LinuxFileTransferStateStore::for_test(state_path.clone()),
             );
             let LinuxFileTransferRequestAction::ChooseDestination(incoming) = service
-                .handle_request(
-                    RequestId::from_bytes([0x53; 16]),
-                    source,
-                    offer.clone(),
-                    30,
-                )
+                .handle_request(RequestId::from_bytes([0x53; 16]), source, offer.clone(), 30)
                 .unwrap()
             else {
                 panic!("fresh transfer should require owner destination");
@@ -524,12 +513,7 @@ mod tests {
             LinuxFileTransferStateStore::for_test(state_path.clone()),
         );
         let LinuxFileTransferRequestAction::ChooseDestination(incoming) = service
-            .handle_request(
-                RequestId::from_bytes([0x63; 16]),
-                source,
-                offer.clone(),
-                40,
-            )
+            .handle_request(RequestId::from_bytes([0x63; 16]), source, offer.clone(), 40)
             .unwrap()
         else {
             panic!("fresh transfer should require owner destination");
