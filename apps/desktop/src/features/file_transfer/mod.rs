@@ -5,9 +5,12 @@ mod linux;
 pub use linux::{
     FILE_TRANSFER_IO_CHUNK_BYTES, LinuxFileTransferDataAction, LinuxFileTransferError,
     LinuxFileTransferLocator, LinuxFileTransferReceiver, LinuxFileTransferRecovery,
-    LinuxFileTransferRequestAction, LinuxFileTransferService, LinuxFileTransferSourceReader,
+    LinuxFileTransferRequestAction, LinuxFileTransferSendFailure, LinuxFileTransferSendHandle,
+    LinuxFileTransferSendStatus, LinuxFileTransferService, LinuxFileTransferSourceReader,
     LinuxFileTransferStateStore, LinuxIncomingFileTransfer, LinuxPreparedFileSource,
 };
 
 #[cfg(target_os = "linux")]
-pub(crate) use linux::{LinuxFileTransferWorkerError, LinuxFileTransferWorkerHandle};
+pub(crate) use linux::{
+    LinuxFileTransferSendStartError, LinuxFileTransferWorkerError, LinuxFileTransferWorkerHandle,
+};

@@ -1,7 +1,10 @@
 use core::fmt;
 use std::{
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     thread,
     time::Duration,
 };
@@ -17,7 +20,8 @@ use tokio::sync::{mpsc, watch};
 
 use crate::features::{
     file_transfer::{
-        LinuxFileTransferWorkerError, LinuxFileTransferWorkerHandle, LinuxIncomingFileTransfer,
+        LinuxFileTransferSendHandle, LinuxFileTransferSendStartError, LinuxFileTransferWorkerError,
+        LinuxFileTransferWorkerHandle, LinuxIncomingFileTransfer,
     },
     identity_store::{
         LinuxEd25519Signer, LinuxIdentityStore, LinuxIdentityStoreError, LinuxSigningSlot,
@@ -39,6 +43,7 @@ pub struct DesktopProductPresenceController {
     control_tx: mpsc::Sender<DiscoveryControl>,
     file_transfer: Option<LinuxFileTransferWorkerHandle>,
     file_transfer_offers: Mutex<Option<mpsc::Receiver<LinuxIncomingFileTransfer>>>,
+    file_transfer_send_active: Arc<AtomicBool>,
 }
 
 impl DesktopProductPresenceController {
@@ -90,6 +95,7 @@ impl DesktopProductPresenceController {
             control_tx,
             file_transfer,
             file_transfer_offers: Mutex::new(file_transfer_offers),
+            file_transfer_send_active: Arc::new(AtomicBool::new(false)),
         }))
     }
 
@@ -128,6 +134,34 @@ impl DesktopProductPresenceController {
             .ok_or(DesktopPresenceError::FileTransferUnavailable)?;
         worker.accept_destination(incoming, final_path).await?;
         Ok(())
+    }
+
+    pub fn start_file_transfer_send(
+        &self,
+        path: PathBuf,
+    ) -> Result<LinuxFileTransferSendHandle, DesktopPresenceError> {
+        if self.file_transfer.is_none() {
+            return Err(DesktopPresenceError::FileTransferUnavailable);
+        }
+        if self
+            .file_transfer_send_active
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return Err(DesktopPresenceError::FileTransferBusy);
+        }
+
+        match LinuxFileTransferSendHandle::start(
+            Arc::clone(&self.agent),
+            path,
+            Arc::clone(&self.file_transfer_send_active),
+        ) {
+            Ok(handle) => Ok(handle),
+            Err(error) => {
+                self.file_transfer_send_active.store(false, Ordering::Release);
+                Err(error.into())
+            }
+        }
     }
 
     pub async fn send_clipboard_text(&self, text: String) -> Result<(), ClipboardOperationError> {
@@ -246,6 +280,7 @@ pub enum DesktopPresenceError {
     Discovery(LinuxTrustedSessionDiscoveryError),
     FileTransfer,
     FileTransferUnavailable,
+    FileTransferBusy,
     PeerUnavailable,
     PolicyOutOfSync,
     Control,
@@ -265,6 +300,7 @@ impl fmt::Display for DesktopPresenceError {
             Self::FileTransferUnavailable => {
                 formatter.write_str("desktop file-transfer service is unavailable")
             }
+            Self::FileTransferBusy => formatter.write_str("desktop file-transfer sender is busy"),
             Self::PeerUnavailable => formatter.write_str("desktop permission peer is unavailable"),
             Self::PolicyOutOfSync => {
                 formatter.write_str("desktop active policy does not match durable policy")
@@ -461,5 +497,11 @@ async fn wait_retry_or_control(control_rx: &mut mpsc::Receiver<DiscoveryControl>
             }
         }
         _ = tokio::time::sleep(DISCOVERY_RETRY) => RetryOutcome::Retry,
+    }
+}
+
+impl From<LinuxFileTransferSendStartError> for DesktopPresenceError {
+    fn from(_: LinuxFileTransferSendStartError) -> Self {
+        Self::FileTransfer
     }
 }
