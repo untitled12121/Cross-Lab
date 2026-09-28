@@ -92,7 +92,7 @@ impl LinuxFileTransferStateStore {
     }
 
     #[cfg(test)]
-    fn for_test(path: PathBuf) -> Self {
+    pub(super) fn for_test(path: PathBuf) -> Self {
         Self { path }
     }
 }
