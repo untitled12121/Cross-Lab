@@ -394,9 +394,8 @@ mod tests {
         let transfer_id = offer.transfer_id();
         let request_id = RequestId::from_bytes([0x43; 16]);
         let stream_id = StreamId::from_bytes([0x44; 16]);
-        let mut service = LinuxFileTransferService::for_test(
-            LinuxFileTransferStateStore::for_test(state_path),
-        );
+        let mut service =
+            LinuxFileTransferService::for_test(LinuxFileTransferStateStore::for_test(state_path));
 
         let LinuxFileTransferRequestAction::ChooseDestination(incoming) = service
             .handle_request(request_id, source, offer.clone(), 20)
@@ -478,9 +477,8 @@ mod tests {
             }
         }
 
-        let mut service = LinuxFileTransferService::for_test(
-            LinuxFileTransferStateStore::for_test(state_path),
-        );
+        let mut service =
+            LinuxFileTransferService::for_test(LinuxFileTransferStateStore::for_test(state_path));
         assert!(matches!(
             service
                 .handle_request(
@@ -523,9 +521,8 @@ mod tests {
             .unwrap();
         drop(service);
 
-        let mut service = LinuxFileTransferService::for_test(
-            LinuxFileTransferStateStore::for_test(state_path),
-        );
+        let mut service =
+            LinuxFileTransferService::for_test(LinuxFileTransferStateStore::for_test(state_path));
         assert!(matches!(
             service.handle_request(
                 RequestId::from_bytes([0x64; 16]),
