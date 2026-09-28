@@ -62,20 +62,72 @@ pub enum LinuxFileTransferSendStatus {
     },
 }
 
+#[derive(Clone)]
+pub struct LinuxFileTransferSendToken {
+    transfer_id: TransferId,
+    path: PathBuf,
+}
+
+impl LinuxFileTransferSendToken {
+    fn new(path: PathBuf) -> Result<Self, LinuxFileTransferSendStartError> {
+        Ok(Self {
+            transfer_id: TransferId::generate()
+                .map_err(|_| LinuxFileTransferSendStartError::Random)?,
+            path,
+        })
+    }
+
+    pub const fn transfer_id(&self) -> TransferId {
+        self.transfer_id
+    }
+}
+
+impl fmt::Debug for LinuxFileTransferSendToken {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LinuxFileTransferSendToken")
+            .field("transfer_id", &self.transfer_id)
+            .field("path", &"[REDACTED]")
+            .finish()
+    }
+}
+
 pub struct LinuxFileTransferSendHandle {
     cancel_tx: watch::Sender<bool>,
     status: watch::Receiver<LinuxFileTransferSendStatus>,
+    token: LinuxFileTransferSendToken,
 }
 
 impl LinuxFileTransferSendHandle {
-    pub(crate) fn start(
+    pub(crate) fn new(
         agent: Arc<TrustedPresenceAgent>,
         path: PathBuf,
+        active: Arc<AtomicBool>,
+    ) -> Result<Self, LinuxFileTransferSendStartError> {
+        Self::start(
+            agent,
+            LinuxFileTransferSendToken::new(path)?,
+            active,
+        )
+    }
+
+    pub(crate) fn retry(
+        agent: Arc<TrustedPresenceAgent>,
+        token: LinuxFileTransferSendToken,
+        active: Arc<AtomicBool>,
+    ) -> Result<Self, LinuxFileTransferSendStartError> {
+        Self::start(agent, token, active)
+    }
+
+    fn start(
+        agent: Arc<TrustedPresenceAgent>,
+        token: LinuxFileTransferSendToken,
         active: Arc<AtomicBool>,
     ) -> Result<Self, LinuxFileTransferSendStartError> {
         let (cancel_tx, cancel_rx) = watch::channel(false);
         let (status_tx, status) = watch::channel(LinuxFileTransferSendStatus::Preparing);
         let thread_status = status_tx.clone();
+        let thread_token = token.clone();
 
         thread::Builder::new()
             .name("crosslab-file-send".into())
@@ -93,16 +145,24 @@ impl LinuxFileTransferSendHandle {
                     return;
                 };
 
-                runtime.block_on(run_send(agent, path, cancel_rx, thread_status));
+                runtime.block_on(run_send(agent, thread_token, cancel_rx, thread_status));
                 active.store(false, Ordering::Release);
             })
             .map_err(|_| LinuxFileTransferSendStartError::Thread)?;
 
-        Ok(Self { cancel_tx, status })
+        Ok(Self {
+            cancel_tx,
+            status,
+            token,
+        })
     }
 
     pub fn subscribe_status(&self) -> watch::Receiver<LinuxFileTransferSendStatus> {
         self.status.clone()
+    }
+
+    pub fn retry_token(&self) -> LinuxFileTransferSendToken {
+        self.token.clone()
     }
 
     pub fn cancel(&self) {
@@ -118,12 +178,16 @@ impl Drop for LinuxFileTransferSendHandle {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LinuxFileTransferSendStartError {
+    Random,
     Thread,
 }
 
 impl fmt::Display for LinuxFileTransferSendStartError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("Linux file-transfer sender thread could not start")
+        formatter.write_str(match self {
+            Self::Random => "Linux file-transfer identifier generation failed",
+            Self::Thread => "Linux file-transfer sender thread could not start",
+        })
     }
 }
 
@@ -131,18 +195,11 @@ impl std::error::Error for LinuxFileTransferSendStartError {}
 
 async fn run_send(
     agent: Arc<TrustedPresenceAgent>,
-    path: PathBuf,
+    token: LinuxFileTransferSendToken,
     mut cancel_rx: watch::Receiver<bool>,
     status_tx: watch::Sender<LinuxFileTransferSendStatus>,
 ) {
-    let transfer_id = match TransferId::generate() {
-        Ok(transfer_id) => transfer_id,
-        Err(_) => {
-            fail(&status_tx, 0, 0, LinuxFileTransferSendFailure::Failed);
-            return;
-        }
-    };
-    let source = match LinuxPreparedFileSource::prepare(path, transfer_id) {
+    let source = match LinuxPreparedFileSource::prepare(token.path, token.transfer_id) {
         Ok(source) => source,
         Err(error) => {
             fail(&status_tx, 0, 0, map_source_error(&error));
