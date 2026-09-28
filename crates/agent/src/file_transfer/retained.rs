@@ -711,11 +711,10 @@ mod tests {
             partial.commit_checkpoint(checkpoint + 1, 11),
             Err(FileTransferStateError::InvalidCheckpoint)
         );
-        assert_eq!(
+        assert!(
             partial
                 .commit_checkpoint(FILE_TRANSFER_CHECKPOINT_BYTES + 17, 12)
-                .unwrap(),
-            true
+                .unwrap()
         );
     }
 
