@@ -148,7 +148,10 @@ mod tests {
 
         store.commit(&snapshot).unwrap();
         assert_eq!(store.load().unwrap(), snapshot);
-        assert_eq!(fs::metadata(&store.path).unwrap().permissions().mode() & 0o077, 0);
+        assert_eq!(
+            fs::metadata(&store.path).unwrap().permissions().mode() & 0o077,
+            0
+        );
         assert_eq!(
             fs::metadata(store.path.parent().unwrap())
                 .unwrap()
