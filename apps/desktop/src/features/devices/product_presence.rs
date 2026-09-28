@@ -244,7 +244,7 @@ pub enum DesktopPresenceError {
     ProductIdentity(ProductIdentityError),
     Agent(PresenceAgentError),
     Discovery(LinuxTrustedSessionDiscoveryError),
-    FileTransfer(LinuxFileTransferWorkerError),
+    FileTransfer,
     FileTransferUnavailable,
     PeerUnavailable,
     PolicyOutOfSync,
@@ -261,7 +261,7 @@ impl fmt::Display for DesktopPresenceError {
             Self::ProductIdentity(error) => fmt::Display::fmt(error, formatter),
             Self::Agent(error) => fmt::Display::fmt(error, formatter),
             Self::Discovery(error) => fmt::Display::fmt(error, formatter),
-            Self::FileTransfer(error) => fmt::Display::fmt(error, formatter),
+            Self::FileTransfer => formatter.write_str("desktop file-transfer operation failed"),
             Self::FileTransferUnavailable => {
                 formatter.write_str("desktop file-transfer service is unavailable")
             }
@@ -314,8 +314,8 @@ impl From<LinuxTrustedSessionDiscoveryError> for DesktopPresenceError {
 }
 
 impl From<LinuxFileTransferWorkerError> for DesktopPresenceError {
-    fn from(error: LinuxFileTransferWorkerError) -> Self {
-        Self::FileTransfer(error)
+    fn from(_: LinuxFileTransferWorkerError) -> Self {
+        Self::FileTransfer
     }
 }
 
