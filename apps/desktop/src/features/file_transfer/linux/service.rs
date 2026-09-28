@@ -192,91 +192,122 @@ impl LinuxFileTransferService {
                 transfer_id,
                 stream_id,
                 resume_offset,
-            } => {
-                let Some(active) = self.active.get_mut(&transfer_id) else {
-                    return abort(
-                        transfer_id,
-                        stream_id,
-                        LinuxFileTransferError::InvalidStream,
-                    );
-                };
-                if active.stream_id.is_some() || active.receiver.offset() != resume_offset {
-                    self.active.remove(&transfer_id);
-                    return abort(
-                        transfer_id,
-                        stream_id,
-                        LinuxFileTransferError::InvalidStream,
-                    );
-                }
-                active.stream_id = Some(stream_id);
-                LinuxFileTransferDataAction::Continue
-            }
-            FileTransferDataEvent::Chunk(chunk) => {
-                let transfer_id = chunk.transfer_id();
-                let stream_id = chunk.stream_id();
-                let result = match self.active.get_mut(&transfer_id) {
-                    Some(active) if active.stream_id == Some(stream_id) => {
-                        active.receiver.write_chunk(chunk.bytes(), now_unix_secs)
-                    }
-                    _ => Err(LinuxFileTransferError::InvalidStream),
-                };
-                match result {
-                    Ok(()) => LinuxFileTransferDataAction::Continue,
-                    Err(error) => {
-                        self.active.remove(&transfer_id);
-                        abort(transfer_id, stream_id, error)
-                    }
-                }
-            }
+            } => self.handle_opened(transfer_id, stream_id, resume_offset),
+            FileTransferDataEvent::Chunk(chunk) => self.handle_chunk(
+                chunk.transfer_id(),
+                chunk.stream_id(),
+                chunk.bytes(),
+                now_unix_secs,
+            ),
             FileTransferDataEvent::Finished {
                 transfer_id,
                 stream_id,
-            } => {
-                let Some(active) = self.active.remove(&transfer_id) else {
-                    return abort(
-                        transfer_id,
-                        stream_id,
-                        LinuxFileTransferError::InvalidStream,
-                    );
-                };
-                if active.stream_id != Some(stream_id) {
-                    return abort(
-                        transfer_id,
-                        stream_id,
-                        LinuxFileTransferError::InvalidStream,
-                    );
-                }
-                match active.receiver.finish(now_unix_secs) {
-                    Ok(()) => LinuxFileTransferDataAction::Terminal {
-                        transfer_id,
-                        outcome: FileTransferTerminalOutcome::Completed,
-                    },
-                    Err(error) => abort(transfer_id, stream_id, error),
-                }
-            }
+            } => self.handle_finished(transfer_id, stream_id, now_unix_secs),
             FileTransferDataEvent::Cancelled {
                 transfer_id,
                 stream_id,
-            } => {
-                let Some(active) = self.active.remove(&transfer_id) else {
-                    return abort(
-                        transfer_id,
-                        stream_id,
-                        LinuxFileTransferError::InvalidStream,
-                    );
-                };
-                if active.stream_id != Some(stream_id) {
-                    return abort(
-                        transfer_id,
-                        stream_id,
-                        LinuxFileTransferError::InvalidStream,
-                    );
-                }
-                LinuxFileTransferDataAction::Terminal {
-                    transfer_id,
-                    outcome: FileTransferTerminalOutcome::Cancelled,
-                }
+            } => self.handle_cancelled(transfer_id, stream_id),
+        }
+    }
+
+    fn handle_opened(
+        &mut self,
+        transfer_id: TransferId,
+        stream_id: StreamId,
+        resume_offset: u64,
+    ) -> LinuxFileTransferDataAction {
+        let Some(active) = self.active.get_mut(&transfer_id) else {
+            return abort(
+                transfer_id,
+                stream_id,
+                LinuxFileTransferError::InvalidStream,
+            );
+        };
+        if active.stream_id.is_some() || active.receiver.offset() != resume_offset {
+            self.active.remove(&transfer_id);
+            return abort(
+                transfer_id,
+                stream_id,
+                LinuxFileTransferError::InvalidStream,
+            );
+        }
+        active.stream_id = Some(stream_id);
+        LinuxFileTransferDataAction::Continue
+    }
+
+    fn handle_chunk(
+        &mut self,
+        transfer_id: TransferId,
+        stream_id: StreamId,
+        bytes: &[u8],
+        now_unix_secs: u64,
+    ) -> LinuxFileTransferDataAction {
+        let result = match self.active.get_mut(&transfer_id) {
+            Some(active) if active.stream_id == Some(stream_id) => {
+                active.receiver.write_chunk(bytes, now_unix_secs)
             }
+            _ => Err(LinuxFileTransferError::InvalidStream),
+        };
+        match result {
+            Ok(()) => LinuxFileTransferDataAction::Continue,
+            Err(error) => {
+                self.active.remove(&transfer_id);
+                abort(transfer_id, stream_id, error)
+            }
+        }
+    }
+
+    fn handle_finished(
+        &mut self,
+        transfer_id: TransferId,
+        stream_id: StreamId,
+        now_unix_secs: u64,
+    ) -> LinuxFileTransferDataAction {
+        let Some(active) = self.active.remove(&transfer_id) else {
+            return abort(
+                transfer_id,
+                stream_id,
+                LinuxFileTransferError::InvalidStream,
+            );
+        };
+        if active.stream_id != Some(stream_id) {
+            return abort(
+                transfer_id,
+                stream_id,
+                LinuxFileTransferError::InvalidStream,
+            );
+        }
+        match active.receiver.finish(now_unix_secs) {
+            Ok(()) => LinuxFileTransferDataAction::Terminal {
+                transfer_id,
+                outcome: FileTransferTerminalOutcome::Completed,
+            },
+            Err(error) => abort(transfer_id, stream_id, error),
+        }
+    }
+
+    fn handle_cancelled(
+        &mut self,
+        transfer_id: TransferId,
+        stream_id: StreamId,
+    ) -> LinuxFileTransferDataAction {
+        let Some(active) = self.active.remove(&transfer_id) else {
+            return abort(
+                transfer_id,
+                stream_id,
+                LinuxFileTransferError::InvalidStream,
+            );
+        };
+        if active.stream_id != Some(stream_id) {
+            return abort(
+                transfer_id,
+                stream_id,
+                LinuxFileTransferError::InvalidStream,
+            );
+        }
+        LinuxFileTransferDataAction::Terminal {
+            transfer_id,
+            outcome: FileTransferTerminalOutcome::Cancelled,
         }
     }
 
@@ -291,7 +322,7 @@ fn abort(
     stream_id: StreamId,
     error: LinuxFileTransferError,
 ) -> LinuxFileTransferDataAction {
-    let outcome = match error {
+    let outcome = match &error {
         LinuxFileTransferError::Integrity(
             FileTransferIntegrityError::SizeMismatch
             | FileTransferIntegrityError::DigestMismatch
@@ -311,7 +342,7 @@ fn abort(
 mod tests {
     use std::{env, fmt::Write as _, fs};
 
-    use crosslab_agent::{FileTransferDataChunk, FileTransferStateError};
+    use crosslab_agent::FileTransferStateError;
     use crosslab_crypto::{blake3_256, random_bytes};
     use crosslab_protocol::{FileTransferDigest, FILE_TRANSFER_CHECKPOINT_BYTES};
 
@@ -320,6 +351,7 @@ mod tests {
     #[test]
     fn fresh_offer_requires_owner_destination_before_receiver_exists() {
         let root = test_root("fresh");
+        fs::create_dir_all(&root).unwrap();
         let state_path = root.join("state.bin");
         let final_path = root.join("received.bin");
         let source = DeviceId::from_bytes([0x31; 32]);
@@ -383,35 +415,15 @@ mod tests {
             .unwrap();
 
         assert!(matches!(
-            service.handle_data(
-                FileTransferDataEvent::Opened {
-                    transfer_id,
-                    stream_id,
-                    resume_offset: 0,
-                },
-                22
-            ),
+            service.handle_opened(transfer_id, stream_id, 0),
             LinuxFileTransferDataAction::Continue
         ));
         assert!(matches!(
-            service.handle_data(
-                FileTransferDataEvent::Chunk(FileTransferDataChunk::new(
-                    transfer_id,
-                    stream_id,
-                    payload.to_vec(),
-                )),
-                23
-            ),
+            service.handle_chunk(transfer_id, stream_id, payload, 23),
             LinuxFileTransferDataAction::Continue
         ));
         assert!(matches!(
-            service.handle_data(
-                FileTransferDataEvent::Finished {
-                    transfer_id,
-                    stream_id,
-                },
-                24
-            ),
+            service.handle_finished(transfer_id, stream_id, 24),
             LinuxFileTransferDataAction::Terminal {
                 transfer_id: completed,
                 outcome: FileTransferTerminalOutcome::Completed,
@@ -468,24 +480,10 @@ mod tests {
                 .accept_destination(incoming, final_path.clone(), 31)
                 .unwrap();
             let stream_id = StreamId::from_bytes([0x54; 16]);
-            service.handle_data(
-                FileTransferDataEvent::Opened {
-                    transfer_id,
-                    stream_id,
-                    resume_offset: 0,
-                },
-                32,
-            );
+            service.handle_opened(transfer_id, stream_id, 0);
             for chunk in payload[..checkpoint + 5].chunks(64 * 1024) {
                 assert!(matches!(
-                    service.handle_data(
-                        FileTransferDataEvent::Chunk(FileTransferDataChunk::new(
-                            transfer_id,
-                            stream_id,
-                            chunk.to_vec(),
-                        )),
-                        33
-                    ),
+                    service.handle_chunk(transfer_id, stream_id, chunk, 33),
                     LinuxFileTransferDataAction::Continue
                 ));
             }
