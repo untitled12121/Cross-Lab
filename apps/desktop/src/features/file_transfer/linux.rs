@@ -1,13 +1,15 @@
 use core::fmt;
 
-use crosslab_agent::FileTransferStateError;
+use crosslab_agent::{FileTransferIntegrityError, FileTransferStateError};
 use crosslab_protocol::FileTransferProfileError;
 
 mod locator;
+mod receive;
 mod source;
 mod state_store;
 
 pub use locator::LinuxFileTransferLocator;
+pub use receive::{LinuxFileTransferReceiver, LinuxFileTransferRecovery};
 pub use source::{
     FILE_TRANSFER_IO_CHUNK_BYTES, LinuxFileTransferSourceReader, LinuxPreparedFileSource,
 };
@@ -20,6 +22,14 @@ pub enum LinuxFileTransferError {
     InvalidSource,
     SourceChanged,
     InvalidLocator,
+    InvalidPartial,
+    DestinationExists,
+    PartialExists,
+    RetainedStateMissing,
+    RetainedStateExists,
+    AlreadyComplete,
+    ChunkTooLarge,
+    Integrity(FileTransferIntegrityError),
     State(FileTransferStateError),
     Profile(FileTransferProfileError),
     Io(std::io::Error),
@@ -37,6 +47,14 @@ impl fmt::Display for LinuxFileTransferError {
                 formatter.write_str("selected source changed during file transfer preparation")
             }
             Self::InvalidLocator => formatter.write_str("Linux file-transfer locator is invalid"),
+            Self::InvalidPartial => formatter.write_str("Linux file-transfer partial state is invalid"),
+            Self::DestinationExists => formatter.write_str("selected destination already exists"),
+            Self::PartialExists => formatter.write_str("file-transfer partial target already exists"),
+            Self::RetainedStateMissing => formatter.write_str("retained file-transfer state is missing"),
+            Self::RetainedStateExists => formatter.write_str("retained file-transfer state already exists"),
+            Self::AlreadyComplete => formatter.write_str("file transfer is already complete"),
+            Self::ChunkTooLarge => formatter.write_str("file-transfer chunk exceeds the platform I/O bound"),
+            Self::Integrity(error) => fmt::Display::fmt(error, formatter),
             Self::State(error) => fmt::Display::fmt(error, formatter),
             Self::Profile(error) => fmt::Display::fmt(error, formatter),
             Self::Io(_) => formatter.write_str("Linux file-transfer storage I/O failed"),
@@ -61,5 +79,11 @@ impl From<FileTransferStateError> for LinuxFileTransferError {
 impl From<FileTransferProfileError> for LinuxFileTransferError {
     fn from(error: FileTransferProfileError) -> Self {
         Self::Profile(error)
+    }
+}
+
+impl From<FileTransferIntegrityError> for LinuxFileTransferError {
+    fn from(error: FileTransferIntegrityError) -> Self {
+        Self::Integrity(error)
     }
 }
