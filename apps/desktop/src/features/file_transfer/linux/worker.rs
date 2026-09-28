@@ -6,9 +6,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crosslab_agent::{
-    FileTransferOperationError, TrustedPresenceAgent,
-};
+use crosslab_agent::{FileTransferOperationError, TrustedPresenceAgent};
 use tokio::sync::{mpsc, oneshot, watch};
 
 use super::{
@@ -26,7 +24,8 @@ pub(crate) struct LinuxFileTransferWorkerHandle {
 impl LinuxFileTransferWorkerHandle {
     pub(crate) fn start(
         agent: Arc<TrustedPresenceAgent>,
-    ) -> Result<(Self, mpsc::Receiver<LinuxIncomingFileTransfer>), LinuxFileTransferWorkerError> {
+    ) -> Result<(Self, mpsc::Receiver<LinuxIncomingFileTransfer>), LinuxFileTransferWorkerError>
+    {
         let service = LinuxFileTransferService::from_environment()?;
         let requests = agent.take_file_transfer_requests()?;
         let data = agent.take_file_transfer_data()?;
@@ -44,13 +43,7 @@ impl LinuxFileTransferWorkerHandle {
                     return;
                 };
                 runtime.block_on(run_worker(
-                    agent,
-                    service,
-                    requests,
-                    data,
-                    command_rx,
-                    pending_tx,
-                    stop_rx,
+                    agent, service, requests, data, command_rx, pending_tx, stop_rx,
                 ));
             })
             .map_err(|_| LinuxFileTransferWorkerError::Thread)?;
@@ -252,7 +245,9 @@ impl fmt::Display for LinuxFileTransferWorkerError {
         match self {
             Self::Platform(error) => fmt::Display::fmt(error, formatter),
             Self::Agent(error) => fmt::Display::fmt(error, formatter),
-            Self::InvalidAction => formatter.write_str("Linux file-transfer service action is invalid"),
+            Self::InvalidAction => {
+                formatter.write_str("Linux file-transfer service action is invalid")
+            }
             Self::Closed => formatter.write_str("Linux file-transfer service is unavailable"),
             Self::Thread => formatter.write_str("Linux file-transfer service could not start"),
         }
