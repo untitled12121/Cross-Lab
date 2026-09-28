@@ -1,5 +1,10 @@
 use core::fmt;
-use std::{sync::Arc, thread, time::Duration};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    thread,
+    time::Duration,
+};
 
 use crosslab_agent::{
     ClipboardAvailability, ClipboardOperationError, ClipboardPlatformError, ClipboardRequest,
@@ -11,6 +16,9 @@ use crosslab_policy::{CapabilityId, OperationName, PolicyError, RuleEffect};
 use tokio::sync::{mpsc, watch};
 
 use crate::features::{
+    file_transfer::{
+        LinuxFileTransferWorkerError, LinuxFileTransferWorkerHandle, LinuxIncomingFileTransfer,
+    },
     identity_store::{
         LinuxEd25519Signer, LinuxIdentityStore, LinuxIdentityStoreError, LinuxSigningSlot,
     },
@@ -29,6 +37,8 @@ pub struct DesktopProductPresenceController {
     agent: Arc<TrustedPresenceAgent>,
     status: watch::Receiver<PresenceSnapshot>,
     control_tx: mpsc::Sender<DiscoveryControl>,
+    file_transfer: Option<LinuxFileTransferWorkerHandle>,
+    file_transfer_offers: Mutex<Option<mpsc::Receiver<LinuxIncomingFileTransfer>>>,
 }
 
 impl DesktopProductPresenceController {
@@ -52,6 +62,11 @@ impl DesktopProductPresenceController {
             ClipboardAvailability::new(true, true),
         )?);
         let status = agent.subscribe_status();
+        let (file_transfer, file_transfer_offers) =
+            match LinuxFileTransferWorkerHandle::start(Arc::clone(&agent)) {
+                Ok((worker, offers)) => (Some(worker), Some(offers)),
+                Err(_) => (None, None),
+            };
         let discovery_agent = Arc::clone(&agent);
         let (control_tx, control_rx) = mpsc::channel(CONTROL_CAPACITY);
 
@@ -73,6 +88,8 @@ impl DesktopProductPresenceController {
             agent,
             status,
             control_tx,
+            file_transfer,
+            file_transfer_offers: Mutex::new(file_transfer_offers),
         }))
     }
 
@@ -88,6 +105,29 @@ impl DesktopProductPresenceController {
         &self,
     ) -> Result<mpsc::Receiver<ClipboardRequest>, ClipboardOperationError> {
         self.agent.take_clipboard_requests()
+    }
+
+    pub fn take_file_transfer_offers(
+        &self,
+    ) -> Result<mpsc::Receiver<LinuxIncomingFileTransfer>, DesktopPresenceError> {
+        self.file_transfer_offers
+            .lock()
+            .map_err(|_| DesktopPresenceError::FileTransferUnavailable)?
+            .take()
+            .ok_or(DesktopPresenceError::FileTransferUnavailable)
+    }
+
+    pub async fn accept_file_transfer_destination(
+        &self,
+        incoming: LinuxIncomingFileTransfer,
+        final_path: PathBuf,
+    ) -> Result<(), DesktopPresenceError> {
+        let worker = self
+            .file_transfer
+            .as_ref()
+            .ok_or(DesktopPresenceError::FileTransferUnavailable)?;
+        worker.accept_destination(incoming, final_path).await?;
+        Ok(())
     }
 
     pub async fn send_clipboard_text(&self, text: String) -> Result<(), ClipboardOperationError> {
@@ -204,6 +244,8 @@ pub enum DesktopPresenceError {
     ProductIdentity(ProductIdentityError),
     Agent(PresenceAgentError),
     Discovery(LinuxTrustedSessionDiscoveryError),
+    FileTransfer,
+    FileTransferUnavailable,
     PeerUnavailable,
     PolicyOutOfSync,
     Control,
@@ -219,6 +261,10 @@ impl fmt::Display for DesktopPresenceError {
             Self::ProductIdentity(error) => fmt::Display::fmt(error, formatter),
             Self::Agent(error) => fmt::Display::fmt(error, formatter),
             Self::Discovery(error) => fmt::Display::fmt(error, formatter),
+            Self::FileTransfer => formatter.write_str("desktop file-transfer operation failed"),
+            Self::FileTransferUnavailable => {
+                formatter.write_str("desktop file-transfer service is unavailable")
+            }
             Self::PeerUnavailable => formatter.write_str("desktop permission peer is unavailable"),
             Self::PolicyOutOfSync => {
                 formatter.write_str("desktop active policy does not match durable policy")
@@ -264,6 +310,12 @@ impl From<PresenceAgentError> for DesktopPresenceError {
 impl From<LinuxTrustedSessionDiscoveryError> for DesktopPresenceError {
     fn from(error: LinuxTrustedSessionDiscoveryError) -> Self {
         Self::Discovery(error)
+    }
+}
+
+impl From<LinuxFileTransferWorkerError> for DesktopPresenceError {
+    fn from(_: LinuxFileTransferWorkerError) -> Self {
+        Self::FileTransfer
     }
 }
 

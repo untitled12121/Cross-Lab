@@ -15,6 +15,7 @@ pub use retained::{
 use core::fmt;
 
 use crosslab_core::{EventSubscription, StreamSendError};
+use crosslab_identity::DeviceId;
 use crosslab_policy::{
     CapabilityId, CapabilityVersion, CapabilityVersionRange, LocalCapability, OperationId,
     OperationName, SessionId,
@@ -51,12 +52,17 @@ impl FileTransferAvailability {
 #[derive(Clone, PartialEq, Eq)]
 pub struct FileTransferRequest {
     request_id: RequestId,
+    source_device_id: DeviceId,
     offer: FileTransferOffer,
 }
 
 impl FileTransferRequest {
     pub const fn request_id(&self) -> RequestId {
         self.request_id
+    }
+
+    pub const fn source_device_id(&self) -> DeviceId {
+        self.source_device_id
     }
 
     pub const fn offer(&self) -> &FileTransferOffer {
@@ -73,6 +79,7 @@ impl fmt::Debug for FileTransferRequest {
         formatter
             .debug_struct("FileTransferRequest")
             .field("request_id", &self.request_id)
+            .field("source_device_id", &self.source_device_id)
             .field("offer", &self.offer)
             .finish()
     }
@@ -402,6 +409,7 @@ pub(crate) fn offer_request(
 
 pub(crate) fn decode_inbound(
     request: &ControlRequest,
+    source_device_id: DeviceId,
 ) -> Result<FileTransferRequest, ControlResponseResult> {
     if request.capability_id().as_str() != FILE_TRANSFER_CAPABILITY_ID {
         return Err(failure(
@@ -427,6 +435,7 @@ pub(crate) fn decode_inbound(
     let offer = decode_file_transfer_offer(request.body()).map_err(wire_failure)?;
     Ok(FileTransferRequest {
         request_id: request.request_id(),
+        source_device_id,
         offer,
     })
 }
@@ -541,6 +550,10 @@ mod tests {
         .unwrap()
     }
 
+    fn source_device_id() -> DeviceId {
+        DeviceId::from_bytes([0x40; 32])
+    }
+
     #[test]
     fn file_transfer_capability_is_disabled_by_default() {
         assert!(local_capabilities(FileTransferAvailability::default()).is_empty());
@@ -551,9 +564,10 @@ mod tests {
     fn offer_request_round_trips_without_exposing_paths() {
         let request_id = RequestId::from_bytes([0x43; 16]);
         let request = offer_request(request_id, &offer()).unwrap();
-        let decoded = decode_inbound(&request).unwrap();
+        let decoded = decode_inbound(&request, source_device_id()).unwrap();
 
         assert_eq!(decoded.request_id(), request_id);
+        assert_eq!(decoded.source_device_id(), source_device_id());
         assert_eq!(decoded.offer(), &offer());
         assert!(!format!("{decoded:?}").contains("example.txt"));
     }
@@ -570,7 +584,7 @@ mod tests {
             body,
         );
 
-        let error = decode_inbound(&request).unwrap_err();
+        let error = decode_inbound(&request, source_device_id()).unwrap_err();
         assert!(matches!(
             error,
             ControlResponseResult::Error(error)
@@ -582,6 +596,7 @@ mod tests {
     fn ready_response_validates_resume_checkpoint() {
         let request = FileTransferRequest {
             request_id: RequestId::from_bytes([0x46; 16]),
+            source_device_id: source_device_id(),
             offer: FileTransferOffer::new(
                 TransferId::from_bytes([0x47; 32]),
                 "checkpoint.bin".into(),
@@ -657,6 +672,7 @@ mod tests {
     fn already_complete_response_binds_original_transfer() {
         let request = FileTransferRequest {
             request_id: RequestId::from_bytes([0x45; 16]),
+            source_device_id: source_device_id(),
             offer: offer(),
         };
         let response = already_complete_response(&request).unwrap();

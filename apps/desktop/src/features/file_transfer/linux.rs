@@ -5,15 +5,22 @@ use crosslab_protocol::FileTransferProfileError;
 
 mod locator;
 mod receive;
+mod service;
 mod source;
 mod state_store;
+mod worker;
 
 pub use locator::LinuxFileTransferLocator;
 pub use receive::{LinuxFileTransferReceiver, LinuxFileTransferRecovery};
+pub use service::{
+    LinuxFileTransferDataAction, LinuxFileTransferRequestAction, LinuxFileTransferService,
+    LinuxIncomingFileTransfer,
+};
 pub use source::{
     FILE_TRANSFER_IO_CHUNK_BYTES, LinuxFileTransferSourceReader, LinuxPreparedFileSource,
 };
 pub use state_store::LinuxFileTransferStateStore;
+pub(crate) use worker::{LinuxFileTransferWorkerError, LinuxFileTransferWorkerHandle};
 
 #[derive(Debug)]
 pub enum LinuxFileTransferError {
@@ -28,6 +35,8 @@ pub enum LinuxFileTransferError {
     RetainedStateMissing,
     RetainedStateExists,
     AlreadyComplete,
+    AlreadyActive,
+    InvalidStream,
     ChunkTooLarge,
     Integrity(FileTransferIntegrityError),
     State(FileTransferStateError),
@@ -61,6 +70,8 @@ impl fmt::Display for LinuxFileTransferError {
                 formatter.write_str("retained file-transfer state already exists")
             }
             Self::AlreadyComplete => formatter.write_str("file transfer is already complete"),
+            Self::AlreadyActive => formatter.write_str("file transfer is already active"),
+            Self::InvalidStream => formatter.write_str("file transfer stream state is invalid"),
             Self::ChunkTooLarge => {
                 formatter.write_str("file-transfer chunk exceeds the platform I/O bound")
             }
