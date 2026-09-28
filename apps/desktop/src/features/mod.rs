@@ -1,6 +1,8 @@
 pub mod appearance;
 pub mod clipboard;
 pub mod devices;
+#[cfg(target_os = "linux")]
+pub mod file_transfer;
 pub mod identity_store;
 pub mod owner;
 pub mod pairing;
