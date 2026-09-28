@@ -29,7 +29,6 @@ pub struct LinuxFileTransferReceiver {
     file: File,
     locator: LinuxFileTransferLocator,
     partial: FileTransferPartialState,
-    snapshot: FileTransferStateSnapshot,
     store: LinuxFileTransferStateStore,
     offset: u64,
 }
@@ -62,8 +61,7 @@ impl LinuxFileTransferReceiver {
         let identity = FileTransferIdentity::new(source_device_id, offer);
         let partial =
             FileTransferPartialState::new(identity, 0, locator.encode()?, now_unix_secs)?;
-        let mut next_snapshot = snapshot.clone();
-        next_snapshot.upsert_partial(partial.clone())?;
+        snapshot.upsert_partial(partial.clone())?;
 
         let file = match OpenOptions::new()
             .read(true)
@@ -79,18 +77,16 @@ impl LinuxFileTransferReceiver {
             Err(error) => return Err(error.into()),
         };
 
-        if let Err(error) = store.commit(&next_snapshot) {
+        if let Err(error) = store.commit(&snapshot) {
             drop(file);
             let _ = fs::remove_file(locator.partial_path());
             return Err(error);
         }
-        snapshot = next_snapshot;
 
         Ok(Self {
             file,
             locator,
             partial,
-            snapshot,
             store,
             offset: 0,
         })
@@ -144,7 +140,6 @@ impl LinuxFileTransferReceiver {
             locator,
             offset: partial.durable_offset(),
             partial,
-            snapshot,
             store,
         }))
     }
@@ -205,9 +200,9 @@ impl LinuxFileTransferReceiver {
 
         let completed =
             FileTransferCompletionTombstone::new(self.partial.identity().clone(), now_unix_secs);
-        let mut next = self.snapshot.clone();
-        next.mark_completed(completed)?;
-        self.store.commit(&next)?;
+        let mut snapshot = self.load_partial_snapshot()?;
+        snapshot.mark_completed(completed)?;
+        self.store.commit(&snapshot)?;
 
         drop(self.file);
         cleanup_completed_partial(self.locator.partial_path());
@@ -223,22 +218,34 @@ impl LinuxFileTransferReceiver {
         self.file.sync_all()?;
         let mut partial = self.partial.clone();
         partial.commit_checkpoint(durable, now_unix_secs)?;
-        let mut snapshot = self.snapshot.clone();
+        let mut snapshot = self.load_partial_snapshot()?;
         snapshot.upsert_partial(partial.clone())?;
         self.store.commit(&snapshot)?;
         self.partial = partial;
-        self.snapshot = snapshot;
         Ok(())
+    }
+
+    fn load_partial_snapshot(&self) -> Result<FileTransferStateSnapshot, LinuxFileTransferError> {
+        let snapshot = self.store.load()?;
+        match snapshot.find(
+            self.partial.identity().source_device_id(),
+            self.partial.identity().offer(),
+        )? {
+            Some(FileTransferStateMatch::Partial(_)) => Ok(snapshot),
+            Some(FileTransferStateMatch::AlreadyComplete(_)) => {
+                Err(LinuxFileTransferError::AlreadyComplete)
+            }
+            None => Err(LinuxFileTransferError::RetainedStateMissing),
+        }
     }
 
     fn invalidate_failed_integrity(&mut self) -> Result<(), LinuxFileTransferError> {
         self.file.set_len(0)?;
         self.file.sync_all()?;
 
-        let mut next = self.snapshot.clone();
-        next.remove(self.partial.identity().transfer_id());
-        self.store.commit(&next)?;
-        self.snapshot = next;
+        let mut snapshot = self.load_partial_snapshot()?;
+        snapshot.remove(self.partial.identity().transfer_id());
+        self.store.commit(&snapshot)?;
 
         let partial_path = self.locator.partial_path().to_path_buf();
         let parent = partial_path.parent().map(Path::to_path_buf);
