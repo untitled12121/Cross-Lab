@@ -36,7 +36,7 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 - PR #68 — `files.transfer` v2 data-plane runtime: merged as `d8ef1901253f8363411a713b8955bd045e72dfe8`; exact head `45f14d3ff523ef4eee5268e8d81c9469be8f58de` passed full Rust + Android CI `36340407398`.
 - PR #69 — streaming BLAKE3 integrity + bounded retained transfer state: merged as `0a9d9562bfe35f3fcbd4dc9dd717f247ba0da7a1`; exact head `c5fbab50aaa64e86475e20a1fca2527d195fa5ab` passed full Rust + Android CI `36383403790`.
 - Active Phase 2 implementation branch / PR: `phase2-linux-file-transfer-storage` / #70.
-- ADR-0018, ADR-0019, and ADR-0020 are accepted. Clipboard is implemented; file transfer is in Task 3 shared-runtime implementation.
+- ADR-0018, ADR-0019, and ADR-0020 are accepted. Clipboard is implemented; file transfer is in Task 4 Linux platform-adapter implementation.
 
 ## Implemented M10 Product Path
 
@@ -115,7 +115,7 @@ Continue in small verified vertical slices:
 
 - per-device permissions/capability-control foundation — implemented on PR #56;
 - clipboard — implemented on PR #60 + PR #61;
-- resumable file transfer — protocol-neutral stream foundation on PR #62; ADR-0020 accepted on PR #64; v2 payload contract on PR #65; event-driven actor streams on PR #66; control/authorization runtime on PR #67; data-plane runtime on PR #68; integrity/checkpoint retained state active on PR #69;
+- resumable file transfer — protocol-neutral stream foundation on PR #62; ADR-0020 accepted on PR #64; v2 payload contract on PR #65; event-driven actor streams on PR #66; control/authorization runtime on PR #67; data-plane runtime on PR #68; integrity/checkpoint retained state on PR #69; Linux storage/source adapter active on PR #70;
 - notifications;
 - privacy-conscious audit/history;
 - revocation/device removal;
