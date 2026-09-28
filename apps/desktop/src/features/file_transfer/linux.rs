@@ -15,9 +15,7 @@ use crosslab_agent::{
     FileTransferHasher, FileTransferLocalLocator, FileTransferStateError,
     FileTransferStateSnapshot, MAX_FILE_TRANSFER_STATE_BYTES,
 };
-use crosslab_protocol::{
-    FILE_TRANSFER_CHECKPOINT_BYTES, FileTransferOffer, FileTransferProfileError, TransferId,
-};
+use crosslab_protocol::{FileTransferOffer, FileTransferProfileError, TransferId};
 
 pub const FILE_TRANSFER_IO_CHUNK_BYTES: usize = 64 * 1024;
 
@@ -92,6 +90,9 @@ impl LinuxFileTransferLocator {
             .parent()
             .ok_or(LinuxFileTransferError::InvalidPath)?;
         let partial_path = parent.join(partial_file_name(transfer_id));
+        if partial_path == final_path {
+            return Err(LinuxFileTransferError::InvalidPath);
+        }
         Ok(Self {
             final_path,
             partial_path,
@@ -458,7 +459,9 @@ mod tests {
     };
     use crosslab_crypto::{blake3_256, random_bytes};
     use crosslab_identity::DeviceId;
-    use crosslab_protocol::{FileTransferDigest, FileTransferOffer};
+    use crosslab_protocol::{
+        FILE_TRANSFER_CHECKPOINT_BYTES, FileTransferDigest, FileTransferOffer,
+    };
 
     #[test]
     fn locator_round_trips_without_exposing_paths() {
