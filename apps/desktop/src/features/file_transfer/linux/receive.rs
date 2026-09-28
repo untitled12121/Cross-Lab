@@ -108,13 +108,21 @@ impl LinuxFileTransferReceiver {
         };
         let locator =
             LinuxFileTransferLocator::decode(partial.locator(), offer.transfer_id())?;
-        let mut file = open_existing_partial(locator.partial_path())?;
+        let partial_exists = path_exists(locator.partial_path())?;
+        let final_exists = path_exists(locator.final_path())?;
 
-        if path_exists(locator.final_path())? {
-            if !same_regular_file(&file, locator.final_path())? {
-                return Err(LinuxFileTransferError::DestinationExists);
+        if final_exists {
+            if partial_exists {
+                let mut file = open_existing_partial(locator.partial_path())?;
+                if !same_regular_file(&file, locator.final_path())? {
+                    return Err(LinuxFileTransferError::DestinationExists);
+                }
+                verify_file(&mut file, &offer)?;
+                fs::remove_file(locator.partial_path())?;
+            } else {
+                let mut file = open_existing_final(locator.final_path())?;
+                verify_file(&mut file, &offer)?;
             }
-            verify_file(&mut file, &offer)?;
             sync_parent(locator.final_path())?;
 
             let completed =
@@ -122,10 +130,13 @@ impl LinuxFileTransferReceiver {
             let mut next = snapshot.clone();
             next.mark_completed(completed)?;
             store.commit(&next)?;
-            cleanup_completed_partial(locator.partial_path());
             return Ok(LinuxFileTransferRecovery::AlreadyComplete);
         }
+        if !partial_exists {
+            return Err(LinuxFileTransferError::InvalidPartial);
+        }
 
+        let mut file = open_existing_partial(locator.partial_path())?;
         match partial.recovery_action(file.metadata()?.len())? {
             FileTransferRecoveryAction::Keep => {}
             FileTransferRecoveryAction::TruncateTo(offset) => {
@@ -197,15 +208,14 @@ impl LinuxFileTransferReceiver {
             Err(error) => return Err(error.into()),
         }
         sync_parent(self.locator.final_path())?;
+        fs::remove_file(self.locator.partial_path())?;
+        sync_parent(self.locator.final_path())?;
 
         let completed =
             FileTransferCompletionTombstone::new(self.partial.identity().clone(), now_unix_secs);
         let mut snapshot = self.load_partial_snapshot()?;
         snapshot.mark_completed(completed)?;
         self.store.commit(&snapshot)?;
-
-        drop(self.file);
-        cleanup_completed_partial(self.locator.partial_path());
         Ok(())
     }
 
@@ -308,6 +318,19 @@ fn same_regular_file(file: &File, path: &Path) -> Result<bool, LinuxFileTransfer
     Ok(opened.dev() == metadata.dev() && opened.ino() == metadata.ino())
 }
 
+fn open_existing_final(path: &Path) -> Result<File, LinuxFileTransferError> {
+    let metadata = fs::symlink_metadata(path)?;
+    if !metadata.file_type().is_file() {
+        return Err(LinuxFileTransferError::DestinationExists);
+    }
+    let file = File::open(path)?;
+    let opened = file.metadata()?;
+    if opened.dev() != metadata.dev() || opened.ino() != metadata.ino() {
+        return Err(LinuxFileTransferError::DestinationExists);
+    }
+    Ok(file)
+}
+
 fn verify_file(
     file: &mut File,
     offer: &FileTransferOffer,
@@ -329,14 +352,6 @@ fn sync_parent(path: &Path) -> Result<(), LinuxFileTransferError> {
     let parent = path.parent().ok_or(LinuxFileTransferError::InvalidPath)?;
     File::open(parent)?.sync_all()?;
     Ok(())
-}
-
-fn cleanup_completed_partial(path: &Path) {
-    if fs::remove_file(path).is_ok()
-        && let Some(parent) = path.parent()
-    {
-        let _ = File::open(parent).and_then(|directory| directory.sync_all());
-    }
 }
 
 #[cfg(test)]
