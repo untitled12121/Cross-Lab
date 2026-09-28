@@ -72,8 +72,10 @@ pub struct LinuxFileTransferService {
 }
 
 impl LinuxFileTransferService {
-    pub fn from_environment() -> Result<Self, LinuxFileTransferError> {
-        Ok(Self::new(LinuxFileTransferStateStore::from_environment()?))
+    pub fn from_environment(now_unix_secs: u64) -> Result<Self, LinuxFileTransferError> {
+        let store = LinuxFileTransferStateStore::from_environment()?;
+        store.cleanup_expired(now_unix_secs)?;
+        Ok(Self::new(store))
     }
 
     fn new(store: LinuxFileTransferStateStore) -> Self {
