@@ -1,3 +1,9 @@
+mod state;
+
+pub use state::{
+    FileTransferFailure, FileTransferFeatureState, FileTransferOperationState, FileTransferStage,
+};
+
 #[cfg(target_os = "linux")]
 mod linux;
 
