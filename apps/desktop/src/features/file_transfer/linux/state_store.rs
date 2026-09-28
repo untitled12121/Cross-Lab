@@ -112,7 +112,7 @@ fn set_private_dir(path: &Path) -> Result<(), std::io::Error> {
 
 #[cfg(test)]
 mod tests {
-    use std::fmt::Write as _;
+    use std::{fmt::Write as _, os::unix::fs::PermissionsExt as _};
 
     use crosslab_agent::{
         FileTransferIdentity, FileTransferPartialState, FileTransferRetainedState,
