@@ -6,7 +6,8 @@ pub use linux::{
     FILE_TRANSFER_IO_CHUNK_BYTES, LinuxFileTransferDataAction, LinuxFileTransferError,
     LinuxFileTransferLocator, LinuxFileTransferReceiver, LinuxFileTransferRecovery,
     LinuxFileTransferRequestAction, LinuxFileTransferSendFailure, LinuxFileTransferSendHandle,
-    LinuxFileTransferSendStatus, LinuxFileTransferService, LinuxFileTransferSourceReader,
+    LinuxFileTransferSendStatus, LinuxFileTransferSendToken, LinuxFileTransferService,
+    LinuxFileTransferSourceReader,
     LinuxFileTransferStateStore, LinuxIncomingFileTransfer, LinuxPreparedFileSource,
 };
 
