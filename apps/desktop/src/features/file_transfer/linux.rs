@@ -153,9 +153,17 @@ impl fmt::Debug for LinuxFileTransferLocator {
     }
 }
 
-#[derive(Debug)]
 pub struct LinuxFileTransferStateStore {
     path: PathBuf,
+}
+
+impl fmt::Debug for LinuxFileTransferStateStore {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LinuxFileTransferStateStore")
+            .field("path", &"[REDACTED]")
+            .finish()
+    }
 }
 
 impl LinuxFileTransferStateStore {
@@ -517,6 +525,7 @@ mod tests {
             fs::metadata(store.path.parent().unwrap()).unwrap().mode() & 0o077,
             0
         );
+        assert!(!format!("{store:?}").contains(root.to_string_lossy().as_ref()));
 
         let _ = fs::remove_dir_all(root);
     }
