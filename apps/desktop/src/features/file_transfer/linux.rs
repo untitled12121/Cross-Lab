@@ -47,13 +47,23 @@ impl fmt::Display for LinuxFileTransferError {
                 formatter.write_str("selected source changed during file transfer preparation")
             }
             Self::InvalidLocator => formatter.write_str("Linux file-transfer locator is invalid"),
-            Self::InvalidPartial => formatter.write_str("Linux file-transfer partial state is invalid"),
+            Self::InvalidPartial => {
+                formatter.write_str("Linux file-transfer partial state is invalid")
+            }
             Self::DestinationExists => formatter.write_str("selected destination already exists"),
-            Self::PartialExists => formatter.write_str("file-transfer partial target already exists"),
-            Self::RetainedStateMissing => formatter.write_str("retained file-transfer state is missing"),
-            Self::RetainedStateExists => formatter.write_str("retained file-transfer state already exists"),
+            Self::PartialExists => {
+                formatter.write_str("file-transfer partial target already exists")
+            }
+            Self::RetainedStateMissing => {
+                formatter.write_str("retained file-transfer state is missing")
+            }
+            Self::RetainedStateExists => {
+                formatter.write_str("retained file-transfer state already exists")
+            }
             Self::AlreadyComplete => formatter.write_str("file transfer is already complete"),
-            Self::ChunkTooLarge => formatter.write_str("file-transfer chunk exceeds the platform I/O bound"),
+            Self::ChunkTooLarge => {
+                formatter.write_str("file-transfer chunk exceeds the platform I/O bound")
+            }
             Self::Integrity(error) => fmt::Display::fmt(error, formatter),
             Self::State(error) => fmt::Display::fmt(error, formatter),
             Self::Profile(error) => fmt::Display::fmt(error, formatter),
