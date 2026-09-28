@@ -1,6 +1,6 @@
 # Phase 2 Resumable File Transfer
 
-**Status:** Active — Task 1 implemented; ADR-0020 accepted; PR #65 payload contract + PR #66 actor stream readiness + PR #67 control/authorization + PR #68 data-plane runtime merged; PR #69 integrity/retained state active
+**Status:** Active — Task 1 implemented; ADR-0020 accepted; PR #65-#69 shared runtime complete; PR #70 Linux storage/source adapter active
 **Date:** 2026-09-26
 **Base:** PR #61 merged as `61ae275356201245a7dcac95d11bd598d2c3045e`  
 **Foundation:** PR #62 merged as `e338d10911ccdb908bc495150f048503086c0ce2`; exact implementation head `e663909443d208c712ccb7f6e1e74fb8dab26ab8` passed full Rust + Android CI `36258390585`.
@@ -69,20 +69,22 @@ Any incompatible change to ADR-0020 now requires a new capability profile/versio
 
 ## Task 3 — Shared transfer capability runtime — Active
 
-PR #65 implemented the accepted bounded offer/accept/result payload contract and focused protocol specification. PR #66 connected Quinn's bounded stream-ready signal to `RuntimeActor`. PR #67 completed exact v2 capability registration, bounded offer/accept correlation, result subscription before the offer, default-disabled product availability, and fresh destination `SingleStream` authority after current exact authorization, with one hard capacity budget for pending/unused authority. PR #68 completed actor-owned open/send/finish/cancel stream execution, ownership-preserving backpressure, destination stream correlation, terminal-result handling, and Quinn-backed source-to-destination runtime coverage. Active PR #69 adds streaming BLAKE3 preparation/verification plus bounded retained partial/checkpoint/tombstone capability state.
+PR #65 implemented the accepted bounded offer/accept/result payload contract and focused protocol specification. PR #66 connected Quinn's bounded stream-ready signal to `RuntimeActor`. PR #67 completed exact v2 capability registration, bounded offer/accept correlation, result subscription before the offer, default-disabled product availability, and fresh destination `SingleStream` authority after current exact authorization, with one hard capacity budget for pending/unused authority. PR #68 completed actor-owned open/send/finish/cancel stream execution, ownership-preserving backpressure, destination stream correlation, terminal-result handling, and Quinn-backed source-to-destination runtime coverage. PR #69 completed streaming BLAKE3 preparation/verification plus bounded retained partial/checkpoint/tombstone capability state.
 
 After ADR-0020 acceptance:
 
 - implement exact bounded offer/accept codecs — implemented on PR #65;
 - issue/register the destination `AuthorizedOperation` only after exact authorization — implemented on PR #67;
 - correlate bounded transfer state — control correlation implemented on PR #67; stream/data-plane correlation implemented on PR #68;
-- stream source hashing and payload with bounded buffers/backpressure — actor/data-plane streaming implemented on PR #68; BLAKE3 integrity state active on PR #69;
-- verify final size/digest — shared verifier active on PR #69;
-- persist bounded partial-transfer metadata and verified checkpoint state — shared retained-state codec/model active on PR #69; platform persistence remains Tasks 4/5;
-- expire abandoned partial transfers — bounded count/age pruning model active on PR #69; platform cleanup policy remains Tasks 4/5;
+- stream source hashing and payload with bounded buffers/backpressure — actor/data-plane streaming implemented on PR #68; BLAKE3 integrity state implemented on PR #69;
+- verify final size/digest — shared verifier implemented on PR #69;
+- persist bounded partial-transfer metadata and verified checkpoint state — shared retained-state codec/model implemented on PR #69; platform persistence remains Tasks 4/5;
+- expire abandoned partial transfers — bounded count/age pruning model implemented on PR #69; platform cleanup policy remains Tasks 4/5;
 - never retain payload bytes in logs/history.
 
-## Task 4 — Linux platform adapter
+## Task 4 — Linux platform adapter — Active
+
+PR #70 starts the platform slice with a private atomic retained-state store, opaque/redacted Linux path locators, symlink-safe source opening checks, full streaming BLAKE3 preparation, and bounded 64 KiB resume reads. Product capability advertisement remains disabled until the receive/service path is installed.
 
 - explicit native file selection/save destination;
 - no peer-supplied path authority;
