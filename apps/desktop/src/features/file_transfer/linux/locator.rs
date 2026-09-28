@@ -163,11 +163,9 @@ mod tests {
         assert_eq!(decoded.partial_path(), locator.partial_path());
         let rendered = format!("{decoded:?}");
         assert!(!rendered.contains("owner-selected"));
-        assert!(LinuxFileTransferLocator::decode(
-            &encoded,
-            TransferId::from_bytes([0x22; 32])
-        )
-        .is_err());
+        assert!(
+            LinuxFileTransferLocator::decode(&encoded, TransferId::from_bytes([0x22; 32])).is_err()
+        );
 
         let _ = fs::remove_dir_all(root);
     }
