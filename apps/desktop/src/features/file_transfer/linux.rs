@@ -15,6 +15,7 @@ pub use locator::LinuxFileTransferLocator;
 pub use receive::{LinuxFileTransferReceiver, LinuxFileTransferRecovery};
 pub use sender::{
     LinuxFileTransferSendFailure, LinuxFileTransferSendHandle, LinuxFileTransferSendStatus,
+    LinuxFileTransferSendToken,
 };
 pub use service::{
     LinuxFileTransferDataAction, LinuxFileTransferRequestAction, LinuxFileTransferService,
