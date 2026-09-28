@@ -243,23 +243,20 @@ impl LinuxFileTransferReceiver {
 
     fn load_partial_snapshot(&self) -> Result<FileTransferStateSnapshot, LinuxFileTransferError> {
         let snapshot = self.store.load()?;
-        match snapshot.find(
+        let durable_offset = match snapshot.find(
             self.partial.identity().source_device_id(),
             self.partial.identity().offer(),
         )? {
-            Some(FileTransferStateMatch::Partial(current))
-                if current.durable_offset() == self.partial.durable_offset() =>
-            {
-                Ok(snapshot)
-            }
-            Some(FileTransferStateMatch::Partial(_)) => {
-                Err(FileTransferStateError::CheckpointRegression.into())
-            }
+            Some(FileTransferStateMatch::Partial(current)) => current.durable_offset(),
             Some(FileTransferStateMatch::AlreadyComplete(_)) => {
-                Err(LinuxFileTransferError::AlreadyComplete)
+                return Err(LinuxFileTransferError::AlreadyComplete);
             }
-            None => Err(LinuxFileTransferError::RetainedStateMissing),
+            None => return Err(LinuxFileTransferError::RetainedStateMissing),
+        };
+        if durable_offset != self.partial.durable_offset() {
+            return Err(FileTransferStateError::CheckpointRegression.into());
         }
+        Ok(snapshot)
     }
 
     fn invalidate_failed_integrity(&mut self) -> Result<(), LinuxFileTransferError> {
