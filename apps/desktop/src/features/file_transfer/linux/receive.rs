@@ -59,6 +59,12 @@ impl LinuxFileTransferReceiver {
             return Err(LinuxFileTransferError::DestinationExists);
         }
 
+        let identity = FileTransferIdentity::new(source_device_id, offer);
+        let partial =
+            FileTransferPartialState::new(identity, 0, locator.encode()?, now_unix_secs)?;
+        let mut next_snapshot = snapshot.clone();
+        next_snapshot.upsert_partial(partial.clone())?;
+
         let file = match OpenOptions::new()
             .read(true)
             .write(true)
@@ -73,15 +79,12 @@ impl LinuxFileTransferReceiver {
             Err(error) => return Err(error.into()),
         };
 
-        let identity = FileTransferIdentity::new(source_device_id, offer);
-        let partial =
-            FileTransferPartialState::new(identity, 0, locator.encode()?, now_unix_secs)?;
-        snapshot.upsert_partial(partial.clone())?;
-        if let Err(error) = store.commit(&snapshot) {
+        if let Err(error) = store.commit(&next_snapshot) {
             drop(file);
             let _ = fs::remove_file(locator.partial_path());
             return Err(error);
         }
+        snapshot = next_snapshot;
 
         Ok(Self {
             file,
@@ -185,8 +188,10 @@ impl LinuxFileTransferReceiver {
 
         let offer = self.partial.identity().offer().clone();
         if let Err(error) = verify_file(&mut self.file, &offer) {
-            self.invalidate_failed_integrity()?;
-            return Err(error.into());
+            if matches!(&error, LinuxFileTransferError::Integrity(_)) {
+                self.invalidate_failed_integrity()?;
+            }
+            return Err(error);
         }
 
         match fs::hard_link(self.locator.partial_path(), self.locator.final_path()) {
@@ -299,21 +304,18 @@ fn same_regular_file(file: &File, path: &Path) -> Result<bool, LinuxFileTransfer
 fn verify_file(
     file: &mut File,
     offer: &FileTransferOffer,
-) -> Result<(), FileTransferIntegrityError> {
-    file.seek(SeekFrom::Start(0))
-        .map_err(|_| FileTransferIntegrityError::SizeMismatch)?;
+) -> Result<(), LinuxFileTransferError> {
+    file.seek(SeekFrom::Start(0))?;
     let mut verifier = FileTransferVerifier::new(offer);
     let mut buffer = vec![0_u8; FILE_TRANSFER_IO_CHUNK_BYTES];
     loop {
-        let read = file
-            .read(&mut buffer)
-            .map_err(|_| FileTransferIntegrityError::SizeMismatch)?;
+        let read = file.read(&mut buffer)?;
         if read == 0 {
             break;
         }
         verifier.update(&buffer[..read])?;
     }
-    verifier.finish()
+    verifier.finish().map_err(Into::into)
 }
 
 fn sync_parent(path: &Path) -> Result<(), LinuxFileTransferError> {
