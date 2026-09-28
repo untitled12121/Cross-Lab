@@ -67,7 +67,7 @@ The proposal scopes v2.0 to explicit single-file push with:
 
 Any incompatible change to ADR-0020 now requires a new capability profile/version and architecture review.
 
-## Task 3 — Shared transfer capability runtime — Active
+## Task 3 — Shared transfer capability runtime — Implemented
 
 PR #65 implemented the accepted bounded offer/accept/result payload contract and focused protocol specification. PR #66 connected Quinn's bounded stream-ready signal to `RuntimeActor`. PR #67 completed exact v2 capability registration, bounded offer/accept correlation, result subscription before the offer, default-disabled product availability, and fresh destination `SingleStream` authority after current exact authorization, with one hard capacity budget for pending/unused authority. PR #68 completed actor-owned open/send/finish/cancel stream execution, ownership-preserving backpressure, destination stream correlation, terminal-result handling, and Quinn-backed source-to-destination runtime coverage. PR #69 completed streaming BLAKE3 preparation/verification plus bounded retained partial/checkpoint/tombstone capability state.
 
