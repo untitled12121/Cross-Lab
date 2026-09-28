@@ -8,3 +8,7 @@ pub use linux::{
     LinuxFileTransferRequestAction, LinuxFileTransferService, LinuxFileTransferSourceReader,
     LinuxFileTransferStateStore, LinuxIncomingFileTransfer, LinuxPreparedFileSource,
 };
+
+
+#[cfg(target_os = "linux")]
+pub(crate) use linux::{LinuxFileTransferWorkerError, LinuxFileTransferWorkerHandle};
