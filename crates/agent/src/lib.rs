@@ -13,7 +13,7 @@ pub use file_transfer::{
     FileTransferDataChunk, FileTransferDataEvent, FileTransferHash, FileTransferHasher,
     FileTransferIdentity, FileTransferIntegrityError, FileTransferLocalLocator,
     FileTransferOperationError, FileTransferPartialState, FileTransferRecoveryAction,
-    FileTransferRequest, FileTransferRequestCancellation, FileTransferRetainedState,
+    FileTransferRequest, FileTransferCancellation, FileTransferRetainedState,
     FileTransferSourceStream,
     FileTransferStateError, FileTransferStateMatch, FileTransferStateSnapshot,
     FileTransferVerifier, MAX_FILE_TRANSFER_LOCAL_LOCATOR_BYTES, MAX_FILE_TRANSFER_STATE_BYTES,

@@ -524,6 +524,55 @@ mod tests {
     }
 
     #[test]
+    fn released_active_transfer_can_resume_same_identity() {
+        let root = test_root("released");
+        fs::create_dir_all(&root).unwrap();
+        let state_path = root.join("state.bin");
+        let final_path = root.join("received.bin");
+        let source = DeviceId::from_bytes([0x66; 32]);
+        let offer = test_offer(0x67, b"payload");
+        let transfer_id = offer.transfer_id();
+        let mut service =
+            LinuxFileTransferService::for_test(LinuxFileTransferStateStore::for_test(state_path));
+
+        let LinuxFileTransferRequestAction::ChooseDestination(incoming) = service
+            .handle_request(
+                RequestId::from_bytes([0x68; 16]),
+                source,
+                offer.clone(),
+                50,
+            )
+            .unwrap()
+        else {
+            panic!("fresh transfer should require owner destination");
+        };
+        service.accept_destination(incoming, final_path, 51).unwrap();
+        assert_eq!(
+            service.transfer_progress(transfer_id),
+            Some((0, offer.file_size()))
+        );
+        assert!(service.release_transfer(transfer_id));
+
+        assert!(matches!(
+            service
+                .handle_request(
+                    RequestId::from_bytes([0x69; 16]),
+                    source,
+                    offer,
+                    52,
+                )
+                .unwrap(),
+            LinuxFileTransferRequestAction::Ready {
+                transfer_id: resumed,
+                resume_offset: 0,
+                ..
+            } if resumed == transfer_id
+        ));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn retained_transfer_rejects_changed_authenticated_source() {
         let root = test_root("identity");
         fs::create_dir_all(&root).unwrap();

@@ -9,7 +9,7 @@ use std::{
 
 use crosslab_agent::{
     FileTransferDataEvent, FileTransferIntegrityError, FileTransferOperationError,
-    FileTransferRequestCancellation, TrustedPresenceAgent,
+    FileTransferCancellation, TrustedPresenceAgent,
 };
 use crosslab_protocol::{FileTransferTerminalOutcome, RequestId, TransferId};
 use tokio::sync::{mpsc, oneshot, watch};
@@ -82,7 +82,7 @@ impl LinuxFileTransferWorkerHandle {
     > {
         let service = LinuxFileTransferService::from_environment(unix_now_secs())?;
         let requests = agent.take_file_transfer_requests()?;
-        let cancellations = agent.take_file_transfer_request_cancellations()?;
+        let cancellations = agent.take_file_transfer_cancellations()?;
         let data = agent.take_file_transfer_data()?;
         let (command_tx, command_rx) = mpsc::channel(FILE_TRANSFER_SERVICE_CAPACITY);
         let (pending_tx, pending_rx) = mpsc::channel(FILE_TRANSFER_SERVICE_CAPACITY);
@@ -227,7 +227,7 @@ async fn run_worker(
     agent: Arc<TrustedPresenceAgent>,
     mut service: LinuxFileTransferService,
     mut requests: mpsc::Receiver<crosslab_agent::FileTransferRequest>,
-    mut cancellations: mpsc::Receiver<FileTransferRequestCancellation>,
+    mut cancellations: mpsc::Receiver<FileTransferCancellation>,
     mut data: mpsc::Receiver<FileTransferDataEvent>,
     mut commands: mpsc::Receiver<WorkerCommand>,
     pending_tx: mpsc::Sender<LinuxIncomingFileTransfer>,
@@ -321,12 +321,31 @@ async fn run_worker(
                 let Some(cancellation) = cancellation else {
                     return;
                 };
-                if pending_offers.cancel(cancellation.request_id()) {
-                    let _ = status_tx
-                        .send(LinuxFileTransferReceiveStatus::OfferCancelled {
-                            request_id: cancellation.request_id(),
-                        })
-                        .await;
+                match cancellation {
+                    FileTransferCancellation::Request { request_id, .. } => {
+                        if pending_offers.cancel(request_id) {
+                            let _ = status_tx
+                                .send(LinuxFileTransferReceiveStatus::OfferCancelled {
+                                    request_id,
+                                })
+                                .await;
+                        }
+                    }
+                    FileTransferCancellation::Transfer { transfer_id } => {
+                        if let Some((received_bytes, total_bytes)) =
+                            service.transfer_progress(transfer_id)
+                        {
+                            service.release_transfer(transfer_id);
+                            let _ = status_tx
+                                .send(LinuxFileTransferReceiveStatus::Failed {
+                                    transfer_id,
+                                    received_bytes,
+                                    total_bytes,
+                                    failure: LinuxFileTransferReceiveFailure::Connection,
+                                })
+                                .await;
+                        }
+                    }
                 }
             }
             event = data.recv() => {

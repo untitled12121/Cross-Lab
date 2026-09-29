@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     future::pending,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     num::NonZeroUsize,
@@ -48,7 +48,7 @@ use crate::{
     file_transfer::{
         FileTransferAvailability, FileTransferChunkError, FileTransferDataChunk,
         FileTransferDataEvent, FileTransferOperationError, FileTransferRequest,
-        FileTransferRequestCancellation, FileTransferSourceStream,
+        FileTransferCancellation, FileTransferSourceStream,
         advertisement as file_transfer_advertisement,
         already_complete_response as file_transfer_already_complete_response,
         capability_negotiated as file_transfer_capability_negotiated,
@@ -201,7 +201,7 @@ impl RuntimeAvailability {
 pub(super) struct CapabilityChannels {
     clipboard_requests_tx: mpsc::Sender<ClipboardRequest>,
     file_transfer_requests_tx: mpsc::Sender<FileTransferRequest>,
-    file_transfer_cancellations_tx: mpsc::Sender<FileTransferRequestCancellation>,
+    file_transfer_cancellations_tx: mpsc::Sender<FileTransferCancellation>,
     file_transfer_data_tx: mpsc::Sender<FileTransferDataEvent>,
 }
 
@@ -209,7 +209,7 @@ impl CapabilityChannels {
     pub(super) fn new(
         clipboard_requests_tx: mpsc::Sender<ClipboardRequest>,
         file_transfer_requests_tx: mpsc::Sender<FileTransferRequest>,
-        file_transfer_cancellations_tx: mpsc::Sender<FileTransferRequestCancellation>,
+        file_transfer_cancellations_tx: mpsc::Sender<FileTransferCancellation>,
         file_transfer_data_tx: mpsc::Sender<FileTransferDataEvent>,
     ) -> Self {
         Self {
@@ -406,7 +406,7 @@ enum SourceFileTransfer {
 
 struct FileTransferRuntimeState {
     requests_tx: mpsc::Sender<FileTransferRequest>,
-    cancellations_tx: mpsc::Sender<FileTransferRequestCancellation>,
+    cancellations_tx: mpsc::Sender<FileTransferCancellation>,
     data_tx: mpsc::Sender<FileTransferDataEvent>,
     availability: FileTransferAvailability,
     outgoing: BTreeMap<RequestId, PendingFileOffer>,
@@ -421,7 +421,7 @@ struct FileTransferRuntimeState {
 impl FileTransferRuntimeState {
     fn new(
         requests_tx: mpsc::Sender<FileTransferRequest>,
-        cancellations_tx: mpsc::Sender<FileTransferRequestCancellation>,
+        cancellations_tx: mpsc::Sender<FileTransferCancellation>,
         data_tx: mpsc::Sender<FileTransferDataEvent>,
         availability: FileTransferAvailability,
     ) -> Self {
@@ -440,6 +440,18 @@ impl FileTransferRuntimeState {
         }
     }
 
+    fn notify_request_cancelled(&self, request_id: RequestId, transfer_id: TransferId) {
+        let _ = self
+            .cancellations_tx
+            .try_send(FileTransferCancellation::request(request_id, transfer_id));
+    }
+
+    fn notify_transfer_interrupted(&self, transfer_id: TransferId) {
+        let _ = self
+            .cancellations_tx
+            .try_send(FileTransferCancellation::transfer(transfer_id));
+    }
+
     fn cancel_all(&mut self, error: FileTransferOperationError) {
         for (_, pending) in core::mem::take(&mut self.outgoing) {
             let _ = pending.reply.send(Err(error));
@@ -450,14 +462,24 @@ impl FileTransferRuntimeState {
             }
         }
         for (request_id, request) in core::mem::take(&mut self.inbound) {
-            let cancellation = FileTransferRequestCancellation::new(
-                request_id,
-                request.offer().transfer_id(),
-            );
-            let _ = self.cancellations_tx.try_send(cancellation);
+            self.notify_request_cancelled(request_id, request.offer().transfer_id());
         }
-        self.destination_ready.clear();
-        self.inbound_streams.clear();
+
+        let mut interrupted = BTreeSet::new();
+        interrupted.extend(
+            self.destination_ready
+                .drain(..)
+                .map(|ready| ready.transfer_id),
+        );
+        interrupted.extend(
+            core::mem::take(&mut self.inbound_streams)
+                .into_values()
+                .map(|active| active.transfer_id),
+        );
+        for transfer_id in interrupted {
+            self.notify_transfer_interrupted(transfer_id);
+        }
+
         self.terminal_ready.clear();
         self.completed_results.clear();
     }
@@ -1747,6 +1769,7 @@ async fn fail_inbound_file_transfer(
     outcome: FileTransferTerminalOutcome,
 ) {
     file_transfer.inbound_streams.remove(&stream_id);
+    file_transfer.notify_transfer_interrupted(transfer_id);
     if let Some(connection) = connected.filter(|connection| !connection.reconnecting) {
         let _ = connection.actor.cancel_inbound_stream(stream_id).await;
         let _ = send_file_transfer_terminal(connection, transfer_id, outcome).await;
@@ -1824,18 +1847,21 @@ async fn expire_file_transfer_offers(
     let expired_operations = file_transfer
         .destination_ready
         .iter()
-        .filter_map(|ready| (ready.deadline <= now).then_some(ready.operation_id))
+        .filter_map(|ready| {
+            (ready.deadline <= now).then_some((ready.operation_id, ready.transfer_id))
+        })
         .collect::<Vec<_>>();
     file_transfer
         .destination_ready
         .retain(|ready| ready.deadline > now);
-    for operation_id in expired_operations {
+    for (operation_id, transfer_id) in expired_operations {
         if let Some(connection) = connected
             .as_ref()
             .filter(|connection| !connection.reconnecting)
         {
             let _ = connection.actor.cancel_stream_operation(operation_id).await;
         }
+        file_transfer.notify_transfer_interrupted(transfer_id);
     }
 
     let expired_source = file_transfer
@@ -1971,11 +1997,8 @@ async fn handle_runtime_event(
         NodeEvent::RequestCancelled(request_id) => {
             clipboard.inbound.remove(&request_id);
             if let Some(request) = file_transfer.inbound.remove(&request_id) {
-                let cancellation = FileTransferRequestCancellation::new(
-                    request_id,
-                    request.offer().transfer_id(),
-                );
-                let _ = file_transfer.cancellations_tx.try_send(cancellation);
+                file_transfer
+                    .notify_request_cancelled(request_id, request.offer().transfer_id());
             }
         }
         NodeEvent::SessionClosed(_) => {
@@ -2051,6 +2074,7 @@ async fn handle_runtime_event(
                 file_transfer
                     .terminal_ready
                     .retain(|terminal| terminal.transfer_id != active.transfer_id);
+                file_transfer.notify_transfer_interrupted(active.transfer_id);
                 if let Some(connection) = connected
                     .as_ref()
                     .filter(|connection| !connection.reconnecting)
@@ -2077,6 +2101,7 @@ async fn handle_runtime_event(
                 file_transfer
                     .terminal_ready
                     .retain(|terminal| terminal.transfer_id != active.transfer_id);
+                file_transfer.notify_transfer_interrupted(active.transfer_id);
                 if let Some(connection) = connected
                     .as_ref()
                     .filter(|connection| !connection.reconnecting)

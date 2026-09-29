@@ -28,7 +28,7 @@ use crate::{
     },
     file_transfer::{
         FileTransferAvailability, FileTransferChunkError, FileTransferDataEvent,
-        FileTransferOperationError, FileTransferRequest, FileTransferRequestCancellation,
+        FileTransferOperationError, FileTransferRequest, FileTransferCancellation,
         FileTransferSourceStream,
     },
 };
@@ -48,7 +48,7 @@ pub struct TrustedPresenceAgent {
     permissions: watch::Receiver<PermissionSnapshot>,
     clipboard_requests: Mutex<Option<mpsc::Receiver<ClipboardRequest>>>,
     file_transfer_requests: Mutex<Option<mpsc::Receiver<FileTransferRequest>>>,
-    file_transfer_cancellations: Mutex<Option<mpsc::Receiver<FileTransferRequestCancellation>>>,
+    file_transfer_cancellations: Mutex<Option<mpsc::Receiver<FileTransferCancellation>>>,
     file_transfer_data: Mutex<Option<mpsc::Receiver<FileTransferDataEvent>>>,
 }
 
@@ -332,9 +332,9 @@ impl TrustedPresenceAgent {
             .ok_or(FileTransferOperationError::Closed)
     }
 
-    pub fn take_file_transfer_request_cancellations(
+    pub fn take_file_transfer_cancellations(
         &self,
-    ) -> Result<mpsc::Receiver<FileTransferRequestCancellation>, FileTransferOperationError> {
+    ) -> Result<mpsc::Receiver<FileTransferCancellation>, FileTransferOperationError> {
         self.file_transfer_cancellations
             .lock()
             .map_err(|_| FileTransferOperationError::Closed)?

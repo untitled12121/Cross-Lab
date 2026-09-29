@@ -25,7 +25,7 @@ use crosslab_protocol::{
     DataStreamOpen, Event, EventId, EventScope, EventType, FILE_TRANSFER_CAPABILITY_ID,
     FILE_TRANSFER_RESULT_EVENT_TYPE, FileTransferAcceptance, FileTransferOffer, FileTransferResult,
     FileTransferTerminalOutcome, FileTransferWireError, ProtocolDiagnostic, ProtocolErrorCode,
-    ProtocolFailure, RequestId, RetryClass, StreamDirection, StreamId,
+    ProtocolFailure, RequestId, RetryClass, StreamDirection, StreamId, TransferId,
     decode_file_transfer_acceptance, decode_file_transfer_offer, decode_file_transfer_result,
     encode_file_transfer_acceptance, encode_file_transfer_offer, encode_file_transfer_result,
 };
@@ -86,28 +86,32 @@ impl fmt::Debug for FileTransferRequest {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FileTransferRequestCancellation {
-    request_id: RequestId,
-    transfer_id: crosslab_protocol::TransferId,
+pub enum FileTransferCancellation {
+    Request {
+        request_id: RequestId,
+        transfer_id: TransferId,
+    },
+    Transfer {
+        transfer_id: TransferId,
+    },
 }
 
-impl FileTransferRequestCancellation {
-    pub(crate) const fn new(
-        request_id: RequestId,
-        transfer_id: crosslab_protocol::TransferId,
-    ) -> Self {
-        Self {
+impl FileTransferCancellation {
+    pub(crate) const fn request(request_id: RequestId, transfer_id: TransferId) -> Self {
+        Self::Request {
             request_id,
             transfer_id,
         }
     }
 
-    pub const fn request_id(self) -> RequestId {
-        self.request_id
+    pub(crate) const fn transfer(transfer_id: TransferId) -> Self {
+        Self::Transfer { transfer_id }
     }
 
-    pub const fn transfer_id(self) -> crosslab_protocol::TransferId {
-        self.transfer_id
+    pub const fn transfer_id(self) -> TransferId {
+        match self {
+            Self::Request { transfer_id, .. } | Self::Transfer { transfer_id } => transfer_id,
+        }
     }
 }
 
