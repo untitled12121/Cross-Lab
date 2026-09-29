@@ -811,6 +811,14 @@ impl ControlCenterPage {
                         );
                         page.notice = None;
                     }
+                    Err(error @ DesktopPresenceError::FileTransferConnection) => {
+                        page.file_transfer.receive_failed(
+                            0,
+                            page.file_transfer.receive().total_bytes(),
+                            FileTransferFailure::Connection,
+                        );
+                        page.notice = Some(error.to_string());
+                    }
                     Err(error) => {
                         page.pending_file_transfers.push_front(incoming);
                         page.file_transfer.receive_failed(
@@ -1425,7 +1433,10 @@ impl Render for ControlCenterPage {
                             .focus_visible(|style| style.border_color(theme.ring))
                             .child("Decline"),
                     );
-            } else if receive_stage == FileTransferStage::Transferring {
+            } else if matches!(
+                receive_stage,
+                FileTransferStage::Ready | FileTransferStage::Transferring
+            ) {
                 transfer_actions = transfer_actions.child(
                     Button::new("file-transfer-cancel-receive")
                         .accessibility_label("Cancel the incoming file transfer")

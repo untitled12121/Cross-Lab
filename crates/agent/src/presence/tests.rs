@@ -881,6 +881,109 @@ async fn file_transfer_session_loss_interrupts_ready_destination_transfer() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn file_transfer_destination_cancel_is_valid_from_ready_state() {
+    let (left_state, right_state) = reciprocal_identities();
+    let left_device_id = left_state.local_credential().device_id();
+    let left_signer = Arc::new(SigningKey::from_secret_bytes([0x74; 32]));
+    let right_signer = Arc::new(SigningKey::from_secret_bytes([0x75; 32]));
+    let mut right_policy = PolicyState::new();
+    right_policy
+        .set_rule_effect(
+            left_device_id,
+            CapabilityId::parse("files.transfer").unwrap(),
+            OperationName::parse("receive").unwrap(),
+            RuleEffect::Allow,
+        )
+        .unwrap();
+
+    let left = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
+        left_state,
+        left_signer,
+        PolicyState::new(),
+        ClipboardAvailability::default(),
+        FileTransferAvailability::new(true),
+    )
+    .unwrap();
+    let right = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
+        right_state,
+        right_signer,
+        right_policy,
+        ClipboardAvailability::default(),
+        FileTransferAvailability::new(true),
+    )
+    .unwrap();
+    let mut right_requests = right.take_file_transfer_requests().unwrap();
+
+    left.candidate_available(route_for(&right)).unwrap();
+    right.candidate_available(route_for(&left)).unwrap();
+    let mut left_status = left.subscribe_status();
+    wait_capability_negotiated(&mut left_status, "files.transfer").await;
+
+    let offer = crosslab_protocol::FileTransferOffer::new(
+        crosslab_protocol::TransferId::from_bytes([0xe9; 32]),
+        "ready-cancel.bin".into(),
+        19,
+        crosslab_protocol::FileTransferDigest::from_bytes([0xea; 32]),
+    )
+    .unwrap();
+    let transfer_id = offer.transfer_id();
+
+    let first = left.send_file_offer(offer.clone());
+    tokio::pin!(first);
+    let request = tokio::time::timeout(WAIT, async {
+        tokio::select! {
+            result = &mut first => panic!("file offer completed before peer request: {result:?}"),
+            request = right_requests.recv() => request,
+        }
+    })
+    .await
+    .expect("file offer should arrive")
+    .expect("file transfer request channel should remain open");
+    right
+        .complete_file_transfer_ready(request.request_id(), 0)
+        .await
+        .unwrap();
+    assert!(matches!(
+        first.await.unwrap(),
+        crosslab_protocol::FileTransferAcceptance::Ready {
+            transfer_id: received,
+            ..
+        } if received == transfer_id
+    ));
+
+    right.cancel_file_transfer_receive(transfer_id).await.unwrap();
+    assert_eq!(
+        left.open_file_transfer_stream(transfer_id).await,
+        Err(FileTransferOperationError::Remote(
+            crosslab_protocol::ProtocolErrorCode::Cancelled
+        ))
+    );
+
+    let retry = left.send_file_offer(offer);
+    tokio::pin!(retry);
+    let retry_request = tokio::time::timeout(WAIT, async {
+        tokio::select! {
+            result = &mut retry => panic!("retry completed before peer request: {result:?}"),
+            request = right_requests.recv() => request,
+        }
+    })
+    .await
+    .expect("same transfer identity should retry after destination cancellation")
+    .expect("file transfer request channel should remain open");
+
+    right
+        .decline_file_transfer_request(retry_request.request_id())
+        .await
+        .unwrap();
+    assert_eq!(
+        retry.await,
+        Err(FileTransferOperationError::Remote(
+            crosslab_protocol::ProtocolErrorCode::Cancelled
+        ))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn file_transfer_cancel_after_ready_consumes_remote_authority() {
     let (left_state, right_state) = reciprocal_identities();
     let left_device_id = left_state.local_credential().device_id();

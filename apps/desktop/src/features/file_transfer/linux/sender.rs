@@ -264,6 +264,10 @@ async fn send_ready(
         result = agent.open_file_transfer_stream(transfer_id) => {
             match result {
                 Ok(stream) => stream,
+                Err(FileTransferOperationError::Remote(ProtocolErrorCode::Cancelled)) => {
+                    cancelled(&status_tx, 0, total_bytes);
+                    return;
+                }
                 Err(error) => {
                     fail(&status_tx, 0, total_bytes, map_operation_error(error));
                     return;
@@ -339,7 +343,24 @@ async fn send_ready(
                         _ = tokio::time::sleep(BACKPRESSURE_RETRY) => {}
                     }
                 }
-                Err(FileTransferChunkError::TooLarge(_) | FileTransferChunkError::Closed(_)) => {
+                Err(FileTransferChunkError::Closed(_)) => {
+                    match agent.finish_file_transfer_stream(stream).await {
+                        Ok(result) => apply_terminal_outcome(
+                            &status_tx,
+                            result.outcome(),
+                            transferred,
+                            total_bytes,
+                        ),
+                        Err(error) => fail(
+                            &status_tx,
+                            transferred,
+                            total_bytes,
+                            map_operation_error(error),
+                        ),
+                    }
+                    return;
+                }
+                Err(FileTransferChunkError::TooLarge(_)) => {
                     let _ = agent.cancel_file_transfer_send(stream).await;
                     fail(
                         &status_tx,
@@ -362,36 +383,50 @@ async fn send_ready(
     let _ = status_tx.send(LinuxFileTransferSendStatus::Finalizing { total_bytes });
 
     match agent.finish_file_transfer_stream(stream).await {
-        Ok(result) => match result.outcome() {
-            FileTransferTerminalOutcome::Completed => {
-                let _ = status_tx.send(LinuxFileTransferSendStatus::Completed { total_bytes });
-            }
-            FileTransferTerminalOutcome::Cancelled => {
-                cancelled(&status_tx, transferred, total_bytes);
-            }
-            FileTransferTerminalOutcome::IntegrityFailed => {
-                fail(
-                    &status_tx,
-                    transferred,
-                    total_bytes,
-                    LinuxFileTransferSendFailure::RemoteIntegrity,
-                );
-            }
-            FileTransferTerminalOutcome::StorageFailed => {
-                fail(
-                    &status_tx,
-                    transferred,
-                    total_bytes,
-                    LinuxFileTransferSendFailure::RemoteStorage,
-                );
-            }
-        },
+        Ok(result) => apply_terminal_outcome(
+            &status_tx,
+            result.outcome(),
+            transferred,
+            total_bytes,
+        ),
         Err(error) => fail(
             &status_tx,
             transferred,
             total_bytes,
             map_operation_error(error),
         ),
+    }
+}
+
+fn apply_terminal_outcome(
+    status_tx: &watch::Sender<LinuxFileTransferSendStatus>,
+    outcome: FileTransferTerminalOutcome,
+    transferred_bytes: u64,
+    total_bytes: u64,
+) {
+    match outcome {
+        FileTransferTerminalOutcome::Completed => {
+            let _ = status_tx.send(LinuxFileTransferSendStatus::Completed { total_bytes });
+        }
+        FileTransferTerminalOutcome::Cancelled => {
+            cancelled(status_tx, transferred_bytes, total_bytes);
+        }
+        FileTransferTerminalOutcome::IntegrityFailed => {
+            fail(
+                status_tx,
+                transferred_bytes,
+                total_bytes,
+                LinuxFileTransferSendFailure::RemoteIntegrity,
+            );
+        }
+        FileTransferTerminalOutcome::StorageFailed => {
+            fail(
+                status_tx,
+                transferred_bytes,
+                total_bytes,
+                LinuxFileTransferSendFailure::RemoteStorage,
+            );
+        }
     }
 }
 

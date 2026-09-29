@@ -191,18 +191,12 @@ impl LinuxFileTransferService {
     pub fn cancel_receive(
         &mut self,
         transfer_id: TransferId,
-    ) -> Result<(StreamId, u64, u64), LinuxFileTransferError> {
+    ) -> Result<(u64, u64), LinuxFileTransferError> {
         let active = self
             .active
-            .get(&transfer_id)
+            .remove(&transfer_id)
             .ok_or(LinuxFileTransferError::InvalidStream)?;
-        let stream_id = active
-            .stream_id
-            .ok_or(LinuxFileTransferError::InvalidStream)?;
-        let received_bytes = active.receiver.offset();
-        let total_bytes = active.receiver.total_bytes();
-        self.active.remove(&transfer_id);
-        Ok((stream_id, received_bytes, total_bytes))
+        Ok((active.receiver.offset(), active.receiver.total_bytes()))
     }
 
     pub fn handle_data(
@@ -560,6 +554,54 @@ mod tests {
                     source,
                     offer,
                     52,
+                )
+                .unwrap(),
+            LinuxFileTransferRequestAction::Ready {
+                transfer_id: resumed,
+                resume_offset: 0,
+                ..
+            } if resumed == transfer_id
+        ));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn ready_transfer_can_cancel_before_stream_open_and_resume() {
+        let root = test_root("ready-cancel");
+        fs::create_dir_all(&root).unwrap();
+        let state_path = root.join("state.bin");
+        let final_path = root.join("received.bin");
+        let source = DeviceId::from_bytes([0x6a; 32]);
+        let offer = test_offer(0x6b, b"payload");
+        let transfer_id = offer.transfer_id();
+        let mut service =
+            LinuxFileTransferService::for_test(LinuxFileTransferStateStore::for_test(state_path));
+
+        let LinuxFileTransferRequestAction::ChooseDestination(incoming) = service
+            .handle_request(
+                RequestId::from_bytes([0x6c; 16]),
+                source,
+                offer.clone(),
+                60,
+            )
+            .unwrap()
+        else {
+            panic!("fresh transfer should require owner destination");
+        };
+        service.accept_destination(incoming, final_path, 61).unwrap();
+
+        assert_eq!(
+            service.cancel_receive(transfer_id).unwrap(),
+            (0, offer.file_size())
+        );
+        assert!(matches!(
+            service
+                .handle_request(
+                    RequestId::from_bytes([0x6d; 16]),
+                    source,
+                    offer,
+                    62,
                 )
                 .unwrap(),
             LinuxFileTransferRequestAction::Ready {

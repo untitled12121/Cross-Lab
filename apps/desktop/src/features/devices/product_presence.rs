@@ -345,6 +345,7 @@ pub enum DesktopPresenceError {
     Discovery(LinuxTrustedSessionDiscoveryError),
     FileTransfer,
     FileTransferCancelled,
+    FileTransferConnection,
     FileTransferUnavailable,
     FileTransferBusy,
     PeerUnavailable,
@@ -365,6 +366,9 @@ impl fmt::Display for DesktopPresenceError {
             Self::FileTransfer => formatter.write_str("desktop file-transfer operation failed"),
             Self::FileTransferCancelled => {
                 formatter.write_str("desktop file-transfer offer was cancelled")
+            }
+            Self::FileTransferConnection => {
+                formatter.write_str("desktop file-transfer session is unavailable")
             }
             Self::FileTransferUnavailable => {
                 formatter.write_str("desktop file-transfer service is unavailable")
@@ -424,6 +428,11 @@ impl From<LinuxFileTransferWorkerError> for DesktopPresenceError {
             LinuxFileTransferWorkerError::Agent(FileTransferOperationError::Cancelled) => {
                 Self::FileTransferCancelled
             }
+            LinuxFileTransferWorkerError::Agent(
+                FileTransferOperationError::NotConnected
+                | FileTransferOperationError::Transport
+                | FileTransferOperationError::Closed,
+            ) => Self::FileTransferConnection,
             _ => Self::FileTransfer,
         }
     }

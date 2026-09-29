@@ -16,8 +16,8 @@ use crosslab_policy::{
 };
 use crosslab_protocol::{
     CapabilityAdvertisement, FILE_TRANSFER_CAPABILITY_ID, FeatureSet, FileTransferAcceptance,
-    FileTransferOffer, FileTransferResult, FileTransferTerminalOutcome, ProtocolRange, RequestId,
-    StreamId, TransferId,
+    FileTransferOffer, FileTransferResult, FileTransferTerminalOutcome, ProtocolErrorCode,
+    ProtocolRange, RequestId, StreamId, TransferId,
 };
 use crosslab_runtime::{
     NodeEvent, RuntimeActor, RuntimeActorConfig, RuntimeActorSession, RuntimeNode,
@@ -174,7 +174,13 @@ pub(super) enum AgentCommand {
         reply: oneshot::Sender<Result<FileTransferResult, FileTransferOperationError>>,
     },
     FileTransferCancelReceive {
+        transfer_id: TransferId,
+        reply: oneshot::Sender<Result<(), FileTransferOperationError>>,
+    },
+    FileTransferFailReceive {
         stream_id: StreamId,
+        transfer_id: TransferId,
+        outcome: FileTransferTerminalOutcome,
         reply: oneshot::Sender<Result<(), FileTransferOperationError>>,
     },
     FileTransferTerminal {
@@ -1169,10 +1175,27 @@ async fn handle_command(
                 .await;
             false
         }
-        Some(AgentCommand::FileTransferCancelReceive { stream_id, reply }) => {
+        Some(AgentCommand::FileTransferCancelReceive { transfer_id, reply }) => {
             let outcome =
-                cancel_file_transfer_receive(connected.as_ref(), file_transfer, stream_id).await;
+                cancel_file_transfer_receive(connected.as_ref(), file_transfer, transfer_id).await;
             let _ = reply.send(outcome);
+            false
+        }
+        Some(AgentCommand::FileTransferFailReceive {
+            stream_id,
+            transfer_id,
+            outcome,
+            reply,
+        }) => {
+            let result = fail_file_transfer_receive(
+                connected.as_ref(),
+                file_transfer,
+                stream_id,
+                transfer_id,
+                outcome,
+            )
+            .await;
+            let _ = reply.send(result);
             false
         }
         Some(AgentCommand::FileTransferTerminal {
@@ -1591,6 +1614,19 @@ async fn open_file_transfer_stream(
     file_transfer: &mut FileTransferRuntimeState,
     transfer_id: TransferId,
 ) -> Result<FileTransferSourceStream, FileTransferOperationError> {
+    if let Some(result) = file_transfer.take_cached_result(transfer_id) {
+        return match result.outcome() {
+            FileTransferTerminalOutcome::Cancelled => {
+                Err(FileTransferOperationError::Remote(ProtocolErrorCode::Cancelled))
+            }
+            FileTransferTerminalOutcome::Completed
+            | FileTransferTerminalOutcome::IntegrityFailed
+            | FileTransferTerminalOutcome::StorageFailed => {
+                Err(FileTransferOperationError::InvalidResponse)
+            }
+        };
+    }
+
     let (operation_id, resume_offset, deadline) = match file_transfer.source.get(&transfer_id) {
         Some(SourceFileTransfer::Ready {
             operation_id,
@@ -1718,24 +1754,80 @@ async fn finish_file_transfer_stream(
 async fn cancel_file_transfer_receive(
     connected: Option<&ConnectedRuntime>,
     file_transfer: &mut FileTransferRuntimeState,
-    stream_id: StreamId,
+    transfer_id: TransferId,
 ) -> Result<(), FileTransferOperationError> {
+    let connection = connected
+        .filter(|connection| !connection.reconnecting)
+        .ok_or(FileTransferOperationError::NotConnected)?;
+
+    if let Some(position) = file_transfer
+        .destination_ready
+        .iter()
+        .position(|ready| ready.transfer_id == transfer_id)
+    {
+        let ready = file_transfer.destination_ready.remove(position);
+        let _ = connection
+            .actor
+            .cancel_stream_operation(ready.operation_id)
+            .await;
+        return send_file_transfer_terminal(
+            connection,
+            transfer_id,
+            FileTransferTerminalOutcome::Cancelled,
+        )
+        .await;
+    }
+
+    if let Some(stream_id) = file_transfer
+        .inbound_streams
+        .iter()
+        .find_map(|(stream_id, active)| {
+            (active.transfer_id == transfer_id).then_some(*stream_id)
+        })
+    {
+        let _ = connection.actor.cancel_inbound_stream(stream_id).await;
+        file_transfer.inbound_streams.remove(&stream_id);
+        return send_file_transfer_terminal(
+            connection,
+            transfer_id,
+            FileTransferTerminalOutcome::Cancelled,
+        )
+        .await;
+    }
+
+    Err(FileTransferOperationError::InvalidStream)
+}
+
+async fn fail_file_transfer_receive(
+    connected: Option<&ConnectedRuntime>,
+    file_transfer: &mut FileTransferRuntimeState,
+    stream_id: StreamId,
+    transfer_id: TransferId,
+    outcome: FileTransferTerminalOutcome,
+) -> Result<(), FileTransferOperationError> {
+    if !matches!(
+        outcome,
+        FileTransferTerminalOutcome::IntegrityFailed
+            | FileTransferTerminalOutcome::StorageFailed
+    ) {
+        return Err(FileTransferOperationError::InvalidResponse);
+    }
+
     let active = file_transfer
         .inbound_streams
         .get(&stream_id)
         .copied()
         .ok_or(FileTransferOperationError::InvalidStream)?;
+    if active.transfer_id != transfer_id {
+        return Err(FileTransferOperationError::InvalidStream);
+    }
+
     let connection = connected
         .filter(|connection| !connection.reconnecting)
         .ok_or(FileTransferOperationError::NotConnected)?;
-    connection
-        .actor
-        .cancel_inbound_stream(stream_id)
-        .await
-        .map_err(|_| FileTransferOperationError::Transport)?;
+    let _ = connection.actor.cancel_inbound_stream(stream_id).await;
     file_transfer.inbound_streams.remove(&stream_id);
-    remember_terminal_ready(file_transfer, active.transfer_id);
-    Ok(())
+    send_file_transfer_terminal(connection, transfer_id, outcome).await
 }
 
 async fn complete_file_transfer_terminal(

@@ -441,9 +441,8 @@ async fn run_worker(
                         outcome,
                         error,
                     } => {
-                        let _ = agent.cancel_file_transfer_receive(stream_id).await;
                         let _ = agent
-                            .complete_file_transfer_result(transfer_id, outcome)
+                            .fail_file_transfer_receive(stream_id, transfer_id, outcome)
                             .await;
                         let (received_bytes, total_bytes) = prior.unwrap_or((0, 0));
                         let _ = status_tx.send(LinuxFileTransferReceiveStatus::Failed {
@@ -550,11 +549,18 @@ async fn cancel_receive(
     service: &mut LinuxFileTransferService,
     transfer_id: TransferId,
 ) -> Result<LinuxFileTransferReceiveStatus, LinuxFileTransferWorkerError> {
-    let (stream_id, received_bytes, total_bytes) = service.cancel_receive(transfer_id)?;
-    agent.cancel_file_transfer_receive(stream_id).await?;
-    let _ = agent
-        .complete_file_transfer_result(transfer_id, FileTransferTerminalOutcome::Cancelled)
-        .await;
+    let (received_bytes, total_bytes) = service.cancel_receive(transfer_id)?;
+    match agent.cancel_file_transfer_receive(transfer_id).await {
+        Ok(())
+        | Err(
+            FileTransferOperationError::NotConnected
+            | FileTransferOperationError::InvalidStream
+            | FileTransferOperationError::Cancelled
+            | FileTransferOperationError::Transport
+            | FileTransferOperationError::Closed,
+        ) => {}
+        Err(error) => return Err(error.into()),
+    }
     Ok(LinuxFileTransferReceiveStatus::Cancelled {
         transfer_id,
         received_bytes,
