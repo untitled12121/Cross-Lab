@@ -84,7 +84,7 @@ After ADR-0020 acceptance:
 
 ## Task 4 — Linux platform adapter — Active
 
-PR #70 completed the first platform slice with a private atomic retained-state store, opaque/redacted Linux path locators, symlink-safe source opening checks, full streaming BLAKE3 preparation, and bounded 64 KiB resume reads. PR #71 completed private adjacent receive partials, fsync-before-durable 1 MiB checkpoint advancement, restart truncation/fail-closed recovery, exact whole-file BLAKE3 verification, completion tombstones, crash recovery across publication, and atomic non-clobber publication. PR #72 merged authenticated source binding plus the bounded Linux worker/service that consumes both agent queues, restores retained transfer state, drives receive/terminal handling, and exposes owner destination approval as a typed boundary. Active PR #73 adds native source/save prompts, bounded sender hashing/streaming, stable retry identity, progress/cancel/retry presentation, capability advertisement only with the complete product path, and bounded age-based cleanup of partial/completed retained state.
+PR #70 completed the first platform slice with a private atomic retained-state store, opaque/redacted Linux path locators, symlink-safe source opening checks, full streaming BLAKE3 preparation, and bounded 64 KiB resume reads. PR #71 completed private adjacent receive partials, fsync-before-durable 1 MiB checkpoint advancement, restart truncation/fail-closed recovery, exact whole-file BLAKE3 verification, completion tombstones, crash recovery across publication, and atomic non-clobber publication. PR #72 merged authenticated source binding plus the bounded Linux worker/service that consumes both agent queues, restores retained transfer state, drives receive/terminal handling, and exposes owner destination approval as a typed boundary. Active PR #73 adds native source/save prompts, bounded sender hashing/streaming, stable retry identity, progress/cancel/retry presentation, capability advertisement only with the complete product path, and bounded age-based cleanup of partial/completed retained state. Its current cancellation checkpoint explicitly releases pending source offers, reports destination request cancellation through a bounded product channel, consumes already-issued stream authority when acceptance races cancellation, correlates save prompts by exact request ID, and introduces a non-cancellable finalizing state once payload transmission has finished.
 
 - explicit native file selection/save destination;
 - no peer-supplied path authority;
@@ -117,7 +117,7 @@ Expose the smallest clear controls:
 
 Use a two-level loop so development stays fast without weakening the merge gate.
 
-During iteration, batch a coherent milestone and run only the checks affected by the change: formatting plus targeted crate/package checks, clippy/tests, desktop build, UniFFI generation, or Android tests/assembly as applicable. Do not rerun the complete workspace/mobile matrix after every small edit.
+During iteration, prefer long coherent coding sessions and batch all related implementation, regression tests, cleanup, and documentation into a meaningful milestone before pushing. Run only the checks affected by the change: formatting plus targeted crate/package checks, clippy/tests, desktop build, UniFFI generation, or Android tests/assembly as applicable. Do not rerun the complete workspace/mobile matrix after every small edit, and do not create a push for every small correction unless a durable interruption checkpoint is necessary.
 
 Before marking a PR ready or merging, the exact head must pass the full gate:
 
@@ -135,6 +135,9 @@ File-transfer-specific regression coverage must include:
 - exact default-deny / wrong operation / wrong peer;
 - stale `OperationId` rejection after reconnect;
 - policy/revocation cancellation;
+- explicit pre-accept cancellation releases the pending request/authority and permits immediate same-`TransferId` retry;
+- cancellation racing `Ready` consumes the fresh single-stream authority without sending payload bytes;
+- destination save-prompt cancellation is correlated by exact request ID so a retry cannot inherit stale UI authority;
 - interrupted checkpoint recovery;
 - changed source identity rejection;
 - final size/digest mismatch;
