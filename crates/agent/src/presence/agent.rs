@@ -28,13 +28,15 @@ use crate::{
     },
     file_transfer::{
         FileTransferAvailability, FileTransferChunkError, FileTransferDataEvent,
-        FileTransferOperationError, FileTransferRequest, FileTransferSourceStream,
+        FileTransferOperationError, FileTransferRequest, FileTransferRequestCancellation,
+        FileTransferSourceStream,
     },
 };
 
 const COMMAND_CAPACITY: usize = 64;
 const CLIPBOARD_REQUEST_CAPACITY: usize = 8;
 const FILE_TRANSFER_REQUEST_CAPACITY: usize = 8;
+const FILE_TRANSFER_CANCELLATION_CAPACITY: usize = 8;
 const FILE_TRANSFER_DATA_CAPACITY: usize = 8;
 
 pub struct TrustedPresenceAgent {
@@ -46,6 +48,7 @@ pub struct TrustedPresenceAgent {
     permissions: watch::Receiver<PermissionSnapshot>,
     clipboard_requests: Mutex<Option<mpsc::Receiver<ClipboardRequest>>>,
     file_transfer_requests: Mutex<Option<mpsc::Receiver<FileTransferRequest>>>,
+    file_transfer_cancellations: Mutex<Option<mpsc::Receiver<FileTransferRequestCancellation>>>,
     file_transfer_data: Mutex<Option<mpsc::Receiver<FileTransferDataEvent>>>,
 }
 
@@ -124,6 +127,8 @@ impl TrustedPresenceAgent {
         let (clipboard_requests_tx, clipboard_requests) = mpsc::channel(CLIPBOARD_REQUEST_CAPACITY);
         let (file_transfer_requests_tx, file_transfer_requests) =
             mpsc::channel(FILE_TRANSFER_REQUEST_CAPACITY);
+        let (file_transfer_cancellations_tx, file_transfer_cancellations) =
+            mpsc::channel(FILE_TRANSFER_CANCELLATION_CAPACITY);
         let (file_transfer_data_tx, file_transfer_data) =
             mpsc::channel(FILE_TRANSFER_DATA_CAPACITY);
         let (startup_tx, startup_rx) = std_mpsc::sync_channel(1);
@@ -179,6 +184,7 @@ impl TrustedPresenceAgent {
                             CapabilityChannels::new(
                                 clipboard_requests_tx,
                                 file_transfer_requests_tx,
+                                file_transfer_cancellations_tx,
                                 file_transfer_data_tx,
                             ),
                             RuntimeAvailability::new(
@@ -204,6 +210,7 @@ impl TrustedPresenceAgent {
             permissions,
             clipboard_requests: Mutex::new(Some(clipboard_requests)),
             file_transfer_requests: Mutex::new(Some(file_transfer_requests)),
+            file_transfer_cancellations: Mutex::new(Some(file_transfer_cancellations)),
             file_transfer_data: Mutex::new(Some(file_transfer_data)),
         })
     }
@@ -325,6 +332,16 @@ impl TrustedPresenceAgent {
             .ok_or(FileTransferOperationError::Closed)
     }
 
+    pub fn take_file_transfer_request_cancellations(
+        &self,
+    ) -> Result<mpsc::Receiver<FileTransferRequestCancellation>, FileTransferOperationError> {
+        self.file_transfer_cancellations
+            .lock()
+            .map_err(|_| FileTransferOperationError::Closed)?
+            .take()
+            .ok_or(FileTransferOperationError::Closed)
+    }
+
     pub fn take_file_transfer_data(
         &self,
     ) -> Result<mpsc::Receiver<FileTransferDataEvent>, FileTransferOperationError> {
@@ -343,6 +360,23 @@ impl TrustedPresenceAgent {
         self.command_tx
             .send(AgentCommand::FileTransferOffer {
                 offer,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| FileTransferOperationError::Closed)?;
+        reply_rx
+            .await
+            .map_err(|_| FileTransferOperationError::Closed)?
+    }
+
+    pub async fn cancel_file_transfer_offer(
+        &self,
+        transfer_id: crosslab_protocol::TransferId,
+    ) -> Result<(), FileTransferOperationError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.command_tx
+            .send(AgentCommand::FileTransferCancelOffer {
+                transfer_id,
                 reply: reply_tx,
             })
             .await

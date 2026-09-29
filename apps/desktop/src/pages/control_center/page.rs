@@ -10,7 +10,7 @@ use crosslab_protocol::TransferId;
 use crate::features::devices::TrustDisplay;
 #[cfg(target_os = "linux")]
 use crate::features::{
-    devices::DesktopProductPresenceController,
+    devices::{DesktopPresenceError, DesktopProductPresenceController},
     file_transfer::{
         LinuxFileTransferReceiveFailure, LinuxFileTransferReceiveStatus,
         LinuxFileTransferSendFailure, LinuxFileTransferSendHandle, LinuxFileTransferSendStatus,
@@ -783,12 +783,13 @@ impl ControlCenterPage {
         path: PathBuf,
         cx: &mut Context<Self>,
     ) {
-        let transfer_id = incoming.offer().transfer_id();
+        let request_id = incoming.request_id();
         if self
             .pending_file_transfers
             .front()
-            .is_none_or(|pending| pending.offer().transfer_id() != transfer_id)
+            .is_none_or(|pending| pending.request_id() != request_id)
         {
+            cx.notify();
             return;
         }
         self.pending_file_transfers.pop_front();
@@ -803,6 +804,13 @@ impl ControlCenterPage {
                 page.file_transfer_receive_dialog_open = false;
                 match result {
                     Ok(()) => {}
+                    Err(DesktopPresenceError::FileTransferCancelled) => {
+                        page.file_transfer.receive_cancelled(
+                            0,
+                            page.file_transfer.receive().total_bytes(),
+                        );
+                        page.notice = None;
+                    }
                     Err(error) => {
                         page.pending_file_transfers.push_front(incoming);
                         page.file_transfer.receive_failed(
@@ -864,6 +872,9 @@ impl ControlCenterPage {
             } => self
                 .file_transfer
                 .send_progress(transferred_bytes, total_bytes),
+            LinuxFileTransferSendStatus::Finalizing { total_bytes } => {
+                self.file_transfer.send_finalizing(total_bytes);
+            }
             LinuxFileTransferSendStatus::Completed { total_bytes } => {
                 self.file_transfer.send_completed(total_bytes, false);
                 self.notice = None;
@@ -893,6 +904,22 @@ impl ControlCenterPage {
     #[cfg(target_os = "linux")]
     fn apply_receive_status(&mut self, status: LinuxFileTransferReceiveStatus) {
         match status {
+            LinuxFileTransferReceiveStatus::OfferCancelled { request_id } => {
+                let was_visible = self
+                    .pending_file_transfers
+                    .front()
+                    .is_some_and(|incoming| incoming.request_id() == request_id);
+                self.pending_file_transfers
+                    .retain(|incoming| incoming.request_id() != request_id);
+                if was_visible
+                    && self.file_transfer.receive().stage()
+                        == FileTransferStage::AwaitingDestination
+                {
+                    self.file_transfer.reset_receive();
+                    self.notice = None;
+                }
+                self.surface_next_file_transfer();
+            }
             LinuxFileTransferReceiveStatus::Ready {
                 transfer_id,
                 resume_offset,
@@ -1251,7 +1278,14 @@ impl Render for ControlCenterPage {
                 .any(|id| id == "files.transfer");
             let session_ready = device.connectivity() == ConnectivityDisplay::Connected
                 && device.session() == SessionDisplay::Active;
+            let send_stage = self.file_transfer.send().stage();
             let send_active = self.file_transfer.send().active();
+            let send_cancellable = matches!(
+                send_stage,
+                FileTransferStage::Preparing
+                    | FileTransferStage::WaitingForPeer
+                    | FileTransferStage::Transferring
+            );
             let receive_stage = self.file_transfer.receive().stage();
             let send_can_retry = matches!(
                 self.file_transfer.send().stage(),
@@ -1280,7 +1314,7 @@ impl Render for ControlCenterPage {
                         .child("Send file"),
                 );
 
-            if send_active {
+            if send_cancellable {
                 transfer_actions = transfer_actions.child(
                     Button::new("file-transfer-cancel-send")
                         .accessibility_label("Cancel the outgoing file transfer")

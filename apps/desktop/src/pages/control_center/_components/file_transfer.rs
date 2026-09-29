@@ -122,6 +122,7 @@ fn stage_status(operation: &FileTransferOperationState) -> (&'static str, Status
         FileTransferStage::WaitingForPeer => ("Waiting for peer", StatusTone::Accent),
         FileTransferStage::Ready => ("Ready to receive", StatusTone::Accent),
         FileTransferStage::Transferring => ("Transferring", StatusTone::Accent),
+        FileTransferStage::Finalizing => ("Verifying on peer", StatusTone::Accent),
         FileTransferStage::Completed => ("Completed", StatusTone::Accent),
         FileTransferStage::AlreadyComplete => ("Already complete", StatusTone::Accent),
         FileTransferStage::Cancelled => ("Cancelled", StatusTone::Neutral),

@@ -8,6 +8,7 @@ pub enum FileTransferStage {
     WaitingForPeer,
     Ready,
     Transferring,
+    Finalizing,
     Completed,
     AlreadyComplete,
     Cancelled,
@@ -23,6 +24,7 @@ impl FileTransferStage {
                 | Self::WaitingForPeer
                 | Self::Ready
                 | Self::Transferring
+                | Self::Finalizing
         )
     }
 }
@@ -191,6 +193,15 @@ impl FileTransferFeatureState {
         );
     }
 
+    pub fn send_finalizing(&mut self, total_bytes: u64) {
+        self.send.set(
+            FileTransferStage::Finalizing,
+            total_bytes,
+            total_bytes,
+            None,
+        );
+    }
+
     pub fn send_completed(&mut self, total_bytes: u64, already_complete: bool) {
         self.send.set(
             if already_complete {
@@ -315,6 +326,19 @@ mod tests {
         assert_eq!(state.send().transferred_bytes(), 40);
         assert_eq!(state.receive().stage(), FileTransferStage::Ready);
         assert_eq!(state.receive().transferred_bytes(), 20);
+    }
+
+    #[test]
+    fn finalizing_send_stays_active_without_fake_remaining_bytes() {
+        let mut state = FileTransferFeatureState::new();
+        state.set_available(true);
+        state.begin_send("send.bin".into());
+        state.send_finalizing(128);
+
+        assert_eq!(state.send().stage(), FileTransferStage::Finalizing);
+        assert_eq!(state.send().transferred_bytes(), 128);
+        assert_eq!(state.send().total_bytes(), 128);
+        assert!(state.send().active());
     }
 
     #[test]

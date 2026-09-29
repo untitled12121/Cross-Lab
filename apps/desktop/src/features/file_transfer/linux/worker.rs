@@ -1,5 +1,6 @@
 use core::fmt;
 use std::{
+    collections::{BTreeSet, VecDeque},
     path::PathBuf,
     sync::Arc,
     thread,
@@ -8,9 +9,9 @@ use std::{
 
 use crosslab_agent::{
     FileTransferDataEvent, FileTransferIntegrityError, FileTransferOperationError,
-    TrustedPresenceAgent,
+    FileTransferRequestCancellation, TrustedPresenceAgent,
 };
-use crosslab_protocol::{FileTransferTerminalOutcome, TransferId};
+use crosslab_protocol::{FileTransferTerminalOutcome, RequestId, TransferId};
 use tokio::sync::{mpsc, oneshot, watch};
 
 use super::{
@@ -29,6 +30,9 @@ pub enum LinuxFileTransferReceiveFailure {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinuxFileTransferReceiveStatus {
+    OfferCancelled {
+        request_id: RequestId,
+    },
     Ready {
         transfer_id: TransferId,
         resume_offset: u64,
@@ -78,6 +82,7 @@ impl LinuxFileTransferWorkerHandle {
     > {
         let service = LinuxFileTransferService::from_environment(unix_now_secs())?;
         let requests = agent.take_file_transfer_requests()?;
+        let cancellations = agent.take_file_transfer_request_cancellations()?;
         let data = agent.take_file_transfer_data()?;
         let (command_tx, command_rx) = mpsc::channel(FILE_TRANSFER_SERVICE_CAPACITY);
         let (pending_tx, pending_rx) = mpsc::channel(FILE_TRANSFER_SERVICE_CAPACITY);
@@ -94,7 +99,15 @@ impl LinuxFileTransferWorkerHandle {
                     return;
                 };
                 runtime.block_on(run_worker(
-                    agent, service, requests, data, command_rx, pending_tx, status_tx, stop_rx,
+                    agent,
+                    service,
+                    requests,
+                    cancellations,
+                    data,
+                    command_rx,
+                    pending_tx,
+                    status_tx,
+                    stop_rx,
                 ));
             })
             .map_err(|_| LinuxFileTransferWorkerError::Thread)?;
@@ -164,16 +177,65 @@ enum WorkerCommand {
     },
 }
 
+#[derive(Default)]
+struct PendingOfferTracker {
+    visible: BTreeSet<RequestId>,
+    cancelled_before_dispatch: VecDeque<RequestId>,
+}
+
+impl PendingOfferTracker {
+    fn begin_request(&mut self, request_id: RequestId) -> bool {
+        let Some(position) = self
+            .cancelled_before_dispatch
+            .iter()
+            .position(|cancelled| *cancelled == request_id)
+        else {
+            return true;
+        };
+        self.cancelled_before_dispatch.remove(position);
+        false
+    }
+
+    fn mark_visible(&mut self, request_id: RequestId) {
+        self.visible.insert(request_id);
+    }
+
+    fn accept(&mut self, request_id: RequestId) {
+        self.visible.remove(&request_id);
+    }
+
+    fn cancel(&mut self, request_id: RequestId) -> bool {
+        if self.visible.remove(&request_id) {
+            return true;
+        }
+        if self
+            .cancelled_before_dispatch
+            .iter()
+            .any(|cancelled| *cancelled == request_id)
+        {
+            return false;
+        }
+        if self.cancelled_before_dispatch.len() >= FILE_TRANSFER_SERVICE_CAPACITY {
+            self.cancelled_before_dispatch.pop_front();
+        }
+        self.cancelled_before_dispatch.push_back(request_id);
+        false
+    }
+}
+
 async fn run_worker(
     agent: Arc<TrustedPresenceAgent>,
     mut service: LinuxFileTransferService,
     mut requests: mpsc::Receiver<crosslab_agent::FileTransferRequest>,
+    mut cancellations: mpsc::Receiver<FileTransferRequestCancellation>,
     mut data: mpsc::Receiver<FileTransferDataEvent>,
     mut commands: mpsc::Receiver<WorkerCommand>,
     pending_tx: mpsc::Sender<LinuxIncomingFileTransfer>,
     status_tx: mpsc::Sender<LinuxFileTransferReceiveStatus>,
     mut stop_rx: watch::Receiver<bool>,
 ) {
+    let mut pending_offers = PendingOfferTracker::default();
+
     loop {
         tokio::select! {
             changed = stop_rx.changed() => {
@@ -185,6 +247,9 @@ async fn run_worker(
                 let Some(request) = request else {
                     return;
                 };
+                if !pending_offers.begin_request(request.request_id()) {
+                    continue;
+                }
                 let transfer_id = request.offer().transfer_id();
                 let total_bytes = request.offer().file_size();
                 let now = unix_now_secs();
@@ -196,6 +261,7 @@ async fn run_worker(
                 );
                 match action {
                     Ok(LinuxFileTransferRequestAction::ChooseDestination(incoming)) => {
+                        pending_offers.mark_visible(incoming.request_id());
                         if pending_tx.send(incoming).await.is_err() {
                             return;
                         }
@@ -249,6 +315,18 @@ async fn run_worker(
                             failure: map_platform_failure(&error),
                         }).await;
                     }
+                }
+            }
+            cancellation = cancellations.recv() => {
+                let Some(cancellation) = cancellation else {
+                    return;
+                };
+                if pending_offers.cancel(cancellation.request_id()) {
+                    let _ = status_tx
+                        .send(LinuxFileTransferReceiveStatus::OfferCancelled {
+                            request_id: cancellation.request_id(),
+                        })
+                        .await;
                 }
             }
             event = data.recv() => {
@@ -347,6 +425,7 @@ async fn run_worker(
                         final_path,
                         reply,
                     } => {
+                        pending_offers.accept(incoming.request_id());
                         let result = accept_destination(
                             &agent,
                             &mut service,
@@ -492,5 +571,41 @@ impl From<LinuxFileTransferError> for LinuxFileTransferWorkerError {
 impl From<FileTransferOperationError> for LinuxFileTransferWorkerError {
     fn from(error: FileTransferOperationError) -> Self {
         Self::Agent(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pending_offer_tracker_drops_cancelled_request_before_dispatch() {
+        let request_id = RequestId::from_bytes([0x71; 16]);
+        let mut tracker = PendingOfferTracker::default();
+
+        assert!(!tracker.cancel(request_id));
+        assert!(!tracker.begin_request(request_id));
+        assert!(tracker.begin_request(request_id));
+    }
+
+    #[test]
+    fn pending_offer_tracker_reports_visible_cancellation_once() {
+        let request_id = RequestId::from_bytes([0x72; 16]);
+        let mut tracker = PendingOfferTracker::default();
+
+        assert!(tracker.begin_request(request_id));
+        tracker.mark_visible(request_id);
+        assert!(tracker.cancel(request_id));
+        assert!(!tracker.cancel(request_id));
+    }
+
+    #[test]
+    fn accepted_offer_is_not_reported_as_visible_after_cancel_race() {
+        let request_id = RequestId::from_bytes([0x73; 16]);
+        let mut tracker = PendingOfferTracker::default();
+
+        tracker.mark_visible(request_id);
+        tracker.accept(request_id);
+        assert!(!tracker.cancel(request_id));
     }
 }

@@ -86,6 +86,32 @@ impl fmt::Debug for FileTransferRequest {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FileTransferRequestCancellation {
+    request_id: RequestId,
+    transfer_id: crosslab_protocol::TransferId,
+}
+
+impl FileTransferRequestCancellation {
+    pub(crate) const fn new(
+        request_id: RequestId,
+        transfer_id: crosslab_protocol::TransferId,
+    ) -> Self {
+        Self {
+            request_id,
+            transfer_id,
+        }
+    }
+
+    pub const fn request_id(self) -> RequestId {
+        self.request_id
+    }
+
+    pub const fn transfer_id(self) -> crosslab_protocol::TransferId {
+        self.transfer_id
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FileTransferSourceStream {
     transfer_id: crosslab_protocol::TransferId,
     stream_id: StreamId,

@@ -48,7 +48,8 @@ use crate::{
     file_transfer::{
         FileTransferAvailability, FileTransferChunkError, FileTransferDataChunk,
         FileTransferDataEvent, FileTransferOperationError, FileTransferRequest,
-        FileTransferSourceStream, advertisement as file_transfer_advertisement,
+        FileTransferRequestCancellation, FileTransferSourceStream,
+        advertisement as file_transfer_advertisement,
         already_complete_response as file_transfer_already_complete_response,
         capability_negotiated as file_transfer_capability_negotiated,
         decode_inbound as decode_file_transfer, decode_response as decode_file_transfer_response,
@@ -137,6 +138,10 @@ pub(super) enum AgentCommand {
         offer: FileTransferOffer,
         reply: oneshot::Sender<Result<FileTransferAcceptance, FileTransferOperationError>>,
     },
+    FileTransferCancelOffer {
+        transfer_id: TransferId,
+        reply: oneshot::Sender<Result<(), FileTransferOperationError>>,
+    },
     FileTransferReady {
         request_id: RequestId,
         resume_offset: u64,
@@ -196,6 +201,7 @@ impl RuntimeAvailability {
 pub(super) struct CapabilityChannels {
     clipboard_requests_tx: mpsc::Sender<ClipboardRequest>,
     file_transfer_requests_tx: mpsc::Sender<FileTransferRequest>,
+    file_transfer_cancellations_tx: mpsc::Sender<FileTransferRequestCancellation>,
     file_transfer_data_tx: mpsc::Sender<FileTransferDataEvent>,
 }
 
@@ -203,11 +209,13 @@ impl CapabilityChannels {
     pub(super) fn new(
         clipboard_requests_tx: mpsc::Sender<ClipboardRequest>,
         file_transfer_requests_tx: mpsc::Sender<FileTransferRequest>,
+        file_transfer_cancellations_tx: mpsc::Sender<FileTransferRequestCancellation>,
         file_transfer_data_tx: mpsc::Sender<FileTransferDataEvent>,
     ) -> Self {
         Self {
             clipboard_requests_tx,
             file_transfer_requests_tx,
+            file_transfer_cancellations_tx,
             file_transfer_data_tx,
         }
     }
@@ -398,6 +406,7 @@ enum SourceFileTransfer {
 
 struct FileTransferRuntimeState {
     requests_tx: mpsc::Sender<FileTransferRequest>,
+    cancellations_tx: mpsc::Sender<FileTransferRequestCancellation>,
     data_tx: mpsc::Sender<FileTransferDataEvent>,
     availability: FileTransferAvailability,
     outgoing: BTreeMap<RequestId, PendingFileOffer>,
@@ -412,11 +421,13 @@ struct FileTransferRuntimeState {
 impl FileTransferRuntimeState {
     fn new(
         requests_tx: mpsc::Sender<FileTransferRequest>,
+        cancellations_tx: mpsc::Sender<FileTransferRequestCancellation>,
         data_tx: mpsc::Sender<FileTransferDataEvent>,
         availability: FileTransferAvailability,
     ) -> Self {
         Self {
             requests_tx,
+            cancellations_tx,
             data_tx,
             availability,
             outgoing: BTreeMap::new(),
@@ -519,12 +530,14 @@ pub(super) async fn run_agent(
     let CapabilityChannels {
         clipboard_requests_tx,
         file_transfer_requests_tx,
+        file_transfer_cancellations_tx,
         file_transfer_data_tx,
     } = capabilities;
     let (connect_tx, mut connect_rx) = mpsc::channel(CONNECT_RESULT_CAPACITY);
     let mut clipboard = ClipboardRuntimeState::new(clipboard_requests_tx, availability.clipboard);
     let mut file_transfer = FileTransferRuntimeState::new(
         file_transfer_requests_tx,
+        file_transfer_cancellations_tx,
         file_transfer_data_tx,
         availability.file_transfer,
     );
@@ -1060,6 +1073,12 @@ async fn handle_command(
             start_file_transfer_offer(connected.as_ref(), file_transfer, offer, reply).await;
             false
         }
+        Some(AgentCommand::FileTransferCancelOffer { transfer_id, reply }) => {
+            let outcome =
+                cancel_file_transfer_offer(connected.as_ref(), file_transfer, transfer_id).await;
+            let _ = reply.send(outcome);
+            false
+        }
         Some(AgentCommand::FileTransferReady {
             request_id,
             resume_offset,
@@ -1350,6 +1369,80 @@ async fn start_file_transfer_offer(
             reply,
         },
     );
+}
+
+async fn cancel_file_transfer_offer(
+    connected: Option<&ConnectedRuntime>,
+    file_transfer: &mut FileTransferRuntimeState,
+    transfer_id: TransferId,
+) -> Result<(), FileTransferOperationError> {
+    if let Some(request_id) = file_transfer
+        .outgoing
+        .iter()
+        .find_map(|(request_id, pending)| {
+            (pending.offer.transfer_id() == transfer_id).then_some(*request_id)
+        })
+    {
+        let pending = file_transfer
+            .outgoing
+            .remove(&request_id)
+            .expect("pending file-transfer offer exists");
+        let result = if let Some(connection) =
+            connected.filter(|connection| !connection.reconnecting)
+        {
+            connection
+                .actor
+                .send_cancel(request_id)
+                .await
+                .map_err(|_| FileTransferOperationError::Transport)
+        } else {
+            Ok(())
+        };
+        let _ = pending
+            .reply
+            .send(Err(FileTransferOperationError::Cancelled));
+        return result;
+    }
+
+    let Some(source) = file_transfer.source.remove(&transfer_id) else {
+        return Ok(());
+    };
+    let Some(connection) = connected.filter(|connection| !connection.reconnecting) else {
+        return Ok(());
+    };
+
+    match source {
+        SourceFileTransfer::Ready { operation_id, .. } => {
+            let Some(session_id) = connection.status.borrow().session_id() else {
+                return Ok(());
+            };
+            let stream_id =
+                StreamId::generate().map_err(|_| FileTransferOperationError::Random)?;
+            connection
+                .actor
+                .open_data_stream(file_transfer_source_stream_open(
+                    session_id,
+                    stream_id,
+                    operation_id,
+                ))
+                .await
+                .map_err(|_| FileTransferOperationError::Transport)?;
+            connection
+                .actor
+                .cancel_outbound_stream(stream_id)
+                .await
+                .map_err(|_| FileTransferOperationError::Transport)
+        }
+        SourceFileTransfer::Streaming { stream_id, .. } => connection
+            .actor
+            .cancel_outbound_stream(stream_id)
+            .await
+            .map_err(|_| FileTransferOperationError::Transport),
+        source @ SourceFileTransfer::AwaitingResult { .. } => {
+            file_transfer.source.insert(transfer_id, source);
+            Err(FileTransferOperationError::AlreadyActive)
+        }
+    }
 }
 
 async fn complete_file_transfer_ready(
@@ -1871,7 +1964,13 @@ async fn handle_runtime_event(
         }
         NodeEvent::RequestCancelled(request_id) => {
             clipboard.inbound.remove(&request_id);
-            file_transfer.inbound.remove(&request_id);
+            if let Some(request) = file_transfer.inbound.remove(&request_id) {
+                let cancellation = FileTransferRequestCancellation::new(
+                    request_id,
+                    request.offer().transfer_id(),
+                );
+                let _ = file_transfer.cancellations_tx.try_send(cancellation);
+            }
         }
         NodeEvent::SessionClosed(_) => {
             clipboard.cancel_all(ClipboardOperationError::Cancelled);

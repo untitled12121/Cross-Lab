@@ -45,6 +45,9 @@ pub enum LinuxFileTransferSendStatus {
         transferred_bytes: u64,
         total_bytes: u64,
     },
+    Finalizing {
+        total_bytes: u64,
+    },
     Completed {
         total_bytes: u64,
     },
@@ -219,6 +222,7 @@ async fn run_send(
 
     let acceptance = tokio::select! {
         _ = wait_cancelled(&mut cancel_rx) => {
+            let _ = agent.cancel_file_transfer_offer(token.transfer_id).await;
             cancelled(&status_tx, 0, total_bytes);
             return;
         }
@@ -253,6 +257,7 @@ async fn send_ready(
     let transfer_id = source.offer().transfer_id();
     let stream = tokio::select! {
         _ = wait_cancelled(&mut cancel_rx) => {
+            let _ = agent.cancel_file_transfer_offer(transfer_id).await;
             cancelled(&status_tx, 0, total_bytes);
             return;
         }
@@ -353,6 +358,8 @@ async fn send_ready(
             total_bytes,
         });
     }
+
+    let _ = status_tx.send(LinuxFileTransferSendStatus::Finalizing { total_bytes });
 
     match agent.finish_file_transfer_stream(stream).await {
         Ok(result) => match result.outcome() {

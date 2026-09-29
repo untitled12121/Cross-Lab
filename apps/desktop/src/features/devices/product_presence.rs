@@ -11,8 +11,8 @@ use std::{
 
 use crosslab_agent::{
     ClipboardAvailability, ClipboardOperationError, ClipboardPlatformError, ClipboardRequest,
-    FileTransferAvailability, PermissionSnapshot, PresenceAgentError, PresenceSnapshot,
-    TrustedPresenceAgent, TrustedSessionRoute as AgentTrustedSessionRoute,
+    FileTransferAvailability, FileTransferOperationError, PermissionSnapshot, PresenceAgentError,
+    PresenceSnapshot, TrustedPresenceAgent, TrustedSessionRoute as AgentTrustedSessionRoute,
 };
 use crosslab_identity_store::{ProductIdentityError, ProductIdentityState};
 use crosslab_policy::{CapabilityId, OperationName, PolicyError, RuleEffect};
@@ -332,6 +332,7 @@ pub enum DesktopPresenceError {
     Agent(PresenceAgentError),
     Discovery(LinuxTrustedSessionDiscoveryError),
     FileTransfer,
+    FileTransferCancelled,
     FileTransferUnavailable,
     FileTransferBusy,
     PeerUnavailable,
@@ -350,6 +351,9 @@ impl fmt::Display for DesktopPresenceError {
             Self::Agent(error) => fmt::Display::fmt(error, formatter),
             Self::Discovery(error) => fmt::Display::fmt(error, formatter),
             Self::FileTransfer => formatter.write_str("desktop file-transfer operation failed"),
+            Self::FileTransferCancelled => {
+                formatter.write_str("desktop file-transfer offer was cancelled")
+            }
             Self::FileTransferUnavailable => {
                 formatter.write_str("desktop file-transfer service is unavailable")
             }
@@ -403,8 +407,13 @@ impl From<LinuxTrustedSessionDiscoveryError> for DesktopPresenceError {
 }
 
 impl From<LinuxFileTransferWorkerError> for DesktopPresenceError {
-    fn from(_: LinuxFileTransferWorkerError) -> Self {
-        Self::FileTransfer
+    fn from(error: LinuxFileTransferWorkerError) -> Self {
+        match error {
+            LinuxFileTransferWorkerError::Agent(FileTransferOperationError::Cancelled) => {
+                Self::FileTransferCancelled
+            }
+            _ => Self::FileTransfer,
+        }
     }
 }
 
