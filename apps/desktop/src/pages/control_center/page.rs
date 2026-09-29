@@ -859,10 +859,11 @@ impl ControlCenterPage {
         cx.spawn(async move |this, cx| {
             let result = controller.decline_file_transfer_offer(incoming).await;
             let _ = this.update(cx, |page, cx| {
-                if let Err(error) = result
-                    && error != DesktopPresenceError::FileTransferCancelled
-                {
-                    page.notice = Some(error.to_string());
+                match result {
+                    Ok(()) | Err(DesktopPresenceError::FileTransferCancelled) => {}
+                    Err(error) => {
+                        page.notice = Some(error.to_string());
+                    }
                 }
                 cx.notify();
             });
