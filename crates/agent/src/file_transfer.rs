@@ -519,6 +519,13 @@ pub(crate) fn decode_response(
     }
 }
 
+pub(crate) fn cancelled_failure() -> ControlResponseResult {
+    failure(
+        ProtocolErrorCode::Cancelled,
+        "file transfer request was declined locally",
+    )
+}
+
 pub(crate) fn resource_failure() -> ControlResponseResult {
     failure(
         ProtocolErrorCode::ResourceLimit,
@@ -600,6 +607,15 @@ mod tests {
         assert_eq!(decoded.source_device_id(), source_device_id());
         assert_eq!(decoded.offer(), &offer());
         assert!(!format!("{decoded:?}").contains("example.txt"));
+    }
+
+    #[test]
+    fn declined_request_uses_typed_cancelled_failure() {
+        assert!(matches!(
+            cancelled_failure(),
+            ControlResponseResult::Error(error)
+                if error.code() == ProtocolErrorCode::Cancelled
+        ));
     }
 
     #[test]

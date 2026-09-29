@@ -466,7 +466,7 @@ fn map_operation_error(error: FileTransferOperationError) -> LinuxFileTransferSe
                 LinuxFileTransferSendFailure::NotNegotiated
             }
             ProtocolErrorCode::ResourceLimit => LinuxFileTransferSendFailure::ResourceLimit,
-            ProtocolErrorCode::Cancelled => LinuxFileTransferSendFailure::Failed,
+            ProtocolErrorCode::Cancelled => LinuxFileTransferSendFailure::Denied,
             _ => LinuxFileTransferSendFailure::Failed,
         },
         FileTransferOperationError::InvalidResponse
@@ -494,6 +494,16 @@ mod tests {
         let debug = format!("{status:?}");
         assert!(!debug.contains('/'));
         assert!(!debug.contains("secret.txt"));
+    }
+
+    #[test]
+    fn peer_decline_is_presented_as_denied() {
+        assert_eq!(
+            map_operation_error(FileTransferOperationError::Remote(
+                ProtocolErrorCode::Cancelled,
+            )),
+            LinuxFileTransferSendFailure::Denied
+        );
     }
 
     #[test]

@@ -829,6 +829,48 @@ impl ControlCenterPage {
     }
 
     #[cfg(target_os = "linux")]
+    fn decline_file_transfer_offer(&mut self, cx: &mut Context<Self>) {
+        if self.file_transfer_receive_dialog_open {
+            return;
+        }
+        let Some(incoming) = self.pending_file_transfers.front().cloned() else {
+            return;
+        };
+        let Some(controller) = self.product_presence.as_ref().map(Arc::clone) else {
+            return;
+        };
+
+        let request_id = incoming.request_id();
+        if self
+            .pending_file_transfers
+            .front()
+            .is_none_or(|pending| pending.request_id() != request_id)
+        {
+            return;
+        }
+
+        let total_bytes = incoming.offer().file_size();
+        self.pending_file_transfers.pop_front();
+        self.file_transfer.receive_cancelled(0, total_bytes);
+        self.notice = None;
+        self.surface_next_file_transfer();
+        cx.notify();
+
+        cx.spawn(async move |this, cx| {
+            let result = controller.decline_file_transfer_offer(incoming).await;
+            let _ = this.update(cx, |page, cx| {
+                if let Err(error) = result
+                    && error != DesktopPresenceError::FileTransferCancelled
+                {
+                    page.notice = Some(error.to_string());
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    #[cfg(target_os = "linux")]
     fn cancel_file_transfer_receive(&mut self, cx: &mut Context<Self>) {
         let Some(transfer_id) = self.active_receive_transfer else {
             return;
@@ -1349,22 +1391,39 @@ impl Render for ControlCenterPage {
             }
 
             if receive_stage == FileTransferStage::AwaitingDestination {
-                transfer_actions = transfer_actions.child(
-                    Button::new("file-transfer-save")
-                        .accessibility_label("Choose where to save the incoming file")
-                        .disabled(!enabled || self.file_transfer_receive_dialog_open)
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.choose_file_transfer_destination(window, cx);
-                        }))
-                        .h(px(appearance.metrics.control_height_default))
-                        .px(px(appearance.spacing.lg))
-                        .border_1()
-                        .border_color(theme.border)
-                        .bg(theme.accent)
-                        .text_color(theme.accent_foreground)
-                        .focus_visible(|style| style.border_color(theme.ring))
-                        .child("Save as…"),
-                );
+                transfer_actions = transfer_actions
+                    .child(
+                        Button::new("file-transfer-save")
+                            .accessibility_label("Choose where to save the incoming file")
+                            .disabled(!enabled || self.file_transfer_receive_dialog_open)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.choose_file_transfer_destination(window, cx);
+                            }))
+                            .h(px(appearance.metrics.control_height_default))
+                            .px(px(appearance.spacing.lg))
+                            .border_1()
+                            .border_color(theme.border)
+                            .bg(theme.accent)
+                            .text_color(theme.accent_foreground)
+                            .focus_visible(|style| style.border_color(theme.ring))
+                            .child("Save as…"),
+                    )
+                    .child(
+                        Button::new("file-transfer-decline")
+                            .accessibility_label("Decline the incoming file transfer")
+                            .disabled(self.file_transfer_receive_dialog_open)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.decline_file_transfer_offer(cx);
+                            }))
+                            .h(px(appearance.metrics.control_height_default))
+                            .px(px(appearance.spacing.lg))
+                            .border_1()
+                            .border_color(theme.border)
+                            .bg(theme.secondary)
+                            .text_color(theme.secondary_foreground)
+                            .focus_visible(|style| style.border_color(theme.ring))
+                            .child("Decline"),
+                    );
             } else if receive_stage == FileTransferStage::Transferring {
                 transfer_actions = transfer_actions.child(
                     Button::new("file-transfer-cancel-receive")

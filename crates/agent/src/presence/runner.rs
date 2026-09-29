@@ -53,6 +53,7 @@ use crate::{
         already_complete_response as file_transfer_already_complete_response,
         capability_negotiated as file_transfer_capability_negotiated,
         decode_inbound as decode_file_transfer, decode_response as decode_file_transfer_response,
+        cancelled_failure as file_transfer_cancelled_failure,
         decode_terminal_result_event as decode_file_transfer_terminal_result,
         internal_failure as file_transfer_internal_failure,
         local_capabilities as file_transfer_local_capabilities,
@@ -140,6 +141,10 @@ pub(super) enum AgentCommand {
     },
     FileTransferCancelOffer {
         transfer_id: TransferId,
+        reply: oneshot::Sender<Result<(), FileTransferOperationError>>,
+    },
+    FileTransferDecline {
+        request_id: RequestId,
         reply: oneshot::Sender<Result<(), FileTransferOperationError>>,
     },
     FileTransferReady {
@@ -1107,6 +1112,12 @@ async fn handle_command(
             let _ = reply.send(outcome);
             false
         }
+        Some(AgentCommand::FileTransferDecline { request_id, reply }) => {
+            let outcome =
+                decline_file_transfer_request(connected.as_ref(), file_transfer, request_id).await;
+            let _ = reply.send(outcome);
+            false
+        }
         Some(AgentCommand::FileTransferReady {
             request_id,
             resume_offset,
@@ -1471,6 +1482,24 @@ async fn cancel_file_transfer_offer(
             Err(FileTransferOperationError::AlreadyActive)
         }
     }
+}
+
+async fn decline_file_transfer_request(
+    connected: Option<&ConnectedRuntime>,
+    file_transfer: &mut FileTransferRuntimeState,
+    request_id: RequestId,
+) -> Result<(), FileTransferOperationError> {
+    if file_transfer.inbound.remove(&request_id).is_none() {
+        return Err(FileTransferOperationError::Cancelled);
+    }
+    let connection = connected
+        .filter(|connection| !connection.reconnecting)
+        .ok_or(FileTransferOperationError::Cancelled)?;
+    connection
+        .actor
+        .send_response(request_id, file_transfer_cancelled_failure())
+        .await
+        .map_err(|_| FileTransferOperationError::Transport)
 }
 
 async fn complete_file_transfer_ready(

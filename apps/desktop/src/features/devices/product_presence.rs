@@ -147,6 +147,18 @@ impl DesktopProductPresenceController {
         Ok(())
     }
 
+    pub async fn decline_file_transfer_offer(
+        &self,
+        incoming: LinuxIncomingFileTransfer,
+    ) -> Result<(), DesktopPresenceError> {
+        let worker = self
+            .file_transfer
+            .as_ref()
+            .ok_or(DesktopPresenceError::FileTransferUnavailable)?;
+        worker.decline_offer(incoming).await?;
+        Ok(())
+    }
+
     pub async fn cancel_file_transfer_receive(
         &self,
         transfer_id: crosslab_protocol::TransferId,

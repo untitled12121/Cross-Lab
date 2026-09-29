@@ -141,6 +141,23 @@ impl LinuxFileTransferWorkerHandle {
             .map_err(|_| LinuxFileTransferWorkerError::Closed)?
     }
 
+    pub(crate) async fn decline_offer(
+        &self,
+        incoming: LinuxIncomingFileTransfer,
+    ) -> Result<(), LinuxFileTransferWorkerError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.command_tx
+            .send(WorkerCommand::Decline {
+                incoming,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| LinuxFileTransferWorkerError::Closed)?;
+        reply_rx
+            .await
+            .map_err(|_| LinuxFileTransferWorkerError::Closed)?
+    }
+
     pub(crate) async fn cancel_receive(
         &self,
         transfer_id: TransferId,
@@ -169,6 +186,10 @@ enum WorkerCommand {
     Accept {
         incoming: LinuxIncomingFileTransfer,
         final_path: PathBuf,
+        reply: oneshot::Sender<Result<(), LinuxFileTransferWorkerError>>,
+    },
+    Decline {
+        incoming: LinuxIncomingFileTransfer,
         reply: oneshot::Sender<Result<(), LinuxFileTransferWorkerError>>,
     },
     Cancel {
@@ -461,6 +482,17 @@ async fn run_worker(
                                 let _ = reply.send(Err(error));
                             }
                         }
+                    }
+                    WorkerCommand::Decline { incoming, reply } => {
+                        pending_offers.accept(incoming.request_id());
+                        let result = agent
+                            .decline_file_transfer_request(incoming.request_id())
+                            .await;
+                        let result = match result {
+                            Ok(()) | Err(FileTransferOperationError::Cancelled) => Ok(()),
+                            Err(error) => Err(error.into()),
+                        };
+                        let _ = reply.send(result);
                     }
                     WorkerCommand::Cancel { transfer_id, reply } => {
                         let result = cancel_receive(&agent, &mut service, transfer_id).await;
