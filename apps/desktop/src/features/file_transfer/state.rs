@@ -229,12 +229,8 @@ impl FileTransferFeatureState {
 
     pub fn incoming_offer(&mut self, display_name: String, total_bytes: u64) {
         self.receive.display_name = Some(display_name);
-        self.receive.set(
-            FileTransferStage::AwaitingDestination,
-            0,
-            total_bytes,
-            None,
-        );
+        self.receive
+            .set(FileTransferStage::AwaitingDestination, 0, total_bytes, None);
     }
 
     pub fn receive_ready(&mut self, resume_offset: u64, total_bytes: u64) {

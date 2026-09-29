@@ -94,14 +94,7 @@ impl LinuxFileTransferWorkerHandle {
                     return;
                 };
                 runtime.block_on(run_worker(
-                    agent,
-                    service,
-                    requests,
-                    data,
-                    command_rx,
-                    pending_tx,
-                    status_tx,
-                    stop_rx,
+                    agent, service, requests, data, command_rx, pending_tx, status_tx, stop_rx,
                 ));
             })
             .map_err(|_| LinuxFileTransferWorkerError::Thread)?;

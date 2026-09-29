@@ -6,6 +6,8 @@ use crosslab_agent::{ClipboardPlatformError, ClipboardRequest};
 #[cfg(target_os = "linux")]
 use crosslab_protocol::TransferId;
 
+#[cfg(feature = "development-provisioning")]
+use crate::features::devices::TrustDisplay;
 #[cfg(target_os = "linux")]
 use crate::features::{
     devices::DesktopProductPresenceController,
@@ -15,8 +17,6 @@ use crate::features::{
         LinuxFileTransferSendToken, LinuxIncomingFileTransfer,
     },
 };
-#[cfg(feature = "development-provisioning")]
-use crate::features::devices::TrustDisplay;
 use crate::{
     features::{
         appearance::{active_theme, font_weight},
@@ -25,9 +25,7 @@ use crate::{
             ConnectivityDisplay, DesktopRuntimeController, DevicesFeatureState, PresenceDisplay,
             SessionDisplay,
         },
-        file_transfer::{
-            FileTransferFailure, FileTransferFeatureState, FileTransferStage,
-        },
+        file_transfer::{FileTransferFailure, FileTransferFeatureState, FileTransferStage},
         owner::OwnerFeatureState,
         pairing::{DesktopPairingInvitation, DesktopPairingStage, load_existing_product_identity},
     },
@@ -40,12 +38,12 @@ use crate::{
     },
 };
 
+#[cfg(target_os = "linux")]
+use gpui_kit::PathPromptOptions;
 use gpui_kit::{
     ClipboardItem, Context, InteractiveElement as _, IntoElement, ParentElement as _, Render,
     Styled as _, Window, base::Button, component::theme::ActiveTheme as _, div, px,
 };
-#[cfg(target_os = "linux")]
-use gpui_kit::PathPromptOptions;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Section {
@@ -744,11 +742,7 @@ impl ControlCenterPage {
     }
 
     #[cfg(target_os = "linux")]
-    fn choose_file_transfer_destination(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn choose_file_transfer_destination(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.file_transfer_receive_dialog_open {
             return;
         }
@@ -762,8 +756,7 @@ impl ControlCenterPage {
         let directory = env::var_os("HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("/"));
-        let receiver =
-            cx.prompt_for_new_path(&directory, Some(incoming.offer().display_name()));
+        let receiver = cx.prompt_for_new_path(&directory, Some(incoming.offer().display_name()));
         self.file_transfer_receive_dialog_open = true;
         let view = cx.entity();
 
@@ -772,12 +765,7 @@ impl ControlCenterPage {
             view.update_in(window, move |page, _, cx| {
                 page.file_transfer_receive_dialog_open = false;
                 if let Some(path) = path {
-                    page.accept_file_transfer_destination(
-                        controller,
-                        incoming,
-                        path,
-                        cx,
-                    );
+                    page.accept_file_transfer_destination(controller, incoming, path, cx);
                 } else {
                     cx.notify();
                 }
@@ -1278,11 +1266,7 @@ impl Render for ControlCenterPage {
                 .child(
                     Button::new("file-transfer-send")
                         .accessibility_label("Select a local file to send to this device")
-                        .disabled(
-                            !enabled
-                                || send_active
-                                || self.file_transfer_send_dialog_open,
-                        )
+                        .disabled(!enabled || send_active || self.file_transfer_send_dialog_open)
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.choose_file_to_send(window, cx);
                         }))

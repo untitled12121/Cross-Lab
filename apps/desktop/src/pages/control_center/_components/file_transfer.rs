@@ -59,10 +59,7 @@ pub(crate) fn file_transfer_panel(
         .child(operation_panel("Receive", state.receive(), cx));
 
     if !state.available() {
-        panel = panel.child(note(
-            "File transfer is unavailable in this runtime.",
-            cx,
-        ));
+        panel = panel.child(note("File transfer is unavailable in this runtime.", cx));
     } else if !negotiated {
         panel = panel.child(note(
             "This authenticated session did not negotiate files.transfer v2.",
@@ -73,11 +70,7 @@ pub(crate) fn file_transfer_panel(
     panel
 }
 
-fn operation_panel(
-    label: &str,
-    operation: &FileTransferOperationState,
-    cx: &App,
-) -> Div {
+fn operation_panel(label: &str, operation: &FileTransferOperationState, cx: &App) -> Div {
     let theme = cx.theme();
     let appearance = active_theme(cx);
     let (status_label, tone) = stage_status(operation);
@@ -144,7 +137,9 @@ fn failure_label(failure: FileTransferFailure) -> &'static str {
         FileTransferFailure::Denied => "The peer denied the file transfer.",
         FileTransferFailure::ResourceLimit => "File-transfer capacity is currently busy.",
         FileTransferFailure::TimedOut => "The file-transfer request timed out.",
-        FileTransferFailure::Integrity => "File verification failed. The final file was not published.",
+        FileTransferFailure::Integrity => {
+            "File verification failed. The final file was not published."
+        }
         FileTransferFailure::Storage => "Local or remote storage could not complete the transfer.",
         FileTransferFailure::Connection => "The authenticated session ended during the transfer.",
         FileTransferFailure::Failed => "The file transfer failed.",
@@ -167,7 +162,10 @@ fn progress_label(done: u64, total: u64) -> String {
     let percent = if total == 0 {
         0
     } else {
-        done.saturating_mul(100).checked_div(total).unwrap_or(0).min(100)
+        done.saturating_mul(100)
+            .checked_div(total)
+            .unwrap_or(0)
+            .min(100)
     };
     format!(
         "{} / {} · {percent}%",

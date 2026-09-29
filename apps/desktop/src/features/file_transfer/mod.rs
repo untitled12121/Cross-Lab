@@ -12,9 +12,8 @@ pub use linux::{
     FILE_TRANSFER_IO_CHUNK_BYTES, LinuxFileTransferDataAction, LinuxFileTransferError,
     LinuxFileTransferLocator, LinuxFileTransferReceiveFailure, LinuxFileTransferReceiveStatus,
     LinuxFileTransferReceiver, LinuxFileTransferRecovery, LinuxFileTransferRequestAction,
-    LinuxFileTransferSendFailure, LinuxFileTransferSendHandle,
-    LinuxFileTransferSendStatus, LinuxFileTransferSendToken, LinuxFileTransferService,
-    LinuxFileTransferSourceReader,
+    LinuxFileTransferSendFailure, LinuxFileTransferSendHandle, LinuxFileTransferSendStatus,
+    LinuxFileTransferSendToken, LinuxFileTransferService, LinuxFileTransferSourceReader,
     LinuxFileTransferStateStore, LinuxIncomingFileTransfer, LinuxPreparedFileSource,
 };
 

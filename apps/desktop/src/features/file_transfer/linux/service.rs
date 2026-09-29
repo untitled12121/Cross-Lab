@@ -183,9 +183,9 @@ impl LinuxFileTransferService {
     }
 
     pub fn transfer_progress(&self, transfer_id: TransferId) -> Option<(u64, u64)> {
-        self.active.get(&transfer_id).map(|active| {
-            (active.receiver.offset(), active.receiver.total_bytes())
-        })
+        self.active
+            .get(&transfer_id)
+            .map(|active| (active.receiver.offset(), active.receiver.total_bytes()))
     }
 
     pub fn cancel_receive(

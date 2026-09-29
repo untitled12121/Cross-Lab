@@ -13,6 +13,7 @@ mod worker;
 
 pub use locator::LinuxFileTransferLocator;
 pub use receive::{LinuxFileTransferReceiver, LinuxFileTransferRecovery};
+pub(crate) use sender::LinuxFileTransferSendStartError;
 pub use sender::{
     LinuxFileTransferSendFailure, LinuxFileTransferSendHandle, LinuxFileTransferSendStatus,
     LinuxFileTransferSendToken,
@@ -25,7 +26,6 @@ pub use source::{
     FILE_TRANSFER_IO_CHUNK_BYTES, LinuxFileTransferSourceReader, LinuxPreparedFileSource,
 };
 pub use state_store::LinuxFileTransferStateStore;
-pub(crate) use sender::LinuxFileTransferSendStartError;
 pub use worker::{LinuxFileTransferReceiveFailure, LinuxFileTransferReceiveStatus};
 pub(crate) use worker::{LinuxFileTransferWorkerError, LinuxFileTransferWorkerHandle};
 

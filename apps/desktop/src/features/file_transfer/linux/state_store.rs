@@ -228,7 +228,8 @@ mod tests {
 
         let partial_id = TransferId::from_bytes([0x41; 32]);
         let partial_locator =
-            LinuxFileTransferLocator::for_destination(root.join("partial.bin"), partial_id).unwrap();
+            LinuxFileTransferLocator::for_destination(root.join("partial.bin"), partial_id)
+                .unwrap();
         fs::write(partial_locator.partial_path(), b"partial").unwrap();
         let partial = FileTransferPartialState::new(
             FileTransferIdentity::new(

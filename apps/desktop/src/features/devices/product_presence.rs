@@ -12,8 +12,7 @@ use std::{
 use crosslab_agent::{
     ClipboardAvailability, ClipboardOperationError, ClipboardPlatformError, ClipboardRequest,
     FileTransferAvailability, PermissionSnapshot, PresenceAgentError, PresenceSnapshot,
-    TrustedPresenceAgent,
-    TrustedSessionRoute as AgentTrustedSessionRoute,
+    TrustedPresenceAgent, TrustedSessionRoute as AgentTrustedSessionRoute,
 };
 use crosslab_identity_store::{ProductIdentityError, ProductIdentityState};
 use crosslab_policy::{CapabilityId, OperationName, PolicyError, RuleEffect};
@@ -182,7 +181,8 @@ impl DesktopProductPresenceController {
         ) {
             Ok(handle) => Ok(handle),
             Err(error) => {
-                self.file_transfer_send_active.store(false, Ordering::Release);
+                self.file_transfer_send_active
+                    .store(false, Ordering::Release);
                 Err(error.into())
             }
         }
@@ -210,7 +210,8 @@ impl DesktopProductPresenceController {
         ) {
             Ok(handle) => Ok(handle),
             Err(error) => {
-                self.file_transfer_send_active.store(false, Ordering::Release);
+                self.file_transfer_send_active
+                    .store(false, Ordering::Release);
                 Err(error.into())
             }
         }
