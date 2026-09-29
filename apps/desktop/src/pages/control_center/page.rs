@@ -912,8 +912,7 @@ impl ControlCenterPage {
                 self.pending_file_transfers
                     .retain(|incoming| incoming.request_id() != request_id);
                 if was_visible
-                    && self.file_transfer.receive().stage()
-                        == FileTransferStage::AwaitingDestination
+                    && self.file_transfer.receive().stage() == FileTransferStage::AwaitingDestination
                 {
                     self.file_transfer.reset_receive();
                     self.notice = None;

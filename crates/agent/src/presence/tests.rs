@@ -518,6 +518,9 @@ async fn file_transfer_offer_is_bounded_correlated_and_cancelled_on_disconnect()
     )
     .unwrap();
     let mut right_requests = right.take_file_transfer_requests().unwrap();
+    let mut right_cancellations = right
+        .take_file_transfer_request_cancellations()
+        .unwrap();
 
     left.candidate_available(route_for(&right)).unwrap();
     right.candidate_available(route_for(&left)).unwrap();
@@ -557,7 +560,7 @@ async fn file_transfer_offer_is_bounded_correlated_and_cancelled_on_disconnect()
 
     let second = left.send_file_offer(offer);
     tokio::pin!(second);
-    let _ = tokio::time::timeout(WAIT, async {
+    let second_inbound = tokio::time::timeout(WAIT, async {
         tokio::select! {
             result = &mut second => panic!("second file offer completed before peer request: {result:?}"),
             request = right_requests.recv() => request,
@@ -566,8 +569,18 @@ async fn file_transfer_offer_is_bounded_correlated_and_cancelled_on_disconnect()
     .await
     .expect("second file offer should arrive")
     .expect("file transfer request channel should remain open");
+    let second_request_id = second_inbound.request_id();
+    let second_transfer_id = second_inbound.offer().transfer_id();
+
     left.disconnect().unwrap();
     assert_eq!(second.await, Err(FileTransferOperationError::Cancelled));
+
+    let cancellation = tokio::time::timeout(WAIT, right_cancellations.recv())
+        .await
+        .expect("destination should clear the pending offer when the session closes")
+        .expect("file transfer cancellation channel should remain open");
+    assert_eq!(cancellation.request_id(), second_request_id);
+    assert_eq!(cancellation.transfer_id(), second_transfer_id);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

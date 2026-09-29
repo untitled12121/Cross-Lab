@@ -194,12 +194,8 @@ impl FileTransferFeatureState {
     }
 
     pub fn send_finalizing(&mut self, total_bytes: u64) {
-        self.send.set(
-            FileTransferStage::Finalizing,
-            total_bytes,
-            total_bytes,
-            None,
-        );
+        self.send
+            .set(FileTransferStage::Finalizing, total_bytes, total_bytes, None);
     }
 
     pub fn send_completed(&mut self, total_bytes: u64, already_complete: bool) {

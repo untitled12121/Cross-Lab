@@ -449,7 +449,13 @@ impl FileTransferRuntimeState {
                 let _ = reply.send(Err(error));
             }
         }
-        self.inbound.clear();
+        for (request_id, request) in core::mem::take(&mut self.inbound) {
+            let cancellation = FileTransferRequestCancellation::new(
+                request_id,
+                request.offer().transfer_id(),
+            );
+            let _ = self.cancellations_tx.try_send(cancellation);
+        }
         self.destination_ready.clear();
         self.inbound_streams.clear();
         self.terminal_ready.clear();
