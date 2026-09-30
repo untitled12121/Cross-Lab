@@ -925,7 +925,7 @@ async fn file_transfer_destination_cancel_wins_after_stream_finish_before_platfo
 async fn file_transfer_cancel_after_ready_consumes_remote_authority() {
     let (left, right, _) = file_transfer_pair();
     let mut right_requests = right.take_file_transfer_requests().unwrap();
-    let mut right_data = right.take_file_transfer_data().unwrap();
+    let mut right_cancellations = right.take_file_transfer_cancellations().unwrap();
 
     connect_file_transfer_pair(&left, &right).await;
 
@@ -963,36 +963,14 @@ async fn file_transfer_cancel_after_ready_consumes_remote_authority() {
 
     left.cancel_file_transfer_offer(transfer_id).await.unwrap();
 
-    let opened = tokio::time::timeout(WAIT, right_data.recv())
+    let cancellation = tokio::time::timeout(WAIT, right_cancellations.recv())
         .await
-        .expect("ready cancellation should consume the issued authority")
-        .expect("file transfer data channel should remain open");
-    let stream_id = match opened {
-        crate::FileTransferDataEvent::Opened {
-            transfer_id: received,
-            stream_id,
-            resume_offset: 0,
-        } if received == transfer_id => stream_id,
-        other => panic!("expected cancellation stream open, got {other:?}"),
-    };
-    let cancelled = tokio::time::timeout(WAIT, right_data.recv())
-        .await
-        .expect("ready cancellation should cancel the opened stream")
-        .expect("file transfer data channel should remain open");
-    assert!(matches!(
-        cancelled,
-        crate::FileTransferDataEvent::Cancelled {
-            transfer_id: received,
-            stream_id: cancelled_stream,
-        } if received == transfer_id && cancelled_stream == stream_id
-    ));
-    right
-        .complete_file_transfer_result(
-            transfer_id,
-            crosslab_protocol::FileTransferTerminalOutcome::Cancelled,
-        )
-        .await
-        .unwrap();
+        .expect("ready cancellation should revoke destination authority")
+        .expect("file transfer cancellation channel should remain open");
+    assert_eq!(
+        cancellation,
+        FileTransferCancellation::Transfer { transfer_id }
+    );
 
     let retry = left.send_file_offer(offer);
     tokio::pin!(retry);

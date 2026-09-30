@@ -182,14 +182,18 @@ pub(crate) async fn run_outgoing_uni_stream(
     _permit: OwnedSemaphorePermit,
 ) {
     let mut terminal = shared.subscribe();
-    if shared.is_terminal() {
-        driver.state.close();
+    if shared.is_terminal() || *driver.cancel_rx.borrow() {
+        driver.state.cancel();
         return;
     }
 
     let open = tokio::select! {
         _ = terminal.changed() => {
             driver.state.close();
+            return;
+        }
+        _ = driver.cancel_rx.changed() => {
+            driver.state.cancel();
             return;
         }
         result = connection.open_uni() => result,
@@ -207,6 +211,11 @@ pub(crate) async fn run_outgoing_uni_stream(
             let _ = send.reset(STREAM_CANCEL_CODE);
             return;
         }
+        _ = driver.cancel_rx.changed() => {
+            driver.state.cancel();
+            let _ = send.reset(STREAM_CANCEL_CODE);
+            return;
+        }
         _ = &mut stopped => {
             driver.state.close();
             return;
@@ -217,12 +226,6 @@ pub(crate) async fn run_outgoing_uni_stream(
                 return;
             }
         }
-    }
-
-    if *driver.cancel_rx.borrow() {
-        driver.state.cancel();
-        let _ = send.reset(STREAM_CANCEL_CODE);
-        return;
     }
 
     loop {

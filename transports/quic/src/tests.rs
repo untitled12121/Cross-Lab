@@ -399,23 +399,6 @@ async fn uni_stream_sender_cancel_resets_receiver() {
 }
 
 #[tokio::test]
-async fn uni_stream_immediate_cancel_preserves_opening_correlation() {
-    let pair = promoted_loopback_transport_pair_with_config(QuicTransportConfig::default()).await;
-    let opening = vec![0x52];
-    let mut send = pair.client.try_open_uni_stream(opening.clone()).unwrap();
-
-    send.cancel();
-
-    let incoming = eventually_accept(&pair.server).await;
-    let (received_opening, mut recv) = incoming.into_parts();
-    assert_eq!(received_opening, opening);
-    eventually_cancelled(recv.as_mut()).await;
-
-    pair.client.shutdown().await;
-    pair.server.shutdown().await;
-}
-
-#[tokio::test]
 async fn uni_stream_sender_drop_resets_receiver() {
     let pair = promoted_loopback_transport_pair_with_config(QuicTransportConfig::default()).await;
     let send = pair.client.try_open_uni_stream(vec![0x51]).unwrap();

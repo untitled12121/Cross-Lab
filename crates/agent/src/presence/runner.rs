@@ -387,6 +387,7 @@ struct PendingFileOffer {
 }
 
 struct DestinationReadyFileTransfer {
+    request_id: RequestId,
     transfer_id: TransferId,
     operation_id: OperationId,
     resume_offset: u64,
@@ -406,6 +407,7 @@ struct TerminalReadyFileTransfer {
 
 enum SourceFileTransfer {
     Ready {
+        request_id: RequestId,
         operation_id: OperationId,
         resume_offset: u64,
         deadline: Instant,
@@ -1482,26 +1484,11 @@ async fn cancel_file_transfer_offer(
     };
 
     match source {
-        SourceFileTransfer::Ready { operation_id, .. } => {
-            let Some(session_id) = connection.status.borrow().session_id() else {
-                return Ok(());
-            };
-            let stream_id = StreamId::generate().map_err(|_| FileTransferOperationError::Random)?;
-            connection
-                .actor
-                .open_data_stream(file_transfer_source_stream_open(
-                    session_id,
-                    stream_id,
-                    operation_id,
-                ))
-                .await
-                .map_err(|_| FileTransferOperationError::Transport)?;
-            connection
-                .actor
-                .cancel_outbound_stream(stream_id)
-                .await
-                .map_err(|_| FileTransferOperationError::Transport)
-        }
+        SourceFileTransfer::Ready { request_id, .. } => connection
+            .actor
+            .send_cancel(request_id)
+            .await
+            .map_err(|_| FileTransferOperationError::Transport),
         SourceFileTransfer::Streaming { stream_id, .. } => connection
             .actor
             .cancel_outbound_stream(stream_id)
@@ -1585,6 +1572,7 @@ async fn complete_file_transfer_ready(
     file_transfer
         .destination_ready
         .push(DestinationReadyFileTransfer {
+            request_id,
             transfer_id: request.offer().transfer_id(),
             operation_id,
             resume_offset,
@@ -1639,6 +1627,7 @@ async fn open_file_transfer_stream(
             operation_id,
             resume_offset,
             deadline,
+            ..
         }) => (*operation_id, *resume_offset, *deadline),
         Some(_) => return Err(FileTransferOperationError::AlreadyActive),
         None => return Err(FileTransferOperationError::InvalidStream),
@@ -2171,6 +2160,7 @@ async fn handle_runtime_event(
                         file_transfer.source.insert(
                             *transfer_id,
                             SourceFileTransfer::Ready {
+                                request_id: response.request_id(),
                                 operation_id: *operation_id,
                                 resume_offset: *resume_offset,
                                 deadline: Instant::now() + FILE_TRANSFER_OPERATION_LIFETIME,
@@ -2187,6 +2177,28 @@ async fn handle_runtime_event(
             clipboard.inbound.remove(&request_id);
             if let Some(request) = file_transfer.inbound.remove(&request_id) {
                 file_transfer.notify_request_cancelled(request_id, request.offer().transfer_id());
+            } else if let Some(position) = file_transfer
+                .destination_ready
+                .iter()
+                .position(|ready| ready.request_id == request_id)
+            {
+                let ready = file_transfer.destination_ready.remove(position);
+                if let Some(connection) = connected
+                    .as_ref()
+                    .filter(|connection| !connection.reconnecting)
+                {
+                    let _ = connection
+                        .actor
+                        .cancel_stream_operation(ready.operation_id)
+                        .await;
+                    let _ = send_file_transfer_terminal(
+                        connection,
+                        ready.transfer_id,
+                        FileTransferTerminalOutcome::Cancelled,
+                    )
+                    .await;
+                }
+                file_transfer.notify_transfer_interrupted(ready.transfer_id);
             }
         }
         NodeEvent::SessionClosed(_) => {
