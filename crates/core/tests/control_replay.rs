@@ -400,8 +400,7 @@ fn outbound_cancel_is_allowed_after_response_completion() {
     let session = fixture.session();
     let policy = fixture.allow_policy();
     let context = session.context().unwrap();
-    let mut dispatcher =
-        ControlDispatcher::new(context, NonZeroUsize::new(4).unwrap());
+    let mut dispatcher = ControlDispatcher::new(context, NonZeroUsize::new(4).unwrap());
     let id = RequestId::from_bytes([0x36; 16]);
 
     let outbound = dispatcher
@@ -434,10 +433,7 @@ fn outbound_cancel_is_allowed_after_response_completion() {
     ));
 
     let cancel = dispatcher
-        .prepare_outbound(
-            context,
-            EnvelopeBody::CancelRequest(CancelRequest::new(id)),
-        )
+        .prepare_outbound(context, EnvelopeBody::CancelRequest(CancelRequest::new(id)))
         .unwrap();
     dispatcher.commit_outbound(&cancel);
 }
