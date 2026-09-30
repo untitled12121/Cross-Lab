@@ -344,7 +344,7 @@ async fn send_ready(
                     }
                 }
                 Err(FileTransferChunkError::Closed(_)) => {
-                    match agent.finish_file_transfer_stream(stream).await {
+                    match agent.recover_closed_file_transfer_result(stream).await {
                         Ok(result) => apply_terminal_outcome(
                             &status_tx,
                             result.outcome(),
@@ -538,6 +538,25 @@ mod tests {
                 ProtocolErrorCode::Cancelled,
             )),
             LinuxFileTransferSendFailure::Denied
+        );
+    }
+
+    #[test]
+    fn terminal_cancel_updates_sender_status() {
+        let (status_tx, status) = watch::channel(LinuxFileTransferSendStatus::Preparing);
+        apply_terminal_outcome(
+            &status_tx,
+            FileTransferTerminalOutcome::Cancelled,
+            7,
+            12,
+        );
+
+        assert_eq!(
+            *status.borrow(),
+            LinuxFileTransferSendStatus::Cancelled {
+                transferred_bytes: 7,
+                total_bytes: 12,
+            }
         );
     }
 

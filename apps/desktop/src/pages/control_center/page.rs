@@ -937,18 +937,23 @@ impl ControlCenterPage {
             LinuxFileTransferSendStatus::Cancelled {
                 transferred_bytes,
                 total_bytes,
-            } => self
-                .file_transfer
-                .send_cancelled(transferred_bytes, total_bytes),
+            } => {
+                self.file_transfer
+                    .send_cancelled(transferred_bytes, total_bytes);
+                self.notice = None;
+            }
             LinuxFileTransferSendStatus::Failed {
                 transferred_bytes,
                 total_bytes,
                 failure,
-            } => self.file_transfer.send_failed(
-                transferred_bytes,
-                total_bytes,
-                map_send_failure(failure),
-            ),
+            } => {
+                self.file_transfer.send_failed(
+                    transferred_bytes,
+                    total_bytes,
+                    map_send_failure(failure),
+                );
+                self.notice = None;
+            }
         }
     }
 
@@ -995,6 +1000,7 @@ impl ControlCenterPage {
                     self.active_receive_transfer = None;
                 }
                 self.file_transfer.receive_completed(total_bytes, false);
+                self.notice = None;
                 self.surface_next_file_transfer();
             }
             LinuxFileTransferReceiveStatus::AlreadyComplete {
@@ -1005,6 +1011,7 @@ impl ControlCenterPage {
                     self.active_receive_transfer = None;
                 }
                 self.file_transfer.receive_completed(total_bytes, true);
+                self.notice = None;
                 self.surface_next_file_transfer();
             }
             LinuxFileTransferReceiveStatus::Cancelled {
@@ -1017,6 +1024,7 @@ impl ControlCenterPage {
                 }
                 self.file_transfer
                     .receive_cancelled(received_bytes, total_bytes);
+                self.notice = None;
                 self.surface_next_file_transfer();
             }
             LinuxFileTransferReceiveStatus::Failed {
@@ -1033,6 +1041,7 @@ impl ControlCenterPage {
                     total_bytes,
                     map_receive_failure(failure),
                 );
+                self.notice = None;
                 self.surface_next_file_transfer();
             }
         }

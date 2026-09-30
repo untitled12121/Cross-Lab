@@ -512,10 +512,27 @@ impl TrustedPresenceAgent {
             .map_err(|_| FileTransferOperationError::Closed)?
     }
 
+    pub async fn recover_closed_file_transfer_result(
+        &self,
+        stream: FileTransferSourceStream,
+    ) -> Result<crosslab_protocol::FileTransferResult, FileTransferOperationError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.command_tx
+            .send(AgentCommand::FileTransferRecoverClosed {
+                stream,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| FileTransferOperationError::Closed)?;
+        reply_rx
+            .await
+            .map_err(|_| FileTransferOperationError::Closed)?
+    }
+
     pub async fn cancel_file_transfer_receive(
         &self,
         transfer_id: crosslab_protocol::TransferId,
-    ) -> Result<(), FileTransferOperationError> {
+    ) -> Result<Option<crosslab_protocol::StreamId>, FileTransferOperationError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.command_tx
             .send(AgentCommand::FileTransferCancelReceive {

@@ -173,9 +173,13 @@ pub(super) enum AgentCommand {
         stream: FileTransferSourceStream,
         reply: oneshot::Sender<Result<FileTransferResult, FileTransferOperationError>>,
     },
+    FileTransferRecoverClosed {
+        stream: FileTransferSourceStream,
+        reply: oneshot::Sender<Result<FileTransferResult, FileTransferOperationError>>,
+    },
     FileTransferCancelReceive {
         transfer_id: TransferId,
-        reply: oneshot::Sender<Result<(), FileTransferOperationError>>,
+        reply: oneshot::Sender<Result<Option<StreamId>, FileTransferOperationError>>,
     },
     FileTransferFailReceive {
         stream_id: StreamId,
@@ -396,6 +400,7 @@ struct ActiveInboundFileTransfer {
 
 struct TerminalReadyFileTransfer {
     transfer_id: TransferId,
+    stream_id: StreamId,
     deadline: Instant,
 }
 
@@ -1175,6 +1180,16 @@ async fn handle_command(
                 .await;
             false
         }
+        Some(AgentCommand::FileTransferRecoverClosed { stream, reply }) => {
+            recover_closed_file_transfer_result(
+                connected.as_ref(),
+                file_transfer,
+                stream,
+                reply,
+            )
+            .await;
+            false
+        }
         Some(AgentCommand::FileTransferCancelReceive { transfer_id, reply }) => {
             let outcome =
                 cancel_file_transfer_receive(connected.as_ref(), file_transfer, transfer_id).await;
@@ -1751,11 +1766,53 @@ async fn finish_file_transfer_stream(
     );
 }
 
+async fn recover_closed_file_transfer_result(
+    connected: Option<&ConnectedRuntime>,
+    file_transfer: &mut FileTransferRuntimeState,
+    stream: FileTransferSourceStream,
+    reply: oneshot::Sender<Result<FileTransferResult, FileTransferOperationError>>,
+) {
+    if let Some(result) = file_transfer.take_cached_result(stream.transfer_id()) {
+        file_transfer.source.remove(&stream.transfer_id());
+        let _ = reply.send(Ok(result));
+        return;
+    }
+
+    let active = matches!(
+        file_transfer.source.get(&stream.transfer_id()),
+        Some(SourceFileTransfer::Streaming {
+            stream_id,
+            resume_offset,
+        }) if *stream_id == stream.stream_id() && *resume_offset == stream.resume_offset()
+    );
+    if !active {
+        let _ = reply.send(Err(FileTransferOperationError::InvalidStream));
+        return;
+    }
+    let Some(connection) = connected.filter(|connection| !connection.reconnecting) else {
+        file_transfer.source.remove(&stream.transfer_id());
+        let _ = reply.send(Err(FileTransferOperationError::NotConnected));
+        return;
+    };
+
+    let _ = connection
+        .actor
+        .cancel_outbound_stream(stream.stream_id())
+        .await;
+    file_transfer.source.insert(
+        stream.transfer_id(),
+        SourceFileTransfer::AwaitingResult {
+            deadline: Instant::now() + FILE_TRANSFER_OFFER_TIMEOUT,
+            reply,
+        },
+    );
+}
+
 async fn cancel_file_transfer_receive(
     connected: Option<&ConnectedRuntime>,
     file_transfer: &mut FileTransferRuntimeState,
     transfer_id: TransferId,
-) -> Result<(), FileTransferOperationError> {
+) -> Result<Option<StreamId>, FileTransferOperationError> {
     let connection = connected
         .filter(|connection| !connection.reconnecting)
         .ok_or(FileTransferOperationError::NotConnected)?;
@@ -1770,12 +1827,13 @@ async fn cancel_file_transfer_receive(
             .actor
             .cancel_stream_operation(ready.operation_id)
             .await;
-        return send_file_transfer_terminal(
+        let _ = send_file_transfer_terminal(
             connection,
             transfer_id,
             FileTransferTerminalOutcome::Cancelled,
         )
         .await;
+        return Ok(None);
     }
 
     if let Some(stream_id) = file_transfer
@@ -1787,12 +1845,28 @@ async fn cancel_file_transfer_receive(
     {
         let _ = connection.actor.cancel_inbound_stream(stream_id).await;
         file_transfer.inbound_streams.remove(&stream_id);
-        return send_file_transfer_terminal(
+        let _ = send_file_transfer_terminal(
             connection,
             transfer_id,
             FileTransferTerminalOutcome::Cancelled,
         )
         .await;
+        return Ok(Some(stream_id));
+    }
+
+    if let Some(position) = file_transfer
+        .terminal_ready
+        .iter()
+        .position(|terminal| terminal.transfer_id == transfer_id)
+    {
+        let terminal = file_transfer.terminal_ready.remove(position);
+        let _ = send_file_transfer_terminal(
+            connection,
+            transfer_id,
+            FileTransferTerminalOutcome::Cancelled,
+        )
+        .await;
+        return Ok(Some(terminal.stream_id));
     }
 
     Err(FileTransferOperationError::InvalidStream)
@@ -1863,7 +1937,11 @@ async fn send_file_transfer_terminal(
         .map_err(|_| FileTransferOperationError::Transport)
 }
 
-fn remember_terminal_ready(file_transfer: &mut FileTransferRuntimeState, transfer_id: TransferId) {
+fn remember_terminal_ready(
+    file_transfer: &mut FileTransferRuntimeState,
+    transfer_id: TransferId,
+    stream_id: StreamId,
+) {
     if file_transfer
         .terminal_ready
         .iter()
@@ -1878,6 +1956,7 @@ fn remember_terminal_ready(file_transfer: &mut FileTransferRuntimeState, transfe
         .terminal_ready
         .push(TerminalReadyFileTransfer {
             transfer_id,
+            stream_id,
             deadline: Instant::now() + FILE_TRANSFER_OFFER_TIMEOUT,
         });
 }
@@ -2186,7 +2265,7 @@ async fn handle_runtime_event(
             let Some(active) = file_transfer.inbound_streams.remove(&stream_id) else {
                 return;
             };
-            remember_terminal_ready(file_transfer, active.transfer_id);
+            remember_terminal_ready(file_transfer, active.transfer_id, stream_id);
             let event = FileTransferDataEvent::Finished {
                 transfer_id: active.transfer_id,
                 stream_id,
@@ -2213,7 +2292,7 @@ async fn handle_runtime_event(
             let Some(active) = file_transfer.inbound_streams.remove(&stream_id) else {
                 return;
             };
-            remember_terminal_ready(file_transfer, active.transfer_id);
+            remember_terminal_ready(file_transfer, active.transfer_id, stream_id);
             let event = FileTransferDataEvent::Cancelled {
                 transfer_id: active.transfer_id,
                 stream_id,

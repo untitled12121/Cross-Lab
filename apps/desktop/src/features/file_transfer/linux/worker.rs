@@ -11,7 +11,7 @@ use crosslab_agent::{
     FileTransferDataEvent, FileTransferIntegrityError, FileTransferOperationError,
     FileTransferCancellation, TrustedPresenceAgent,
 };
-use crosslab_protocol::{FileTransferTerminalOutcome, RequestId, TransferId};
+use crosslab_protocol::{FileTransferTerminalOutcome, RequestId, StreamId, TransferId};
 use tokio::sync::{mpsc, oneshot, watch};
 
 use super::{
@@ -244,6 +244,27 @@ impl PendingOfferTracker {
     }
 }
 
+#[derive(Default)]
+struct IgnoredDataStreams {
+    stream_ids: VecDeque<StreamId>,
+}
+
+impl IgnoredDataStreams {
+    fn remember(&mut self, stream_id: StreamId) {
+        if self.stream_ids.iter().any(|current| *current == stream_id) {
+            return;
+        }
+        if self.stream_ids.len() >= FILE_TRANSFER_SERVICE_CAPACITY {
+            self.stream_ids.pop_front();
+        }
+        self.stream_ids.push_back(stream_id);
+    }
+
+    fn contains(&self, stream_id: StreamId) -> bool {
+        self.stream_ids.iter().any(|current| *current == stream_id)
+    }
+}
+
 async fn run_worker(
     agent: Arc<TrustedPresenceAgent>,
     mut service: LinuxFileTransferService,
@@ -256,6 +277,7 @@ async fn run_worker(
     mut stop_rx: watch::Receiver<bool>,
 ) {
     let mut pending_offers = PendingOfferTracker::default();
+    let mut ignored_data_streams = IgnoredDataStreams::default();
 
     loop {
         tokio::select! {
@@ -373,6 +395,9 @@ async fn run_worker(
                 let Some(event) = event else {
                     return;
                 };
+                if ignored_data_streams.contains(event_stream_id(&event)) {
+                    continue;
+                }
                 let transfer_id = event_transfer_id(&event);
                 let prior = service.transfer_progress(transfer_id);
                 let reports_progress = matches!(
@@ -494,7 +519,13 @@ async fn run_worker(
                         let _ = reply.send(result);
                     }
                     WorkerCommand::Cancel { transfer_id, reply } => {
-                        let result = cancel_receive(&agent, &mut service, transfer_id).await;
+                        let result = cancel_receive(
+                            &agent,
+                            &mut service,
+                            &mut ignored_data_streams,
+                            transfer_id,
+                        )
+                        .await;
                         match result {
                             Ok(status) => {
                                 let _ = status_tx.send(status).await;
@@ -547,11 +578,17 @@ async fn accept_destination(
 async fn cancel_receive(
     agent: &TrustedPresenceAgent,
     service: &mut LinuxFileTransferService,
+    ignored_data_streams: &mut IgnoredDataStreams,
     transfer_id: TransferId,
 ) -> Result<LinuxFileTransferReceiveStatus, LinuxFileTransferWorkerError> {
-    let (received_bytes, total_bytes) = service.cancel_receive(transfer_id)?;
+    let (local_stream_id, received_bytes, total_bytes) = service.cancel_receive(transfer_id)?;
+    if let Some(stream_id) = local_stream_id {
+        ignored_data_streams.remember(stream_id);
+    }
+
     match agent.cancel_file_transfer_receive(transfer_id).await {
-        Ok(())
+        Ok(Some(stream_id)) => ignored_data_streams.remember(stream_id),
+        Ok(None)
         | Err(
             FileTransferOperationError::NotConnected
             | FileTransferOperationError::InvalidStream
@@ -566,6 +603,15 @@ async fn cancel_receive(
         received_bytes,
         total_bytes,
     })
+}
+
+fn event_stream_id(event: &FileTransferDataEvent) -> StreamId {
+    match event {
+        FileTransferDataEvent::Opened { stream_id, .. }
+        | FileTransferDataEvent::Finished { stream_id, .. }
+        | FileTransferDataEvent::Cancelled { stream_id, .. } => *stream_id,
+        FileTransferDataEvent::Chunk(chunk) => chunk.stream_id(),
+    }
 }
 
 fn event_transfer_id(event: &FileTransferDataEvent) -> TransferId {
@@ -634,6 +680,22 @@ impl From<FileTransferOperationError> for LinuxFileTransferWorkerError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ignored_data_streams_are_bounded_and_idempotent() {
+        let mut ignored = IgnoredDataStreams::default();
+        let repeated = StreamId::from_bytes([0x91; 16]);
+        ignored.remember(repeated);
+        ignored.remember(repeated);
+        assert_eq!(ignored.stream_ids.len(), 1);
+        assert!(ignored.contains(repeated));
+
+        for tag in 0..=FILE_TRANSFER_SERVICE_CAPACITY {
+            let tag = u8::try_from(tag).expect("file-transfer capacity fits u8");
+            ignored.remember(StreamId::from_bytes([tag; 16]));
+        }
+        assert!(ignored.stream_ids.len() <= FILE_TRANSFER_SERVICE_CAPACITY);
+    }
 
     #[test]
     fn pending_offer_tracker_drops_cancelled_request_before_dispatch() {

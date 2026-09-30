@@ -191,12 +191,16 @@ impl LinuxFileTransferService {
     pub fn cancel_receive(
         &mut self,
         transfer_id: TransferId,
-    ) -> Result<(u64, u64), LinuxFileTransferError> {
+    ) -> Result<(Option<StreamId>, u64, u64), LinuxFileTransferError> {
         let active = self
             .active
             .remove(&transfer_id)
             .ok_or(LinuxFileTransferError::InvalidStream)?;
-        Ok((active.receiver.offset(), active.receiver.total_bytes()))
+        Ok((
+            active.stream_id,
+            active.receiver.offset(),
+            active.receiver.total_bytes(),
+        ))
     }
 
     pub fn handle_data(
@@ -593,7 +597,7 @@ mod tests {
 
         assert_eq!(
             service.cancel_receive(transfer_id).unwrap(),
-            (0, offer.file_size())
+            (None, 0, offer.file_size())
         );
         assert!(matches!(
             service
