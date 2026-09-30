@@ -38,7 +38,7 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 - PR #70 — Linux file-transfer storage/source adapter: merged as `eb32d79c94418ce46d70f8f91e05ec521f3ad504`; exact head `e653883b90ca7af4faddc6a635b9ccabdfb56779` passed full Rust + Android CI `36393985966`.
 - PR #71 — Linux receive/publication adapter: merged as `5c8b57c38b1e18771e1df4f872bfa4b5c077f784`; exact head `e1ec4cab51427e47f0318e73fc41d1cc1696ffea` passed full Rust + Android CI `36397884328`.
 - PR #72 — Linux authenticated receive service/worker: merged as `c833a4f9827b4e0cc05999e02c0dac621499800f`; exact head `08ea2cf4361dc9c5634743cebb07a05d4e88966e` passed full Rust + Android CI `36472517377`.
-- Active Phase 2 implementation branch / PR: `phase2-linux-file-transfer-ui` / #73. Exact head `65790c85325cc8478446a9bff4ce220af53cb991` passed dependency audit, formatting, full workspace check, Linux desktop normal/development builds, and the Android job in CI run `36722218482`; Rust then stopped at Clippy because the internal receive worker still had nine parameters. The current repair groups worker input/output channels into focused internal structs, keeps the already-verified startup/ownership/UI cleanup, and gates the development-only revoke helper with its feature so normal builds stay warning-free before the required fresh exact-head gate.
+- Active Phase 2 implementation branch / PR: `phase2-linux-file-transfer-ui` / #73. Exact head `fd0324bc59db8c1b4fb528a8a7c36106f2ea8ee7` passed the Android job and reached the Rust test stage in CI run `36724303206`; two cancellation regressions then failed. Review showed one real transport race: an immediately cancelled QUIC unidirectional stream could reset before its bounded opening record was written, so a source-side Ready cancellation did not reliably consume the destination's issued single-stream authority. The current repair makes an accepted local stream open preserve its opening correlation before reset, adds a transport regression for immediate cancellation, and makes the destination-cancel integration test respect asynchronous terminal-event delivery while still requiring eventual typed `Cancelled` source state.
 - ADR-0018, ADR-0019, and ADR-0020 are accepted. Clipboard is implemented; file transfer is in the Linux product UI/retention checkpoint before Android.
 
 ## Implemented M10 Product Path
@@ -137,7 +137,7 @@ Phase 3 adaptive networking does not begin until Phase 2 is complete.
 
 ## Exact Next Task
 
-1. require one fresh full exact-head Rust + Android gate on PR #73 after the ownership/startup/UI/test-cleanup batch; if it is green, mark PR #73 ready and merge;
+1. require one fresh full exact-head Rust + Android gate on PR #73 after the Ready-cancellation transport-race repair; if it is green, mark PR #73 ready and merge;
 2. preserve the Linux product boundary: owner-selected source/save paths stay local, peer display names never grant path authority, source hashing/data I/O remain bounded, cancellation releases pending/issued transfer authority without stale destination prompts, retry preserves `TransferId` only with the exact original offer identity, receive state remains authenticated-source-bound, and capability advertisement exists only with the complete worker/UI path;
 3. after PR #73 merges, implement the Android SAF/ContentResolver adapter with the same accepted resume/integrity semantics and no broad storage privilege;
 4. finish the matching Android Compose send/receive/progress/cancel/retry flow;

@@ -698,12 +698,21 @@ async fn file_transfer_destination_cancel_is_valid_from_ready_state() {
             .unwrap(),
         None
     );
-    assert_eq!(
-        left.open_file_transfer_stream(transfer_id).await,
-        Err(FileTransferOperationError::Remote(
-            crosslab_protocol::ProtocolErrorCode::Cancelled
-        ))
-    );
+    tokio::time::timeout(WAIT, async {
+        loop {
+            match left.open_file_transfer_stream(transfer_id).await {
+                Err(FileTransferOperationError::Remote(
+                    crosslab_protocol::ProtocolErrorCode::Cancelled,
+                )) => break,
+                Ok(_) | Err(FileTransferOperationError::AlreadyActive) => {
+                    tokio::task::yield_now().await;
+                }
+                other => panic!("unexpected ready-cancel source state: {other:?}"),
+            }
+        }
+    })
+    .await
+    .expect("destination cancellation should reach the source");
 
     let retry = left.send_file_offer(offer);
     tokio::pin!(retry);
