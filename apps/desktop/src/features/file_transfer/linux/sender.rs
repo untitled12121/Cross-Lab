@@ -214,7 +214,7 @@ async fn run_send(
     status_tx: watch::Sender<LinuxFileTransferSendStatus>,
 ) {
     let source =
-        match LinuxPreparedFileSource::prepare_cancellable(token.path, token.transfer_id, || {
+        match LinuxPreparedFileSource::prepare_cancellable(token.path.clone(), token.transfer_id, || {
             is_cancelled(&cancel_rx)
         }) {
             Ok(Some(source)) => source,
