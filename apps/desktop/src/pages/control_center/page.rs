@@ -928,10 +928,14 @@ impl ControlCenterPage {
             }
             LinuxFileTransferSendStatus::Completed { total_bytes } => {
                 self.file_transfer.send_completed(total_bytes, false);
+                self.file_transfer_send = None;
+                self.file_transfer_retry = None;
                 self.notice = None;
             }
             LinuxFileTransferSendStatus::AlreadyComplete { total_bytes } => {
                 self.file_transfer.send_completed(total_bytes, true);
+                self.file_transfer_send = None;
+                self.file_transfer_retry = None;
                 self.notice = None;
             }
             LinuxFileTransferSendStatus::Cancelled {
@@ -940,6 +944,7 @@ impl ControlCenterPage {
             } => {
                 self.file_transfer
                     .send_cancelled(transferred_bytes, total_bytes);
+                self.file_transfer_send = None;
                 self.notice = None;
             }
             LinuxFileTransferSendStatus::Failed {
@@ -952,6 +957,10 @@ impl ControlCenterPage {
                     total_bytes,
                     map_send_failure(failure),
                 );
+                self.file_transfer_send = None;
+                if failure == LinuxFileTransferSendFailure::Source {
+                    self.file_transfer_retry = None;
+                }
                 self.notice = None;
             }
         }

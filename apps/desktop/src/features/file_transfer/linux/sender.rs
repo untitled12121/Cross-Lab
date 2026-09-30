@@ -2,7 +2,7 @@ use core::fmt;
 use std::{
     path::PathBuf,
     sync::{
-        Arc,
+        Arc, OnceLock,
         atomic::{AtomicBool, Ordering},
     },
     thread,
@@ -14,7 +14,8 @@ use crosslab_agent::{
     TrustedPresenceAgent,
 };
 use crosslab_protocol::{
-    FileTransferAcceptance, FileTransferTerminalOutcome, ProtocolErrorCode, TransferId,
+    FileTransferAcceptance, FileTransferOffer, FileTransferTerminalOutcome, ProtocolErrorCode,
+    TransferId,
 };
 use tokio::sync::watch;
 
@@ -69,6 +70,7 @@ pub enum LinuxFileTransferSendStatus {
 pub struct LinuxFileTransferSendToken {
     transfer_id: TransferId,
     path: PathBuf,
+    expected_offer: Arc<OnceLock<FileTransferOffer>>,
 }
 
 impl LinuxFileTransferSendToken {
@@ -77,11 +79,24 @@ impl LinuxFileTransferSendToken {
             transfer_id: TransferId::generate()
                 .map_err(|_| LinuxFileTransferSendStartError::Random)?,
             path,
+            expected_offer: Arc::new(OnceLock::new()),
         })
     }
 
     pub const fn transfer_id(&self) -> TransferId {
         self.transfer_id
+    }
+
+    fn bind_offer(&self, offer: &FileTransferOffer) -> bool {
+        if let Some(expected) = self.expected_offer.get() {
+            return expected == offer;
+        }
+        if self.expected_offer.set(offer.clone()).is_ok() {
+            return true;
+        }
+        self.expected_offer
+            .get()
+            .is_some_and(|expected| expected == offer)
     }
 }
 
@@ -213,6 +228,15 @@ async fn run_send(
             }
         };
     let total_bytes = source.offer().file_size();
+    if !token.bind_offer(source.offer()) {
+        fail(
+            &status_tx,
+            0,
+            total_bytes,
+            LinuxFileTransferSendFailure::Source,
+        );
+        return;
+    }
 
     if is_cancelled(&cancel_rx) {
         cancelled(&status_tx, 0, total_bytes);
@@ -529,6 +553,48 @@ mod tests {
         let debug = format!("{status:?}");
         assert!(!debug.contains('/'));
         assert!(!debug.contains("secret.txt"));
+    }
+
+    #[test]
+    fn retry_token_binds_transfer_id_to_exact_offer_identity() {
+        let token = LinuxFileTransferSendToken::new(PathBuf::from("/private/source.bin")).unwrap();
+        let digest = crosslab_protocol::FileTransferDigest::from_bytes([0x31; 32]);
+        let offer = FileTransferOffer::new(
+            token.transfer_id(),
+            "source.bin".into(),
+            12,
+            digest,
+        )
+        .unwrap();
+
+        assert!(token.bind_offer(&offer));
+        assert!(token.clone().bind_offer(&offer));
+
+        let changed = FileTransferOffer::new(
+            token.transfer_id(),
+            "source.bin".into(),
+            13,
+            crosslab_protocol::FileTransferDigest::from_bytes([0x32; 32]),
+        )
+        .unwrap();
+        assert!(!token.bind_offer(&changed));
+    }
+
+    #[test]
+    fn retry_token_debug_redacts_local_path_and_bound_offer() {
+        let token = LinuxFileTransferSendToken::new(PathBuf::from("/private/secret.bin")).unwrap();
+        let offer = FileTransferOffer::new(
+            token.transfer_id(),
+            "secret.bin".into(),
+            4,
+            crosslab_protocol::FileTransferDigest::from_bytes([0x33; 32]),
+        )
+        .unwrap();
+        assert!(token.bind_offer(&offer));
+
+        let debug = format!("{token:?}");
+        assert!(!debug.contains("/private/secret.bin"));
+        assert!(!debug.contains("secret.bin"));
     }
 
     #[test]
