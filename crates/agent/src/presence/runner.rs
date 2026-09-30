@@ -46,14 +46,14 @@ use crate::{
         write_completion as clipboard_write_completion, write_request as clipboard_write_request,
     },
     file_transfer::{
-        FileTransferAvailability, FileTransferChunkError, FileTransferDataChunk,
-        FileTransferDataEvent, FileTransferOperationError, FileTransferRequest,
-        FileTransferCancellation, FileTransferSourceStream,
+        FileTransferAvailability, FileTransferCancellation, FileTransferChunkError,
+        FileTransferDataChunk, FileTransferDataEvent, FileTransferOperationError,
+        FileTransferRequest, FileTransferSourceStream,
         advertisement as file_transfer_advertisement,
         already_complete_response as file_transfer_already_complete_response,
         capability_negotiated as file_transfer_capability_negotiated,
-        decode_inbound as decode_file_transfer, decode_response as decode_file_transfer_response,
         cancelled_failure as file_transfer_cancelled_failure,
+        decode_inbound as decode_file_transfer, decode_response as decode_file_transfer_response,
         decode_terminal_result_event as decode_file_transfer_terminal_result,
         internal_failure as file_transfer_internal_failure,
         local_capabilities as file_transfer_local_capabilities,
@@ -1181,13 +1181,8 @@ async fn handle_command(
             false
         }
         Some(AgentCommand::FileTransferRecoverClosed { stream, reply }) => {
-            recover_closed_file_transfer_result(
-                connected.as_ref(),
-                file_transfer,
-                stream,
-                reply,
-            )
-            .await;
+            recover_closed_file_transfer_result(connected.as_ref(), file_transfer, stream, reply)
+                .await;
             false
         }
         Some(AgentCommand::FileTransferCancelReceive { transfer_id, reply }) => {
@@ -1464,17 +1459,16 @@ async fn cancel_file_transfer_offer(
             .outgoing
             .remove(&request_id)
             .expect("pending file-transfer offer exists");
-        let result = if let Some(connection) =
-            connected.filter(|connection| !connection.reconnecting)
-        {
-            connection
-                .actor
-                .send_cancel(request_id)
-                .await
-                .map_err(|_| FileTransferOperationError::Transport)
-        } else {
-            Ok(())
-        };
+        let result =
+            if let Some(connection) = connected.filter(|connection| !connection.reconnecting) {
+                connection
+                    .actor
+                    .send_cancel(request_id)
+                    .await
+                    .map_err(|_| FileTransferOperationError::Transport)
+            } else {
+                Ok(())
+            };
         let _ = pending
             .reply
             .send(Err(FileTransferOperationError::Cancelled));
@@ -1493,8 +1487,7 @@ async fn cancel_file_transfer_offer(
             let Some(session_id) = connection.status.borrow().session_id() else {
                 return Ok(());
             };
-            let stream_id =
-                StreamId::generate().map_err(|_| FileTransferOperationError::Random)?;
+            let stream_id = StreamId::generate().map_err(|_| FileTransferOperationError::Random)?;
             connection
                 .actor
                 .open_data_stream(file_transfer_source_stream_open(
@@ -1631,9 +1624,9 @@ async fn open_file_transfer_stream(
 ) -> Result<FileTransferSourceStream, FileTransferOperationError> {
     if let Some(result) = file_transfer.take_cached_result(transfer_id) {
         return match result.outcome() {
-            FileTransferTerminalOutcome::Cancelled => {
-                Err(FileTransferOperationError::Remote(ProtocolErrorCode::Cancelled))
-            }
+            FileTransferTerminalOutcome::Cancelled => Err(FileTransferOperationError::Remote(
+                ProtocolErrorCode::Cancelled,
+            )),
             FileTransferTerminalOutcome::Completed
             | FileTransferTerminalOutcome::IntegrityFailed
             | FileTransferTerminalOutcome::StorageFailed => {
@@ -1839,9 +1832,7 @@ async fn cancel_file_transfer_receive(
     if let Some(stream_id) = file_transfer
         .inbound_streams
         .iter()
-        .find_map(|(stream_id, active)| {
-            (active.transfer_id == transfer_id).then_some(*stream_id)
-        })
+        .find_map(|(stream_id, active)| (active.transfer_id == transfer_id).then_some(*stream_id))
     {
         let _ = connection.actor.cancel_inbound_stream(stream_id).await;
         file_transfer.inbound_streams.remove(&stream_id);
@@ -1881,8 +1872,7 @@ async fn fail_file_transfer_receive(
 ) -> Result<(), FileTransferOperationError> {
     if !matches!(
         outcome,
-        FileTransferTerminalOutcome::IntegrityFailed
-            | FileTransferTerminalOutcome::StorageFailed
+        FileTransferTerminalOutcome::IntegrityFailed | FileTransferTerminalOutcome::StorageFailed
     ) {
         return Err(FileTransferOperationError::InvalidResponse);
     }
@@ -2197,8 +2187,7 @@ async fn handle_runtime_event(
         NodeEvent::RequestCancelled(request_id) => {
             clipboard.inbound.remove(&request_id);
             if let Some(request) = file_transfer.inbound.remove(&request_id) {
-                file_transfer
-                    .notify_request_cancelled(request_id, request.offer().transfer_id());
+                file_transfer.notify_request_cancelled(request_id, request.offer().transfer_id());
             }
         }
         NodeEvent::SessionClosed(_) => {

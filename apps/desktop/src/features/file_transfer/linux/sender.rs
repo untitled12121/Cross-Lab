@@ -407,12 +407,9 @@ async fn send_ready(
     let _ = status_tx.send(LinuxFileTransferSendStatus::Finalizing { total_bytes });
 
     match agent.finish_file_transfer_stream(stream).await {
-        Ok(result) => apply_terminal_outcome(
-            &status_tx,
-            result.outcome(),
-            transferred,
-            total_bytes,
-        ),
+        Ok(result) => {
+            apply_terminal_outcome(&status_tx, result.outcome(), transferred, total_bytes)
+        }
         Err(error) => fail(
             &status_tx,
             transferred,
@@ -559,13 +556,8 @@ mod tests {
     fn retry_token_binds_transfer_id_to_exact_offer_identity() {
         let token = LinuxFileTransferSendToken::new(PathBuf::from("/private/source.bin")).unwrap();
         let digest = crosslab_protocol::FileTransferDigest::from_bytes([0x31; 32]);
-        let offer = FileTransferOffer::new(
-            token.transfer_id(),
-            "source.bin".into(),
-            12,
-            digest,
-        )
-        .unwrap();
+        let offer =
+            FileTransferOffer::new(token.transfer_id(), "source.bin".into(), 12, digest).unwrap();
 
         assert!(token.bind_offer(&offer));
         assert!(token.clone().bind_offer(&offer));
@@ -610,12 +602,7 @@ mod tests {
     #[test]
     fn terminal_cancel_updates_sender_status() {
         let (status_tx, status) = watch::channel(LinuxFileTransferSendStatus::Preparing);
-        apply_terminal_outcome(
-            &status_tx,
-            FileTransferTerminalOutcome::Cancelled,
-            7,
-            12,
-        );
+        apply_terminal_outcome(&status_tx, FileTransferTerminalOutcome::Cancelled, 7, 12);
 
         assert_eq!(
             *status.borrow(),

@@ -805,10 +805,8 @@ impl ControlCenterPage {
                 match result {
                     Ok(()) => {}
                     Err(DesktopPresenceError::FileTransferCancelled) => {
-                        page.file_transfer.receive_cancelled(
-                            0,
-                            page.file_transfer.receive().total_bytes(),
-                        );
+                        page.file_transfer
+                            .receive_cancelled(0, page.file_transfer.receive().total_bytes());
                         page.notice = None;
                     }
                     Err(error @ DesktopPresenceError::FileTransferConnection) => {
@@ -977,7 +975,8 @@ impl ControlCenterPage {
                 self.pending_file_transfers
                     .retain(|incoming| incoming.request_id() != request_id);
                 if was_visible
-                    && self.file_transfer.receive().stage() == FileTransferStage::AwaitingDestination
+                    && self.file_transfer.receive().stage()
+                        == FileTransferStage::AwaitingDestination
                 {
                     self.file_transfer.reset_receive();
                     self.notice = None;

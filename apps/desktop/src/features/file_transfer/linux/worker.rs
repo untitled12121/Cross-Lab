@@ -8,8 +8,8 @@ use std::{
 };
 
 use crosslab_agent::{
-    FileTransferDataEvent, FileTransferIntegrityError, FileTransferOperationError,
-    FileTransferCancellation, TrustedPresenceAgent,
+    FileTransferCancellation, FileTransferDataEvent, FileTransferIntegrityError,
+    FileTransferOperationError, TrustedPresenceAgent,
 };
 use crosslab_protocol::{FileTransferTerminalOutcome, RequestId, StreamId, TransferId};
 use tokio::sync::{mpsc, oneshot, watch};

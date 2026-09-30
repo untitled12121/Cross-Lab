@@ -518,9 +518,7 @@ async fn file_transfer_offer_is_bounded_correlated_and_cancelled_on_disconnect()
     )
     .unwrap();
     let mut right_requests = right.take_file_transfer_requests().unwrap();
-    let mut right_cancellations = right
-        .take_file_transfer_cancellations()
-        .unwrap();
+    let mut right_cancellations = right.take_file_transfer_cancellations().unwrap();
 
     left.candidate_available(route_for(&right)).unwrap();
     right.candidate_available(route_for(&left)).unwrap();
@@ -621,9 +619,7 @@ async fn file_transfer_explicit_offer_cancel_releases_retry_identity() {
     )
     .unwrap();
     let mut right_requests = right.take_file_transfer_requests().unwrap();
-    let mut right_cancellations = right
-        .take_file_transfer_cancellations()
-        .unwrap();
+    let mut right_cancellations = right.take_file_transfer_cancellations().unwrap();
 
     left.candidate_available(route_for(&right)).unwrap();
     right.candidate_available(route_for(&left)).unwrap();
@@ -952,7 +948,10 @@ async fn file_transfer_destination_cancel_is_valid_from_ready_state() {
     ));
 
     assert_eq!(
-        right.cancel_file_transfer_receive(transfer_id).await.unwrap(),
+        right
+            .cancel_file_transfer_receive(transfer_id)
+            .await
+            .unwrap(),
         None
     );
     assert_eq!(
@@ -1073,7 +1072,10 @@ async fn file_transfer_destination_cancel_stops_active_stream_and_reports_termin
     };
 
     assert_eq!(
-        right.cancel_file_transfer_receive(transfer_id).await.unwrap(),
+        right
+            .cancel_file_transfer_receive(transfer_id)
+            .await
+            .unwrap(),
         Some(stream_id)
     );
     let terminal = tokio::time::timeout(WAIT, left.recover_closed_file_transfer_result(stream))
@@ -1214,7 +1216,10 @@ async fn file_transfer_destination_cancel_wins_after_stream_finish_before_platfo
     ));
 
     assert_eq!(
-        right.cancel_file_transfer_receive(transfer_id).await.unwrap(),
+        right
+            .cancel_file_transfer_receive(transfer_id)
+            .await
+            .unwrap(),
         Some(stream_id)
     );
     let terminal = tokio::time::timeout(WAIT, &mut finish)

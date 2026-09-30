@@ -38,7 +38,7 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 - PR #70 — Linux file-transfer storage/source adapter: merged as `eb32d79c94418ce46d70f8f91e05ec521f3ad504`; exact head `e653883b90ca7af4faddc6a635b9ccabdfb56779` passed full Rust + Android CI `36393985966`.
 - PR #71 — Linux receive/publication adapter: merged as `5c8b57c38b1e18771e1df4f872bfa4b5c077f784`; exact head `e1ec4cab51427e47f0318e73fc41d1cc1696ffea` passed full Rust + Android CI `36397884328`.
 - PR #72 — Linux authenticated receive service/worker: merged as `c833a4f9827b4e0cc05999e02c0dac621499800f`; exact head `08ea2cf4361dc9c5634743cebb07a05d4e88966e` passed full Rust + Android CI `36472517377`.
-- Active Phase 2 implementation branch / PR: `phase2-linux-file-transfer-ui` / #73.
+- Active Phase 2 implementation branch / PR: `phase2-linux-file-transfer-ui` / #73. Exact implementation head `e8e8606e8bf036f3dda14ded540acb17a1c2a487` passed the Android job in CI run `36694548995`, while the Rust job stopped at `cargo fmt --check`; this checkpoint applies that rustfmt-only repair before the required fresh exact-head gate.
 - ADR-0018, ADR-0019, and ADR-0020 are accepted. Clipboard is implemented; file transfer is in the Linux product UI/retention checkpoint before Android.
 
 ## Implemented M10 Product Path
@@ -137,7 +137,7 @@ Phase 3 adaptive networking does not begin until Phase 2 is complete.
 
 ## Exact Next Task
 
-1. finish PR #73 (`phase2-linux-file-transfer-ui`) with race-safe cancellation from offer through `Ready`/streaming, session-lifecycle cleanup, and explicit pending-offer decline, then require one full exact-head Rust + Android gate before merge;
+1. require one fresh full exact-head Rust + Android gate on PR #73 after the rustfmt-only CI repair; if it is green, mark PR #73 ready and merge;
 2. preserve the Linux product boundary: owner-selected source/save paths stay local, peer display names never grant path authority, source hashing/data I/O remain bounded, cancellation releases pending/issued transfer authority without stale destination prompts, retry preserves `TransferId` only with the exact original offer identity, receive state remains authenticated-source-bound, and capability advertisement exists only with the complete worker/UI path;
 3. after PR #73 merges, implement the Android SAF/ContentResolver adapter with the same accepted resume/integrity semantics and no broad storage privilege;
 4. finish the matching Android Compose send/receive/progress/cancel/retry flow;

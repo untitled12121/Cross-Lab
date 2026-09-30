@@ -534,17 +534,14 @@ mod tests {
             LinuxFileTransferService::for_test(LinuxFileTransferStateStore::for_test(state_path));
 
         let LinuxFileTransferRequestAction::ChooseDestination(incoming) = service
-            .handle_request(
-                RequestId::from_bytes([0x68; 16]),
-                source,
-                offer.clone(),
-                50,
-            )
+            .handle_request(RequestId::from_bytes([0x68; 16]), source, offer.clone(), 50)
             .unwrap()
         else {
             panic!("fresh transfer should require owner destination");
         };
-        service.accept_destination(incoming, final_path, 51).unwrap();
+        service
+            .accept_destination(incoming, final_path, 51)
+            .unwrap();
         assert_eq!(
             service.transfer_progress(transfer_id),
             Some((0, offer.file_size()))
@@ -583,17 +580,14 @@ mod tests {
             LinuxFileTransferService::for_test(LinuxFileTransferStateStore::for_test(state_path));
 
         let LinuxFileTransferRequestAction::ChooseDestination(incoming) = service
-            .handle_request(
-                RequestId::from_bytes([0x6c; 16]),
-                source,
-                offer.clone(),
-                60,
-            )
+            .handle_request(RequestId::from_bytes([0x6c; 16]), source, offer.clone(), 60)
             .unwrap()
         else {
             panic!("fresh transfer should require owner destination");
         };
-        service.accept_destination(incoming, final_path, 61).unwrap();
+        service
+            .accept_destination(incoming, final_path, 61)
+            .unwrap();
 
         assert_eq!(
             service.cancel_receive(transfer_id).unwrap(),

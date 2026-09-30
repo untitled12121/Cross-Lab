@@ -27,8 +27,8 @@ use crate::{
         ClipboardAvailability, ClipboardOperationError, ClipboardPlatformError, ClipboardRequest,
     },
     file_transfer::{
-        FileTransferAvailability, FileTransferChunkError, FileTransferDataEvent,
-        FileTransferOperationError, FileTransferRequest, FileTransferCancellation,
+        FileTransferAvailability, FileTransferCancellation, FileTransferChunkError,
+        FileTransferDataEvent, FileTransferOperationError, FileTransferRequest,
         FileTransferSourceStream,
     },
 };
