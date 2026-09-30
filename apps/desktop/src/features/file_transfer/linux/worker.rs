@@ -93,20 +93,22 @@ impl LinuxFileTransferWorkerHandle {
         let (status_tx, status_rx) = mpsc::channel(FILE_TRANSFER_SERVICE_CAPACITY);
         let (stop_tx, stop_rx) = watch::channel(false);
 
+        let inputs = WorkerInputs {
+            requests,
+            cancellations,
+            data,
+            commands: command_rx,
+            stop_rx,
+        };
+        let outputs = WorkerOutputs {
+            pending_tx,
+            status_tx,
+        };
+
         thread::Builder::new()
             .name("crosslab-file-transfer".into())
             .spawn(move || {
-                runtime.block_on(run_worker(
-                    agent,
-                    service,
-                    requests,
-                    cancellations,
-                    data,
-                    command_rx,
-                    pending_tx,
-                    status_tx,
-                    stop_rx,
-                ));
+                runtime.block_on(run_worker(agent, service, inputs, outputs));
             })
             .map_err(|_| LinuxFileTransferWorkerError::Thread)?;
 
@@ -196,6 +198,19 @@ enum WorkerCommand {
     },
 }
 
+struct WorkerInputs {
+    requests: mpsc::Receiver<crosslab_agent::FileTransferRequest>,
+    cancellations: mpsc::Receiver<FileTransferCancellation>,
+    data: mpsc::Receiver<FileTransferDataEvent>,
+    commands: mpsc::Receiver<WorkerCommand>,
+    stop_rx: watch::Receiver<bool>,
+}
+
+struct WorkerOutputs {
+    pending_tx: mpsc::Sender<LinuxIncomingFileTransfer>,
+    status_tx: mpsc::Sender<LinuxFileTransferReceiveStatus>,
+}
+
 #[derive(Default)]
 struct PendingOfferTracker {
     visible: BTreeSet<RequestId>,
@@ -266,14 +281,16 @@ impl IgnoredDataStreams {
 async fn run_worker(
     agent: Arc<TrustedPresenceAgent>,
     mut service: LinuxFileTransferService,
-    mut requests: mpsc::Receiver<crosslab_agent::FileTransferRequest>,
-    mut cancellations: mpsc::Receiver<FileTransferCancellation>,
-    mut data: mpsc::Receiver<FileTransferDataEvent>,
-    mut commands: mpsc::Receiver<WorkerCommand>,
-    pending_tx: mpsc::Sender<LinuxIncomingFileTransfer>,
-    status_tx: mpsc::Sender<LinuxFileTransferReceiveStatus>,
-    mut stop_rx: watch::Receiver<bool>,
+    inputs: WorkerInputs,
+    outputs: WorkerOutputs,
 ) {
+    let mut requests = inputs.requests;
+    let mut cancellations = inputs.cancellations;
+    let mut data = inputs.data;
+    let mut commands = inputs.commands;
+    let mut stop_rx = inputs.stop_rx;
+    let pending_tx = outputs.pending_tx;
+    let status_tx = outputs.status_tx;
     let mut pending_offers = PendingOfferTracker::default();
     let mut ignored_data_streams = IgnoredDataStreams::default();
 

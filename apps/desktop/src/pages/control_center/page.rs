@@ -1060,6 +1060,7 @@ impl ControlCenterPage {
         }
     }
 
+    #[cfg(feature = "development-provisioning")]
     fn revoke_peer(&mut self, cx: &mut Context<Self>) {
         self.notice = Some(match self.runtime.revoke_current_peer() {
             Ok(()) => "Revocation requested. Fresh reconnects should now be rejected.".to_owned(),
