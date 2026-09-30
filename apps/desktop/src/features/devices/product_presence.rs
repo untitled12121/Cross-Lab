@@ -498,11 +498,8 @@ async fn run_discovery(
         };
 
         let _ = agent.network_available();
-        let mut discovery = Some(discovery);
+        let mut discovery = discovery;
         let exit = loop {
-            let active = discovery
-                .as_mut()
-                .expect("discovery exists until the loop exits");
             tokio::select! {
                 control = control_rx.recv() => {
                     match control {
@@ -515,7 +512,7 @@ async fn run_discovery(
                         }
                     }
                 }
-                event = active.next_event() => {
+                event = discovery.next_event() => {
                     match event {
                         Some(LinuxTrustedSessionDiscoveryEvent::Candidate(route)) => {
                             if let Ok(route) =
@@ -538,9 +535,7 @@ async fn run_discovery(
             }
         };
 
-        if let Some(discovery) = discovery.take() {
-            let _ = discovery.stop().await;
-        }
+        let _ = discovery.stop().await;
 
         match exit {
             DiscoveryLoopExit::Stop => return,

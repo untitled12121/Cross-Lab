@@ -1455,10 +1455,9 @@ async fn cancel_file_transfer_offer(
             (pending.offer.transfer_id() == transfer_id).then_some(*request_id)
         })
     {
-        let pending = file_transfer
-            .outgoing
-            .remove(&request_id)
-            .expect("pending file-transfer offer exists");
+        let Some(pending) = file_transfer.outgoing.remove(&request_id) else {
+            return Ok(());
+        };
         let result =
             if let Some(connection) = connected.filter(|connection| !connection.reconnecting) {
                 connection

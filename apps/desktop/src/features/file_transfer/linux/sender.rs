@@ -212,21 +212,20 @@ async fn run_send(
     mut cancel_rx: watch::Receiver<bool>,
     status_tx: watch::Sender<LinuxFileTransferSendStatus>,
 ) {
-    let source = match LinuxPreparedFileSource::prepare_cancellable(
-        &token.path,
-        token.transfer_id,
-        || is_cancelled(&cancel_rx),
-    ) {
-        Ok(Some(source)) => source,
-        Ok(None) => {
-            cancelled(&status_tx, 0, 0);
-            return;
-        }
-        Err(error) => {
-            fail(&status_tx, 0, 0, map_source_error(&error));
-            return;
-        }
-    };
+    let source =
+        match LinuxPreparedFileSource::prepare_cancellable(&token.path, token.transfer_id, || {
+            is_cancelled(&cancel_rx)
+        }) {
+            Ok(Some(source)) => source,
+            Ok(None) => {
+                cancelled(&status_tx, 0, 0);
+                return;
+            }
+            Err(error) => {
+                fail(&status_tx, 0, 0, map_source_error(&error));
+                return;
+            }
+        };
     let total_bytes = source.offer().file_size();
     if !token.bind_offer(source.offer()) {
         fail(
