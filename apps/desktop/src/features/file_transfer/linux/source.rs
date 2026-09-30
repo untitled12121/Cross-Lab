@@ -21,17 +21,17 @@ pub struct LinuxPreparedFileSource {
 
 impl LinuxPreparedFileSource {
     pub fn prepare(path: PathBuf, transfer_id: TransferId) -> Result<Self, LinuxFileTransferError> {
-        Self::prepare_cancellable(path, transfer_id, || false)?
+        Self::prepare_cancellable(&path, transfer_id, || false)?
             .ok_or(LinuxFileTransferError::SourceChanged)
     }
 
     pub(crate) fn prepare_cancellable(
-        path: PathBuf,
+        path: &Path,
         transfer_id: TransferId,
         mut cancelled: impl FnMut() -> bool,
     ) -> Result<Option<Self>, LinuxFileTransferError> {
-        let display_name = source_display_name(&path)?;
-        let (mut file, fingerprint) = open_regular_source(&path)?;
+        let display_name = source_display_name(path)?;
+        let (mut file, fingerprint) = open_regular_source(path)?;
         let mut hasher = FileTransferHasher::new();
         let mut buffer = vec![0_u8; FILE_TRANSFER_IO_CHUNK_BYTES];
 
@@ -61,7 +61,7 @@ impl LinuxPreparedFileSource {
         let offer = hash.into_offer(transfer_id, display_name)?;
 
         Ok(Some(Self {
-            path,
+            path: path.to_path_buf(),
             offer,
             fingerprint,
         }))

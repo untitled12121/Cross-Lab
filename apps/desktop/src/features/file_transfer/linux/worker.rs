@@ -81,6 +81,10 @@ impl LinuxFileTransferWorkerHandle {
         LinuxFileTransferWorkerError,
     > {
         let service = LinuxFileTransferService::from_environment(unix_now_secs())?;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|_| LinuxFileTransferWorkerError::Thread)?;
         let requests = agent.take_file_transfer_requests()?;
         let cancellations = agent.take_file_transfer_cancellations()?;
         let data = agent.take_file_transfer_data()?;
@@ -92,12 +96,6 @@ impl LinuxFileTransferWorkerHandle {
         thread::Builder::new()
             .name("crosslab-file-transfer".into())
             .spawn(move || {
-                let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                else {
-                    return;
-                };
                 runtime.block_on(run_worker(
                     agent,
                     service,
@@ -698,33 +696,23 @@ mod tests {
     }
 
     #[test]
-    fn pending_offer_tracker_drops_cancelled_request_before_dispatch() {
-        let request_id = RequestId::from_bytes([0x71; 16]);
+    fn pending_offer_tracker_handles_cancel_and_accept_races() {
         let mut tracker = PendingOfferTracker::default();
 
-        assert!(!tracker.cancel(request_id));
-        assert!(!tracker.begin_request(request_id));
-        assert!(tracker.begin_request(request_id));
-    }
+        let cancelled_before_dispatch = RequestId::from_bytes([0x71; 16]);
+        assert!(!tracker.cancel(cancelled_before_dispatch));
+        assert!(!tracker.begin_request(cancelled_before_dispatch));
+        assert!(tracker.begin_request(cancelled_before_dispatch));
 
-    #[test]
-    fn pending_offer_tracker_reports_visible_cancellation_once() {
-        let request_id = RequestId::from_bytes([0x72; 16]);
-        let mut tracker = PendingOfferTracker::default();
+        let visible = RequestId::from_bytes([0x72; 16]);
+        assert!(tracker.begin_request(visible));
+        tracker.mark_visible(visible);
+        assert!(tracker.cancel(visible));
+        assert!(!tracker.cancel(visible));
 
-        assert!(tracker.begin_request(request_id));
-        tracker.mark_visible(request_id);
-        assert!(tracker.cancel(request_id));
-        assert!(!tracker.cancel(request_id));
-    }
-
-    #[test]
-    fn accepted_offer_is_not_reported_as_visible_after_cancel_race() {
-        let request_id = RequestId::from_bytes([0x73; 16]);
-        let mut tracker = PendingOfferTracker::default();
-
-        tracker.mark_visible(request_id);
-        tracker.accept(request_id);
-        assert!(!tracker.cancel(request_id));
+        let accepted = RequestId::from_bytes([0x73; 16]);
+        tracker.mark_visible(accepted);
+        tracker.accept(accepted);
+        assert!(!tracker.cancel(accepted));
     }
 }

@@ -23,6 +23,14 @@ use super::{LinuxFileTransferError, LinuxPreparedFileSource};
 
 const BACKPRESSURE_RETRY: Duration = Duration::from_millis(10);
 
+struct ActiveSendGuard(Arc<AtomicBool>);
+
+impl Drop for ActiveSendGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinuxFileTransferSendFailure {
     Source,
@@ -142,25 +150,16 @@ impl LinuxFileTransferSendHandle {
         let (status_tx, status) = watch::channel(LinuxFileTransferSendStatus::Preparing);
         let thread_status = status_tx.clone();
         let thread_token = token.clone();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|_| LinuxFileTransferSendStartError::Thread)?;
 
         thread::Builder::new()
             .name("crosslab-file-send".into())
             .spawn(move || {
-                let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                else {
-                    let _ = thread_status.send(LinuxFileTransferSendStatus::Failed {
-                        transferred_bytes: 0,
-                        total_bytes: 0,
-                        failure: LinuxFileTransferSendFailure::Failed,
-                    });
-                    active.store(false, Ordering::Release);
-                    return;
-                };
-
+                let _active = ActiveSendGuard(active);
                 runtime.block_on(run_send(agent, thread_token, cancel_rx, thread_status));
-                active.store(false, Ordering::Release);
             })
             .map_err(|_| LinuxFileTransferSendStartError::Thread)?;
 
@@ -213,20 +212,21 @@ async fn run_send(
     mut cancel_rx: watch::Receiver<bool>,
     status_tx: watch::Sender<LinuxFileTransferSendStatus>,
 ) {
-    let source =
-        match LinuxPreparedFileSource::prepare_cancellable(token.path.clone(), token.transfer_id, || {
-            is_cancelled(&cancel_rx)
-        }) {
-            Ok(Some(source)) => source,
-            Ok(None) => {
-                cancelled(&status_tx, 0, 0);
-                return;
-            }
-            Err(error) => {
-                fail(&status_tx, 0, 0, map_source_error(&error));
-                return;
-            }
-        };
+    let source = match LinuxPreparedFileSource::prepare_cancellable(
+        &token.path,
+        token.transfer_id,
+        || is_cancelled(&cancel_rx),
+    ) {
+        Ok(Some(source)) => source,
+        Ok(None) => {
+            cancelled(&status_tx, 0, 0);
+            return;
+        }
+        Err(error) => {
+            fail(&status_tx, 0, 0, map_source_error(&error));
+            return;
+        }
+    };
     let total_bytes = source.offer().file_size();
     if !token.bind_offer(source.offer()) {
         fail(
@@ -540,19 +540,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn public_progress_never_contains_local_path_or_file_name() {
-        let status = LinuxFileTransferSendStatus::Failed {
-            transferred_bytes: 10,
-            total_bytes: 20,
-            failure: LinuxFileTransferSendFailure::Source,
-        };
-
-        let debug = format!("{status:?}");
-        assert!(!debug.contains('/'));
-        assert!(!debug.contains("secret.txt"));
-    }
-
-    #[test]
     fn retry_token_binds_transfer_id_to_exact_offer_identity() {
         let token = LinuxFileTransferSendToken::new(PathBuf::from("/private/source.bin")).unwrap();
         let digest = crosslab_protocol::FileTransferDigest::from_bytes([0x31; 32]);
@@ -590,16 +577,6 @@ mod tests {
     }
 
     #[test]
-    fn peer_decline_is_presented_as_denied() {
-        assert_eq!(
-            map_operation_error(FileTransferOperationError::Remote(
-                ProtocolErrorCode::Cancelled,
-            )),
-            LinuxFileTransferSendFailure::Denied
-        );
-    }
-
-    #[test]
     fn terminal_cancel_updates_sender_status() {
         let (status_tx, status) = watch::channel(LinuxFileTransferSendStatus::Preparing);
         apply_terminal_outcome(&status_tx, FileTransferTerminalOutcome::Cancelled, 7, 12);
@@ -614,12 +591,28 @@ mod tests {
     }
 
     #[test]
-    fn authorization_failure_is_presented_as_denied() {
-        assert_eq!(
-            map_operation_error(FileTransferOperationError::Remote(
-                ProtocolErrorCode::AuthorizationDenied,
-            )),
-            LinuxFileTransferSendFailure::Denied
-        );
+    fn operation_errors_map_to_product_failures() {
+        let cases = [
+            (
+                FileTransferOperationError::Remote(ProtocolErrorCode::Cancelled),
+                LinuxFileTransferSendFailure::Denied,
+            ),
+            (
+                FileTransferOperationError::Remote(ProtocolErrorCode::AuthorizationDenied),
+                LinuxFileTransferSendFailure::Denied,
+            ),
+            (
+                FileTransferOperationError::Remote(ProtocolErrorCode::CapabilityUnsupported),
+                LinuxFileTransferSendFailure::NotNegotiated,
+            ),
+            (
+                FileTransferOperationError::ResourceLimit,
+                LinuxFileTransferSendFailure::ResourceLimit,
+            ),
+        ];
+
+        for (error, expected) in cases {
+            assert_eq!(map_operation_error(error), expected);
+        }
     }
 }

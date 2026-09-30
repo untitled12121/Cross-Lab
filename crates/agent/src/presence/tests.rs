@@ -150,42 +150,10 @@ async fn fail_closed_policy_advances_revision_and_removes_rules() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn file_transfer_ready_mints_fresh_runtime_authority() {
-    let (left_state, right_state) = reciprocal_identities();
-    let left_device_id = left_state.local_credential().device_id();
-    let left_signer = Arc::new(SigningKey::from_secret_bytes([0x74; 32]));
-    let right_signer = Arc::new(SigningKey::from_secret_bytes([0x75; 32]));
-    let mut right_policy = PolicyState::new();
-    right_policy
-        .set_rule_effect(
-            left_device_id,
-            CapabilityId::parse("files.transfer").unwrap(),
-            OperationName::parse("receive").unwrap(),
-            RuleEffect::Allow,
-        )
-        .unwrap();
-
-    let left = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
-        left_state,
-        left_signer,
-        PolicyState::new(),
-        ClipboardAvailability::default(),
-        FileTransferAvailability::new(true),
-    )
-    .unwrap();
-    let right = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
-        right_state,
-        right_signer,
-        right_policy,
-        ClipboardAvailability::default(),
-        FileTransferAvailability::new(true),
-    )
-    .unwrap();
+    let (left, right, _) = file_transfer_pair();
     let mut right_requests = right.take_file_transfer_requests().unwrap();
 
-    left.candidate_available(route_for(&right)).unwrap();
-    right.candidate_available(route_for(&left)).unwrap();
-    let mut left_status = left.subscribe_status();
-    wait_capability_negotiated(&mut left_status, "files.transfer").await;
+    connect_file_transfer_pair(&left, &right).await;
 
     let offer = crosslab_protocol::FileTransferOffer::new(
         crosslab_protocol::TransferId::from_bytes([0xb1; 32]),
@@ -256,43 +224,11 @@ async fn file_transfer_ready_mints_fresh_runtime_authority() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn file_transfer_data_plane_correlates_bytes_and_terminal_result() {
-    let (left_state, right_state) = reciprocal_identities();
-    let left_device_id = left_state.local_credential().device_id();
-    let left_signer = Arc::new(SigningKey::from_secret_bytes([0x74; 32]));
-    let right_signer = Arc::new(SigningKey::from_secret_bytes([0x75; 32]));
-    let mut right_policy = PolicyState::new();
-    right_policy
-        .set_rule_effect(
-            left_device_id,
-            CapabilityId::parse("files.transfer").unwrap(),
-            OperationName::parse("receive").unwrap(),
-            RuleEffect::Allow,
-        )
-        .unwrap();
-
-    let left = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
-        left_state,
-        left_signer,
-        PolicyState::new(),
-        ClipboardAvailability::default(),
-        FileTransferAvailability::new(true),
-    )
-    .unwrap();
-    let right = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
-        right_state,
-        right_signer,
-        right_policy,
-        ClipboardAvailability::default(),
-        FileTransferAvailability::new(true),
-    )
-    .unwrap();
+    let (left, right, _) = file_transfer_pair();
     let mut right_requests = right.take_file_transfer_requests().unwrap();
     let mut right_data = right.take_file_transfer_data().unwrap();
 
-    left.candidate_available(route_for(&right)).unwrap();
-    right.candidate_available(route_for(&left)).unwrap();
-    let mut left_status = left.subscribe_status();
-    wait_capability_negotiated(&mut left_status, "files.transfer").await;
+    connect_file_transfer_pair(&left, &right).await;
 
     let offer = crosslab_protocol::FileTransferOffer::new(
         crosslab_protocol::TransferId::from_bytes([0xb8; 32]),
@@ -397,42 +333,10 @@ async fn file_transfer_data_plane_correlates_bytes_and_terminal_result() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn file_transfer_unused_ready_authority_shares_inbound_capacity() {
-    let (left_state, right_state) = reciprocal_identities();
-    let left_device_id = left_state.local_credential().device_id();
-    let left_signer = Arc::new(SigningKey::from_secret_bytes([0x74; 32]));
-    let right_signer = Arc::new(SigningKey::from_secret_bytes([0x75; 32]));
-    let mut right_policy = PolicyState::new();
-    right_policy
-        .set_rule_effect(
-            left_device_id,
-            CapabilityId::parse("files.transfer").unwrap(),
-            OperationName::parse("receive").unwrap(),
-            RuleEffect::Allow,
-        )
-        .unwrap();
-
-    let left = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
-        left_state,
-        left_signer,
-        PolicyState::new(),
-        ClipboardAvailability::default(),
-        FileTransferAvailability::new(true),
-    )
-    .unwrap();
-    let right = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
-        right_state,
-        right_signer,
-        right_policy,
-        ClipboardAvailability::default(),
-        FileTransferAvailability::new(true),
-    )
-    .unwrap();
+    let (left, right, _) = file_transfer_pair();
     let mut right_requests = right.take_file_transfer_requests().unwrap();
 
-    left.candidate_available(route_for(&right)).unwrap();
-    right.candidate_available(route_for(&left)).unwrap();
-    let mut left_status = left.subscribe_status();
-    wait_capability_negotiated(&mut left_status, "files.transfer").await;
+    connect_file_transfer_pair(&left, &right).await;
 
     for byte in 0xc0..0xc8 {
         let offer = crosslab_protocol::FileTransferOffer::new(
@@ -487,43 +391,11 @@ async fn file_transfer_unused_ready_authority_shares_inbound_capacity() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn file_transfer_offer_is_bounded_correlated_and_cancelled_on_disconnect() {
-    let (left_state, right_state) = reciprocal_identities();
-    let left_device_id = left_state.local_credential().device_id();
-    let left_signer = Arc::new(SigningKey::from_secret_bytes([0x74; 32]));
-    let right_signer = Arc::new(SigningKey::from_secret_bytes([0x75; 32]));
-    let mut right_policy = PolicyState::new();
-    right_policy
-        .set_rule_effect(
-            left_device_id,
-            CapabilityId::parse("files.transfer").unwrap(),
-            OperationName::parse("receive").unwrap(),
-            RuleEffect::Allow,
-        )
-        .unwrap();
-
-    let left = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
-        left_state,
-        left_signer,
-        PolicyState::new(),
-        ClipboardAvailability::default(),
-        FileTransferAvailability::new(true),
-    )
-    .unwrap();
-    let right = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
-        right_state,
-        right_signer,
-        right_policy,
-        ClipboardAvailability::default(),
-        FileTransferAvailability::new(true),
-    )
-    .unwrap();
+    let (left, right, source_device_id) = file_transfer_pair();
     let mut right_requests = right.take_file_transfer_requests().unwrap();
     let mut right_cancellations = right.take_file_transfer_cancellations().unwrap();
 
-    left.candidate_available(route_for(&right)).unwrap();
-    right.candidate_available(route_for(&left)).unwrap();
-    let mut left_status = left.subscribe_status();
-    wait_capability_negotiated(&mut left_status, "files.transfer").await;
+    connect_file_transfer_pair(&left, &right).await;
 
     let offer = crosslab_protocol::FileTransferOffer::new(
         crosslab_protocol::TransferId::from_bytes([0xa1; 32]),
@@ -544,7 +416,7 @@ async fn file_transfer_offer_is_bounded_correlated_and_cancelled_on_disconnect()
     .expect("file offer should arrive")
     .expect("file transfer request channel should remain open");
 
-    assert_eq!(inbound.source_device_id(), left_device_id);
+    assert_eq!(inbound.source_device_id(), source_device_id);
     assert_eq!(inbound.offer(), &offer);
     right
         .complete_file_transfer_already_complete(inbound.request_id())
@@ -588,43 +460,11 @@ async fn file_transfer_offer_is_bounded_correlated_and_cancelled_on_disconnect()
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn file_transfer_explicit_offer_cancel_releases_retry_identity() {
-    let (left_state, right_state) = reciprocal_identities();
-    let left_device_id = left_state.local_credential().device_id();
-    let left_signer = Arc::new(SigningKey::from_secret_bytes([0x74; 32]));
-    let right_signer = Arc::new(SigningKey::from_secret_bytes([0x75; 32]));
-    let mut right_policy = PolicyState::new();
-    right_policy
-        .set_rule_effect(
-            left_device_id,
-            CapabilityId::parse("files.transfer").unwrap(),
-            OperationName::parse("receive").unwrap(),
-            RuleEffect::Allow,
-        )
-        .unwrap();
-
-    let left = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
-        left_state,
-        left_signer,
-        PolicyState::new(),
-        ClipboardAvailability::default(),
-        FileTransferAvailability::new(true),
-    )
-    .unwrap();
-    let right = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
-        right_state,
-        right_signer,
-        right_policy,
-        ClipboardAvailability::default(),
-        FileTransferAvailability::new(true),
-    )
-    .unwrap();
+    let (left, right, _) = file_transfer_pair();
     let mut right_requests = right.take_file_transfer_requests().unwrap();
     let mut right_cancellations = right.take_file_transfer_cancellations().unwrap();
 
-    left.candidate_available(route_for(&right)).unwrap();
-    right.candidate_available(route_for(&left)).unwrap();
-    let mut left_status = left.subscribe_status();
-    wait_capability_negotiated(&mut left_status, "files.transfer").await;
+    connect_file_transfer_pair(&left, &right).await;
 
     let offer = crosslab_protocol::FileTransferOffer::new(
         crosslab_protocol::TransferId::from_bytes([0xe1; 32]),
@@ -694,42 +534,10 @@ async fn file_transfer_explicit_offer_cancel_releases_retry_identity() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn file_transfer_destination_decline_is_typed_and_retryable() {
-    let (left_state, right_state) = reciprocal_identities();
-    let left_device_id = left_state.local_credential().device_id();
-    let left_signer = Arc::new(SigningKey::from_secret_bytes([0x74; 32]));
-    let right_signer = Arc::new(SigningKey::from_secret_bytes([0x75; 32]));
-    let mut right_policy = PolicyState::new();
-    right_policy
-        .set_rule_effect(
-            left_device_id,
-            CapabilityId::parse("files.transfer").unwrap(),
-            OperationName::parse("receive").unwrap(),
-            RuleEffect::Allow,
-        )
-        .unwrap();
-
-    let left = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
-        left_state,
-        left_signer,
-        PolicyState::new(),
-        ClipboardAvailability::default(),
-        FileTransferAvailability::new(true),
-    )
-    .unwrap();
-    let right = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
-        right_state,
-        right_signer,
-        right_policy,
-        ClipboardAvailability::default(),
-        FileTransferAvailability::new(true),
-    )
-    .unwrap();
+    let (left, right, _) = file_transfer_pair();
     let mut right_requests = right.take_file_transfer_requests().unwrap();
 
-    left.candidate_available(route_for(&right)).unwrap();
-    right.candidate_available(route_for(&left)).unwrap();
-    let mut left_status = left.subscribe_status();
-    wait_capability_negotiated(&mut left_status, "files.transfer").await;
+    connect_file_transfer_pair(&left, &right).await;
 
     let offer = crosslab_protocol::FileTransferOffer::new(
         crosslab_protocol::TransferId::from_bytes([0xe7; 32]),
@@ -794,43 +602,11 @@ async fn file_transfer_destination_decline_is_typed_and_retryable() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn file_transfer_session_loss_interrupts_ready_destination_transfer() {
-    let (left_state, right_state) = reciprocal_identities();
-    let left_device_id = left_state.local_credential().device_id();
-    let left_signer = Arc::new(SigningKey::from_secret_bytes([0x74; 32]));
-    let right_signer = Arc::new(SigningKey::from_secret_bytes([0x75; 32]));
-    let mut right_policy = PolicyState::new();
-    right_policy
-        .set_rule_effect(
-            left_device_id,
-            CapabilityId::parse("files.transfer").unwrap(),
-            OperationName::parse("receive").unwrap(),
-            RuleEffect::Allow,
-        )
-        .unwrap();
-
-    let left = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
-        left_state,
-        left_signer,
-        PolicyState::new(),
-        ClipboardAvailability::default(),
-        FileTransferAvailability::new(true),
-    )
-    .unwrap();
-    let right = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
-        right_state,
-        right_signer,
-        right_policy,
-        ClipboardAvailability::default(),
-        FileTransferAvailability::new(true),
-    )
-    .unwrap();
+    let (left, right, _) = file_transfer_pair();
     let mut right_requests = right.take_file_transfer_requests().unwrap();
     let mut right_cancellations = right.take_file_transfer_cancellations().unwrap();
 
-    left.candidate_available(route_for(&right)).unwrap();
-    right.candidate_available(route_for(&left)).unwrap();
-    let mut left_status = left.subscribe_status();
-    wait_capability_negotiated(&mut left_status, "files.transfer").await;
+    connect_file_transfer_pair(&left, &right).await;
 
     let offer = crosslab_protocol::FileTransferOffer::new(
         crosslab_protocol::TransferId::from_bytes([0xe5; 32]),
@@ -878,42 +654,10 @@ async fn file_transfer_session_loss_interrupts_ready_destination_transfer() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn file_transfer_destination_cancel_is_valid_from_ready_state() {
-    let (left_state, right_state) = reciprocal_identities();
-    let left_device_id = left_state.local_credential().device_id();
-    let left_signer = Arc::new(SigningKey::from_secret_bytes([0x74; 32]));
-    let right_signer = Arc::new(SigningKey::from_secret_bytes([0x75; 32]));
-    let mut right_policy = PolicyState::new();
-    right_policy
-        .set_rule_effect(
-            left_device_id,
-            CapabilityId::parse("files.transfer").unwrap(),
-            OperationName::parse("receive").unwrap(),
-            RuleEffect::Allow,
-        )
-        .unwrap();
-
-    let left = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
-        left_state,
-        left_signer,
-        PolicyState::new(),
-        ClipboardAvailability::default(),
-        FileTransferAvailability::new(true),
-    )
-    .unwrap();
-    let right = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
-        right_state,
-        right_signer,
-        right_policy,
-        ClipboardAvailability::default(),
-        FileTransferAvailability::new(true),
-    )
-    .unwrap();
+    let (left, right, _) = file_transfer_pair();
     let mut right_requests = right.take_file_transfer_requests().unwrap();
 
-    left.candidate_available(route_for(&right)).unwrap();
-    right.candidate_available(route_for(&left)).unwrap();
-    let mut left_status = left.subscribe_status();
-    wait_capability_negotiated(&mut left_status, "files.transfer").await;
+    connect_file_transfer_pair(&left, &right).await;
 
     let offer = crosslab_protocol::FileTransferOffer::new(
         crosslab_protocol::TransferId::from_bytes([0xe9; 32]),
@@ -987,43 +731,11 @@ async fn file_transfer_destination_cancel_is_valid_from_ready_state() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn file_transfer_destination_cancel_stops_active_stream_and_reports_terminal() {
-    let (left_state, right_state) = reciprocal_identities();
-    let left_device_id = left_state.local_credential().device_id();
-    let left_signer = Arc::new(SigningKey::from_secret_bytes([0x74; 32]));
-    let right_signer = Arc::new(SigningKey::from_secret_bytes([0x75; 32]));
-    let mut right_policy = PolicyState::new();
-    right_policy
-        .set_rule_effect(
-            left_device_id,
-            CapabilityId::parse("files.transfer").unwrap(),
-            OperationName::parse("receive").unwrap(),
-            RuleEffect::Allow,
-        )
-        .unwrap();
-
-    let left = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
-        left_state,
-        left_signer,
-        PolicyState::new(),
-        ClipboardAvailability::default(),
-        FileTransferAvailability::new(true),
-    )
-    .unwrap();
-    let right = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
-        right_state,
-        right_signer,
-        right_policy,
-        ClipboardAvailability::default(),
-        FileTransferAvailability::new(true),
-    )
-    .unwrap();
+    let (left, right, _) = file_transfer_pair();
     let mut right_requests = right.take_file_transfer_requests().unwrap();
     let mut right_data = right.take_file_transfer_data().unwrap();
 
-    left.candidate_available(route_for(&right)).unwrap();
-    right.candidate_available(route_for(&left)).unwrap();
-    let mut left_status = left.subscribe_status();
-    wait_capability_negotiated(&mut left_status, "files.transfer").await;
+    connect_file_transfer_pair(&left, &right).await;
 
     let offer = crosslab_protocol::FileTransferOffer::new(
         crosslab_protocol::TransferId::from_bytes([0xeb; 32]),
@@ -1112,43 +824,11 @@ async fn file_transfer_destination_cancel_stops_active_stream_and_reports_termin
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn file_transfer_destination_cancel_wins_after_stream_finish_before_platform_publish() {
-    let (left_state, right_state) = reciprocal_identities();
-    let left_device_id = left_state.local_credential().device_id();
-    let left_signer = Arc::new(SigningKey::from_secret_bytes([0x74; 32]));
-    let right_signer = Arc::new(SigningKey::from_secret_bytes([0x75; 32]));
-    let mut right_policy = PolicyState::new();
-    right_policy
-        .set_rule_effect(
-            left_device_id,
-            CapabilityId::parse("files.transfer").unwrap(),
-            OperationName::parse("receive").unwrap(),
-            RuleEffect::Allow,
-        )
-        .unwrap();
-
-    let left = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
-        left_state,
-        left_signer,
-        PolicyState::new(),
-        ClipboardAvailability::default(),
-        FileTransferAvailability::new(true),
-    )
-    .unwrap();
-    let right = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
-        right_state,
-        right_signer,
-        right_policy,
-        ClipboardAvailability::default(),
-        FileTransferAvailability::new(true),
-    )
-    .unwrap();
+    let (left, right, _) = file_transfer_pair();
     let mut right_requests = right.take_file_transfer_requests().unwrap();
     let mut right_data = right.take_file_transfer_data().unwrap();
 
-    left.candidate_available(route_for(&right)).unwrap();
-    right.candidate_available(route_for(&left)).unwrap();
-    let mut left_status = left.subscribe_status();
-    wait_capability_negotiated(&mut left_status, "files.transfer").await;
+    connect_file_transfer_pair(&left, &right).await;
 
     let offer = crosslab_protocol::FileTransferOffer::new(
         crosslab_protocol::TransferId::from_bytes([0xed; 32]),
@@ -1234,43 +914,11 @@ async fn file_transfer_destination_cancel_wins_after_stream_finish_before_platfo
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn file_transfer_cancel_after_ready_consumes_remote_authority() {
-    let (left_state, right_state) = reciprocal_identities();
-    let left_device_id = left_state.local_credential().device_id();
-    let left_signer = Arc::new(SigningKey::from_secret_bytes([0x74; 32]));
-    let right_signer = Arc::new(SigningKey::from_secret_bytes([0x75; 32]));
-    let mut right_policy = PolicyState::new();
-    right_policy
-        .set_rule_effect(
-            left_device_id,
-            CapabilityId::parse("files.transfer").unwrap(),
-            OperationName::parse("receive").unwrap(),
-            RuleEffect::Allow,
-        )
-        .unwrap();
-
-    let left = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
-        left_state,
-        left_signer,
-        PolicyState::new(),
-        ClipboardAvailability::default(),
-        FileTransferAvailability::new(true),
-    )
-    .unwrap();
-    let right = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
-        right_state,
-        right_signer,
-        right_policy,
-        ClipboardAvailability::default(),
-        FileTransferAvailability::new(true),
-    )
-    .unwrap();
+    let (left, right, _) = file_transfer_pair();
     let mut right_requests = right.take_file_transfer_requests().unwrap();
     let mut right_data = right.take_file_transfer_data().unwrap();
 
-    left.candidate_available(route_for(&right)).unwrap();
-    right.candidate_available(route_for(&left)).unwrap();
-    let mut left_status = left.subscribe_status();
-    wait_capability_negotiated(&mut left_status, "files.transfer").await;
+    connect_file_transfer_pair(&left, &right).await;
 
     let offer = crosslab_protocol::FileTransferOffer::new(
         crosslab_protocol::TransferId::from_bytes([0xe3; 32]),
@@ -1361,43 +1009,7 @@ async fn file_transfer_cancel_after_ready_consumes_remote_authority() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn clipboard_v1_round_trips_explicit_write_and_read() {
-    let (left_state, right_state) = reciprocal_identities();
-    let left_device_id = left_state.local_credential().device_id();
-    let left_signer = Arc::new(SigningKey::from_secret_bytes([0x74; 32]));
-    let right_signer = Arc::new(SigningKey::from_secret_bytes([0x75; 32]));
-    let mut right_policy = PolicyState::new();
-    right_policy
-        .set_rule_effect(
-            left_device_id,
-            CapabilityId::parse("clipboard.write").unwrap(),
-            OperationName::parse("set").unwrap(),
-            RuleEffect::Allow,
-        )
-        .unwrap();
-    right_policy
-        .set_rule_effect(
-            left_device_id,
-            CapabilityId::parse("clipboard.read").unwrap(),
-            OperationName::parse("get").unwrap(),
-            RuleEffect::Allow,
-        )
-        .unwrap();
-
-    let availability = ClipboardAvailability::new(true, true);
-    let left = TrustedPresenceAgent::spawn_with_policy_and_clipboard(
-        left_state,
-        left_signer,
-        PolicyState::new(),
-        availability,
-    )
-    .unwrap();
-    let right = TrustedPresenceAgent::spawn_with_policy_and_clipboard(
-        right_state,
-        right_signer,
-        right_policy,
-        availability,
-    )
-    .unwrap();
+    let (left, right, _) = clipboard_pair(true);
     let mut right_clipboard = right.take_clipboard_requests().unwrap();
 
     left.candidate_available(route_for(&right)).unwrap();
@@ -1455,35 +1067,7 @@ async fn clipboard_v1_round_trips_explicit_write_and_read() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn clipboard_pending_work_is_cancelled_on_disconnect() {
-    let (left_state, right_state) = reciprocal_identities();
-    let left_device_id = left_state.local_credential().device_id();
-    let left_signer = Arc::new(SigningKey::from_secret_bytes([0x74; 32]));
-    let right_signer = Arc::new(SigningKey::from_secret_bytes([0x75; 32]));
-    let mut right_policy = PolicyState::new();
-    right_policy
-        .set_rule_effect(
-            left_device_id,
-            CapabilityId::parse("clipboard.write").unwrap(),
-            OperationName::parse("set").unwrap(),
-            RuleEffect::Allow,
-        )
-        .unwrap();
-
-    let availability = ClipboardAvailability::new(true, true);
-    let left = TrustedPresenceAgent::spawn_with_policy_and_clipboard(
-        left_state,
-        left_signer,
-        PolicyState::new(),
-        availability,
-    )
-    .unwrap();
-    let right = TrustedPresenceAgent::spawn_with_policy_and_clipboard(
-        right_state,
-        right_signer,
-        right_policy,
-        availability,
-    )
-    .unwrap();
+    let (left, right, _) = clipboard_pair(false);
     let mut right_clipboard = right.take_clipboard_requests().unwrap();
 
     left.candidate_available(route_for(&right)).unwrap();
@@ -1509,37 +1093,7 @@ async fn clipboard_pending_work_is_cancelled_on_disconnect() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn clipboard_pending_work_is_cancelled_on_policy_replacement() {
-    let (left_state, right_state) = reciprocal_identities();
-    let left_device_id = left_state.local_credential().device_id();
-    let right_device_id = right_state.local_credential().device_id();
-    let left_signer = Arc::new(SigningKey::from_secret_bytes([0x74; 32]));
-    let right_signer = Arc::new(SigningKey::from_secret_bytes([0x75; 32]));
-
-    let mut right_policy = PolicyState::new();
-    right_policy
-        .set_rule_effect(
-            left_device_id,
-            CapabilityId::parse("clipboard.write").unwrap(),
-            OperationName::parse("set").unwrap(),
-            RuleEffect::Allow,
-        )
-        .unwrap();
-
-    let availability = ClipboardAvailability::new(true, true);
-    let left = TrustedPresenceAgent::spawn_with_policy_and_clipboard(
-        left_state,
-        left_signer,
-        PolicyState::new(),
-        availability,
-    )
-    .unwrap();
-    let right = TrustedPresenceAgent::spawn_with_policy_and_clipboard(
-        right_state,
-        right_signer,
-        right_policy,
-        availability,
-    )
-    .unwrap();
+    let (left, right, right_device_id) = clipboard_pair(false);
     let mut right_clipboard = right.take_clipboard_requests().unwrap();
 
     left.candidate_available(route_for(&right)).unwrap();
@@ -1580,36 +1134,7 @@ async fn clipboard_pending_work_is_cancelled_on_policy_replacement() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn clipboard_pending_work_does_not_cross_reconnect() {
-    let (left_state, right_state) = reciprocal_identities();
-    let left_device_id = left_state.local_credential().device_id();
-    let left_signer = Arc::new(SigningKey::from_secret_bytes([0x74; 32]));
-    let right_signer = Arc::new(SigningKey::from_secret_bytes([0x75; 32]));
-
-    let mut right_policy = PolicyState::new();
-    right_policy
-        .set_rule_effect(
-            left_device_id,
-            CapabilityId::parse("clipboard.write").unwrap(),
-            OperationName::parse("set").unwrap(),
-            RuleEffect::Allow,
-        )
-        .unwrap();
-
-    let availability = ClipboardAvailability::new(true, true);
-    let left = TrustedPresenceAgent::spawn_with_policy_and_clipboard(
-        left_state,
-        left_signer,
-        PolicyState::new(),
-        availability,
-    )
-    .unwrap();
-    let right = TrustedPresenceAgent::spawn_with_policy_and_clipboard(
-        right_state,
-        right_signer,
-        right_policy,
-        availability,
-    )
-    .unwrap();
+    let (left, right, _) = clipboard_pair(false);
     let mut right_clipboard = right.take_clipboard_requests().unwrap();
 
     left.candidate_available(route_for(&right)).unwrap();
@@ -1677,6 +1202,89 @@ async fn clipboard_pending_work_does_not_cross_reconnect() {
         .await
         .unwrap();
     fresh.await.unwrap();
+}
+
+fn clipboard_pair(allow_read: bool) -> (TrustedPresenceAgent, TrustedPresenceAgent, DeviceId) {
+    let (left_state, right_state) = reciprocal_identities();
+    let source_device_id = left_state.local_credential().device_id();
+    let right_device_id = right_state.local_credential().device_id();
+    let mut right_policy = PolicyState::new();
+    right_policy
+        .set_rule_effect(
+            source_device_id,
+            CapabilityId::parse("clipboard.write").unwrap(),
+            OperationName::parse("set").unwrap(),
+            RuleEffect::Allow,
+        )
+        .unwrap();
+    if allow_read {
+        right_policy
+            .set_rule_effect(
+                source_device_id,
+                CapabilityId::parse("clipboard.read").unwrap(),
+                OperationName::parse("get").unwrap(),
+                RuleEffect::Allow,
+            )
+            .unwrap();
+    }
+
+    let availability = ClipboardAvailability::new(true, true);
+    let left = TrustedPresenceAgent::spawn_with_policy_and_clipboard(
+        left_state,
+        Arc::new(SigningKey::from_secret_bytes([0x74; 32])),
+        PolicyState::new(),
+        availability,
+    )
+    .unwrap();
+    let right = TrustedPresenceAgent::spawn_with_policy_and_clipboard(
+        right_state,
+        Arc::new(SigningKey::from_secret_bytes([0x75; 32])),
+        right_policy,
+        availability,
+    )
+    .unwrap();
+
+    (left, right, right_device_id)
+}
+
+fn file_transfer_pair() -> (TrustedPresenceAgent, TrustedPresenceAgent, DeviceId) {
+    let (left_state, right_state) = reciprocal_identities();
+    let source_device_id = left_state.local_credential().device_id();
+    let mut right_policy = PolicyState::new();
+    right_policy
+        .set_rule_effect(
+            source_device_id,
+            CapabilityId::parse("files.transfer").unwrap(),
+            OperationName::parse("receive").unwrap(),
+            RuleEffect::Allow,
+        )
+        .unwrap();
+
+    let left = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
+        left_state,
+        Arc::new(SigningKey::from_secret_bytes([0x74; 32])),
+        PolicyState::new(),
+        ClipboardAvailability::default(),
+        FileTransferAvailability::new(true),
+    )
+    .unwrap();
+    let right = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
+        right_state,
+        Arc::new(SigningKey::from_secret_bytes([0x75; 32])),
+        right_policy,
+        ClipboardAvailability::default(),
+        FileTransferAvailability::new(true),
+    )
+    .unwrap();
+
+    (left, right, source_device_id)
+}
+
+async fn connect_file_transfer_pair(left: &TrustedPresenceAgent, right: &TrustedPresenceAgent) {
+    left.candidate_available(route_for(right)).unwrap();
+    right.candidate_available(route_for(left)).unwrap();
+    let mut status = left.subscribe_status();
+    wait_capability_negotiated(&mut status, "files.transfer").await;
 }
 
 fn reciprocal_identities() -> (ProductIdentityState, ProductIdentityState) {

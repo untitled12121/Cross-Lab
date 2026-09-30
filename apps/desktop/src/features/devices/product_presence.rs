@@ -69,6 +69,10 @@ impl DesktopProductPresenceController {
             ClipboardAvailability::new(true, true),
             FileTransferAvailability::new(true),
         )?);
+        let discovery_runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|_| DesktopPresenceError::Thread)?;
         let status = agent.subscribe_status();
         let (file_transfer, file_transfer_offers, file_transfer_statuses) =
             LinuxFileTransferWorkerHandle::start(Arc::clone(&agent))?;
@@ -78,14 +82,7 @@ impl DesktopProductPresenceController {
         thread::Builder::new()
             .name("crosslab-desktop-presence".into())
             .spawn(move || {
-                let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                else {
-                    let _ = discovery_agent.network_lost();
-                    return;
-                };
-                runtime.block_on(run_discovery(discovery_agent, control_rx));
+                discovery_runtime.block_on(run_discovery(discovery_agent, control_rx));
             })
             .map_err(|_| DesktopPresenceError::Thread)?;
 

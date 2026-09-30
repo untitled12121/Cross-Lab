@@ -633,7 +633,12 @@ impl ControlCenterPage {
         let view = cx.entity();
 
         cx.spawn_in(window, async move |_, window| {
-            let path = receiver.await.ok()?.ok()??.into_iter().next();
+            let path = receiver
+                .await
+                .ok()
+                .and_then(Result::ok)
+                .flatten()
+                .and_then(|paths| paths.into_iter().next());
             view.update_in(window, move |page, _, cx| {
                 page.file_transfer_send_dialog_open = false;
                 if let Some(path) = path {
