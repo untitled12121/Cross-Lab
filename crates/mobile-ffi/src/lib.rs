@@ -33,7 +33,8 @@ pub use file_transfer::{
     MobileFileTransferCancellationKind, MobileFileTransferChunkOutcome,
     MobileFileTransferChunkResult, MobileFileTransferDataEvent, MobileFileTransferDataKind,
     MobileFileTransferError, MobileFileTransferHasher, MobileFileTransferRequest,
-    MobileFileTransferResult, MobileFileTransferSourceStream, MobileFileTransferTerminalOutcome,
+    MobileFileTransferResult, MobileFileTransferRetainedKind, MobileFileTransferRetainedMatch,
+    MobileFileTransferSourceStream, MobileFileTransferState, MobileFileTransferTerminalOutcome,
     MobileFileTransferVerifier, MobilePreparedFileTransfer,
 };
 pub use identity_store::{MobileIdentityCommit, MobileIdentityStoreError};

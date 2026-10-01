@@ -2,8 +2,11 @@ use core::fmt;
 use std::sync::{Arc, Mutex};
 
 use crosslab_agent::{
-    FileTransferChunkError, FileTransferDataEvent, FileTransferHasher, FileTransferIntegrityError,
-    FileTransferOperationError, FileTransferRequest, FileTransferSourceStream, FileTransferVerifier,
+    FileTransferChunkError, FileTransferCompletionTombstone, FileTransferDataEvent,
+    FileTransferHasher, FileTransferIdentity, FileTransferIntegrityError, FileTransferLocalLocator,
+    FileTransferOperationError, FileTransferPartialState, FileTransferRecoveryAction,
+    FileTransferRequest, FileTransferSourceStream, FileTransferStateError, FileTransferStateMatch,
+    FileTransferStateSnapshot, FileTransferVerifier,
 };
 use crosslab_identity::DeviceId;
 use crosslab_protocol::{
@@ -285,6 +288,158 @@ impl MobileFileTransferRequest {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum MobileFileTransferRetainedKind {
+    New,
+    Partial,
+    AlreadyComplete,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct MobileFileTransferRetainedMatch {
+    pub kind: MobileFileTransferRetainedKind,
+    pub durable_offset: Option<u64>,
+    pub local_locator: Option<Vec<u8>>,
+    pub truncate_to: Option<u64>,
+}
+
+#[derive(uniffi::Object)]
+pub struct MobileFileTransferState {
+    state: Mutex<FileTransferStateSnapshot>,
+}
+
+impl fmt::Debug for MobileFileTransferState {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let state = self.state.lock().ok();
+        formatter
+            .debug_struct("MobileFileTransferState")
+            .field("state", &state.as_deref())
+            .finish()
+    }
+}
+
+#[uniffi::export]
+impl MobileFileTransferState {
+    #[uniffi::constructor]
+    pub fn new(encoded: Option<Vec<u8>>) -> Result<Self, MobileFileTransferError> {
+        let state = match encoded {
+            Some(encoded) => FileTransferStateSnapshot::decode(&encoded)?,
+            None => FileTransferStateSnapshot::default(),
+        };
+        Ok(Self {
+            state: Mutex::new(state),
+        })
+    }
+
+    pub fn match_request(
+        &self,
+        request: Arc<MobileFileTransferRequest>,
+        partial_file_len: Option<u64>,
+    ) -> Result<MobileFileTransferRetainedMatch, MobileFileTransferError> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| MobileFileTransferError::StateUnavailable)?;
+        let matched = state.find(request.source_device_id, &request.offer)?;
+        Ok(match matched {
+            None => MobileFileTransferRetainedMatch {
+                kind: MobileFileTransferRetainedKind::New,
+                durable_offset: None,
+                local_locator: None,
+                truncate_to: None,
+            },
+            Some(FileTransferStateMatch::Partial(partial)) => {
+                let truncate_to = match partial_file_len {
+                    Some(length) => match partial.recovery_action(length)? {
+                        FileTransferRecoveryAction::Keep => None,
+                        FileTransferRecoveryAction::TruncateTo(offset) => Some(offset),
+                    },
+                    None => None,
+                };
+                MobileFileTransferRetainedMatch {
+                    kind: MobileFileTransferRetainedKind::Partial,
+                    durable_offset: Some(partial.durable_offset()),
+                    local_locator: Some(partial.locator().bytes().to_vec()),
+                    truncate_to,
+                }
+            }
+            Some(FileTransferStateMatch::AlreadyComplete(_)) => MobileFileTransferRetainedMatch {
+                kind: MobileFileTransferRetainedKind::AlreadyComplete,
+                durable_offset: Some(request.offer.file_size()),
+                local_locator: None,
+                truncate_to: None,
+            },
+        })
+    }
+
+    pub fn upsert_partial(
+        &self,
+        request: Arc<MobileFileTransferRequest>,
+        durable_offset: u64,
+        local_locator: Vec<u8>,
+        updated_at_unix_secs: u64,
+    ) -> Result<(), MobileFileTransferError> {
+        let identity =
+            FileTransferIdentity::new(request.source_device_id, request.offer.clone());
+        let locator = FileTransferLocalLocator::new(local_locator)?;
+        let partial =
+            FileTransferPartialState::new(identity, durable_offset, locator, updated_at_unix_secs)?;
+        self.state
+            .lock()
+            .map_err(|_| MobileFileTransferError::StateUnavailable)?
+            .upsert_partial(partial)
+            .map_err(MobileFileTransferError::from)
+    }
+
+    pub fn mark_completed(
+        &self,
+        request: Arc<MobileFileTransferRequest>,
+        updated_at_unix_secs: u64,
+    ) -> Result<(), MobileFileTransferError> {
+        let identity =
+            FileTransferIdentity::new(request.source_device_id, request.offer.clone());
+        let completed = FileTransferCompletionTombstone::new(identity, updated_at_unix_secs);
+        self.state
+            .lock()
+            .map_err(|_| MobileFileTransferError::StateUnavailable)?
+            .mark_completed(completed)
+            .map_err(MobileFileTransferError::from)
+    }
+
+    pub fn remove(
+        &self,
+        transfer_id_bytes: Vec<u8>,
+    ) -> Result<bool, MobileFileTransferError> {
+        let transfer_id = transfer_id(transfer_id_bytes)?;
+        Ok(self
+            .state
+            .lock()
+            .map_err(|_| MobileFileTransferError::StateUnavailable)?
+            .remove(transfer_id))
+    }
+
+    pub fn prune_expired(
+        &self,
+        now_unix_secs: u64,
+        max_age_secs: u64,
+    ) -> Result<u64, MobileFileTransferError> {
+        let removed = self
+            .state
+            .lock()
+            .map_err(|_| MobileFileTransferError::StateUnavailable)?
+            .prune_expired(now_unix_secs, max_age_secs);
+        u64::try_from(removed).map_err(|_| MobileFileTransferError::RetainedStateLimit)
+    }
+
+    pub fn encode(&self) -> Result<Vec<u8>, MobileFileTransferError> {
+        self.state
+            .lock()
+            .map_err(|_| MobileFileTransferError::StateUnavailable)?
+            .encode()
+            .map_err(MobileFileTransferError::from)
+    }
+}
+
 #[derive(uniffi::Object)]
 pub struct MobilePreparedFileTransfer {
     offer: FileTransferOffer,
@@ -512,6 +667,10 @@ pub enum MobileFileTransferError {
     InvalidIdentifier,
     InvalidOffer,
     IntegrityFailed,
+    RetainedStateInvalid,
+    RetainedStateMismatch,
+    RetainedStateComplete,
+    RetainedStateLimit,
     NotConnected,
     NotNegotiated,
     InvalidResponse,
@@ -536,6 +695,10 @@ impl fmt::Display for MobileFileTransferError {
             Self::InvalidIdentifier => "file transfer identifier is invalid",
             Self::InvalidOffer => "file transfer offer is invalid",
             Self::IntegrityFailed => "file transfer integrity verification failed",
+            Self::RetainedStateInvalid => "file transfer retained state is invalid",
+            Self::RetainedStateMismatch => "file transfer retained identity does not match",
+            Self::RetainedStateComplete => "file transfer is already complete",
+            Self::RetainedStateLimit => "file transfer retained-state limit is exhausted",
             Self::NotConnected => "file transfer peer is not connected",
             Self::NotNegotiated => "file transfer capability is not negotiated",
             Self::InvalidResponse => "file transfer peer returned an invalid response",
@@ -598,6 +761,27 @@ impl From<FileTransferProfileError> for MobileFileTransferError {
             FileTransferProfileError::InvalidResumeOffset => Self::InvalidResumeOffset,
             FileTransferProfileError::InvalidDisplayName
             | FileTransferProfileError::TransferIdMismatch => Self::InvalidOffer,
+        }
+    }
+}
+
+impl From<FileTransferStateError> for MobileFileTransferError {
+    fn from(error: FileTransferStateError) -> Self {
+        match error {
+            FileTransferStateError::IdentityMismatch => Self::RetainedStateMismatch,
+            FileTransferStateError::AlreadyComplete => Self::RetainedStateComplete,
+            FileTransferStateError::TooManyEntries | FileTransferStateError::SnapshotTooLarge => {
+                Self::RetainedStateLimit
+            }
+            FileTransferStateError::InvalidCheckpoint => Self::InvalidResumeOffset,
+            FileTransferStateError::InvalidLocator
+            | FileTransferStateError::CheckpointRegression
+            | FileTransferStateError::PartialShorterThanCheckpoint
+            | FileTransferStateError::UnsupportedSchema
+            | FileTransferStateError::MalformedSnapshot
+            | FileTransferStateError::SnapshotDigestMismatch
+            | FileTransferStateError::DuplicateTransferId
+            | FileTransferStateError::InvalidOffer => Self::RetainedStateInvalid,
         }
     }
 }
@@ -665,6 +849,44 @@ mod tests {
         let verifier = prepared.verifier();
         verifier.update(b"changed!".to_vec()).unwrap();
         assert_eq!(verifier.finish(), Err(MobileFileTransferError::IntegrityFailed));
+    }
+
+    #[test]
+    fn retained_state_round_trips_partial_identity_and_recovery() {
+        let request = Arc::new(MobileFileTransferRequest {
+            request_id: RequestId::from_bytes([0x11; 16]),
+            source_device_id: DeviceId::from_bytes([0x22; 32]),
+            offer: FileTransferOffer::new(
+                TransferId::from_bytes([0x33; 32]),
+                "payload.bin".into(),
+                2_097_152,
+                crosslab_protocol::FileTransferDigest::from_bytes([0x44; 32]),
+            )
+            .unwrap(),
+        });
+        let state = MobileFileTransferState::new(None).unwrap();
+        state
+            .upsert_partial(
+                Arc::clone(&request),
+                1_048_576,
+                b"content://private/local".to_vec(),
+                10,
+            )
+            .unwrap();
+
+        let encoded = state.encode().unwrap();
+        let restored = MobileFileTransferState::new(Some(encoded)).unwrap();
+        let matched = restored
+            .match_request(Arc::clone(&request), Some(1_048_600))
+            .unwrap();
+
+        assert_eq!(matched.kind, MobileFileTransferRetainedKind::Partial);
+        assert_eq!(matched.durable_offset, Some(1_048_576));
+        assert_eq!(matched.truncate_to, Some(1_048_576));
+        assert_eq!(
+            matched.local_locator.as_deref(),
+            Some(b"content://private/local".as_slice())
+        );
     }
 
     #[test]

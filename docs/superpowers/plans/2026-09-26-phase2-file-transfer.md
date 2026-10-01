@@ -95,7 +95,7 @@ PR #70 completed the first platform slice with a private atomic retained-state s
 
 ## Task 5 — Android platform adapter — Active
 
-The first Task 5 slice is on `phase2-android-file-transfer`: mobile FFI exposes bounded file-transfer request/cancellation/data streams, streaming source hashing and destination verification, and typed send/receive operations without exposing session authority. Android adds a local SAF/ContentResolver adapter with exact source metadata, explicit persistable-grant helpers, private transfer-ID-keyed partial files, durable-offset truncation, and bounded publication copying. Capability advertisement remains disabled until the worker/recovery/owner destination path is complete.
+The first Task 5 slice is on `phase2-android-file-transfer`: mobile FFI exposes bounded file-transfer request/cancellation/data streams, streaming source hashing and destination verification, and typed send/receive operations without exposing session authority. Android adds a local SAF/ContentResolver adapter with exact source metadata, explicit persistable-grant helpers, private transfer-ID-keyed partial files, durable-offset truncation, bounded publication copying, and an AtomicFile no-backup store for the shared retained-state encoding. Capability advertisement remains disabled until the worker/recovery/owner destination path is complete.
 
 - use Storage Access Framework / ContentResolver boundaries;
 - retain URI permission only after explicit owner grant where required;
