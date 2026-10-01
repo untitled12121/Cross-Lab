@@ -189,11 +189,9 @@ impl MobileFileTransferState {
         let partial_ids = expired
             .iter()
             .filter_map(|entry| match entry {
-                FileTransferRetainedState::Partial(partial) => {
-                    Some(MobileExpiredFileTransfer {
-                        transfer_id: partial.identity().transfer_id().to_bytes().to_vec(),
-                    })
-                }
+                FileTransferRetainedState::Partial(partial) => Some(MobileExpiredFileTransfer {
+                    transfer_id: partial.identity().transfer_id().to_bytes().to_vec(),
+                }),
                 FileTransferRetainedState::Completed(_) => None,
             })
             .collect::<Vec<_>>();
@@ -208,6 +206,50 @@ impl MobileFileTransferState {
 mod tests {
     use super::*;
     use crate::file_transfer::MobileFileTransferHasher;
+
+    #[test]
+    fn cleanup_expires_partials_before_completion_tombstones() {
+        let partial_hasher = MobileFileTransferHasher::new();
+        partial_hasher.update(b"partial".to_vec()).unwrap();
+        let partial_offer = partial_hasher.finish_new("partial.bin".into()).unwrap();
+
+        let completed_hasher = MobileFileTransferHasher::new();
+        completed_hasher.update(b"complete".to_vec()).unwrap();
+        let completed_offer = completed_hasher.finish_new("complete.bin".into()).unwrap();
+
+        let state = MobileFileTransferState::new(None).unwrap();
+        state
+            .upsert_partial(
+                vec![0x51; 32],
+                Arc::clone(&partial_offer),
+                0,
+                b"content://private/partial".to_vec(),
+                10,
+            )
+            .unwrap();
+        state
+            .mark_completed(vec![0x52; 32], Arc::clone(&completed_offer), 10)
+            .unwrap();
+
+        let expired = state.cleanup_expired(21, 10, 20).unwrap();
+        assert_eq!(expired.len(), 1);
+        assert_eq!(expired[0].transfer_id, partial_offer.transfer_id());
+
+        assert_eq!(
+            state
+                .find(vec![0x51; 32], partial_offer)
+                .unwrap()
+                .kind(),
+            MobileFileTransferRecoveryKind::None
+        );
+        assert_eq!(
+            state
+                .find(vec![0x52; 32], completed_offer)
+                .unwrap()
+                .kind(),
+            MobileFileTransferRecoveryKind::AlreadyComplete
+        );
+    }
 
     #[test]
     fn retained_state_round_trips_redacted_locator() {

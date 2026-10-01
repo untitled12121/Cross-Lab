@@ -23,8 +23,9 @@ pub use retained::{
 };
 pub use runtime::{
     MobileFileTransferAcceptance, MobileFileTransferAcceptanceKind, MobileFileTransferCancellation,
-    MobileFileTransferDataEvent, MobileFileTransferDataKind, MobileFileTransferRequest,
-    MobileFileTransferResult, MobileFileTransferSourceStream, MobileFileTransferTerminalOutcome,
+    MobileFileTransferChunkOutcome, MobileFileTransferDataEvent, MobileFileTransferDataKind,
+    MobileFileTransferRequest, MobileFileTransferResult, MobileFileTransferSourceStream,
+    MobileFileTransferTerminalOutcome,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Error)]

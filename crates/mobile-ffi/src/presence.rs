@@ -19,9 +19,10 @@ use crate::{
         MobileClipboardRequest, request_id,
     },
     file_transfer::{
-        MobileFileTransferAcceptance, MobileFileTransferCancellation, MobileFileTransferDataEvent,
-        MobileFileTransferError, MobileFileTransferOffer, MobileFileTransferRequest,
-        MobileFileTransferResult, MobileFileTransferSourceStream, MobileFileTransferTerminalOutcome,
+        MobileFileTransferAcceptance, MobileFileTransferCancellation,
+        MobileFileTransferChunkOutcome, MobileFileTransferDataEvent, MobileFileTransferError,
+        MobileFileTransferOffer, MobileFileTransferRequest, MobileFileTransferResult,
+        MobileFileTransferSourceStream, MobileFileTransferTerminalOutcome,
         request_id as file_request_id, stream_id as file_stream_id,
         transfer_id as file_transfer_id,
     },
@@ -409,7 +410,9 @@ impl MobileTrustedPresenceAgent {
             tokio::time::timeout(Duration::from_millis(timeout_ms), requests.recv()).await
         });
         match request {
-            Ok(Some(request)) => Ok(Some(Arc::new(MobileFileTransferRequest::from_agent(request)))),
+            Ok(Some(request)) => Ok(Some(Arc::new(MobileFileTransferRequest::from_agent(
+                request,
+            )))),
             Ok(None) => Err(MobileFileTransferError::Closed),
             Err(_) => Ok(None),
         }
@@ -455,7 +458,9 @@ impl MobileTrustedPresenceAgent {
             tokio::time::timeout(Duration::from_millis(timeout_ms), data.recv()).await
         });
         match event {
-            Ok(Some(event)) => Ok(Some(Arc::new(MobileFileTransferDataEvent::from_agent(event)))),
+            Ok(Some(event)) => Ok(Some(Arc::new(MobileFileTransferDataEvent::from_agent(
+                event,
+            )))),
             Ok(None) => Err(MobileFileTransferError::Closed),
             Err(_) => Ok(None),
         }
@@ -491,9 +496,7 @@ impl MobileTrustedPresenceAgent {
             .lock()
             .map_err(|_| MobileFileTransferError::StateUnavailable)?;
         runtime
-            .block_on(agent.cancel_file_transfer_offer(file_transfer_id(
-                transfer_id_bytes,
-            )?))
+            .block_on(agent.cancel_file_transfer_offer(file_transfer_id(transfer_id_bytes)?))
             .map_err(MobileFileTransferError::from)
     }
 
@@ -509,9 +512,7 @@ impl MobileTrustedPresenceAgent {
             .lock()
             .map_err(|_| MobileFileTransferError::StateUnavailable)?;
         runtime
-            .block_on(agent.decline_file_transfer_request(file_request_id(
-                request_id_bytes,
-            )?))
+            .block_on(agent.decline_file_transfer_request(file_request_id(request_id_bytes)?))
             .map_err(MobileFileTransferError::from)
     }
 
@@ -528,10 +529,12 @@ impl MobileTrustedPresenceAgent {
             .lock()
             .map_err(|_| MobileFileTransferError::StateUnavailable)?;
         runtime
-            .block_on(agent.complete_file_transfer_ready(
-                file_request_id(request_id_bytes)?,
-                resume_offset,
-            ))
+            .block_on(
+                agent.complete_file_transfer_ready(
+                    file_request_id(request_id_bytes)?,
+                    resume_offset,
+                ),
+            )
             .map_err(MobileFileTransferError::from)
     }
 
@@ -547,9 +550,9 @@ impl MobileTrustedPresenceAgent {
             .lock()
             .map_err(|_| MobileFileTransferError::StateUnavailable)?;
         runtime
-            .block_on(agent.complete_file_transfer_already_complete(file_request_id(
-                request_id_bytes,
-            )?))
+            .block_on(
+                agent.complete_file_transfer_already_complete(file_request_id(request_id_bytes)?),
+            )
             .map_err(MobileFileTransferError::from)
     }
 
@@ -565,9 +568,7 @@ impl MobileTrustedPresenceAgent {
             .lock()
             .map_err(|_| MobileFileTransferError::StateUnavailable)?;
         runtime
-            .block_on(agent.open_file_transfer_stream(file_transfer_id(
-                transfer_id_bytes,
-            )?))
+            .block_on(agent.open_file_transfer_stream(file_transfer_id(transfer_id_bytes)?))
             .map(MobileFileTransferSourceStream::from_agent)
             .map(Arc::new)
             .map_err(MobileFileTransferError::from)
@@ -577,17 +578,25 @@ impl MobileTrustedPresenceAgent {
         &self,
         stream: Arc<MobileFileTransferSourceStream>,
         bytes: Vec<u8>,
-    ) -> Result<(), MobileFileTransferError> {
-        let agent = self
-            .agent_handle()
-            .map_err(|_| MobileFileTransferError::Closed)?;
-        let runtime = self
-            .file_transfer_operation_runtime
-            .lock()
-            .map_err(|_| MobileFileTransferError::StateUnavailable)?;
-        runtime
-            .block_on(agent.send_file_transfer_chunk(stream.stream(), bytes))
-            .map_err(MobileFileTransferError::from)
+    ) -> MobileFileTransferChunkOutcome {
+        let Ok(agent) = self.agent_handle() else {
+            return MobileFileTransferChunkOutcome::Closed;
+        };
+        let Ok(runtime) = self.file_transfer_operation_runtime.lock() else {
+            return MobileFileTransferChunkOutcome::Closed;
+        };
+        match runtime.block_on(agent.send_file_transfer_chunk(stream.stream(), bytes)) {
+            Ok(()) => MobileFileTransferChunkOutcome::Sent,
+            Err(crosslab_agent::FileTransferChunkError::Backpressure(_)) => {
+                MobileFileTransferChunkOutcome::Backpressure
+            }
+            Err(crosslab_agent::FileTransferChunkError::TooLarge(_)) => {
+                MobileFileTransferChunkOutcome::TooLarge
+            }
+            Err(crosslab_agent::FileTransferChunkError::Closed(_)) => {
+                MobileFileTransferChunkOutcome::Closed
+            }
+        }
     }
 
     pub fn finish_file_transfer_stream(
@@ -638,9 +647,7 @@ impl MobileTrustedPresenceAgent {
             .lock()
             .map_err(|_| MobileFileTransferError::StateUnavailable)?;
         runtime
-            .block_on(agent.cancel_file_transfer_receive(file_transfer_id(
-                transfer_id_bytes,
-            )?))
+            .block_on(agent.cancel_file_transfer_receive(file_transfer_id(transfer_id_bytes)?))
             .map(|stream| stream.map(|stream_id| stream_id.to_bytes().to_vec()))
             .map_err(MobileFileTransferError::from)
     }

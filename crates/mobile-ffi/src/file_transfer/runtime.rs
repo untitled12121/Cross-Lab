@@ -1,9 +1,7 @@
 use core::fmt;
 use std::sync::{Arc, Mutex};
 
-use crosslab_agent::{
-    FileTransferDataEvent, FileTransferRequest, FileTransferSourceStream,
-};
+use crosslab_agent::{FileTransferDataEvent, FileTransferRequest, FileTransferSourceStream};
 use crosslab_identity::DeviceId;
 use crosslab_protocol::{
     FileTransferAcceptance, FileTransferOffer, FileTransferResult, FileTransferTerminalOutcome,
@@ -24,6 +22,14 @@ pub enum MobileFileTransferDataKind {
     Chunk,
     Finished,
     Cancelled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum MobileFileTransferChunkOutcome {
+    Sent,
+    Backpressure,
+    TooLarge,
+    Closed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
@@ -126,7 +132,8 @@ impl MobileFileTransferCancellation {
 #[uniffi::export]
 impl MobileFileTransferCancellation {
     pub fn request_id(&self) -> Option<Vec<u8>> {
-        self.request_id.map(|request_id| request_id.to_bytes().to_vec())
+        self.request_id
+            .map(|request_id| request_id.to_bytes().to_vec())
     }
 
     pub fn transfer_id(&self) -> Vec<u8> {

@@ -30,13 +30,12 @@ pub use dto::{
 pub use error::MobileRuntimeError;
 pub use file_transfer::{
     MobileExpiredFileTransfer, MobileFileTransferAcceptance, MobileFileTransferAcceptanceKind,
-    MobileFileTransferCancellation,
-    MobileFileTransferDataEvent, MobileFileTransferDataKind, MobileFileTransferError,
-    MobileFileTransferHasher, MobileFileTransferOffer, MobileFileTransferRecovery,
-    MobileFileTransferRecoveryKind, MobileFileTransferRequest, MobileFileTransferResult,
-    MobileFileTransferSourceStream, MobileFileTransferState, MobileFileTransferTerminalOutcome,
-    MobileFileTransferVerifier,
-};
+    MobileFileTransferCancellation, MobileFileTransferChunkOutcome, MobileFileTransferDataEvent,
+    MobileFileTransferDataKind, MobileFileTransferError, MobileFileTransferHasher,
+    MobileFileTransferOffer, MobileFileTransferRecovery, MobileFileTransferRecoveryKind,
+    MobileFileTransferRequest, MobileFileTransferResult, MobileFileTransferSourceStream,
+    MobileFileTransferState, MobileFileTransferTerminalOutcome, MobileFileTransferVerifier,
+}
 pub use identity_store::{MobileIdentityCommit, MobileIdentityStoreError};
 pub use pairing::{
     MobilePairingBootstrap, MobilePairingBootstrapError, MobilePairingBootstrapSummary,
