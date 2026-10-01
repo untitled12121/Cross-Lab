@@ -7,6 +7,7 @@ mod clipboard;
 mod development;
 mod dto;
 mod error;
+mod file_transfer;
 mod identity_store;
 mod network;
 mod pairing;
@@ -27,6 +28,14 @@ pub use dto::{
     MobileRuntimeSnapshot, MobileSessionState, MobileTransportSecurity, MobileTrustState,
 };
 pub use error::MobileRuntimeError;
+pub use file_transfer::{
+    MobileFileTransferAcceptance, MobileFileTransferAcceptanceKind, MobileFileTransferCancellation,
+    MobileFileTransferDataEvent, MobileFileTransferDataKind, MobileFileTransferError,
+    MobileFileTransferHasher, MobileFileTransferOffer, MobileFileTransferRecovery,
+    MobileFileTransferRecoveryKind, MobileFileTransferRequest, MobileFileTransferResult,
+    MobileFileTransferSourceStream, MobileFileTransferState, MobileFileTransferTerminalOutcome,
+    MobileFileTransferVerifier,
+};
 pub use identity_store::{MobileIdentityCommit, MobileIdentityStoreError};
 pub use pairing::{
     MobilePairingBootstrap, MobilePairingBootstrapError, MobilePairingBootstrapSummary,
