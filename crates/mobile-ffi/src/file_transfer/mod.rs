@@ -115,7 +115,6 @@ impl From<FileTransferOperationError> for MobileFileTransferError {
     }
 }
 
-
 impl From<FileTransferIntegrityError> for MobileFileTransferError {
     fn from(_: FileTransferIntegrityError) -> Self {
         Self::Integrity

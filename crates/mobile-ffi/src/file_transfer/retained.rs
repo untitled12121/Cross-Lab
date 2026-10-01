@@ -236,17 +236,11 @@ mod tests {
         assert_eq!(expired[0].transfer_id, partial_offer.transfer_id());
 
         assert_eq!(
-            state
-                .find(vec![0x51; 32], partial_offer)
-                .unwrap()
-                .kind(),
+            state.find(vec![0x51; 32], partial_offer).unwrap().kind(),
             MobileFileTransferRecoveryKind::None
         );
         assert_eq!(
-            state
-                .find(vec![0x52; 32], completed_offer)
-                .unwrap()
-                .kind(),
+            state.find(vec![0x52; 32], completed_offer).unwrap().kind(),
             MobileFileTransferRecoveryKind::AlreadyComplete
         );
     }
