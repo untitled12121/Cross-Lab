@@ -9,14 +9,14 @@ pub use clipboard::{
     ClipboardPlatformError, ClipboardRequest,
 };
 pub use file_transfer::{
-    FileTransferAvailability, FileTransferChunkError, FileTransferCompletionTombstone,
-    FileTransferDataChunk, FileTransferDataEvent, FileTransferHash, FileTransferHasher,
-    FileTransferIdentity, FileTransferIntegrityError, FileTransferLocalLocator,
-    FileTransferOperationError, FileTransferPartialState, FileTransferRecoveryAction,
-    FileTransferRequest, FileTransferRetainedState, FileTransferSourceStream,
-    FileTransferStateError, FileTransferStateMatch, FileTransferStateSnapshot,
-    FileTransferVerifier, MAX_FILE_TRANSFER_LOCAL_LOCATOR_BYTES, MAX_FILE_TRANSFER_STATE_BYTES,
-    MAX_RETAINED_FILE_TRANSFERS,
+    FileTransferAvailability, FileTransferCancellation, FileTransferChunkError,
+    FileTransferCompletionTombstone, FileTransferDataChunk, FileTransferDataEvent,
+    FileTransferHash, FileTransferHasher, FileTransferIdentity, FileTransferIntegrityError,
+    FileTransferLocalLocator, FileTransferOperationError, FileTransferPartialState,
+    FileTransferRecoveryAction, FileTransferRequest, FileTransferRetainedState,
+    FileTransferSourceStream, FileTransferStateError, FileTransferStateMatch,
+    FileTransferStateSnapshot, FileTransferVerifier, MAX_FILE_TRANSFER_LOCAL_LOCATOR_BYTES,
+    MAX_FILE_TRANSFER_STATE_BYTES, MAX_RETAINED_FILE_TRANSFERS,
 };
 pub use presence::{
     PermissionRule, PermissionSnapshot, PresenceAgentError, PresenceDiscoveryInfo, PresencePhase,

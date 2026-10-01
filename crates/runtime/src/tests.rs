@@ -712,6 +712,62 @@ fn runtime_issues_and_cancels_exact_stream_authority() {
 }
 
 #[test]
+fn runtime_cancels_exact_operation_after_stream_admission() {
+    let fixture = Fixture::new();
+    let transport = TestTransport::new([0x8a; 32]);
+    let mut session = fixture.active_session(&transport);
+    activate_files_capability(&mut session);
+    let (policy, operation) = stream_policy_and_operation(&fixture, &session);
+    let operation_id = operation.id();
+    let context = session.context().unwrap();
+    let stream_id = StreamId::from_bytes([0x8b; 16]);
+    let open = DataStreamOpen::new(
+        context.session_id(),
+        stream_id,
+        operation_id,
+        files_capability(),
+        CapabilityVersion::new(1, 0),
+        receive_operation(),
+        StreamDirection::SourceToDestination,
+        0,
+    );
+    let mut runtime = RuntimeNode::new(
+        session,
+        &transport,
+        policy,
+        vec![files_local_capability()],
+        NetworkClass::Local,
+        NonZeroUsize::new(4).unwrap(),
+    )
+    .unwrap();
+    runtime.register_stream_operation(operation).unwrap();
+    transport.push_incoming_stream(
+        encode_data_stream_open(&open).unwrap(),
+        vec![b"must-not-be-delivered".to_vec()],
+    );
+
+    assert!(matches!(
+        runtime.receive_stream_one(&fixture.peer_trust, 11).unwrap(),
+        crate::NodeEvent::Stream(crate::RuntimeStreamEvent::Opened(admitted))
+            if admitted.stream_id() == stream_id && admitted.operation_id() == operation_id
+    ));
+
+    runtime.cancel_stream_operation(operation_id).unwrap();
+    assert!(matches!(
+        runtime.receive_stream_one(&fixture.peer_trust, 11),
+        Err(NodeError::Stream(crate::RuntimeStreamError::Receive(
+            StreamReceiveError::Empty
+        )))
+    ));
+    assert!(matches!(
+        runtime.cancel_stream_operation(operation_id),
+        Err(NodeError::Stream(crate::RuntimeStreamError::Admission(
+            crosslab_core::StreamAdmissionError::OperationNotFound
+        )))
+    ));
+}
+
+#[test]
 fn runtime_refuses_stream_authority_without_exact_allow() {
     let fixture = Fixture::new();
     let transport = TestTransport::new([0x7f; 32]);

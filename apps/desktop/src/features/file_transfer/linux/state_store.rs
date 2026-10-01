@@ -8,10 +8,14 @@ use std::{
 };
 
 use crosslab_agent::{
-    FileTransferStateError, FileTransferStateSnapshot, MAX_FILE_TRANSFER_STATE_BYTES,
+    FileTransferRetainedState, FileTransferStateError, FileTransferStateSnapshot,
+    MAX_FILE_TRANSFER_STATE_BYTES,
 };
 
-use super::LinuxFileTransferError;
+use super::{LinuxFileTransferError, LinuxFileTransferLocator};
+
+const PARTIAL_RETENTION_SECS: u64 = 7 * 24 * 60 * 60;
+const COMPLETION_RETENTION_SECS: u64 = 30 * 24 * 60 * 60;
 
 #[derive(Clone)]
 pub struct LinuxFileTransferStateStore {
@@ -51,6 +55,38 @@ impl LinuxFileTransferStateStore {
             return Err(FileTransferStateError::SnapshotTooLarge.into());
         }
         FileTransferStateSnapshot::decode(&bytes).map_err(Into::into)
+    }
+
+    pub fn cleanup_expired(&self, now_unix_secs: u64) -> Result<usize, LinuxFileTransferError> {
+        let mut snapshot = self.load()?;
+        let expired = snapshot
+            .entries()
+            .iter()
+            .filter(|entry| {
+                let max_age = match entry {
+                    FileTransferRetainedState::Partial(_) => PARTIAL_RETENTION_SECS,
+                    FileTransferRetainedState::Completed(_) => COMPLETION_RETENTION_SECS,
+                };
+                entry_expired(entry.updated_at_unix_secs(), now_unix_secs, max_age)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+
+        for entry in &expired {
+            if let FileTransferRetainedState::Partial(partial) = entry {
+                let locator = LinuxFileTransferLocator::decode(
+                    partial.locator(),
+                    partial.identity().transfer_id(),
+                )?;
+                remove_expired_partial(locator.partial_path())?;
+            }
+            snapshot.remove(entry.identity().transfer_id());
+        }
+
+        if !expired.is_empty() {
+            self.commit(&snapshot)?;
+        }
+        Ok(expired.len())
     }
 
     pub fn commit(
@@ -111,12 +147,30 @@ fn set_private_dir(path: &Path) -> Result<(), std::io::Error> {
     fs::set_permissions(path, fs::Permissions::from_mode(0o700))
 }
 
+fn entry_expired(updated_at: u64, now: u64, max_age: u64) -> bool {
+    now >= updated_at && now.saturating_sub(updated_at) > max_age
+}
+
+fn remove_expired_partial(path: &Path) -> Result<(), LinuxFileTransferError> {
+    match fs::remove_file(path) {
+        Ok(()) => {
+            if let Some(parent) = path.parent() {
+                File::open(parent)?.sync_all()?;
+            }
+            Ok(())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fmt::Write as _;
 
     use crosslab_agent::{
-        FileTransferIdentity, FileTransferPartialState, FileTransferRetainedState,
+        FileTransferCompletionTombstone, FileTransferIdentity, FileTransferPartialState,
+        FileTransferRetainedState,
     };
     use crosslab_crypto::{blake3_256, random_bytes};
     use crosslab_identity::DeviceId;
@@ -164,6 +218,62 @@ mod tests {
         assert!(!format!("{store:?}").contains(root.to_string_lossy().as_ref()));
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn cleanup_expires_partial_files_and_completion_tombstones() {
+        let root = test_root("cleanup");
+        fs::create_dir_all(&root).unwrap();
+        let store = LinuxFileTransferStateStore::for_test(root.join("state-v1.bin"));
+
+        let partial_id = TransferId::from_bytes([0x41; 32]);
+        let partial_locator =
+            LinuxFileTransferLocator::for_destination(root.join("partial.bin"), partial_id)
+                .unwrap();
+        fs::write(partial_locator.partial_path(), b"partial").unwrap();
+        let partial = FileTransferPartialState::new(
+            FileTransferIdentity::new(
+                DeviceId::from_bytes([0x42; 32]),
+                test_offer(partial_id, "partial.bin", b"partial"),
+            ),
+            0,
+            partial_locator.encode().unwrap(),
+            10,
+        )
+        .unwrap();
+
+        let complete_id = TransferId::from_bytes([0x43; 32]);
+        let completed = FileTransferCompletionTombstone::new(
+            FileTransferIdentity::new(
+                DeviceId::from_bytes([0x44; 32]),
+                test_offer(complete_id, "complete.bin", b"complete"),
+            ),
+            10,
+        );
+        store
+            .commit(
+                &FileTransferStateSnapshot::new(vec![
+                    FileTransferRetainedState::Partial(partial),
+                    FileTransferRetainedState::Completed(completed),
+                ])
+                .unwrap(),
+            )
+            .unwrap();
+
+        let now = 10 + COMPLETION_RETENTION_SECS + 1;
+        assert_eq!(store.cleanup_expired(now).unwrap(), 2);
+        assert!(!partial_locator.partial_path().exists());
+        assert!(store.load().unwrap().is_empty());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn cleanup_keeps_recent_and_future_dated_entries() {
+        assert!(!entry_expired(100, 100, 10));
+        assert!(!entry_expired(95, 100, 10));
+        assert!(!entry_expired(110, 100, 10));
+        assert!(entry_expired(89, 100, 10));
     }
 
     #[test]

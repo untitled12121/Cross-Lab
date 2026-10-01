@@ -25,7 +25,7 @@ use crosslab_protocol::{
     DataStreamOpen, Event, EventId, EventScope, EventType, FILE_TRANSFER_CAPABILITY_ID,
     FILE_TRANSFER_RESULT_EVENT_TYPE, FileTransferAcceptance, FileTransferOffer, FileTransferResult,
     FileTransferTerminalOutcome, FileTransferWireError, ProtocolDiagnostic, ProtocolErrorCode,
-    ProtocolFailure, RequestId, RetryClass, StreamDirection, StreamId,
+    ProtocolFailure, RequestId, RetryClass, StreamDirection, StreamId, TransferId,
     decode_file_transfer_acceptance, decode_file_transfer_offer, decode_file_transfer_result,
     encode_file_transfer_acceptance, encode_file_transfer_offer, encode_file_transfer_result,
 };
@@ -82,6 +82,36 @@ impl fmt::Debug for FileTransferRequest {
             .field("source_device_id", &self.source_device_id)
             .field("offer", &self.offer)
             .finish()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileTransferCancellation {
+    Request {
+        request_id: RequestId,
+        transfer_id: TransferId,
+    },
+    Transfer {
+        transfer_id: TransferId,
+    },
+}
+
+impl FileTransferCancellation {
+    pub(crate) const fn request(request_id: RequestId, transfer_id: TransferId) -> Self {
+        Self::Request {
+            request_id,
+            transfer_id,
+        }
+    }
+
+    pub(crate) const fn transfer(transfer_id: TransferId) -> Self {
+        Self::Transfer { transfer_id }
+    }
+
+    pub const fn transfer_id(self) -> TransferId {
+        match self {
+            Self::Request { transfer_id, .. } | Self::Transfer { transfer_id } => transfer_id,
+        }
     }
 }
 
@@ -489,6 +519,13 @@ pub(crate) fn decode_response(
     }
 }
 
+pub(crate) fn cancelled_failure() -> ControlResponseResult {
+    failure(
+        ProtocolErrorCode::Cancelled,
+        "file transfer request was declined locally",
+    )
+}
+
 pub(crate) fn resource_failure() -> ControlResponseResult {
     failure(
         ProtocolErrorCode::ResourceLimit,
@@ -570,6 +607,15 @@ mod tests {
         assert_eq!(decoded.source_device_id(), source_device_id());
         assert_eq!(decoded.offer(), &offer());
         assert!(!format!("{decoded:?}").contains("example.txt"));
+    }
+
+    #[test]
+    fn declined_request_uses_typed_cancelled_failure() {
+        assert!(matches!(
+            cancelled_failure(),
+            ControlResponseResult::Error(error)
+                if error.code() == ProtocolErrorCode::Cancelled
+        ));
     }
 
     #[test]

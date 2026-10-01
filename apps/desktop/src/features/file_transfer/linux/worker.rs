@@ -1,12 +1,17 @@
 use core::fmt;
 use std::{
+    collections::{BTreeSet, VecDeque},
     path::PathBuf,
     sync::Arc,
     thread,
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crosslab_agent::{FileTransferOperationError, TrustedPresenceAgent};
+use crosslab_agent::{
+    FileTransferCancellation, FileTransferDataEvent, FileTransferIntegrityError,
+    FileTransferOperationError, TrustedPresenceAgent,
+};
+use crosslab_protocol::{FileTransferTerminalOutcome, RequestId, StreamId, TransferId};
 use tokio::sync::{mpsc, oneshot, watch};
 
 use super::{
@@ -16,6 +21,49 @@ use super::{
 
 const FILE_TRANSFER_SERVICE_CAPACITY: usize = 8;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinuxFileTransferReceiveFailure {
+    Connection,
+    Integrity,
+    Storage,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinuxFileTransferReceiveStatus {
+    OfferCancelled {
+        request_id: RequestId,
+    },
+    Ready {
+        transfer_id: TransferId,
+        resume_offset: u64,
+        total_bytes: u64,
+    },
+    Receiving {
+        transfer_id: TransferId,
+        received_bytes: u64,
+        total_bytes: u64,
+    },
+    Completed {
+        transfer_id: TransferId,
+        total_bytes: u64,
+    },
+    AlreadyComplete {
+        transfer_id: TransferId,
+        total_bytes: u64,
+    },
+    Cancelled {
+        transfer_id: TransferId,
+        received_bytes: u64,
+        total_bytes: u64,
+    },
+    Failed {
+        transfer_id: TransferId,
+        received_bytes: u64,
+        total_bytes: u64,
+        failure: LinuxFileTransferReceiveFailure,
+    },
+}
+
 pub(crate) struct LinuxFileTransferWorkerHandle {
     command_tx: mpsc::Sender<WorkerCommand>,
     stop_tx: watch::Sender<bool>,
@@ -24,27 +72,43 @@ pub(crate) struct LinuxFileTransferWorkerHandle {
 impl LinuxFileTransferWorkerHandle {
     pub(crate) fn start(
         agent: Arc<TrustedPresenceAgent>,
-    ) -> Result<(Self, mpsc::Receiver<LinuxIncomingFileTransfer>), LinuxFileTransferWorkerError>
-    {
-        let service = LinuxFileTransferService::from_environment()?;
+    ) -> Result<
+        (
+            Self,
+            mpsc::Receiver<LinuxIncomingFileTransfer>,
+            mpsc::Receiver<LinuxFileTransferReceiveStatus>,
+        ),
+        LinuxFileTransferWorkerError,
+    > {
+        let service = LinuxFileTransferService::from_environment(unix_now_secs())?;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|_| LinuxFileTransferWorkerError::Thread)?;
         let requests = agent.take_file_transfer_requests()?;
+        let cancellations = agent.take_file_transfer_cancellations()?;
         let data = agent.take_file_transfer_data()?;
         let (command_tx, command_rx) = mpsc::channel(FILE_TRANSFER_SERVICE_CAPACITY);
         let (pending_tx, pending_rx) = mpsc::channel(FILE_TRANSFER_SERVICE_CAPACITY);
+        let (status_tx, status_rx) = mpsc::channel(FILE_TRANSFER_SERVICE_CAPACITY);
         let (stop_tx, stop_rx) = watch::channel(false);
+
+        let inputs = WorkerInputs {
+            requests,
+            cancellations,
+            data,
+            commands: command_rx,
+            stop_rx,
+        };
+        let outputs = WorkerOutputs {
+            pending_tx,
+            status_tx,
+        };
 
         thread::Builder::new()
             .name("crosslab-file-transfer".into())
             .spawn(move || {
-                let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                else {
-                    return;
-                };
-                runtime.block_on(run_worker(
-                    agent, service, requests, data, command_rx, pending_tx, stop_rx,
-                ));
+                runtime.block_on(run_worker(agent, service, inputs, outputs));
             })
             .map_err(|_| LinuxFileTransferWorkerError::Thread)?;
 
@@ -54,6 +118,7 @@ impl LinuxFileTransferWorkerHandle {
                 stop_tx,
             },
             pending_rx,
+            status_rx,
         ))
     }
 
@@ -67,6 +132,40 @@ impl LinuxFileTransferWorkerHandle {
             .send(WorkerCommand::Accept {
                 incoming,
                 final_path,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| LinuxFileTransferWorkerError::Closed)?;
+        reply_rx
+            .await
+            .map_err(|_| LinuxFileTransferWorkerError::Closed)?
+    }
+
+    pub(crate) async fn decline_offer(
+        &self,
+        incoming: LinuxIncomingFileTransfer,
+    ) -> Result<(), LinuxFileTransferWorkerError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.command_tx
+            .send(WorkerCommand::Decline {
+                incoming,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| LinuxFileTransferWorkerError::Closed)?;
+        reply_rx
+            .await
+            .map_err(|_| LinuxFileTransferWorkerError::Closed)?
+    }
+
+    pub(crate) async fn cancel_receive(
+        &self,
+        transfer_id: TransferId,
+    ) -> Result<(), LinuxFileTransferWorkerError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.command_tx
+            .send(WorkerCommand::Cancel {
+                transfer_id,
                 reply: reply_tx,
             })
             .await
@@ -89,17 +188,112 @@ enum WorkerCommand {
         final_path: PathBuf,
         reply: oneshot::Sender<Result<(), LinuxFileTransferWorkerError>>,
     },
+    Decline {
+        incoming: LinuxIncomingFileTransfer,
+        reply: oneshot::Sender<Result<(), LinuxFileTransferWorkerError>>,
+    },
+    Cancel {
+        transfer_id: TransferId,
+        reply: oneshot::Sender<Result<(), LinuxFileTransferWorkerError>>,
+    },
+}
+
+struct WorkerInputs {
+    requests: mpsc::Receiver<crosslab_agent::FileTransferRequest>,
+    cancellations: mpsc::Receiver<FileTransferCancellation>,
+    data: mpsc::Receiver<FileTransferDataEvent>,
+    commands: mpsc::Receiver<WorkerCommand>,
+    stop_rx: watch::Receiver<bool>,
+}
+
+struct WorkerOutputs {
+    pending_tx: mpsc::Sender<LinuxIncomingFileTransfer>,
+    status_tx: mpsc::Sender<LinuxFileTransferReceiveStatus>,
+}
+
+#[derive(Default)]
+struct PendingOfferTracker {
+    visible: BTreeSet<RequestId>,
+    cancelled_before_dispatch: VecDeque<RequestId>,
+}
+
+impl PendingOfferTracker {
+    fn begin_request(&mut self, request_id: RequestId) -> bool {
+        let Some(position) = self
+            .cancelled_before_dispatch
+            .iter()
+            .position(|cancelled| *cancelled == request_id)
+        else {
+            return true;
+        };
+        self.cancelled_before_dispatch.remove(position);
+        false
+    }
+
+    fn mark_visible(&mut self, request_id: RequestId) {
+        self.visible.insert(request_id);
+    }
+
+    fn accept(&mut self, request_id: RequestId) {
+        self.visible.remove(&request_id);
+    }
+
+    fn cancel(&mut self, request_id: RequestId) -> bool {
+        if self.visible.remove(&request_id) {
+            return true;
+        }
+        if self
+            .cancelled_before_dispatch
+            .iter()
+            .any(|cancelled| *cancelled == request_id)
+        {
+            return false;
+        }
+        if self.cancelled_before_dispatch.len() >= FILE_TRANSFER_SERVICE_CAPACITY {
+            self.cancelled_before_dispatch.pop_front();
+        }
+        self.cancelled_before_dispatch.push_back(request_id);
+        false
+    }
+}
+
+#[derive(Default)]
+struct IgnoredDataStreams {
+    stream_ids: VecDeque<StreamId>,
+}
+
+impl IgnoredDataStreams {
+    fn remember(&mut self, stream_id: StreamId) {
+        if self.stream_ids.iter().any(|current| *current == stream_id) {
+            return;
+        }
+        if self.stream_ids.len() >= FILE_TRANSFER_SERVICE_CAPACITY {
+            self.stream_ids.pop_front();
+        }
+        self.stream_ids.push_back(stream_id);
+    }
+
+    fn contains(&self, stream_id: StreamId) -> bool {
+        self.stream_ids.iter().any(|current| *current == stream_id)
+    }
 }
 
 async fn run_worker(
     agent: Arc<TrustedPresenceAgent>,
     mut service: LinuxFileTransferService,
-    mut requests: mpsc::Receiver<crosslab_agent::FileTransferRequest>,
-    mut data: mpsc::Receiver<crosslab_agent::FileTransferDataEvent>,
-    mut commands: mpsc::Receiver<WorkerCommand>,
-    pending_tx: mpsc::Sender<LinuxIncomingFileTransfer>,
-    mut stop_rx: watch::Receiver<bool>,
+    inputs: WorkerInputs,
+    outputs: WorkerOutputs,
 ) {
+    let mut requests = inputs.requests;
+    let mut cancellations = inputs.cancellations;
+    let mut data = inputs.data;
+    let mut commands = inputs.commands;
+    let mut stop_rx = inputs.stop_rx;
+    let pending_tx = outputs.pending_tx;
+    let status_tx = outputs.status_tx;
+    let mut pending_offers = PendingOfferTracker::default();
+    let mut ignored_data_streams = IgnoredDataStreams::default();
+
     loop {
         tokio::select! {
             changed = stop_rx.changed() => {
@@ -111,6 +305,11 @@ async fn run_worker(
                 let Some(request) = request else {
                     return;
                 };
+                if !pending_offers.begin_request(request.request_id()) {
+                    continue;
+                }
+                let transfer_id = request.offer().transfer_id();
+                let total_bytes = request.offer().file_size();
                 let now = unix_now_secs();
                 let action = service.handle_request(
                     request.request_id(),
@@ -120,6 +319,7 @@ async fn run_worker(
                 );
                 match action {
                     Ok(LinuxFileTransferRequestAction::ChooseDestination(incoming)) => {
+                        pending_offers.mark_visible(incoming.request_id());
                         if pending_tx.send(incoming).await.is_err() {
                             return;
                         }
@@ -129,28 +329,111 @@ async fn run_worker(
                         transfer_id,
                         resume_offset,
                     }) => {
-                        if agent
+                        match agent
                             .complete_file_transfer_ready(request_id, resume_offset)
                             .await
-                            .is_err()
                         {
-                            service.release_transfer(transfer_id);
+                            Ok(()) => {
+                                let _ = status_tx.send(LinuxFileTransferReceiveStatus::Ready {
+                                    transfer_id,
+                                    resume_offset,
+                                    total_bytes,
+                                }).await;
+                            }
+                            Err(_) => {
+                                service.release_transfer(transfer_id);
+                                let _ = status_tx.send(LinuxFileTransferReceiveStatus::Failed {
+                                    transfer_id,
+                                    received_bytes: resume_offset,
+                                    total_bytes,
+                                    failure: LinuxFileTransferReceiveFailure::Connection,
+                                }).await;
+                            }
                         }
                     }
                     Ok(LinuxFileTransferRequestAction::AlreadyComplete { request_id, .. }) => {
-                        let _ = agent
+                        if agent
                             .complete_file_transfer_already_complete(request_id)
-                            .await;
+                            .await
+                            .is_ok()
+                        {
+                            let _ = status_tx.send(
+                                LinuxFileTransferReceiveStatus::AlreadyComplete {
+                                    transfer_id,
+                                    total_bytes,
+                                }
+                            ).await;
+                        }
                     }
-                    Err(_) => {}
+                    Err(error) => {
+                        let _ = status_tx.send(LinuxFileTransferReceiveStatus::Failed {
+                            transfer_id,
+                            received_bytes: 0,
+                            total_bytes,
+                            failure: map_platform_failure(&error),
+                        }).await;
+                    }
+                }
+            }
+            cancellation = cancellations.recv() => {
+                let Some(cancellation) = cancellation else {
+                    return;
+                };
+                match cancellation {
+                    FileTransferCancellation::Request { request_id, .. } => {
+                        if pending_offers.cancel(request_id) {
+                            let _ = status_tx
+                                .send(LinuxFileTransferReceiveStatus::OfferCancelled {
+                                    request_id,
+                                })
+                                .await;
+                        }
+                    }
+                    FileTransferCancellation::Transfer { transfer_id } => {
+                        if let Some((received_bytes, total_bytes)) =
+                            service.transfer_progress(transfer_id)
+                        {
+                            service.release_transfer(transfer_id);
+                            let _ = status_tx
+                                .send(LinuxFileTransferReceiveStatus::Failed {
+                                    transfer_id,
+                                    received_bytes,
+                                    total_bytes,
+                                    failure: LinuxFileTransferReceiveFailure::Connection,
+                                })
+                                .await;
+                        }
+                    }
                 }
             }
             event = data.recv() => {
                 let Some(event) = event else {
                     return;
                 };
+                if ignored_data_streams.contains(event_stream_id(&event)) {
+                    continue;
+                }
+                let transfer_id = event_transfer_id(&event);
+                let prior = service.transfer_progress(transfer_id);
+                let reports_progress = matches!(
+                    &event,
+                    FileTransferDataEvent::Opened { .. } | FileTransferDataEvent::Chunk(_)
+                );
                 match service.handle_data(event, unix_now_secs()) {
-                    LinuxFileTransferDataAction::Continue => {}
+                    LinuxFileTransferDataAction::Continue => {
+                        if reports_progress
+                            && let Some((received_bytes, total_bytes)) =
+                                service.transfer_progress(transfer_id)
+                        {
+                            let _ = status_tx.try_send(
+                                LinuxFileTransferReceiveStatus::Receiving {
+                                    transfer_id,
+                                    received_bytes,
+                                    total_bytes,
+                                }
+                            );
+                        }
+                    }
                     LinuxFileTransferDataAction::Terminal {
                         transfer_id,
                         outcome,
@@ -158,17 +441,56 @@ async fn run_worker(
                         let _ = agent
                             .complete_file_transfer_result(transfer_id, outcome)
                             .await;
+                        let (received_bytes, total_bytes) = prior.unwrap_or((0, 0));
+                        let status = match outcome {
+                            FileTransferTerminalOutcome::Completed => {
+                                LinuxFileTransferReceiveStatus::Completed {
+                                    transfer_id,
+                                    total_bytes,
+                                }
+                            }
+                            FileTransferTerminalOutcome::Cancelled => {
+                                LinuxFileTransferReceiveStatus::Cancelled {
+                                    transfer_id,
+                                    received_bytes,
+                                    total_bytes,
+                                }
+                            }
+                            FileTransferTerminalOutcome::IntegrityFailed => {
+                                LinuxFileTransferReceiveStatus::Failed {
+                                    transfer_id,
+                                    received_bytes,
+                                    total_bytes,
+                                    failure: LinuxFileTransferReceiveFailure::Integrity,
+                                }
+                            }
+                            FileTransferTerminalOutcome::StorageFailed => {
+                                LinuxFileTransferReceiveStatus::Failed {
+                                    transfer_id,
+                                    received_bytes,
+                                    total_bytes,
+                                    failure: LinuxFileTransferReceiveFailure::Storage,
+                                }
+                            }
+                        };
+                        let _ = status_tx.send(status).await;
                     }
                     LinuxFileTransferDataAction::Abort {
                         transfer_id,
                         stream_id,
                         outcome,
-                        ..
+                        error,
                     } => {
-                        let _ = agent.cancel_file_transfer_receive(stream_id).await;
                         let _ = agent
-                            .complete_file_transfer_result(transfer_id, outcome)
+                            .fail_file_transfer_receive(stream_id, transfer_id, outcome)
                             .await;
+                        let (received_bytes, total_bytes) = prior.unwrap_or((0, 0));
+                        let _ = status_tx.send(LinuxFileTransferReceiveStatus::Failed {
+                            transfer_id,
+                            received_bytes,
+                            total_bytes,
+                            failure: map_platform_failure(&error),
+                        }).await;
                     }
                 }
             }
@@ -182,6 +504,7 @@ async fn run_worker(
                         final_path,
                         reply,
                     } => {
+                        pending_offers.accept(incoming.request_id());
                         let result = accept_destination(
                             &agent,
                             &mut service,
@@ -189,7 +512,44 @@ async fn run_worker(
                             final_path,
                         )
                         .await;
+                        match result {
+                            Ok(status) => {
+                                let _ = status_tx.send(status).await;
+                                let _ = reply.send(Ok(()));
+                            }
+                            Err(error) => {
+                                let _ = reply.send(Err(error));
+                            }
+                        }
+                    }
+                    WorkerCommand::Decline { incoming, reply } => {
+                        pending_offers.accept(incoming.request_id());
+                        let result = agent
+                            .decline_file_transfer_request(incoming.request_id())
+                            .await;
+                        let result = match result {
+                            Ok(()) | Err(FileTransferOperationError::Cancelled) => Ok(()),
+                            Err(error) => Err(error.into()),
+                        };
                         let _ = reply.send(result);
+                    }
+                    WorkerCommand::Cancel { transfer_id, reply } => {
+                        let result = cancel_receive(
+                            &agent,
+                            &mut service,
+                            &mut ignored_data_streams,
+                            transfer_id,
+                        )
+                        .await;
+                        match result {
+                            Ok(status) => {
+                                let _ = status_tx.send(status).await;
+                                let _ = reply.send(Ok(()));
+                            }
+                            Err(error) => {
+                                let _ = reply.send(Err(error));
+                            }
+                        }
                     }
                 }
             }
@@ -202,7 +562,8 @@ async fn accept_destination(
     service: &mut LinuxFileTransferService,
     incoming: LinuxIncomingFileTransfer,
     final_path: PathBuf,
-) -> Result<(), LinuxFileTransferWorkerError> {
+) -> Result<LinuxFileTransferReceiveStatus, LinuxFileTransferWorkerError> {
+    let total_bytes = incoming.offer().file_size();
     let action = service.accept_destination(incoming, final_path, unix_now_secs())?;
     let LinuxFileTransferRequestAction::Ready {
         request_id,
@@ -217,11 +578,74 @@ async fn accept_destination(
         .complete_file_transfer_ready(request_id, resume_offset)
         .await
     {
-        Ok(()) => Ok(()),
+        Ok(()) => Ok(LinuxFileTransferReceiveStatus::Ready {
+            transfer_id,
+            resume_offset,
+            total_bytes,
+        }),
         Err(error) => {
             service.release_transfer(transfer_id);
             Err(error.into())
         }
+    }
+}
+
+async fn cancel_receive(
+    agent: &TrustedPresenceAgent,
+    service: &mut LinuxFileTransferService,
+    ignored_data_streams: &mut IgnoredDataStreams,
+    transfer_id: TransferId,
+) -> Result<LinuxFileTransferReceiveStatus, LinuxFileTransferWorkerError> {
+    let (local_stream_id, received_bytes, total_bytes) = service.cancel_receive(transfer_id)?;
+    if let Some(stream_id) = local_stream_id {
+        ignored_data_streams.remember(stream_id);
+    }
+
+    match agent.cancel_file_transfer_receive(transfer_id).await {
+        Ok(Some(stream_id)) => ignored_data_streams.remember(stream_id),
+        Ok(None)
+        | Err(
+            FileTransferOperationError::NotConnected
+            | FileTransferOperationError::InvalidStream
+            | FileTransferOperationError::Cancelled
+            | FileTransferOperationError::Transport
+            | FileTransferOperationError::Closed,
+        ) => {}
+        Err(error) => return Err(error.into()),
+    }
+    Ok(LinuxFileTransferReceiveStatus::Cancelled {
+        transfer_id,
+        received_bytes,
+        total_bytes,
+    })
+}
+
+fn event_stream_id(event: &FileTransferDataEvent) -> StreamId {
+    match event {
+        FileTransferDataEvent::Opened { stream_id, .. }
+        | FileTransferDataEvent::Finished { stream_id, .. }
+        | FileTransferDataEvent::Cancelled { stream_id, .. } => *stream_id,
+        FileTransferDataEvent::Chunk(chunk) => chunk.stream_id(),
+    }
+}
+
+fn event_transfer_id(event: &FileTransferDataEvent) -> TransferId {
+    match event {
+        FileTransferDataEvent::Opened { transfer_id, .. }
+        | FileTransferDataEvent::Finished { transfer_id, .. }
+        | FileTransferDataEvent::Cancelled { transfer_id, .. } => *transfer_id,
+        FileTransferDataEvent::Chunk(chunk) => chunk.transfer_id(),
+    }
+}
+
+fn map_platform_failure(error: &LinuxFileTransferError) -> LinuxFileTransferReceiveFailure {
+    match error {
+        LinuxFileTransferError::Integrity(
+            FileTransferIntegrityError::SizeMismatch
+            | FileTransferIntegrityError::DigestMismatch
+            | FileTransferIntegrityError::SizeOverflow,
+        ) => LinuxFileTransferReceiveFailure::Integrity,
+        _ => LinuxFileTransferReceiveFailure::Storage,
     }
 }
 
@@ -265,5 +689,47 @@ impl From<LinuxFileTransferError> for LinuxFileTransferWorkerError {
 impl From<FileTransferOperationError> for LinuxFileTransferWorkerError {
     fn from(error: FileTransferOperationError) -> Self {
         Self::Agent(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ignored_data_streams_are_bounded_and_idempotent() {
+        let mut ignored = IgnoredDataStreams::default();
+        let repeated = StreamId::from_bytes([0x91; 16]);
+        ignored.remember(repeated);
+        ignored.remember(repeated);
+        assert_eq!(ignored.stream_ids.len(), 1);
+        assert!(ignored.contains(repeated));
+
+        for tag in 0..=FILE_TRANSFER_SERVICE_CAPACITY {
+            let tag = u8::try_from(tag).expect("file-transfer capacity fits u8");
+            ignored.remember(StreamId::from_bytes([tag; 16]));
+        }
+        assert!(ignored.stream_ids.len() <= FILE_TRANSFER_SERVICE_CAPACITY);
+    }
+
+    #[test]
+    fn pending_offer_tracker_handles_cancel_and_accept_races() {
+        let mut tracker = PendingOfferTracker::default();
+
+        let cancelled_before_dispatch = RequestId::from_bytes([0x71; 16]);
+        assert!(!tracker.cancel(cancelled_before_dispatch));
+        assert!(!tracker.begin_request(cancelled_before_dispatch));
+        assert!(tracker.begin_request(cancelled_before_dispatch));
+
+        let visible = RequestId::from_bytes([0x72; 16]);
+        assert!(tracker.begin_request(visible));
+        tracker.mark_visible(visible);
+        assert!(tracker.cancel(visible));
+        assert!(!tracker.cancel(visible));
+
+        let accepted = RequestId::from_bytes([0x73; 16]);
+        tracker.mark_visible(accepted);
+        tracker.accept(accepted);
+        assert!(!tracker.cancel(accepted));
     }
 }

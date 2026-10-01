@@ -17,6 +17,7 @@ pub(crate) fn devices_content(
     actions: Option<Div>,
     pairing: Option<Div>,
     clipboard: Option<Div>,
+    file_transfer: Option<Div>,
     notice: Option<&str>,
     cx: &App,
 ) -> Div {
@@ -77,7 +78,7 @@ pub(crate) fn devices_content(
     }
 
     content.child(match state.current() {
-        Some(device) => device_panel(device, state, clipboard, cx),
+        Some(device) => device_panel(device, state, clipboard, file_transfer, cx),
         None => empty_state(state.presence(), cx),
     })
 }
@@ -134,6 +135,7 @@ fn device_panel(
     device: &DevicePresentation,
     state: &DevicesFeatureState,
     clipboard: Option<Div>,
+    file_transfer: Option<Div>,
     cx: &App,
 ) -> Div {
     let theme = cx.theme();
@@ -243,6 +245,9 @@ fn device_panel(
 
     if let Some(clipboard) = clipboard {
         panel = panel.child(clipboard);
+    }
+    if let Some(file_transfer) = file_transfer {
+        panel = panel.child(file_transfer);
     }
 
     panel

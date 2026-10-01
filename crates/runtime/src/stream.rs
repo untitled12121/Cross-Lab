@@ -294,8 +294,24 @@ impl RuntimeStreams {
         &mut self,
         operation_id: OperationId,
     ) -> Result<(), RuntimeStreamError> {
-        self.admission.cancel_operation(operation_id)?;
-        Ok(())
+        let mut cancelled_active = false;
+        while let Some(index) = self
+            .inbound
+            .iter()
+            .rposition(|inbound| inbound.admitted.operation_id() == operation_id)
+        {
+            let mut inbound = self.inbound.remove(index);
+            let stream_id = inbound.admitted.stream_id();
+            inbound.stream.cancel();
+            self.admission.cancel_stream(stream_id)?;
+            cancelled_active = true;
+        }
+
+        match self.admission.cancel_operation(operation_id) {
+            Ok(()) => Ok(()),
+            Err(StreamAdmissionError::OperationNotFound) if cancelled_active => Ok(()),
+            Err(error) => Err(error.into()),
+        }
     }
 
     pub(crate) fn cancel_all(&mut self) {

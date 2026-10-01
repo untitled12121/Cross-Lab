@@ -1,15 +1,18 @@
 use core::fmt;
 use std::{
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     thread,
     time::Duration,
 };
 
 use crosslab_agent::{
     ClipboardAvailability, ClipboardOperationError, ClipboardPlatformError, ClipboardRequest,
-    PermissionSnapshot, PresenceAgentError, PresenceSnapshot, TrustedPresenceAgent,
-    TrustedSessionRoute as AgentTrustedSessionRoute,
+    FileTransferAvailability, FileTransferOperationError, PermissionSnapshot, PresenceAgentError,
+    PresenceSnapshot, TrustedPresenceAgent, TrustedSessionRoute as AgentTrustedSessionRoute,
 };
 use crosslab_identity_store::{ProductIdentityError, ProductIdentityState};
 use crosslab_policy::{CapabilityId, OperationName, PolicyError, RuleEffect};
@@ -17,7 +20,9 @@ use tokio::sync::{mpsc, watch};
 
 use crate::features::{
     file_transfer::{
-        LinuxFileTransferWorkerError, LinuxFileTransferWorkerHandle, LinuxIncomingFileTransfer,
+        LinuxFileTransferReceiveStatus, LinuxFileTransferSendHandle,
+        LinuxFileTransferSendStartError, LinuxFileTransferSendToken, LinuxFileTransferWorkerError,
+        LinuxFileTransferWorkerHandle, LinuxIncomingFileTransfer,
     },
     identity_store::{
         LinuxEd25519Signer, LinuxIdentityStore, LinuxIdentityStoreError, LinuxSigningSlot,
@@ -39,6 +44,8 @@ pub struct DesktopProductPresenceController {
     control_tx: mpsc::Sender<DiscoveryControl>,
     file_transfer: Option<LinuxFileTransferWorkerHandle>,
     file_transfer_offers: Mutex<Option<mpsc::Receiver<LinuxIncomingFileTransfer>>>,
+    file_transfer_statuses: Mutex<Option<mpsc::Receiver<LinuxFileTransferReceiveStatus>>>,
+    file_transfer_send_active: Arc<AtomicBool>,
 }
 
 impl DesktopProductPresenceController {
@@ -55,32 +62,27 @@ impl DesktopProductPresenceController {
 
         let policy = LinuxPolicyStore::from_environment()?.load().await?;
         let signer = LinuxEd25519Signer::load_required(LinuxSigningSlot::LocalDevice).await?;
-        let agent = Arc::new(TrustedPresenceAgent::spawn_with_policy_and_clipboard(
+        let agent = Arc::new(TrustedPresenceAgent::spawn_with_policy_and_capabilities(
             identity,
             Arc::new(signer),
             policy,
             ClipboardAvailability::new(true, true),
+            FileTransferAvailability::new(true),
         )?);
+        let discovery_runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|_| DesktopPresenceError::Thread)?;
         let status = agent.subscribe_status();
-        let (file_transfer, file_transfer_offers) =
-            match LinuxFileTransferWorkerHandle::start(Arc::clone(&agent)) {
-                Ok((worker, offers)) => (Some(worker), Some(offers)),
-                Err(_) => (None, None),
-            };
+        let (file_transfer, file_transfer_offers, file_transfer_statuses) =
+            LinuxFileTransferWorkerHandle::start(Arc::clone(&agent))?;
         let discovery_agent = Arc::clone(&agent);
         let (control_tx, control_rx) = mpsc::channel(CONTROL_CAPACITY);
 
         thread::Builder::new()
             .name("crosslab-desktop-presence".into())
             .spawn(move || {
-                let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                else {
-                    let _ = discovery_agent.network_lost();
-                    return;
-                };
-                runtime.block_on(run_discovery(discovery_agent, control_rx));
+                discovery_runtime.block_on(run_discovery(discovery_agent, control_rx));
             })
             .map_err(|_| DesktopPresenceError::Thread)?;
 
@@ -88,8 +90,10 @@ impl DesktopProductPresenceController {
             agent,
             status,
             control_tx,
-            file_transfer,
-            file_transfer_offers: Mutex::new(file_transfer_offers),
+            file_transfer: Some(file_transfer),
+            file_transfer_offers: Mutex::new(Some(file_transfer_offers)),
+            file_transfer_statuses: Mutex::new(Some(file_transfer_statuses)),
+            file_transfer_send_active: Arc::new(AtomicBool::new(false)),
         }))
     }
 
@@ -117,6 +121,16 @@ impl DesktopProductPresenceController {
             .ok_or(DesktopPresenceError::FileTransferUnavailable)
     }
 
+    pub fn take_file_transfer_statuses(
+        &self,
+    ) -> Result<mpsc::Receiver<LinuxFileTransferReceiveStatus>, DesktopPresenceError> {
+        self.file_transfer_statuses
+            .lock()
+            .map_err(|_| DesktopPresenceError::FileTransferUnavailable)?
+            .take()
+            .ok_or(DesktopPresenceError::FileTransferUnavailable)
+    }
+
     pub async fn accept_file_transfer_destination(
         &self,
         incoming: LinuxIncomingFileTransfer,
@@ -128,6 +142,88 @@ impl DesktopProductPresenceController {
             .ok_or(DesktopPresenceError::FileTransferUnavailable)?;
         worker.accept_destination(incoming, final_path).await?;
         Ok(())
+    }
+
+    pub async fn decline_file_transfer_offer(
+        &self,
+        incoming: LinuxIncomingFileTransfer,
+    ) -> Result<(), DesktopPresenceError> {
+        let worker = self
+            .file_transfer
+            .as_ref()
+            .ok_or(DesktopPresenceError::FileTransferUnavailable)?;
+        worker.decline_offer(incoming).await?;
+        Ok(())
+    }
+
+    pub async fn cancel_file_transfer_receive(
+        &self,
+        transfer_id: crosslab_protocol::TransferId,
+    ) -> Result<(), DesktopPresenceError> {
+        let worker = self
+            .file_transfer
+            .as_ref()
+            .ok_or(DesktopPresenceError::FileTransferUnavailable)?;
+        worker.cancel_receive(transfer_id).await?;
+        Ok(())
+    }
+
+    pub fn start_file_transfer_send(
+        &self,
+        path: PathBuf,
+    ) -> Result<LinuxFileTransferSendHandle, DesktopPresenceError> {
+        if self.file_transfer.is_none() {
+            return Err(DesktopPresenceError::FileTransferUnavailable);
+        }
+        if self
+            .file_transfer_send_active
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return Err(DesktopPresenceError::FileTransferBusy);
+        }
+
+        match LinuxFileTransferSendHandle::new(
+            Arc::clone(&self.agent),
+            path,
+            Arc::clone(&self.file_transfer_send_active),
+        ) {
+            Ok(handle) => Ok(handle),
+            Err(error) => {
+                self.file_transfer_send_active
+                    .store(false, Ordering::Release);
+                Err(error.into())
+            }
+        }
+    }
+
+    pub fn retry_file_transfer_send(
+        &self,
+        token: LinuxFileTransferSendToken,
+    ) -> Result<LinuxFileTransferSendHandle, DesktopPresenceError> {
+        if self.file_transfer.is_none() {
+            return Err(DesktopPresenceError::FileTransferUnavailable);
+        }
+        if self
+            .file_transfer_send_active
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return Err(DesktopPresenceError::FileTransferBusy);
+        }
+
+        match LinuxFileTransferSendHandle::retry(
+            Arc::clone(&self.agent),
+            token,
+            Arc::clone(&self.file_transfer_send_active),
+        ) {
+            Ok(handle) => Ok(handle),
+            Err(error) => {
+                self.file_transfer_send_active
+                    .store(false, Ordering::Release);
+                Err(error.into())
+            }
+        }
     }
 
     pub async fn send_clipboard_text(&self, text: String) -> Result<(), ClipboardOperationError> {
@@ -245,7 +341,10 @@ pub enum DesktopPresenceError {
     Agent(PresenceAgentError),
     Discovery(LinuxTrustedSessionDiscoveryError),
     FileTransfer,
+    FileTransferCancelled,
+    FileTransferConnection,
     FileTransferUnavailable,
+    FileTransferBusy,
     PeerUnavailable,
     PolicyOutOfSync,
     Control,
@@ -262,9 +361,16 @@ impl fmt::Display for DesktopPresenceError {
             Self::Agent(error) => fmt::Display::fmt(error, formatter),
             Self::Discovery(error) => fmt::Display::fmt(error, formatter),
             Self::FileTransfer => formatter.write_str("desktop file-transfer operation failed"),
+            Self::FileTransferCancelled => {
+                formatter.write_str("desktop file-transfer offer was cancelled")
+            }
+            Self::FileTransferConnection => {
+                formatter.write_str("desktop file-transfer session is unavailable")
+            }
             Self::FileTransferUnavailable => {
                 formatter.write_str("desktop file-transfer service is unavailable")
             }
+            Self::FileTransferBusy => formatter.write_str("desktop file-transfer sender is busy"),
             Self::PeerUnavailable => formatter.write_str("desktop permission peer is unavailable"),
             Self::PolicyOutOfSync => {
                 formatter.write_str("desktop active policy does not match durable policy")
@@ -314,8 +420,18 @@ impl From<LinuxTrustedSessionDiscoveryError> for DesktopPresenceError {
 }
 
 impl From<LinuxFileTransferWorkerError> for DesktopPresenceError {
-    fn from(_: LinuxFileTransferWorkerError) -> Self {
-        Self::FileTransfer
+    fn from(error: LinuxFileTransferWorkerError) -> Self {
+        match error {
+            LinuxFileTransferWorkerError::Agent(FileTransferOperationError::Cancelled) => {
+                Self::FileTransferCancelled
+            }
+            LinuxFileTransferWorkerError::Agent(
+                FileTransferOperationError::NotConnected
+                | FileTransferOperationError::Transport
+                | FileTransferOperationError::Closed,
+            ) => Self::FileTransferConnection,
+            _ => Self::FileTransfer,
+        }
     }
 }
 
@@ -382,11 +498,8 @@ async fn run_discovery(
         };
 
         let _ = agent.network_available();
-        let mut discovery = Some(discovery);
+        let mut discovery = discovery;
         let exit = loop {
-            let active = discovery
-                .as_mut()
-                .expect("discovery exists until the loop exits");
             tokio::select! {
                 control = control_rx.recv() => {
                     match control {
@@ -399,7 +512,7 @@ async fn run_discovery(
                         }
                     }
                 }
-                event = active.next_event() => {
+                event = discovery.next_event() => {
                     match event {
                         Some(LinuxTrustedSessionDiscoveryEvent::Candidate(route)) => {
                             if let Ok(route) =
@@ -422,9 +535,7 @@ async fn run_discovery(
             }
         };
 
-        if let Some(discovery) = discovery.take() {
-            let _ = discovery.stop().await;
-        }
+        let _ = discovery.stop().await;
 
         match exit {
             DiscoveryLoopExit::Stop => return,
@@ -461,5 +572,11 @@ async fn wait_retry_or_control(control_rx: &mut mpsc::Receiver<DiscoveryControl>
             }
         }
         _ = tokio::time::sleep(DISCOVERY_RETRY) => RetryOutcome::Retry,
+    }
+}
+
+impl From<LinuxFileTransferSendStartError> for DesktopPresenceError {
+    fn from(_: LinuxFileTransferSendStartError) -> Self {
+        Self::FileTransfer
     }
 }

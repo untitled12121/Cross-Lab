@@ -1,6 +1,6 @@
 # Phase 2 Resumable File Transfer
 
-**Status:** Active — Task 1 implemented; ADR-0020 accepted; PR #65-#69 shared runtime complete; PR #70-#71 Linux storage/receive merged; PR #72 Linux product service active
+**Status:** Active — Task 1 implemented; ADR-0020 accepted; PR #65-#69 shared runtime complete; PR #70-#72 Linux storage/receive/service merged; PR #73 Linux native product UI + retention cleanup active
 **Date:** 2026-09-26
 **Base:** PR #61 merged as `61ae275356201245a7dcac95d11bd598d2c3045e`  
 **Foundation:** PR #62 merged as `e338d10911ccdb908bc495150f048503086c0ce2`; exact implementation head `e663909443d208c712ccb7f6e1e74fb8dab26ab8` passed full Rust + Android CI `36258390585`.
@@ -84,7 +84,7 @@ After ADR-0020 acceptance:
 
 ## Task 4 — Linux platform adapter — Active
 
-PR #70 completed the first platform slice with a private atomic retained-state store, opaque/redacted Linux path locators, symlink-safe source opening checks, full streaming BLAKE3 preparation, and bounded 64 KiB resume reads. PR #71 completed private adjacent receive partials, fsync-before-durable 1 MiB checkpoint advancement, restart truncation/fail-closed recovery, exact whole-file BLAKE3 verification, completion tombstones, crash recovery across publication, and atomic non-clobber publication. PR #72 binds each inbound offer to the authenticated source device and adds a Linux worker/service that consumes both bounded agent queues, restores retained transfer state, drives receive/terminal handling, and exposes owner destination approval as a typed product boundary. Product capability advertisement remains disabled until the native owner prompt path is connected.
+PR #70 completed the first platform slice with a private atomic retained-state store, opaque/redacted Linux path locators, symlink-safe source opening checks, full streaming BLAKE3 preparation, and bounded 64 KiB resume reads. PR #71 completed private adjacent receive partials, fsync-before-durable 1 MiB checkpoint advancement, restart truncation/fail-closed recovery, exact whole-file BLAKE3 verification, completion tombstones, crash recovery across publication, and atomic non-clobber publication. PR #72 merged authenticated source binding plus the bounded Linux worker/service that consumes both agent queues, restores retained transfer state, drives receive/terminal handling, and exposes owner destination approval as a typed boundary. Active PR #73 adds native source/save prompts, bounded sender hashing/streaming, stable retry identity, progress/cancel/retry presentation, capability advertisement only with the complete product path, and bounded age-based cleanup of partial/completed retained state. Its current cancellation checkpoint explicitly releases pending source offers, reports typed destination request/transfer cancellation through a bounded product channel, consumes already-issued stream authority when acceptance races cancellation, correlates save prompts by exact request ID, releases accepted platform receivers on session/policy/disconnect/operation-expiry cleanup while preserving retained resume state, adds an explicit owner decline path that returns typed `Cancelled` without minting stream authority or storage state, makes destination cancellation valid from `Ready` through active streaming and the pre-publication finished-stream window with exact operation/stream revocation and retained resume state, suppresses already-buffered events for cancelled stream identities, preserves source terminal correlation across transport-close/result ordering, keeps integrity/storage aborts on a separate atomic stream-failure path, avoids stale prompt resurrection after session loss, binds same-`TransferId` sender retry to the exact original offer identity so a changed local source cannot mutate retained transfer identity, drops path-bearing send state after terminal completion/source invalidation, and introduces a non-cancellable finalizing state once payload transmission has finished.
 
 - explicit native file selection/save destination;
 - no peer-supplied path authority;
@@ -115,7 +115,11 @@ Expose the smallest clear controls:
 
 ## Verification
 
-For every implementation milestone:
+Use a two-level loop so development stays fast without weakening the merge gate.
+
+During iteration, prefer long coherent coding sessions and batch all related implementation, regression tests, cleanup, and documentation into a meaningful milestone before pushing. Run only the checks affected by the change: formatting plus targeted crate/package checks, clippy/tests, desktop build, UniFFI generation, or Android tests/assembly as applicable. Do not rerun the complete workspace/mobile matrix after every small edit, and do not create a push for every small correction unless a durable interruption checkpoint is necessary.
+
+Before marking a PR ready or merging, the exact head must pass the full gate:
 
 - `cargo fmt --check`;
 - `cargo check --workspace --all-targets --all-features`;
@@ -131,7 +135,15 @@ File-transfer-specific regression coverage must include:
 - exact default-deny / wrong operation / wrong peer;
 - stale `OperationId` rejection after reconnect;
 - policy/revocation cancellation;
+- explicit pre-accept cancellation releases the pending request/authority and permits immediate same-`TransferId` retry;
+- cancellation racing `Ready` consumes the fresh single-stream authority without sending payload bytes;
+- destination save-prompt cancellation is correlated by exact request ID so a retry cannot inherit stale UI authority;
+- explicit owner decline returns typed cancellation, creates no receiver/stream authority, and permits immediate same-`TransferId` retry;
+- destination cancellation works immediately after `Ready`, during streaming, and after stream finish but before platform publication; it revokes exact authority, suppresses stale queued data events, and surfaces terminal `Cancelled` without publishing the file;
+- session/policy/disconnect/operation-expiry interruption releases accepted platform state while preserving retained partial resume state;
+- bounded data-channel failure releases platform active state instead of poisoning later retry with stale `AlreadyActive`;
 - interrupted checkpoint recovery;
+- same-`TransferId` retry preserves the exact original offer identity; a changed local source fails locally and requires a fresh owner selection/new transfer identity;
 - changed source identity rejection;
 - final size/digest mismatch;
 - destination collision/non-clobber behavior;

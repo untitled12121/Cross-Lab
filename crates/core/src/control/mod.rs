@@ -228,9 +228,7 @@ impl ControlDispatcher {
                 Ok(InboundControl::Event(event.clone()))
             }
             EnvelopeBody::CancelRequest(cancel) => {
-                if !self.inbound_requests.remove(&cancel.request_id()) {
-                    return Err(ControlDispatchError::UnknownRequest);
-                }
+                self.inbound_requests.remove(&cancel.request_id());
                 self.remember_completed_inbound(cancel.request_id());
                 Ok(InboundControl::Cancelled(cancel.request_id()))
             }
@@ -288,11 +286,7 @@ impl ControlDispatcher {
                     return Err(ControlDispatchError::UnknownRequest);
                 }
             }
-            EnvelopeBody::CancelRequest(cancel) => {
-                if !self.pending_outgoing.contains_key(&cancel.request_id()) {
-                    return Err(ControlDispatchError::UnknownRequest);
-                }
-            }
+            EnvelopeBody::CancelRequest(_) => {}
             EnvelopeBody::CapabilityAdvertisement(_)
             | EnvelopeBody::Event(_)
             | EnvelopeBody::ProtocolError(_)

@@ -10,7 +10,7 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 
 ## Canonical Baseline
 
-- Current `main` after PR #71: `5c8b57c38b1e18771e1df4f872bfa4b5c077f784`.
+- Current `main` after PR #72: `c833a4f9827b4e0cc05999e02c0dac621499800f`.
 - PR #49 — Linux Add Device QR invitation UI + Android CameraX/ML Kit scanner: merged as `445bbf32178dff94f339fc1ae80447967f5da215`; exact-head CI `35533414673` green on `7d3176ffd4387d3e29982ae5fe641249d6d33445`.
 - PR #50 — shared product pairing coordinator + durable reciprocal trust persistence: merged as `3af825e6f78bef4512168f587f452c1b0267b6a7`; exact-head CI `35567548228` and Fuzz Smoke `35567548208` green on `ec59f99f7c09898aa2533d8b40bd4e980fa2b022`.
 - PR #51 — ADR-0016 LAN discovery profile + versioned product-pairing wire + provisional Quinn pairing channel: merged as `cf2add350ffa60056d74ac57b0a187a0297d8777`; exact-head CI `35593397861` and Fuzz Smoke `35593397844` green on `2702cc0c926cf044c65aef0376f573aaedae8c6f`.
@@ -37,8 +37,9 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 - PR #69 — streaming BLAKE3 integrity + bounded retained transfer state: merged as `0a9d9562bfe35f3fcbd4dc9dd717f247ba0da7a1`; exact head `c5fbab50aaa64e86475e20a1fca2527d195fa5ab` passed full Rust + Android CI `36383403790`.
 - PR #70 — Linux file-transfer storage/source adapter: merged as `eb32d79c94418ce46d70f8f91e05ec521f3ad504`; exact head `e653883b90ca7af4faddc6a635b9ccabdfb56779` passed full Rust + Android CI `36393985966`.
 - PR #71 — Linux receive/publication adapter: merged as `5c8b57c38b1e18771e1df4f872bfa4b5c077f784`; exact head `e1ec4cab51427e47f0318e73fc41d1cc1696ffea` passed full Rust + Android CI `36397884328`.
-- Active Phase 2 implementation branch / PR: `phase2-linux-file-transfer-service` / #72.
-- ADR-0018, ADR-0019, and ADR-0020 are accepted. Clipboard is implemented; file transfer is in Task 4 Linux platform-adapter implementation.
+- PR #72 — Linux authenticated receive service/worker: merged as `c833a4f9827b4e0cc05999e02c0dac621499800f`; exact head `08ea2cf4361dc9c5634743cebb07a05d4e88966e` passed full Rust + Android CI `36472517377`.
+- Active Phase 2 implementation branch / PR: `phase2-linux-file-transfer-ui` / #73. Exact head `a9959c62f3a83a6afc8f9121e214cec1711ea9c5` passed the Android job in CI run `36764376645`; Rust stopped only at `cargo fmt --check` on two formatting-only diffs in the new control cancellation regressions, so no Rust compile/test result exists for that head. This checkpoint applies the exact rustfmt output without changing the protocol semantics: post-response authenticated cancellation remains idempotent, retained in bounded replay history, and available to revoke the exact Ready file-transfer authority.
+- ADR-0018, ADR-0019, and ADR-0020 are accepted. Clipboard is implemented; file transfer is in the Linux product UI/retention checkpoint before Android.
 
 ## Implemented M10 Product Path
 
@@ -111,13 +112,13 @@ Owner approval on 2026-09-25 unblocked implementation. PR #58 merged the shared 
 
 PR #59 completed the persist-before-apply permission-edit boundary. PR #60 then added the shared ADR-0018 clipboard runtime with bounded UTF-8 payloads, capability negotiation, session-local request correlation, and cancellation across policy/reconnect/disconnect/shutdown. PR #61 completed the Linux GPUI and Android ClipboardManager adapters plus explicit Send/Fetch product controls without background clipboard monitoring or plaintext history.
 
-Clipboard is complete for the Phase 2 MVP software slice. PR #62 completed the protocol-neutral authorized data-stream runtime foundation, PR #65 implemented the accepted v2 offer/accept/result payload contract, PR #66 completed event-driven data-stream draining through `RuntimeActor`, PR #67 completed exact v2 control/authorization runtime, PR #68 completed the actor-owned source/destination data plane, and PR #69 completed streaming BLAKE3 integrity plus bounded retained partial/checkpoint/tombstone state. PR #70 completed the first Linux platform-adapter slice with private crash-safe retained-state persistence, opaque local path locators, and bounded source hashing/resume readers. PR #71 completed private receive partials, durable 1 MiB checkpoint ordering, restart truncation, exact final integrity verification, completion tombstones, crash-safe publication recovery, and atomic non-clobber publication. Active PR #72 binds inbound offers to the authenticated source device and adds a Linux file-transfer worker that consumes both bounded agent queues, restores retained transfers, drives receive completion, and exposes owner destination approval as a typed product boundary. Production `files.transfer` advertisement remains disabled until the native owner prompt path is connected.
+Clipboard is complete for the Phase 2 MVP software slice. PR #62 completed the protocol-neutral authorized data-stream runtime foundation, PR #65 implemented the accepted v2 offer/accept/result payload contract, PR #66 completed event-driven data-stream draining through `RuntimeActor`, PR #67 completed exact v2 control/authorization runtime, PR #68 completed the actor-owned source/destination data plane, and PR #69 completed streaming BLAKE3 integrity plus bounded retained partial/checkpoint/tombstone state. PR #70 completed the first Linux platform-adapter slice with private crash-safe retained-state persistence, opaque local path locators, and bounded source hashing/resume readers. PR #71 completed private receive partials, durable 1 MiB checkpoint ordering, restart truncation, exact final integrity verification, completion tombstones, crash-safe publication recovery, and atomic non-clobber publication. PR #72 merged authenticated source binding plus the bounded Linux receive worker/service. Active PR #73 adds explicit native source/save selection, bounded sender hashing/streaming, stable retry/resume identity, send/receive progress, cancellation, retry/resume controls, production `files.transfer` advertisement only when the complete Linux worker/UI path starts successfully, and bounded age-based retained-state cleanup. The current PR #73 checkpoint closes both pre-stream and session-lifecycle cancellation races: owner cancellation removes the pending source offer immediately, propagates request cancellation to the destination product worker, consumes any already-issued single-stream authority if acceptance won the race, drops stale save prompts by exact request identity, and allows immediate retry with the same `TransferId`. Session/policy/disconnect/operation-expiry cleanup now also releases accepted destination platform receivers while retaining only resumable partial state, so stale session-local authority cannot leave a transfer permanently `AlreadyActive`. The Linux receive UI now exposes an explicit owner `Decline` action for a pending offer; decline returns the existing typed `Cancelled` control failure, creates no stream authority or partial file, and permits immediate same-`TransferId` retry. Dismissing the native Save As picker remains non-destructive so the owner can choose a destination again. Accepted `Ready` receives are now cancellable before the data stream opens, during transfer, and after stream finish while publication is still pending: cancellation is keyed by `TransferId`, revokes exact operation/stream authority, best-effort emits terminal `Cancelled`, releases the platform receiver while retaining resumable partial state, and suppresses already-buffered events for the exact cancelled stream so stale data cannot overwrite the owner's cancellation state. If the source observes transport close before the terminal event, it enters the existing bounded terminal-wait state instead of issuing a second finish operation. Platform integrity/storage aborts remain a separate atomic path so they preserve the correct `IntegrityFailed` or `StorageFailed` terminal outcome. Stale destination prompts are never requeued after session loss. Sender retry tokens now bind the generated `TransferId` to the first prepared exact offer identity (display basename, exact size, and BLAKE3 digest); if the local source changes, retry fails locally instead of reusing the same `TransferId` with different metadata. Path-bearing send handles are dropped at terminal state, successful transfers discard the retry token, and source-change failures require a fresh owner file selection/new transfer identity.
 
 Continue in small verified vertical slices:
 
 - per-device permissions/capability-control foundation — implemented on PR #56;
 - clipboard — implemented on PR #60 + PR #61;
-- resumable file transfer — protocol-neutral stream foundation on PR #62; ADR-0020 accepted on PR #64; v2 payload contract on PR #65; event-driven actor streams on PR #66; control/authorization runtime on PR #67; data-plane runtime on PR #68; integrity/checkpoint retained state on PR #69; Linux storage/source adapter on PR #70; Linux receive/publication adapter on PR #71; Linux product service active on PR #72;
+- resumable file transfer — protocol-neutral stream foundation on PR #62; ADR-0020 accepted on PR #64; v2 payload contract on PR #65; event-driven actor streams on PR #66; control/authorization runtime on PR #67; data-plane runtime on PR #68; integrity/checkpoint retained state on PR #69; Linux storage/source adapter on PR #70; Linux receive/publication adapter on PR #71; Linux product service merged on PR #72; Linux native product UI + retention cleanup active on PR #73;
 - notifications;
 - privacy-conscious audit/history;
 - revocation/device removal;
@@ -136,14 +137,16 @@ Phase 3 adaptive networking does not begin until Phase 2 is complete.
 
 ## Exact Next Task
 
-1. finish PR #72 (`phase2-linux-file-transfer-service`) with the full exact-head Rust + Android gate and fix only verified failures;
-2. preserve this sub-slice boundary: authenticated source `DeviceId` is attached at agent dispatch, both bounded file-transfer queues are consumed outside GPUI components, retained partial/completed state is restored before authority, and platform storage/data failures terminate fail-closed; keep production `files.transfer` advertisement disabled until the owner prompt is connected;
-3. after merge, add explicit Linux native source/save selection and the GPUI Send/receive/resume/progress/cancel/retry flow, then enable `FileTransferAvailability` only when that complete service/UI path is active;
-4. implement the Android SAF/ContentResolver adapter with the same accepted resume/integrity semantics and no broad storage privilege;
-5. finish the matching Android Compose product flow;
-6. add bounded retained-state cleanup policy before declaring file transfer product-complete;
-7. keep M10 physical evidence separately pending until owner hardware is available;
-8. stop before Phase 3.
+1. require one fresh full exact-head Rust + Android gate on PR #73 after aligning shared control cancellation with the existing Protocol V1 idempotent post-response semantics; if it is green, mark PR #73 ready and merge;
+2. preserve the Linux product boundary: owner-selected source/save paths stay local, peer display names never grant path authority, source hashing/data I/O remain bounded, cancellation releases pending/issued transfer authority without stale destination prompts, retry preserves `TransferId` only with the exact original offer identity, receive state remains authenticated-source-bound, and capability advertisement exists only with the complete worker/UI path;
+3. after PR #73 merges, implement the Android SAF/ContentResolver adapter with the same accepted resume/integrity semantics and no broad storage privilege;
+4. finish the matching Android Compose send/receive/progress/cancel/retry flow;
+5. keep M10 physical evidence separately pending until owner hardware is available;
+6. stop before Phase 3.
+
+## Efficient Verification Workflow
+
+During implementation, prefer long coherent coding sessions over short update/push loops. Carry related code, tests, refactors, UI integration, and documentation through a meaningful milestone before creating a Git checkpoint. Run only focused checks for touched crates/features plus formatting while iterating; do not repeatedly run the full workspace/Android matrix for every small edit. Push once at the milestone boundary (or earlier only when interruption/context risk makes a durable checkpoint necessary), then let CI run without polling. If CI fails, inspect the completed failure once, fix only the verified issue, run the smallest relevant local check, and push one repair batch. The full Rust + Android exact-head gate remains mandatory before a PR is marked ready/merged.
 
 ## Resume Procedure
 
@@ -151,5 +154,6 @@ Phase 3 adaptive networking does not begin until Phase 2 is complete.
 2. read Master Architecture revision 2.10, this file, active plans, and relevant ADRs/specifications;
 3. inspect existing code and relevant uploaded research before adding adapters/dependencies;
 4. reuse existing pairing/session/policy/currentness boundaries rather than duplicating security semantics;
-5. work in small verifiable milestones, run full relevant gates, commit/push, and update this file;
-6. keep physical-device evidence separate from CI claims.
+5. work in coherent verifiable milestones, use focused checks while iterating, batch related edits into one push, and update this file;
+6. require the full exact-head Rust + Android gate before merge, but do not poll CI continuously after a push;
+7. keep physical-device evidence separate from CI claims.
