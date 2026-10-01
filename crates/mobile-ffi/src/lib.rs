@@ -29,7 +29,8 @@ pub use dto::{
 };
 pub use error::MobileRuntimeError;
 pub use file_transfer::{
-    MobileFileTransferAcceptance, MobileFileTransferAcceptanceKind, MobileFileTransferCancellation,
+    MobileExpiredFileTransfer, MobileFileTransferAcceptance, MobileFileTransferAcceptanceKind,
+    MobileFileTransferCancellation,
     MobileFileTransferDataEvent, MobileFileTransferDataKind, MobileFileTransferError,
     MobileFileTransferHasher, MobileFileTransferOffer, MobileFileTransferRecovery,
     MobileFileTransferRecoveryKind, MobileFileTransferRequest, MobileFileTransferResult,

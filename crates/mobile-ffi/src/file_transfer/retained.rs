@@ -9,6 +9,11 @@ use crosslab_agent::{
 
 use super::{MobileFileTransferError, MobileFileTransferOffer, device_id, transfer_id};
 
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct MobileExpiredFileTransfer {
+    pub transfer_id: Vec<u8>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum MobileFileTransferRecoveryKind {
     None,
@@ -163,7 +168,7 @@ impl MobileFileTransferState {
         now_unix_secs: u64,
         partial_max_age_secs: u64,
         completion_max_age_secs: u64,
-    ) -> Result<Vec<Vec<u8>>, MobileFileTransferError> {
+    ) -> Result<Vec<MobileExpiredFileTransfer>, MobileFileTransferError> {
         let mut state = self
             .state
             .lock()
@@ -185,7 +190,9 @@ impl MobileFileTransferState {
             .iter()
             .filter_map(|entry| match entry {
                 FileTransferRetainedState::Partial(partial) => {
-                    Some(partial.identity().transfer_id().to_bytes().to_vec())
+                    Some(MobileExpiredFileTransfer {
+                        transfer_id: partial.identity().transfer_id().to_bytes().to_vec(),
+                    })
                 }
                 FileTransferRetainedState::Completed(_) => None,
             })

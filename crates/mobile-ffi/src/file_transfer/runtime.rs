@@ -45,6 +45,17 @@ impl From<FileTransferTerminalOutcome> for MobileFileTransferTerminalOutcome {
     }
 }
 
+impl From<MobileFileTransferTerminalOutcome> for FileTransferTerminalOutcome {
+    fn from(value: MobileFileTransferTerminalOutcome) -> Self {
+        match value {
+            MobileFileTransferTerminalOutcome::Completed => Self::Completed,
+            MobileFileTransferTerminalOutcome::Cancelled => Self::Cancelled,
+            MobileFileTransferTerminalOutcome::IntegrityFailed => Self::IntegrityFailed,
+            MobileFileTransferTerminalOutcome::StorageFailed => Self::StorageFailed,
+        }
+    }
+}
+
 #[derive(uniffi::Object)]
 pub struct MobileFileTransferRequest {
     request_id: RequestId,

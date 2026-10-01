@@ -95,7 +95,7 @@ PR #70 completed the first platform slice with a private atomic retained-state s
 
 ## Task 5 — Android platform adapter — Active
 
-Active branch `phase2-android-file-transfer-adapter` starts from merged PR #73 / `main` `881a5dc0f50943d2cc312a5396afecc07c6a1073`.
+Active branch / draft PR `phase2-android-file-transfer-adapter` / #75 starts from merged PR #73 / `main` `881a5dc0f50943d2cc312a5396afecc07c6a1073`.
 
 The adapter slice keeps capability/UI authority separate while establishing the reusable mobile boundary:
 

@@ -6,8 +6,8 @@ use crosslab_agent::{
 };
 use crosslab_identity::DeviceId;
 use crosslab_protocol::{
-    FileTransferDigest, FileTransferProfileError, FileTransferTerminalOutcome, ProtocolErrorCode,
-    RequestId, StreamId, TransferId,
+    FileTransferDigest, FileTransferProfileError, ProtocolErrorCode, RequestId, StreamId,
+    TransferId,
 };
 
 mod integrity;
@@ -18,7 +18,8 @@ pub use integrity::{
     MobileFileTransferHasher, MobileFileTransferOffer, MobileFileTransferVerifier,
 };
 pub use retained::{
-    MobileFileTransferRecovery, MobileFileTransferRecoveryKind, MobileFileTransferState,
+    MobileExpiredFileTransfer, MobileFileTransferRecovery, MobileFileTransferRecoveryKind,
+    MobileFileTransferState,
 };
 pub use runtime::{
     MobileFileTransferAcceptance, MobileFileTransferAcceptanceKind, MobileFileTransferCancellation,
@@ -183,21 +184,6 @@ pub(super) fn digest(bytes: Vec<u8>) -> Result<FileTransferDigest, MobileFileTra
         .try_into()
         .map_err(|_| MobileFileTransferError::InvalidOffer)?;
     Ok(FileTransferDigest::from_bytes(bytes))
-}
-
-pub(super) fn terminal_outcome(
-    value: MobileFileTransferTerminalOutcome,
-) -> FileTransferTerminalOutcome {
-    match value {
-        MobileFileTransferTerminalOutcome::Completed => FileTransferTerminalOutcome::Completed,
-        MobileFileTransferTerminalOutcome::Cancelled => FileTransferTerminalOutcome::Cancelled,
-        MobileFileTransferTerminalOutcome::IntegrityFailed => {
-            FileTransferTerminalOutcome::IntegrityFailed
-        }
-        MobileFileTransferTerminalOutcome::StorageFailed => {
-            FileTransferTerminalOutcome::StorageFailed
-        }
-    }
 }
 
 #[cfg(test)]

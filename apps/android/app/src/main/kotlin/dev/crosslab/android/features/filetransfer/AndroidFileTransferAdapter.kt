@@ -238,8 +238,8 @@ class AndroidFileTransferAdapter(
                 partialMaxAgeSecs = PARTIAL_RETENTION_SECS.toULong(),
                 completionMaxAgeSecs = COMPLETION_RETENTION_SECS.toULong(),
             )
-        partialIds.forEach { transferId ->
-            runCatching { partialFile(transferId).delete() }
+        partialIds.forEach { expired ->
+            runCatching { partialFile(expired.transferId).delete() }
         }
         val orphanCutoff = System.currentTimeMillis() - COMPLETION_RETENTION_SECS * 1000L
         root.listFiles()
