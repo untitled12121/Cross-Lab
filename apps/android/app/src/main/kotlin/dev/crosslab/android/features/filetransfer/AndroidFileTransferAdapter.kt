@@ -42,6 +42,9 @@ class AndroidFileTransferAdapter(context: Context) {
     fun openSource(source: AndroidFileTransferSource): InputStream? =
         resolver.openInputStream(source.uri)
 
+    fun openForRead(uri: Uri): InputStream? =
+        runCatching { resolver.openInputStream(uri) }.getOrNull()
+
     fun persistSourceGrant(uri: Uri): Boolean =
         persistGrant(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
 

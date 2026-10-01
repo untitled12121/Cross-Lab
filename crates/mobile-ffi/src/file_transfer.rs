@@ -379,8 +379,7 @@ impl MobileFileTransferState {
         local_locator: Vec<u8>,
         updated_at_unix_secs: u64,
     ) -> Result<(), MobileFileTransferError> {
-        let identity =
-            FileTransferIdentity::new(request.source_device_id, request.offer.clone());
+        let identity = FileTransferIdentity::new(request.source_device_id, request.offer.clone());
         let locator = FileTransferLocalLocator::new(local_locator)?;
         let partial =
             FileTransferPartialState::new(identity, durable_offset, locator, updated_at_unix_secs)?;
@@ -396,8 +395,7 @@ impl MobileFileTransferState {
         request: Arc<MobileFileTransferRequest>,
         updated_at_unix_secs: u64,
     ) -> Result<(), MobileFileTransferError> {
-        let identity =
-            FileTransferIdentity::new(request.source_device_id, request.offer.clone());
+        let identity = FileTransferIdentity::new(request.source_device_id, request.offer.clone());
         let completed = FileTransferCompletionTombstone::new(identity, updated_at_unix_secs);
         self.state
             .lock()
@@ -406,10 +404,7 @@ impl MobileFileTransferState {
             .map_err(MobileFileTransferError::from)
     }
 
-    pub fn remove(
-        &self,
-        transfer_id_bytes: Vec<u8>,
-    ) -> Result<bool, MobileFileTransferError> {
+    pub fn remove(&self, transfer_id_bytes: Vec<u8>) -> Result<bool, MobileFileTransferError> {
         let transfer_id = transfer_id(transfer_id_bytes)?;
         Ok(self
             .state
@@ -477,6 +472,10 @@ impl MobilePreparedFileTransfer {
     pub fn verifier(&self) -> Arc<MobileFileTransferVerifier> {
         Arc::new(MobileFileTransferVerifier::new(&self.offer))
     }
+
+    pub fn same_offer(&self, other: Arc<MobilePreparedFileTransfer>) -> bool {
+        self.offer == other.offer
+    }
 }
 
 #[derive(uniffi::Object)]
@@ -491,6 +490,16 @@ impl MobileFileTransferHasher {
     pub fn new() -> Result<Self, MobileFileTransferError> {
         Ok(Self {
             transfer_id: TransferId::generate().map_err(|_| MobileFileTransferError::Random)?,
+            hasher: Mutex::new(Some(FileTransferHasher::new())),
+        })
+    }
+
+    #[uniffi::constructor]
+    pub fn with_transfer_id(
+        transfer_id_bytes: Vec<u8>,
+    ) -> Result<Self, MobileFileTransferError> {
+        Ok(Self {
+            transfer_id: transfer_id(transfer_id_bytes)?,
             hasher: Mutex::new(Some(FileTransferHasher::new())),
         })
     }
@@ -524,6 +533,13 @@ impl MobileFileTransferHasher {
             .map_err(MobileFileTransferError::from)?;
         Ok(Arc::new(MobilePreparedFileTransfer { offer }))
     }
+}
+
+#[uniffi::export]
+pub fn file_transfer_hasher_for_retry(
+    transfer_id_bytes: Vec<u8>,
+) -> Result<Arc<MobileFileTransferHasher>, MobileFileTransferError> {
+    MobileFileTransferHasher::with_transfer_id(transfer_id_bytes).map(Arc::new)
 }
 
 #[derive(uniffi::Object)]
@@ -848,7 +864,10 @@ mod tests {
 
         let verifier = prepared.verifier();
         verifier.update(b"changed!".to_vec()).unwrap();
-        assert_eq!(verifier.finish(), Err(MobileFileTransferError::IntegrityFailed));
+        assert_eq!(
+            verifier.finish(),
+            Err(MobileFileTransferError::IntegrityFailed)
+        );
     }
 
     #[test]

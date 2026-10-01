@@ -19,11 +19,12 @@ use crate::{
         MobileClipboardRequest, request_id as clipboard_request_id,
     },
     file_transfer::{
-        MobileFileTransferAcceptance, MobileFileTransferCancellation, MobileFileTransferChunkResult,
-        MobileFileTransferDataEvent, MobileFileTransferError, MobileFileTransferRequest,
-        MobileFileTransferResult, MobileFileTransferSourceStream, MobileFileTransferTerminalOutcome,
-        MobilePreparedFileTransfer, request_id as file_transfer_request_id,
-        stream_id as file_transfer_stream_id, transfer_id as file_transfer_id,
+        MobileFileTransferAcceptance, MobileFileTransferCancellation,
+        MobileFileTransferChunkResult, MobileFileTransferDataEvent, MobileFileTransferError,
+        MobileFileTransferRequest, MobileFileTransferResult, MobileFileTransferSourceStream,
+        MobileFileTransferTerminalOutcome, MobilePreparedFileTransfer,
+        request_id as file_transfer_request_id, stream_id as file_transfer_stream_id,
+        transfer_id as file_transfer_id,
     },
     network::socket_addr,
     policy_store::{MobilePolicyStoreError, decode_policy_store},
@@ -350,7 +351,9 @@ impl MobileTrustedPresenceAgent {
         });
 
         match request {
-            Ok(Some(request)) => Ok(Some(Arc::new(MobileFileTransferRequest::from_agent(request)))),
+            Ok(Some(request)) => Ok(Some(Arc::new(MobileFileTransferRequest::from_agent(
+                request,
+            )))),
             Ok(None) => Err(MobileFileTransferError::Closed),
             Err(_) => Ok(None),
         }
@@ -373,9 +376,9 @@ impl MobileTrustedPresenceAgent {
         });
 
         match cancellation {
-            Ok(Some(cancellation)) => {
-                Ok(Some(MobileFileTransferCancellation::from_agent(cancellation)))
-            }
+            Ok(Some(cancellation)) => Ok(Some(MobileFileTransferCancellation::from_agent(
+                cancellation,
+            ))),
             Ok(None) => Err(MobileFileTransferError::Closed),
             Err(_) => Ok(None),
         }
@@ -398,7 +401,9 @@ impl MobileTrustedPresenceAgent {
         });
 
         match event {
-            Ok(Some(event)) => Ok(Some(Arc::new(MobileFileTransferDataEvent::from_agent(event)))),
+            Ok(Some(event)) => Ok(Some(Arc::new(MobileFileTransferDataEvent::from_agent(
+                event,
+            )))),
             Ok(None) => Err(MobileFileTransferError::Closed),
             Err(_) => Ok(None),
         }
@@ -733,13 +738,9 @@ impl MobileTrustedPresenceAgent {
             .map_err(MobileClipboardError::from)
     }
 
-
     fn with_file_transfer_runtime<T>(
         &self,
-        operation: impl FnOnce(
-            &TrustedPresenceAgent,
-            &Runtime,
-        ) -> Result<T, MobileFileTransferError>,
+        operation: impl FnOnce(&TrustedPresenceAgent, &Runtime) -> Result<T, MobileFileTransferError>,
     ) -> Result<T, MobileFileTransferError> {
         let agent = self
             .agent_handle()
