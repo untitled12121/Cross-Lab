@@ -35,7 +35,7 @@ pub use file_transfer::{
     MobileFileTransferOffer, MobileFileTransferRecovery, MobileFileTransferRecoveryKind,
     MobileFileTransferRequest, MobileFileTransferResult, MobileFileTransferSourceStream,
     MobileFileTransferState, MobileFileTransferTerminalOutcome, MobileFileTransferVerifier,
-}
+};
 pub use identity_store::{MobileIdentityCommit, MobileIdentityStoreError};
 pub use pairing::{
     MobilePairingBootstrap, MobilePairingBootstrapError, MobilePairingBootstrapSummary,

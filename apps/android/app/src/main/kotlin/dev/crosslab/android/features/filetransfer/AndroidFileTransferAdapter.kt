@@ -79,6 +79,7 @@ class AndroidFileTransferAdapter(
         if (retryOffer != null && !offer.sameIdentity(retryOffer)) {
             throw FileTransferSourceChanged()
         }
+        offer.fileSize().toSafeLong()
         return AndroidFileTransferSource(uri, offer)
     }
 
@@ -110,6 +111,7 @@ class AndroidFileTransferAdapter(
         destinationUri: Uri?,
         persistWritePermission: Boolean,
     ): AndroidReceivePreparation {
+        offer.fileSize().toSafeLong()
         val recovery = state.find(sourceDeviceId, offer)
         if (recovery.kind() == MobileFileTransferRecoveryKind.ALREADY_COMPLETE) {
             return AndroidReceivePreparation.alreadyComplete(offer.fileSize())
@@ -240,7 +242,7 @@ class AndroidFileTransferAdapter(
             runCatching { partialFile(entry.transferId).delete() }
         }
 
-        val orphanCutoff = System.currentTimeMillis() - COMPLETION_RETENTION_SECS * 1000L
+        val orphanCutoff = System.currentTimeMillis() - PARTIAL_RETENTION_SECS * 1000L
         root.listFiles()
             ?.filter { file ->
                 file.isFile &&

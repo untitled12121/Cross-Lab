@@ -106,21 +106,30 @@ class AndroidFileTransferReceiver internal constructor(
             throw FileTransferIntegrityFailure()
         }
 
-        file?.fd?.sync()
-        file?.close()
+        val active = checkNotNull(file)
         file = null
+        try {
+            active.fd.sync()
+        } finally {
+            active.close()
+        }
 
         val verifier = MobileFileTransferVerifier(offer)
-        try {
-            FileInputStream(partial).use { input ->
-                val buffer = ByteArray(FILE_TRANSFER_IO_CHUNK_BYTES)
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read < 0) break
-                    if (read == 0) continue
+        FileInputStream(partial).use { input ->
+            val buffer = ByteArray(FILE_TRANSFER_IO_CHUNK_BYTES)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                if (read == 0) continue
+                try {
                     verifier.update(buffer.copyOf(read))
+                } catch (error: Throwable) {
+                    failIntegrity()
+                    throw FileTransferIntegrityFailure(error)
                 }
             }
+        }
+        try {
             verifier.finish()
         } catch (error: Throwable) {
             failIntegrity()
@@ -136,9 +145,10 @@ class AndroidFileTransferReceiver internal constructor(
     @Synchronized
     fun cancel() {
         if (terminal) return
-        file?.fd?.sync()
-        file?.close()
+        val active = file
         file = null
+        runCatching { active?.fd?.sync() }
+        runCatching { active?.close() }
         terminal = true
     }
 

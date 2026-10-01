@@ -1,8 +1,7 @@
 use core::fmt;
 
 use crosslab_agent::{
-    FileTransferChunkError, FileTransferIntegrityError, FileTransferOperationError,
-    FileTransferStateError,
+    FileTransferIntegrityError, FileTransferOperationError, FileTransferStateError,
 };
 use crosslab_identity::DeviceId;
 use crosslab_protocol::{
@@ -46,8 +45,6 @@ pub enum MobileFileTransferError {
     Random,
     TimedOut,
     Cancelled,
-    Backpressure,
-    ChunkTooLarge,
     Transport,
     Closed,
     RemoteDenied,
@@ -76,8 +73,6 @@ impl fmt::Display for MobileFileTransferError {
             Self::Random => "file transfer identifier generation failed",
             Self::TimedOut => "file transfer operation timed out",
             Self::Cancelled => "file transfer operation was cancelled",
-            Self::Backpressure => "file transfer data path is applying backpressure",
-            Self::ChunkTooLarge => "file transfer chunk exceeds the transport limit",
             Self::Transport => "file transfer transport failed",
             Self::Closed => "file transfer runtime is closed",
             Self::RemoteDenied => "file transfer operation is denied by the peer",
@@ -120,15 +115,6 @@ impl From<FileTransferOperationError> for MobileFileTransferError {
     }
 }
 
-impl From<FileTransferChunkError> for MobileFileTransferError {
-    fn from(error: FileTransferChunkError) -> Self {
-        match error {
-            FileTransferChunkError::Backpressure(_) => Self::Backpressure,
-            FileTransferChunkError::TooLarge(_) => Self::ChunkTooLarge,
-            FileTransferChunkError::Closed(_) => Self::Closed,
-        }
-    }
-}
 
 impl From<FileTransferIntegrityError> for MobileFileTransferError {
     fn from(_: FileTransferIntegrityError) -> Self {
