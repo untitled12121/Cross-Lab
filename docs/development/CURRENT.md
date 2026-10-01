@@ -10,7 +10,7 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 
 ## Canonical Baseline
 
-- Current `main` after PR #72: `c833a4f9827b4e0cc05999e02c0dac621499800f`.
+- Current `main` after PR #73: `881a5dc0f50943d2cc312a5396afecc07c6a1073`.
 - PR #49 — Linux Add Device QR invitation UI + Android CameraX/ML Kit scanner: merged as `445bbf32178dff94f339fc1ae80447967f5da215`; exact-head CI `35533414673` green on `7d3176ffd4387d3e29982ae5fe641249d6d33445`.
 - PR #50 — shared product pairing coordinator + durable reciprocal trust persistence: merged as `3af825e6f78bef4512168f587f452c1b0267b6a7`; exact-head CI `35567548228` and Fuzz Smoke `35567548208` green on `ec59f99f7c09898aa2533d8b40bd4e980fa2b022`.
 - PR #51 — ADR-0016 LAN discovery profile + versioned product-pairing wire + provisional Quinn pairing channel: merged as `cf2add350ffa60056d74ac57b0a187a0297d8777`; exact-head CI `35593397861` and Fuzz Smoke `35593397844` green on `2702cc0c926cf044c65aef0376f573aaedae8c6f`.
@@ -38,8 +38,9 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 - PR #70 — Linux file-transfer storage/source adapter: merged as `eb32d79c94418ce46d70f8f91e05ec521f3ad504`; exact head `e653883b90ca7af4faddc6a635b9ccabdfb56779` passed full Rust + Android CI `36393985966`.
 - PR #71 — Linux receive/publication adapter: merged as `5c8b57c38b1e18771e1df4f872bfa4b5c077f784`; exact head `e1ec4cab51427e47f0318e73fc41d1cc1696ffea` passed full Rust + Android CI `36397884328`.
 - PR #72 — Linux authenticated receive service/worker: merged as `c833a4f9827b4e0cc05999e02c0dac621499800f`; exact head `08ea2cf4361dc9c5634743cebb07a05d4e88966e` passed full Rust + Android CI `36472517377`.
-- Active Phase 2 implementation branch / PR: `phase2-linux-file-transfer-ui` / #73. Exact head `a9959c62f3a83a6afc8f9121e214cec1711ea9c5` passed the Android job in CI run `36764376645`; Rust stopped only at `cargo fmt --check` on two formatting-only diffs in the new control cancellation regressions, so no Rust compile/test result exists for that head. This checkpoint applies the exact rustfmt output without changing the protocol semantics: post-response authenticated cancellation remains idempotent, retained in bounded replay history, and available to revoke the exact Ready file-transfer authority.
-- ADR-0018, ADR-0019, and ADR-0020 are accepted. Clipboard is implemented; file transfer is in the Linux product UI/retention checkpoint before Android.
+- PR #73 — Linux native file-transfer product UI + retention/cancellation cleanup: merged as `881a5dc0f50943d2cc312a5396afecc07c6a1073`; exact head `0651fb2695a0c13a4a6ba9475b6c82117c3ce6a0` passed full Rust + Android CI `36766577759`.
+- Active Phase 2 implementation branch: `phase2-android-file-transfer`. The first Android Task 5 slice adds a narrow mobile FFI for file-transfer control/data/integrity plus a SAF/ContentResolver-local adapter with private bounded partial files. Production `files.transfer` advertisement remains disabled on Android until the worker, retained-state recovery, destination approval, and product flow are complete.
+- ADR-0018, ADR-0019, and ADR-0020 are accepted. Clipboard is implemented; Linux file transfer is merged and Android Task 5 is active.
 
 ## Implemented M10 Product Path
 
@@ -118,7 +119,7 @@ Continue in small verified vertical slices:
 
 - per-device permissions/capability-control foundation — implemented on PR #56;
 - clipboard — implemented on PR #60 + PR #61;
-- resumable file transfer — protocol-neutral stream foundation on PR #62; ADR-0020 accepted on PR #64; v2 payload contract on PR #65; event-driven actor streams on PR #66; control/authorization runtime on PR #67; data-plane runtime on PR #68; integrity/checkpoint retained state on PR #69; Linux storage/source adapter on PR #70; Linux receive/publication adapter on PR #71; Linux product service merged on PR #72; Linux native product UI + retention cleanup active on PR #73;
+- resumable file transfer — protocol-neutral stream foundation on PR #62; ADR-0020 accepted on PR #64; v2 payload contract on PR #65; event-driven actor streams on PR #66; control/authorization runtime on PR #67; data-plane runtime on PR #68; integrity/checkpoint retained state on PR #69; Linux storage/source adapter on PR #70; Linux receive/publication adapter on PR #71; Linux product service merged on PR #72; Linux native product UI + retention cleanup merged on PR #73; Android SAF/ContentResolver adapter active;
 - notifications;
 - privacy-conscious audit/history;
 - revocation/device removal;
@@ -137,10 +138,10 @@ Phase 3 adaptive networking does not begin until Phase 2 is complete.
 
 ## Exact Next Task
 
-1. require one fresh full exact-head Rust + Android gate on PR #73 after aligning shared control cancellation with the existing Protocol V1 idempotent post-response semantics; if it is green, mark PR #73 ready and merge;
-2. preserve the Linux product boundary: owner-selected source/save paths stay local, peer display names never grant path authority, source hashing/data I/O remain bounded, cancellation releases pending/issued transfer authority without stale destination prompts, retry preserves `TransferId` only with the exact original offer identity, receive state remains authenticated-source-bound, and capability advertisement exists only with the complete worker/UI path;
-3. after PR #73 merges, implement the Android SAF/ContentResolver adapter with the same accepted resume/integrity semantics and no broad storage privilege;
-4. finish the matching Android Compose send/receive/progress/cancel/retry flow;
+1. complete the Android Task 5 platform slice on `phase2-android-file-transfer`: use the new mobile FFI boundary plus SAF/ContentResolver-local source/destination handles, persist bounded retained state, recover private partials by durable checkpoint, and keep URI/path authority local;
+2. wire bounded Android send/receive workers for offer/Ready/data/cancel/result handling, exact BLAKE3 verification, backpressure, reconnect cleanup, and same-`TransferId` exact-offer retry;
+3. enable Android `FileTransferAvailability` only after the complete worker/owner-destination path is active, then finish the matching Compose send/receive/progress/cancel/retry flow;
+4. preserve no broad storage privilege, no remote filesystem browser, no payload logging/history, and no stale session authority across app/network lifecycle;
 5. keep M10 physical evidence separately pending until owner hardware is available;
 6. stop before Phase 3.
 

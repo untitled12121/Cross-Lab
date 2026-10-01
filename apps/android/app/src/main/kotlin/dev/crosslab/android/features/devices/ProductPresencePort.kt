@@ -345,6 +345,7 @@ class ProductPresencePort(
                     policyAnchor = policy?.anchor,
                     clipboardReadAvailable = clipboardAvailable,
                     clipboardWriteAvailable = clipboardAvailable,
+                    fileTransferAvailable = false,
                 )
             }.getOrElse {
                 publishLocked(
