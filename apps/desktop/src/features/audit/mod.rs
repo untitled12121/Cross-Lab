@@ -205,16 +205,24 @@ impl LinuxAuditStore {
     }
 }
 
-#[derive(Debug)]
 pub(crate) enum LinuxAuditError {
     Path,
     Clock,
     Currentness,
     Malformed,
     Io(std::io::Error),
-    Keyring(oo7::Error),
+    Keyring(Box<oo7::Error>),
     Store(IdentityStoreError),
     Audit(AuditError),
+}
+
+impl core::fmt::Debug for LinuxAuditError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_tuple("LinuxAuditError")
+            .field(&self.to_string())
+            .finish()
+    }
 }
 
 impl core::fmt::Display for LinuxAuditError {
@@ -250,7 +258,7 @@ impl From<std::io::Error> for LinuxAuditError {
 }
 impl From<oo7::Error> for LinuxAuditError {
     fn from(error: oo7::Error) -> Self {
-        Self::Keyring(error)
+        Self::Keyring(Box::new(error))
     }
 }
 impl From<IdentityStoreError> for LinuxAuditError {
@@ -339,6 +347,15 @@ fn private_file(path: &Path) -> Result<(), std::io::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn owner_visible_errors_hide_sources_and_remain_small() {
+        let error = LinuxAuditError::Io(std::io::Error::other("PRIVATE_AUDIT_PAYLOAD"));
+        assert_eq!(error.to_string(), "protected audit storage I/O unavailable");
+        assert!(!format!("{error:?}").contains("PRIVATE_AUDIT_PAYLOAD"));
+        assert!(std::error::Error::source(&error).is_some());
+        assert!(std::mem::size_of::<LinuxAuditError>() <= 64);
+    }
 
     #[test]
     fn malformed_and_trailing_audit_bundles_fail_closed() {

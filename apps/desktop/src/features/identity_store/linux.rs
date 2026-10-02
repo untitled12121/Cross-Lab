@@ -99,12 +99,12 @@ impl LinuxIdentityStore {
             self.verify_anchor(anchor).await?;
         }
 
-        if let Some(expected) = expected_payload {
-            if current_envelope.as_ref().map(|e| e.payload()) != Some(expected) {
-                return Err(LinuxIdentityStoreError::Store(
-                    IdentityStoreError::RevisionConflict,
-                ));
-            }
+        if expected_payload.is_some_and(|expected| {
+            current_envelope.as_ref().map(|envelope| envelope.payload()) != Some(expected)
+        }) {
+            return Err(LinuxIdentityStoreError::Store(
+                IdentityStoreError::RevisionConflict,
+            ));
         }
         let commit = prepare_commit(current_envelope.as_ref(), payload)?;
         let next_anchor = commit.anchor();

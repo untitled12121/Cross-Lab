@@ -25,6 +25,7 @@ import uniffi.crosslab_mobile_ffi.MobileClipboardRequest
 import uniffi.crosslab_mobile_ffi.MobileClipboardRequestKind
 import uniffi.crosslab_mobile_ffi.MobilePermissionEffect
 import uniffi.crosslab_mobile_ffi.MobilePermissionSnapshot
+import uniffi.crosslab_mobile_ffi.MobilePresenceAvailability
 import uniffi.crosslab_mobile_ffi.MobilePresenceDiscovery
 import uniffi.crosslab_mobile_ffi.MobilePresencePhase
 import uniffi.crosslab_mobile_ffi.MobilePresenceSnapshot
@@ -429,11 +430,14 @@ class ProductPresencePort(
                     localDeviceSigner = identityRepository.localDeviceSigner,
                     policyEnvelope = policy?.envelope,
                     policyAnchor = policy?.anchor,
-                    clipboardReadAvailable = clipboardAvailable,
-                    clipboardWriteAvailable = clipboardAvailable,
-                    fileTransferAvailable = fileTransferAvailable,
-                    notificationSourceAvailable = notification.locallyAvailable(),
-                    notificationContentEnabled = notification.permitsContent(),
+                    availability =
+                        MobilePresenceAvailability(
+                            clipboardRead = clipboardAvailable,
+                            clipboardWrite = clipboardAvailable,
+                            fileTransfer = fileTransferAvailable,
+                            notificationSource = notification.locallyAvailable(),
+                            notificationContent = notification.permitsContent(),
+                        ),
                 )
             }.getOrElse {
                 publishLocked(

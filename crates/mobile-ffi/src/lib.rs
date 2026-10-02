@@ -47,8 +47,8 @@ pub use pairing_persistence::{MobileProductPairingCommit, MobileProductPairingJo
 pub use policy_store::{MobilePolicyCommit, MobilePolicyStoreError};
 pub use presence::{
     MobilePermissionEffect, MobilePermissionRule, MobilePermissionSnapshot,
-    MobilePresenceDiscovery, MobilePresenceError, MobilePresencePhase, MobilePresenceSnapshot,
-    MobileTrustedPresenceAgent,
+    MobilePresenceAvailability, MobilePresenceDiscovery, MobilePresenceError, MobilePresencePhase,
+    MobilePresenceSnapshot, MobileTrustedPresenceAgent,
 };
 pub use product_identity::{
     MobileProductIdentity, MobileProductIdentityError, MobileSigningCallbackError,
