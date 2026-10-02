@@ -74,7 +74,7 @@ User-visible diagnostics should explain actionable failures without exposing sec
 
 ## 7. Persistence
 
-Phase 1 simulator audit sinks are in-memory test structures. Persistent audit storage is deferred until durable state is introduced.
+Phase 1 simulator audit sinks are in-memory test structures. Persistent owner-only history storage is governed by accepted ADR-0023 and remains a separate product implementation gate. The bounded codec/domain model alone is not a protected store.
 
 Before persistent audit logs ship, the storage design must define:
 

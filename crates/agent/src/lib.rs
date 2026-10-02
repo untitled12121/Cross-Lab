@@ -2,6 +2,7 @@
 
 mod clipboard;
 mod file_transfer;
+mod notification;
 mod presence;
 
 pub use clipboard::{
@@ -17,6 +18,9 @@ pub use file_transfer::{
     FileTransferSourceStream, FileTransferStateError, FileTransferStateMatch,
     FileTransferStateSnapshot, FileTransferVerifier, MAX_FILE_TRANSFER_LOCAL_LOCATOR_BYTES,
     MAX_FILE_TRANSFER_STATE_BYTES, MAX_RETAINED_FILE_TRANSFERS,
+};
+pub use notification::{
+    NOTIFICATION_QUEUE_CAPACITY, NotificationConsent, NotificationMirror, NotificationMirrorError,
 };
 pub use presence::{
     PermissionRule, PermissionSnapshot, PresenceAgentError, PresenceDiscoveryInfo, PresencePhase,

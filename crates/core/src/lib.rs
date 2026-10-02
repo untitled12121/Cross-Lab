@@ -1,11 +1,16 @@
 //! Platform-independent Cross-Lab coordination core.
 
+mod audit;
 mod control;
 mod pairing;
 mod session;
 mod stream;
 mod transport;
 
+pub use audit::{
+    AUDIT_RETENTION_HOURS, AuditAction, AuditError, AuditHistory, AuditOutcome, AuditRecord,
+    MAX_AUDIT_EVENTS, MAX_AUDIT_SNAPSHOT_BYTES,
+};
 pub use control::{ControlDispatchError, ControlDispatcher, EventSubscription, InboundControl};
 pub use pairing::{
     PAIRING_BOOTSTRAP_PROFILE_V1, PAIRING_DNS_SD_SERVICE_TYPE, PAIRING_DNS_SD_TXT_VERSION_KEY,

@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -30,14 +30,15 @@ fun OwnerScreen(
     theme: ThemeDocument,
     runtime: RuntimeControllerState,
     trustedPeerIds: List<String>,
+    inventoryGeneration: Int,
     revokedPeerIds: List<String>,
     canRevokePeers: Boolean,
     revocationNotice: String?,
-    onRevokePeer: (Int) -> Unit,
+    onRevokePeer: (Int, Int) -> Unit,
 ) {
     val colors = theme.colors
     val snapshot = runtime.snapshot
-    var pendingRevoke by remember { mutableIntStateOf(-1) }
+    var pendingRevoke by remember { mutableStateOf<Pair<Int, Int>?>(null) }
 
     Column(
         modifier =
@@ -86,7 +87,7 @@ fun OwnerScreen(
             trustedPeerIds.take(24).forEachIndexed { index, peerId ->
                 InfoRow(theme, "Trusted device ${index + 1}", peerId)
                 if (canRevokePeers) {
-                    if (pendingRevoke == index) {
+                    if (pendingRevoke == (index to inventoryGeneration)) {
                         BasicText(
                             text = "Revoke this device permanently? Its existing credentials will no longer grant access.",
                             style = theme.typography.scales.caption.toTextStyle()
@@ -97,21 +98,21 @@ fun OwnerScreen(
                             label = "Confirm revocation",
                             destructive = true,
                             onClick = {
-                                pendingRevoke = -1
-                                onRevokePeer(index)
+                                pendingRevoke = null
+                                onRevokePeer(index, inventoryGeneration)
                             },
                         )
                         ControlButton(
                             theme = theme,
                             label = "Cancel",
-                            onClick = { pendingRevoke = -1 },
+                            onClick = { pendingRevoke = null },
                         )
                     } else {
                         ControlButton(
                             theme = theme,
                             label = "Revoke ${peerId}",
                             destructive = true,
-                            onClick = { pendingRevoke = index },
+                            onClick = { pendingRevoke = index to inventoryGeneration },
                         )
                     }
                 }

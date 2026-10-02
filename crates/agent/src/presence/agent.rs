@@ -104,7 +104,10 @@ impl TrustedPresenceAgent {
         let trusts = identity
             .trusted_peer_records()
             .map_err(|_| PresenceAgentError::Identity)?;
-        if trusts.iter().all(|trust| trust.state() != crosslab_policy::TrustState::Trusted) {
+        if trusts
+            .iter()
+            .all(|trust| trust.state() != crosslab_policy::TrustState::Trusted)
+        {
             return Err(PresenceAgentError::NoTrustedPeers);
         }
 

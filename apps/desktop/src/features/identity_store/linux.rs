@@ -69,7 +69,10 @@ impl LinuxIdentityStore {
         expected_payload: Option<&[u8]>,
         payload: Vec<u8>,
     ) -> Result<u64, LinuxIdentityStoreError> {
-        let parent = self.path.parent().ok_or(LinuxIdentityStoreError::InvalidPath)?;
+        let parent = self
+            .path
+            .parent()
+            .ok_or(LinuxIdentityStoreError::InvalidPath)?;
         fs::create_dir_all(parent)?;
         set_private_dir(parent)?;
         let lock = OpenOptions::new()

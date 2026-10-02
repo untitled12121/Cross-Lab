@@ -4,9 +4,9 @@ use std::{collections::VecDeque, env, path::PathBuf, sync::Arc};
 #[cfg(target_os = "linux")]
 use crosslab_agent::{ClipboardPlatformError, ClipboardRequest};
 #[cfg(target_os = "linux")]
-use crosslab_protocol::TransferId;
-#[cfg(target_os = "linux")]
 use crosslab_identity::DeviceId;
+#[cfg(target_os = "linux")]
+use crosslab_protocol::TransferId;
 
 #[cfg(feature = "development-provisioning")]
 use crate::features::devices::TrustDisplay;
@@ -29,7 +29,10 @@ use crate::{
         },
         file_transfer::{FileTransferFailure, FileTransferFeatureState, FileTransferStage},
         owner::OwnerFeatureState,
-        pairing::{DesktopPairingInvitation, DesktopPairingStage, load_existing_product_identity, revoke_product_peer},
+        pairing::{
+            DesktopPairingInvitation, DesktopPairingStage, load_existing_product_identity,
+            revoke_product_peer,
+        },
     },
     pages::control_center::{
         _components::{
@@ -1652,12 +1655,9 @@ impl Render for ControlCenterPage {
                 self.notice.as_deref(),
                 cx,
             ),
-            Section::Owner => owner_content(
-                &self.owner,
-                owner_controls,
-                self.notice.as_deref(),
-                cx,
-            ),
+            Section::Owner => {
+                owner_content(&self.owner, owner_controls, self.notice.as_deref(), cx)
+            }
         };
 
         control_center_layout(navigation, content, cx)

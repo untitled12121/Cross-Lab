@@ -91,7 +91,9 @@ pub async fn persist_product_pairing_commit(
     identity.validate_providers(&root, &issuer, &local)?;
 
     let next = identity.with_paired_peer(commit.peer_credential(), commit.peer_transition())?;
-    store.commit_payload_if_current(&payload, next.encode()).await?;
+    store
+        .commit_payload_if_current(&payload, next.encode())
+        .await?;
     Ok(ProductIdentityPresentation::from_identity(&next))
 }
 

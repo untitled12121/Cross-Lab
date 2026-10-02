@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -17,6 +18,7 @@ import dev.crosslab.android.features.controlcenter.ControlCenterScreen
 import dev.crosslab.android.features.devices.RuntimeControllerState
 import dev.crosslab.android.features.devices.RuntimeSession
 import dev.crosslab.android.features.filetransfer.FileTransferState
+import dev.crosslab.android.features.identity.revocationTarget
 import dev.crosslab.android.features.pairing.PairingJoinerStage
 import dev.crosslab.android.features.pairing.PairingJoinerState
 import java.util.concurrent.Executors
@@ -28,6 +30,7 @@ class MainActivity : ComponentActivity() {
     private val pairingState = mutableStateOf(PairingJoinerState.idle())
     private val trustedPeerIds = mutableStateOf<List<String>>(emptyList())
     private val trustedPeerDeviceIds = mutableStateOf<List<ByteArray>>(emptyList())
+    private val trustedPeerGeneration = mutableIntStateOf(0)
     private val revokedPeerIds = mutableStateOf<List<String>>(emptyList())
     private val revocationNotice = mutableStateOf<String?>(null)
     private val identityWorker = Executors.newSingleThreadExecutor()
@@ -133,11 +136,17 @@ class MainActivity : ComponentActivity() {
                 onFetchClipboard = app.clipboardController::fetch,
                 pairing = pairingState.value,
                 trustedPeerIds = trustedPeerIds.value,
+                inventoryGeneration = trustedPeerGeneration.intValue,
                 revokedPeerIds = revokedPeerIds.value,
                 canRevokePeers = app.identityRepository.canRevokePeers,
                 revocationNotice = revocationNotice.value,
-                onRevokePeer = { index ->
-                    val id = trustedPeerDeviceIds.value.getOrNull(index)?.copyOf()
+                onRevokePeer = { index, generation ->
+                    val id = revocationTarget(
+                        trustedPeerDeviceIds.value,
+                        index,
+                        generation,
+                        trustedPeerGeneration.intValue,
+                    )
                     if (id != null) {
                         identityWorker.execute {
                             val result = runCatching {
@@ -185,6 +194,7 @@ class MainActivity : ComponentActivity() {
         trustedPeerIds.value = identity?.trustedPeerIds.orEmpty()
         trustedPeerDeviceIds.value = identity?.trustedPeerDeviceIds.orEmpty()
         revokedPeerIds.value = identity?.revokedPeerIds.orEmpty()
+        trustedPeerGeneration.intValue += 1
     }
 
     override fun onDestroy() {

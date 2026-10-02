@@ -202,6 +202,8 @@ impl From<ProductIdentityError> for MobileProductIdentityError {
             ProductIdentityError::UnsupportedSchema => Self::UnsupportedSchema,
             ProductIdentityError::ProviderMismatch => Self::ProviderMismatch,
             ProductIdentityError::PeerLimit
+            | ProductIdentityError::PeerNotFound
+            | ProductIdentityError::Revocation(_)
             | ProductIdentityError::PeerOwnerMismatch
             | ProductIdentityError::LocalDeviceAsPeer
             | ProductIdentityError::DuplicatePeer
@@ -255,26 +257,27 @@ mod tests {
             0,
             &authority,
             &issuer,
-        ).unwrap();
+        )
+        .unwrap();
         let paired = PairingTrustTransition::issue(
             &credential,
             TransitionId::from_bytes([0x26; 32]),
             [0x27; 32],
             &authority,
             &issuer,
-        ).unwrap();
+        )
+        .unwrap();
         identity.add_paired_peer(credential, paired).unwrap();
 
-        let local_signer: Arc<dyn MobileSigningProvider> =
-            Arc::new(TestSigner(local));
-        let issuer_signer: Arc<dyn MobileSigningProvider> =
-            Arc::new(TestSigner(issuer));
+        let local_signer: Arc<dyn MobileSigningProvider> = Arc::new(TestSigner(local));
+        let issuer_signer: Arc<dyn MobileSigningProvider> = Arc::new(TestSigner(issuer));
         let result = product_identity_revoke_peer(
             identity.encode(),
             credential.device_id().as_bytes().to_vec(),
             issuer_signer,
             local_signer,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(result.trusted_peer_count, 0);
         assert!(result.trusted_peer_ids.is_empty());
         assert!(result.trusted_peer_device_ids.is_empty());

@@ -6,8 +6,8 @@ use crosslab_identity::{
     OwnerAuthorityState, OwnerId, OwnerRootRecord,
 };
 use crosslab_policy::{
-    PairingTrustTransition, PairingTrustTransitionError, TransitionId, TrustRecord, TrustTransition,
-    TrustTransitionError,
+    PairingTrustTransition, PairingTrustTransitionError, TransitionId, TrustRecord,
+    TrustTransition, TrustTransitionError,
 };
 
 const MAGIC: &[u8; 8] = b"CLPIDV1\0";
@@ -291,12 +291,22 @@ impl ProductIdentityState {
     }
 
     pub fn encode(&self) -> Vec<u8> {
-        let v3 = self.trusted_peers.iter().any(|peer| peer.revocation.is_some());
+        let v3 = self
+            .trusted_peers
+            .iter()
+            .any(|peer| peer.revocation.is_some());
         let mut output = Vec::with_capacity(
             BASE_ENCODED_LEN + 4 + self.trusted_peers.len() * (PEER_ENCODED_LEN + 1 + 156),
         );
         output.extend_from_slice(MAGIC);
-        output.extend_from_slice(&(if v3 { REVOCATION_SCHEMA_VERSION } else { SCHEMA_VERSION }).to_be_bytes());
+        output.extend_from_slice(
+            &(if v3 {
+                REVOCATION_SCHEMA_VERSION
+            } else {
+                SCHEMA_VERSION
+            })
+            .to_be_bytes(),
+        );
         output.extend_from_slice(self.owner_id.as_bytes());
         output.extend_from_slice(self.local_device_id.as_bytes());
         output.extend_from_slice(&self.root.root_epoch().to_be_bytes());
@@ -727,8 +737,14 @@ mod tests {
         let revoked = identity
             .with_revoked_peer(credential.device_id(), &issuer)
             .unwrap();
-        assert_eq!(identity.trusted_peer_records().unwrap()[0].state(), TrustState::Trusted);
-        assert_eq!(revoked.trusted_peer_records().unwrap()[0].state(), TrustState::Revoked);
+        assert_eq!(
+            identity.trusted_peer_records().unwrap()[0].state(),
+            TrustState::Trusted
+        );
+        assert_eq!(
+            revoked.trusted_peer_records().unwrap()[0].state(),
+            TrustState::Revoked
+        );
         let bytes = revoked.encode();
         assert_eq!(
             u16::from_be_bytes([bytes[MAGIC.len()], bytes[MAGIC.len() + 1]]),
@@ -736,10 +752,15 @@ mod tests {
         );
         let restored = ProductIdentityState::decode(&bytes).unwrap();
         restored.validate_providers(&root, &issuer, &local).unwrap();
-        assert_eq!(restored.trusted_peer_records().unwrap()[0].state(), TrustState::Revoked);
+        assert_eq!(
+            restored.trusted_peer_records().unwrap()[0].state(),
+            TrustState::Revoked
+        );
         assert!(matches!(
             restored.with_revoked_peer(credential.device_id(), &issuer),
-            Err(ProductIdentityError::Revocation(TrustTransitionError::AlreadyRevoked))
+            Err(ProductIdentityError::Revocation(
+                TrustTransitionError::AlreadyRevoked
+            ))
         ));
         let authority = restored.authority_state().unwrap();
         let repeat_transition = PairingTrustTransition::issue(
@@ -762,7 +783,9 @@ mod tests {
         let peer = add_peer(&mut identity, &issuer, 0x19);
         let store = crate::MemoryIdentityStore::default();
         let initial = store.compare_and_swap(None, identity.encode()).unwrap();
-        let revoked = identity.with_revoked_peer(peer.device_id(), &issuer).unwrap();
+        let revoked = identity
+            .with_revoked_peer(peer.device_id(), &issuer)
+            .unwrap();
         let committed = store
             .compare_and_swap(Some(initial.revision()), revoked.encode())
             .unwrap();
@@ -788,18 +811,24 @@ mod tests {
         let wrong = SigningKey::from_secret_bytes([0xf4; 32]);
         assert!(matches!(
             identity.with_revoked_peer(credential.device_id(), &wrong),
-            Err(ProductIdentityError::Revocation(TrustTransitionError::UnknownIssuer))
+            Err(ProductIdentityError::Revocation(
+                TrustTransitionError::UnknownIssuer
+            ))
         ));
         assert_eq!(
             identity.with_revoked_peer(DeviceId::from_bytes([0x95; 32]), &issuer),
             Err(ProductIdentityError::PeerNotFound),
         );
-        let revoked = identity.with_revoked_peer(credential.device_id(), &issuer).unwrap();
+        let revoked = identity
+            .with_revoked_peer(credential.device_id(), &issuer)
+            .unwrap();
         let mut bytes = revoked.encode();
         *bytes.last_mut().unwrap() ^= 1;
         assert!(matches!(
             ProductIdentityState::decode(&bytes),
-            Err(ProductIdentityError::Revocation(TrustTransitionError::InvalidSignature))
+            Err(ProductIdentityError::Revocation(
+                TrustTransitionError::InvalidSignature
+            ))
         ));
         bytes = revoked.encode();
         let issuer_role_index = bytes.len() - 64 - 32 - 2;
