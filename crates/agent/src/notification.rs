@@ -245,9 +245,18 @@ mod tests {
     fn os_or_owner_permission_missing_blocks_subscription() {
         let policy = policy(Some(RuleEffect::Allow));
         for consent in [
-            NotificationConsent { os_access: false, ..consent() },
-            NotificationConsent { owner_enabled: false, ..consent() },
-            NotificationConsent { runtime_active: false, ..consent() },
+            NotificationConsent {
+                os_access: false,
+                ..consent()
+            },
+            NotificationConsent {
+                owner_enabled: false,
+                ..consent()
+            },
+            NotificationConsent {
+                runtime_active: false,
+                ..consent()
+            },
         ] {
             let mut mirror = NotificationMirror::default();
             assert_eq!(
@@ -283,11 +292,23 @@ mod tests {
     fn session_replacement_and_policy_revision_drop_pending() {
         let mut mirror = NotificationMirror::default();
         let old_policy = policy(Some(RuleEffect::Allow));
-        mirror.subscribe(&context(1), &old_policy, consent()).unwrap();
+        mirror
+            .subscribe(&context(1), &old_policy, consent())
+            .unwrap();
         mirror.enqueue(posted(4), &context(1), &old_policy, consent());
-        assert!(mirror.take_next(&context(2), &old_policy, consent()).is_none());
-        assert!(mirror.take_next(&context(1), &old_policy, consent()).is_none());
-        mirror.subscribe(&context(1), &old_policy, consent()).unwrap();
+        assert!(
+            mirror
+                .take_next(&context(2), &old_policy, consent())
+                .is_none()
+        );
+        assert!(
+            mirror
+                .take_next(&context(1), &old_policy, consent())
+                .is_none()
+        );
+        mirror
+            .subscribe(&context(1), &old_policy, consent())
+            .unwrap();
         mirror.enqueue(posted(4), &context(1), &old_policy, consent());
         let mut new_policy = old_policy.clone();
         new_policy
@@ -298,8 +319,16 @@ mod tests {
                 RuleEffect::Deny,
             )
             .unwrap();
-        assert!(mirror.take_next(&context(1), &new_policy, consent()).is_none());
-        assert!(mirror.take_next(&context(1), &old_policy, consent()).is_none());
+        assert!(
+            mirror
+                .take_next(&context(1), &new_policy, consent())
+                .is_none()
+        );
+        assert!(
+            mirror
+                .take_next(&context(1), &old_policy, consent())
+                .is_none()
+        );
     }
 
     #[test]
@@ -314,7 +343,10 @@ mod tests {
             posted(3),
             &context(1),
             &policy,
-            NotificationConsent { owner_enabled: false, ..consent() }
+            NotificationConsent {
+                owner_enabled: false,
+                ..consent()
+            }
         ));
         assert!(mirror.pending.is_empty());
     }

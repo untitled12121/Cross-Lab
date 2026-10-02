@@ -82,6 +82,36 @@ pub(crate) fn owner_content(
                 ),
         )
         .child(controls.unwrap_or_else(div))
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .border_1()
+                .border_color(theme.border)
+                .child(info_row(
+                    "Audit events",
+                    &state.audit_rows().len().to_string(),
+                    cx,
+                ))
+                .child(info_row(
+                    "Older events dropped",
+                    &state.audit_dropped().to_string(),
+                    cx,
+                ))
+                .children(
+                    state
+                        .audit_rows()
+                        .iter()
+                        .rev()
+                        .take(24)
+                        .enumerate()
+                        .map(|(index, row)| info_row(&format!("Event {}", index + 1), row, cx)),
+                )
+                .child(match state.audit_notice() {
+                    Some(notice) => info_row("History status", notice, cx),
+                    None => div(),
+                }),
+        )
         .child(match notice {
             Some(value) => div()
                 .border_1()

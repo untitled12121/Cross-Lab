@@ -10,6 +10,7 @@ import android.os.Build
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import dev.crosslab.android.features.audit.AndroidAuditStore
 import dev.crosslab.android.features.clipboard.ClipboardController
 import dev.crosslab.android.features.clipboard.UnavailableClipboardPort
 import dev.crosslab.android.features.devices.MobileRuntimePort
@@ -23,6 +24,7 @@ import dev.crosslab.android.features.filetransfer.FileTransferController
 import dev.crosslab.android.features.filetransfer.UnavailableFileTransferPort
 import dev.crosslab.android.features.pairing.PairingJoinerController
 import dev.crosslab.android.features.permissions.AndroidPolicyStore
+import dev.crosslab.android.features.notifications.AndroidNotificationConsent
 
 class CrossLabApplication : Application(), DefaultLifecycleObserver {
     lateinit var runtimeController: RuntimeController
@@ -35,6 +37,12 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
         private set
 
     lateinit var identityStore: AndroidIdentityStore
+        private set
+
+    lateinit var auditStore: AndroidAuditStore
+        private set
+
+    lateinit var notificationConsent: AndroidNotificationConsent
         private set
 
     lateinit var localDeviceSigner: AndroidEd25519Signer
@@ -65,6 +73,8 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
     override fun onCreate() {
         super<Application>.onCreate()
         identityStore = AndroidIdentityStore(this)
+        auditStore = AndroidAuditStore(this)
+        notificationConsent = AndroidNotificationConsent(this)
         policyStore = AndroidPolicyStore(this)
         localDeviceSigner = AndroidEd25519Signer(this, AndroidSigningSlot.LOCAL_DEVICE)
         identityRepository =

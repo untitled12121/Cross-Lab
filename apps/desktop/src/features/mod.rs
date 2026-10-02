@@ -1,3 +1,5 @@
+#[cfg(target_os = "linux")]
+pub mod audit;
 pub mod appearance;
 pub mod clipboard;
 pub mod devices;

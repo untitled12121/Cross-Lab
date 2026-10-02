@@ -1,6 +1,6 @@
 # Notification mirror payload v3.0 — bounded capability event body
 
-**Status:** Initial implementation profile under accepted ADR-0021. Linux–Android delivery is not yet integrated or hardware-verified.
+**Status:** Initial implementation profile under accepted ADR-0021. Android OS Notification Access listener, independently stored owner/content consent and permission screen are staged. No cross-device notification delivery is yet integrated or hardware-verified.
 
 Capability: `notifications.read`, version `3.0`. Protected subscribe operation: `subscribe`, non-retryable, **empty request body**. Empty-body validation never constitutes authorization: owner opt-in, Android Notification Access, active authenticated session, explicit exact per-peer rule and capability negotiation are separate mandatory gates.
 
@@ -21,3 +21,5 @@ Redacted means **neither title nor preview may be present**. Content is disabled
 Golden removed example: `01 02` followed by 16 bytes `7a`; resulting length exactly 18 bytes. This profile is not sufficient to authorize `subscribe` or emit events: the sender/receiver runtime must enforce the separate accepted ADR-0021 state machine and bounded queues, lifecycle shutdown and revocation cancellation.
 
 Code/test home: `crates/protocol/src/notification.rs`.
+
+Android `NotificationListenerService` explicitly discards all callbacks until an authenticated, policy-approved session subscription is wired through the agent runtime. The OS permission and owner/content toggles are separate requirements; neither a manifest registration nor granting Notification Access alone enables delivery or retention. The first receiver is Linux in-app plaintext; the request/event bridge, queue integration, lifecycle testing and receiver UI are still pending.

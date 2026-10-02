@@ -2,6 +2,7 @@
 
 #![allow(unsafe_code)]
 
+mod audit;
 mod clipboard;
 #[cfg(feature = "development-provisioning")]
 mod development;
@@ -19,6 +20,7 @@ mod product_identity;
 mod runtime;
 mod session_discovery;
 
+pub use audit::{MobileAuditAction, MobileAuditError, MobileAuditHistory, MobileAuditOutcome};
 pub use clipboard::{
     MobileClipboardError, MobileClipboardOperationResult, MobileClipboardOutcome,
     MobileClipboardPlatformFailure, MobileClipboardRequest, MobileClipboardRequestKind,

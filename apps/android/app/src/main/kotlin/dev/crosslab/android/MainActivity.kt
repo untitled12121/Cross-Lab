@@ -1,6 +1,8 @@
 package dev.crosslab.android
 
 import android.os.Bundle
+import android.content.Intent
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -11,6 +13,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.activity.compose.setContent
 import dev.crosslab.android.features.appearance.ThemeId
+import uniffi.crosslab_mobile_ffi.MobileAuditAction
+import uniffi.crosslab_mobile_ffi.MobileAuditOutcome
 import dev.crosslab.android.features.clipboard.ClipboardState
 import dev.crosslab.android.features.appearance.ThemeParser
 import dev.crosslab.android.features.appearance.ThemeResolver
@@ -19,6 +23,8 @@ import dev.crosslab.android.features.devices.RuntimeControllerState
 import dev.crosslab.android.features.devices.RuntimeSession
 import dev.crosslab.android.features.filetransfer.FileTransferState
 import dev.crosslab.android.features.identity.revocationTarget
+import dev.crosslab.android.features.notifications.NotificationOwnerConsent
+import dev.crosslab.android.features.devices.RuntimeLifecycle
 import dev.crosslab.android.features.pairing.PairingJoinerStage
 import dev.crosslab.android.features.pairing.PairingJoinerState
 import java.util.concurrent.Executors
@@ -33,6 +39,11 @@ class MainActivity : ComponentActivity() {
     private val trustedPeerGeneration = mutableIntStateOf(0)
     private val revokedPeerIds = mutableStateOf<List<String>>(emptyList())
     private val revocationNotice = mutableStateOf<String?>(null)
+    private val auditRows = mutableStateOf<List<String>>(emptyList())
+    private val auditDropped = mutableStateOf(0L)
+    private val auditNotice = mutableStateOf<String?>(null)
+    private val notificationConsent =
+        mutableStateOf(NotificationOwnerConsent(false, false, false, false, false))
     private val identityWorker = Executors.newSingleThreadExecutor()
     private var runtimeSubscription: AutoCloseable? = null
     private var clipboardSubscription: AutoCloseable? = null
@@ -44,6 +55,8 @@ class MainActivity : ComponentActivity() {
 
         val app = application as CrossLabApplication
         refreshTrustedPeers(app)
+        refreshAudit(app)
+        refreshNotificationConsent(app)
         runtimeState.value = app.runtimeController.state()
         runtimeSubscription =
             app.runtimeController.observe { state ->
@@ -107,6 +120,30 @@ class MainActivity : ComponentActivity() {
                         app.fileTransferController.accept(uri, requestId, retainFileAccess)
                     }
                 }
+            val exportAudit =
+                rememberLauncherForActivityResult(
+                    ActivityResultContracts.CreateDocument("text/csv"),
+                ) { uri ->
+                    if (uri != null) {
+                        identityWorker.execute {
+                            val result = runCatching {
+                                val bytes = app.auditStore.export().toByteArray(Charsets.UTF_8)
+                                contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                                    ?: error("export output unavailable")
+                            }
+                            if (!isDestroyed) runOnUiThread {
+                                if (!isDestroyed) {
+                                    auditNotice.value =
+                                        if (result.isSuccess) {
+                                            "Redacted history exported."
+                                        } else {
+                                            "Could not export history."
+                                        }
+                                }
+                            }
+                        }
+                    }
+                }
             ControlCenterScreen(
                 theme = theme,
                 runtime = runtimeState.value,
@@ -140,6 +177,41 @@ class MainActivity : ComponentActivity() {
                 revokedPeerIds = revokedPeerIds.value,
                 canRevokePeers = app.identityRepository.canRevokePeers,
                 revocationNotice = revocationNotice.value,
+                auditRows = auditRows.value,
+                auditDropped = auditDropped.value,
+                auditNotice = auditNotice.value,
+                onClearAudit = {
+                    identityWorker.execute {
+                        val result = runCatching { app.auditStore.clear() }
+                        if (!isDestroyed) runOnUiThread {
+                            if (!isDestroyed) {
+                                auditNotice.value = if (result.isSuccess) {
+                                    "Local audit history cleared."
+                                } else {
+                                    "Audit history could not be cleared."
+                                }
+                                result.getOrNull()?.let { updateAudit(it) }
+                            }
+                        }
+                    }
+                },
+                onExportAudit = { exportAudit.launch("crosslab-audit.csv") },
+                notificationConsent = notificationConsent.value,
+                onToggleNotificationOwner = {
+                    app.notificationConsent.setOwnerEnabled(
+                        !app.notificationConsent.ownerEnabled,
+                    )
+                    refreshNotificationConsent(app)
+                },
+                onToggleNotificationContent = {
+                    app.notificationConsent.setContentEnabled(
+                        !app.notificationConsent.contentEnabled,
+                    )
+                    refreshNotificationConsent(app)
+                },
+                onOpenNotificationAccess = {
+                    startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                },
                 onRevokePeer = { index, generation ->
                     val id = revocationTarget(
                         trustedPeerDeviceIds.value,
@@ -151,7 +223,26 @@ class MainActivity : ComponentActivity() {
                         identityWorker.execute {
                             val result = runCatching {
                                 app.identityRepository.revokePeer(id)
-                                check(app.runtimeController.reloadTrust()) {
+                                // Tear down the prior session before best-effort history I/O.
+                                val reloaded = runCatching {
+                                    app.runtimeController.reloadTrust()
+                                }.getOrDefault(false)
+                                val savedAudit = runCatching {
+                                    app.auditStore.record(
+                                        MobileAuditAction.PEER_REVOKED,
+                                        MobileAuditOutcome.SUCCEEDED,
+                                    )
+                                }
+                                if (!isDestroyed) runOnUiThread {
+                                    if (!isDestroyed) {
+                                        savedAudit.getOrNull()?.let { updateAudit(it) }
+                                        if (savedAudit.isFailure) {
+                                            auditNotice.value =
+                                                "Device revoked; audit history unavailable."
+                                        }
+                                    }
+                                }
+                                check(reloaded) {
                                     "Device revoked, but session restart failed. Restart Cross-Lab."
                                 }
                             }
@@ -175,6 +266,36 @@ class MainActivity : ComponentActivity() {
                 onCancelPairing = app.pairingController::cancel,
             )
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        (application as? CrossLabApplication)?.let(::refreshNotificationConsent)
+    }
+
+    private fun refreshNotificationConsent(app: CrossLabApplication) {
+        notificationConsent.value = app.notificationConsent.current(
+            app.runtimeController.state().lifecycle == RuntimeLifecycle.RUNNING,
+        )
+    }
+
+    private fun refreshAudit(app: CrossLabApplication) {
+        identityWorker.execute {
+            val result = runCatching { app.auditStore.read() }
+            if (!isDestroyed) runOnUiThread {
+                if (!isDestroyed) {
+                    result.getOrNull()?.let { updateAudit(it) }
+                    if (result.isFailure) {
+                        auditNotice.value = "Protected audit history unavailable."
+                    }
+                }
+            }
+        }
+    }
+
+    private fun updateAudit(history: uniffi.crosslab_mobile_ffi.MobileAuditHistory) {
+        auditRows.value = history.rows
+        auditDropped.value = history.droppedCount.toLong()
     }
 
     private fun refreshTrustedPeers(app: CrossLabApplication) {

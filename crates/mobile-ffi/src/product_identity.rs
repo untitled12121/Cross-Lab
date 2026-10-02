@@ -38,6 +38,8 @@ pub struct MobileProductIdentity {
     pub local_device_id: String,
     pub trusted_peer_count: u64,
     pub trusted_peer_ids: Vec<String>,
+    pub trusted_peer_device_ids: Vec<Vec<u8>>,
+    pub revoked_peer_ids: Vec<String>,
 }
 
 impl core::fmt::Debug for MobileProductIdentity {
@@ -57,10 +59,23 @@ impl MobileProductIdentity {
             payload: state.encode(),
             owner_id: short_hex(state.owner_id().as_bytes()),
             local_device_id: short_hex(state.local_device_id().as_bytes()),
-            trusted_peer_count: state.trusted_peers().len() as u64,
+            trusted_peer_count: state.active_trusted_peer_count() as u64,
             trusted_peer_ids: state
                 .trusted_peers()
                 .iter()
+                .filter(|peer| peer.revocation().is_none())
+                .map(|peer| short_hex(peer.credential().device_id().as_bytes()))
+                .collect(),
+            trusted_peer_device_ids: state
+                .trusted_peers()
+                .iter()
+                .filter(|peer| peer.revocation().is_none())
+                .map(|peer| peer.credential().device_id().as_bytes().to_vec())
+                .collect(),
+            revoked_peer_ids: state
+                .trusted_peers()
+                .iter()
+                .filter(|peer| peer.revocation().is_some())
                 .map(|peer| short_hex(peer.credential().device_id().as_bytes()))
                 .collect(),
         }

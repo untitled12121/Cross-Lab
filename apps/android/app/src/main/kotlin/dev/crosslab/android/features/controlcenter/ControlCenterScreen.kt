@@ -33,6 +33,7 @@ import dev.crosslab.android.features.devices.RuntimeControllerState
 import dev.crosslab.android.features.devices.RuntimeLifecycle
 import dev.crosslab.android.features.filetransfer.FileTransferState
 import dev.crosslab.android.features.owner.OwnerScreen
+import dev.crosslab.android.features.notifications.NotificationOwnerConsent
 import dev.crosslab.android.features.pairing.PairingJoinerState
 import uniffi.crosslab_mobile_ffi.MobilePairingBootstrap
 
@@ -67,6 +68,15 @@ fun ControlCenterScreen(
     canRevokePeers: Boolean,
     revocationNotice: String?,
     onRevokePeer: (Int, Int) -> Unit,
+    auditRows: List<String>,
+    auditDropped: Long,
+    auditNotice: String?,
+    onClearAudit: () -> Unit,
+    onExportAudit: () -> Unit,
+    notificationConsent: NotificationOwnerConsent,
+    onToggleNotificationOwner: () -> Unit,
+    onToggleNotificationContent: () -> Unit,
+    onOpenNotificationAccess: () -> Unit,
     onPairingBootstrapScanned: (MobilePairingBootstrap) -> Unit,
     onCancelPairing: () -> Unit,
 ) {
@@ -189,6 +199,15 @@ fun ControlCenterScreen(
                     canRevokePeers = canRevokePeers,
                     revocationNotice = revocationNotice,
                     onRevokePeer = onRevokePeer,
+                    auditRows = auditRows,
+                    auditDropped = auditDropped,
+                    auditNotice = auditNotice,
+                    onClearAudit = onClearAudit,
+                    onExportAudit = onExportAudit,
+                    notificationConsent = notificationConsent,
+                    onToggleNotificationOwner = onToggleNotificationOwner,
+                    onToggleNotificationContent = onToggleNotificationContent,
+                    onOpenNotificationAccess = onOpenNotificationAccess,
                 )
         }
     }

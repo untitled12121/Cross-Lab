@@ -232,14 +232,8 @@ impl NotificationPayload {
                 if offset != bytes.len() {
                     return Err(NotificationProfileError::Malformed);
                 }
-                NotificationPosted::new(
-                    id,
-                    app_label,
-                    title,
-                    preview,
-                    flags & REDACTED != 0,
-                )
-                .map(Self::Posted)
+                NotificationPosted::new(id, app_label, title, preview, flags & REDACTED != 0)
+                    .map(Self::Posted)
             }
             _ => Err(NotificationProfileError::Malformed),
         }
@@ -359,41 +353,41 @@ mod tests {
     #[test]
     fn display_bounds_redaction_and_debug_privacy() {
         let id = NotificationId::from_bytes([5; 16]);
-        assert!(NotificationPosted::new(
-            id,
-            "A".repeat(MAX_NOTIFICATION_APP_LABEL_BYTES + 1),
-            None,
-            None,
-            false
-        ).is_err());
-        assert!(NotificationPosted::new(
-            id,
-            String::new(),
-            Some("T".repeat(MAX_NOTIFICATION_TITLE_BYTES + 1)),
-            None,
-            false
-        ).is_err());
-        assert!(NotificationPosted::new(
-            id,
-            String::new(),
-            None,
-            Some("P".repeat(MAX_NOTIFICATION_PREVIEW_BYTES + 1)),
-            false
-        ).is_err());
-        assert!(NotificationPosted::new(
-            id,
-            String::new(),
-            Some("secret".to_owned()),
-            None,
-            true
-        ).is_err());
-        assert!(NotificationPosted::new(
-            id,
-            "line\nfeed".to_owned(),
-            None,
-            None,
-            false
-        ).is_err());
+        assert!(
+            NotificationPosted::new(
+                id,
+                "A".repeat(MAX_NOTIFICATION_APP_LABEL_BYTES + 1),
+                None,
+                None,
+                false
+            )
+            .is_err()
+        );
+        assert!(
+            NotificationPosted::new(
+                id,
+                String::new(),
+                Some("T".repeat(MAX_NOTIFICATION_TITLE_BYTES + 1)),
+                None,
+                false
+            )
+            .is_err()
+        );
+        assert!(
+            NotificationPosted::new(
+                id,
+                String::new(),
+                None,
+                Some("P".repeat(MAX_NOTIFICATION_PREVIEW_BYTES + 1)),
+                false
+            )
+            .is_err()
+        );
+        assert!(
+            NotificationPosted::new(id, String::new(), Some("secret".to_owned()), None, true)
+                .is_err()
+        );
+        assert!(NotificationPosted::new(id, "line\nfeed".to_owned(), None, None, false).is_err());
         let payload = notification();
         assert!(!format!("{payload:?}").contains("Subject"));
         assert!(!format!("{payload:?}").contains("Messages"));

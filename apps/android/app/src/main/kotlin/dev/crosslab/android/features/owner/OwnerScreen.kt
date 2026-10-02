@@ -23,6 +23,7 @@ import dev.crosslab.android.features.appearance.ThemeDocument
 import dev.crosslab.android.features.appearance.toComposeColor
 import dev.crosslab.android.features.appearance.toTextStyle
 import dev.crosslab.android.features.devices.RuntimeControllerState
+import dev.crosslab.android.features.notifications.NotificationOwnerConsent
 import dev.crosslab.android.components.ui.ControlButton
 
 @Composable
@@ -35,10 +36,20 @@ fun OwnerScreen(
     canRevokePeers: Boolean,
     revocationNotice: String?,
     onRevokePeer: (Int, Int) -> Unit,
+    auditRows: List<String>,
+    auditDropped: Long,
+    auditNotice: String?,
+    onClearAudit: () -> Unit,
+    onExportAudit: () -> Unit,
+    notificationConsent: NotificationOwnerConsent,
+    onToggleNotificationOwner: () -> Unit,
+    onToggleNotificationContent: () -> Unit,
+    onOpenNotificationAccess: () -> Unit,
 ) {
     val colors = theme.colors
     val snapshot = runtime.snapshot
     var pendingRevoke by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var confirmClearAudit by remember { mutableStateOf(false) }
 
     Column(
         modifier =
@@ -128,6 +139,132 @@ fun OwnerScreen(
                 InfoRow(theme, "Revoked ${index + 1}", peerId)
             }
             revocationNotice?.let { InfoRow(theme, "Revocation result", it) }
+        }
+
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = theme.spacing.xl.toFloat().dp)
+                    .border(
+                        BorderStroke(
+                            theme.metrics.borderWidth.toFloat().dp,
+                            colors.border.toComposeColor(),
+                        ),
+                        RectangleShape,
+                    ),
+        ) {
+            InfoRow(theme, "Audit history", "${auditRows.size} records")
+            InfoRow(theme, "Older events dropped", auditDropped.toString())
+            auditRows.takeLast(24).asReversed().forEachIndexed { index, row ->
+                InfoRow(theme, "Event ${index + 1}", row)
+            }
+            if (auditRows.size > 24) {
+                InfoRow(theme, "More audit events", "${auditRows.size - 24} not shown")
+            }
+            auditNotice?.let { InfoRow(theme, "History status", it) }
+            ControlButton(
+                theme = theme,
+                label = "Export redacted history",
+                onClick = onExportAudit,
+            )
+            if (confirmClearAudit) {
+                BasicText(
+                    text = "Permanently clear local audit records? Signed trust revocations remain intact.",
+                    style = theme.typography.scales.caption.toTextStyle()
+                        .copy(color = colors.destructive.toComposeColor()),
+                )
+                ControlButton(
+                    theme = theme,
+                    label = "Confirm clear history",
+                    destructive = true,
+                    onClick = {
+                        confirmClearAudit = false
+                        onClearAudit()
+                    },
+                )
+                ControlButton(
+                    theme = theme,
+                    label = "Cancel",
+                    onClick = { confirmClearAudit = false },
+                )
+            } else {
+                ControlButton(
+                    theme = theme,
+                    label = "Clear audit history",
+                    onClick = { confirmClearAudit = true },
+                )
+            }
+        }
+
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = theme.spacing.xl.toFloat().dp)
+                    .border(
+                        BorderStroke(
+                            theme.metrics.borderWidth.toFloat().dp,
+                            colors.border.toComposeColor(),
+                        ),
+                        RectangleShape,
+                    ),
+        ) {
+            InfoRow(
+                theme,
+                "Notification Access",
+                if (notificationConsent.osAccess) "Granted in Android" else "Not granted",
+            )
+            InfoRow(
+                theme,
+                "Listener",
+                if (notificationConsent.listenerConnected) "Connected" else "Not connected",
+            )
+            InfoRow(
+                theme,
+                "Owner consent",
+                if (notificationConsent.ownerEnabled) "Enabled" else "Disabled",
+            )
+            InfoRow(
+                theme,
+                "Mirror availability",
+                if (notificationConsent.locallyAvailable()) "Local gates ready" else "Unavailable",
+            )
+            InfoRow(
+                theme,
+                "Notification contents",
+                if (notificationConsent.contentEnabled) "Owner allowed" else "Off by default",
+            )
+            ControlButton(
+                theme = theme,
+                label = "Open Android Notification Access settings",
+                onClick = onOpenNotificationAccess,
+            )
+            ControlButton(
+                theme = theme,
+                label = if (notificationConsent.ownerEnabled) {
+                    "Disable mirroring consent"
+                } else {
+                    "Enable mirroring consent"
+                },
+                onClick = onToggleNotificationOwner,
+            )
+            ControlButton(
+                theme = theme,
+                label = if (notificationConsent.contentEnabled) {
+                    "Disable notification text"
+                } else {
+                    "Allow notification text"
+                },
+                enabled = notificationConsent.ownerEnabled,
+                onClick = onToggleNotificationContent,
+            )
+            BasicText(
+                text = "Cross-device delivery requires an authenticated, approved " +
+                    "per-device subscription and is not active yet.",
+                style = theme.typography.scales.caption.toTextStyle()
+                    .copy(color = colors.mutedForeground.toComposeColor()),
+            )
         }
 
         BasicText(

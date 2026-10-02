@@ -46,7 +46,7 @@ impl AuditAction {
         }
     }
 
-    const fn label(self) -> &'static str {
+    pub const fn label(self) -> &'static str {
         match self {
             Self::PairingStarted => "pairing-started",
             Self::PairingFailed => "pairing-failed",
@@ -84,7 +84,7 @@ impl AuditOutcome {
         }
     }
 
-    const fn label(self) -> &'static str {
+    pub const fn label(self) -> &'static str {
         match self {
             Self::Succeeded => "ok",
             Self::Failed => "failed",

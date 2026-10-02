@@ -32,6 +32,9 @@ pub struct OwnerFeatureState {
     trusted_peer_ids: Vec<String>,
     trusted_peer_device_ids: Vec<DeviceId>,
     revoked_peer_ids: Vec<String>,
+    audit_rows: Vec<String>,
+    audit_dropped: u64,
+    audit_notice: Option<String>,
 }
 
 impl OwnerFeatureState {
@@ -41,6 +44,9 @@ impl OwnerFeatureState {
             trusted_peer_ids: Vec::new(),
             trusted_peer_device_ids: Vec::new(),
             revoked_peer_ids: Vec::new(),
+            audit_rows: Vec::new(),
+            audit_dropped: 0,
+            audit_notice: None,
         }
     }
 
@@ -50,6 +56,9 @@ impl OwnerFeatureState {
             trusted_peer_ids: Vec::new(),
             trusted_peer_device_ids: Vec::new(),
             revoked_peer_ids: Vec::new(),
+            audit_rows: Vec::new(),
+            audit_dropped: 0,
+            audit_notice: None,
         }
     }
 
@@ -90,6 +99,28 @@ impl OwnerFeatureState {
         &self.revoked_peer_ids
     }
 
+    pub fn set_audit_rows(&mut self, rows: Vec<String>, dropped: u64) {
+        self.audit_rows = rows;
+        self.audit_dropped = dropped;
+        self.audit_notice = None;
+    }
+
+    pub fn set_audit_notice(&mut self, notice: impl Into<String>) {
+        self.audit_notice = Some(notice.into());
+    }
+
+    pub fn audit_rows(&self) -> &[String] {
+        &self.audit_rows
+    }
+
+    pub const fn audit_dropped(&self) -> u64 {
+        self.audit_dropped
+    }
+
+    pub fn audit_notice(&self) -> Option<&str> {
+        self.audit_notice.as_deref()
+    }
+
     pub const fn current(&self) -> Option<&OwnerPresentation> {
         self.current.as_ref()
     }
@@ -127,6 +158,15 @@ mod tests {
         );
         state.clear();
         assert_eq!(state.trusted_peer_ids(), &["peer".to_owned()]);
+    }
+
+    #[test]
+    fn audit_history_is_not_deleted_by_transient_disconnect() {
+        let mut state = OwnerFeatureState::empty();
+        state.set_audit_rows(vec!["peer-revoked".to_owned()], 2);
+        state.clear();
+        assert_eq!(state.audit_rows(), &["peer-revoked".to_owned()]);
+        assert_eq!(state.audit_dropped(), 2);
     }
 
     #[test]

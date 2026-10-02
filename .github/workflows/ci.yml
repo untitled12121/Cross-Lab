@@ -10,8 +10,19 @@ permissions:
   contents: read
 
 jobs:
+  format:
+    name: Source format
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install Rust formatter
+        run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt
+      - name: Format
+        run: cargo fmt --check
+
   rust:
     name: Rust
+    needs: format
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -60,8 +71,6 @@ jobs:
           fallback: none
       - name: Audit dependencies
         run: cargo audit
-      - name: Format
-        run: cargo fmt --check
       - name: Check
         run: cargo check --workspace --all-targets --all-features
       - name: Enforce mobile FFI unsafe boundary
@@ -85,6 +94,7 @@ jobs:
 
   android:
     name: Android
+    needs: format
     runs-on: ubuntu-24.04
     env:
       JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64

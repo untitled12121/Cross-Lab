@@ -6,12 +6,15 @@ use crosslab_agent::{ClipboardPlatformError, ClipboardRequest};
 #[cfg(target_os = "linux")]
 use crosslab_identity::DeviceId;
 #[cfg(target_os = "linux")]
+use crosslab_core::{AuditAction, AuditHistory, AuditOutcome};
+#[cfg(target_os = "linux")]
 use crosslab_protocol::TransferId;
 
 #[cfg(feature = "development-provisioning")]
 use crate::features::devices::TrustDisplay;
 #[cfg(target_os = "linux")]
 use crate::features::{
+    audit::{LinuxAuditStore, current_hour},
     devices::{DesktopPresenceError, DesktopProductPresenceController},
     file_transfer::{
         LinuxFileTransferReceiveFailure, LinuxFileTransferReceiveStatus,
@@ -88,6 +91,8 @@ pub struct ControlCenterPage {
     pending_revocation: Option<DeviceId>,
     #[cfg(target_os = "linux")]
     revocation_busy: bool,
+    #[cfg(target_os = "linux")]
+    audit_clear_pending: bool,
     notice: Option<String>,
 }
 
@@ -151,6 +156,27 @@ impl ControlCenterPage {
         })
         .detach();
 
+        #[cfg(target_os = "linux")]
+        cx.spawn(async move |this, cx| {
+            let result = async {
+                LinuxAuditStore::from_environment()?
+                    .load(current_hour()?)
+                    .await
+            }
+            .await;
+            let _ = this.update(cx, |page, cx| {
+                match result {
+                    Ok(history) => page.owner.set_audit_rows(
+                        audit_history_rows(&history),
+                        history.dropped_count(),
+                    ),
+                    Err(_) => page.owner.set_audit_notice("Protected audit history unavailable"),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+
         let mut page = Self {
             section: Section::Devices,
             devices,
@@ -183,6 +209,8 @@ impl ControlCenterPage {
             pending_revocation: None,
             #[cfg(target_os = "linux")]
             revocation_busy: false,
+            #[cfg(target_os = "linux")]
+            audit_clear_pending: false,
             notice: None,
         };
         #[cfg(target_os = "linux")]
@@ -426,7 +454,33 @@ impl ControlCenterPage {
             } else {
                 None
             };
+            let audit_result = if result.is_ok() {
+                Some(async {
+                    let store = LinuxAuditStore::from_environment()?;
+                    store.record(
+                        AuditAction::PeerRevoked,
+                        AuditOutcome::Succeeded,
+                        0,
+                        current_hour()?,
+                    )
+                    .await
+                }
+                .await)
+            } else {
+                None
+            };
             let _ = this.update(cx, |page, cx| {
+                if let Some(audit) = audit_result {
+                    match audit {
+                        Ok(history) => page.owner.set_audit_rows(
+                            audit_history_rows(&history),
+                            history.dropped_count(),
+                        ),
+                        Err(_) => page.owner.set_audit_notice(
+                            "Device trust updated; protected audit history unavailable",
+                        ),
+                    }
+                }
                 page.revocation_busy = false;
                 match result {
                     Ok(identity) => {
@@ -458,7 +512,76 @@ impl ControlCenterPage {
         .detach();
     }
 
+    #[cfg(target_os = "linux")]
+    fn clear_owner_audit(&mut self, cx: &mut Context<Self>) {
+        if !self.audit_clear_pending {
+            self.audit_clear_pending = true;
+            self.owner.set_audit_notice(
+                "Confirm again to clear local history. Revoked trust remains protected.",
+            );
+            cx.notify();
+            return;
+        }
+        self.audit_clear_pending = false;
+        cx.spawn(async move |this, cx| {
+            let result = async {
+                LinuxAuditStore::from_environment()?
+                    .clear(current_hour()?)
+                    .await
+            }
+            .await;
+            let _ = this.update(cx, |page, cx| {
+                match result {
+                    Ok(history) => page.owner.set_audit_rows(
+                        audit_history_rows(&history),
+                        history.dropped_count(),
+                    ),
+                    Err(_) => page.owner.set_audit_notice("Audit history could not be cleared"),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    #[cfg(target_os = "linux")]
+    fn export_owner_audit(&mut self, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            let result = async {
+                let history = LinuxAuditStore::from_environment()?
+                    .load(current_hour()?)
+                    .await?;
+                Ok::<String, crate::features::audit::LinuxAuditError>(
+                    history.export_redacted_csv(),
+                )
+            }
+            .await;
+            let _ = this.update(cx, |page, cx| {
+                match result {
+                    Ok(csv) => {
+                        cx.write_to_clipboard(ClipboardItem::new_string(csv));
+                        page.owner.set_audit_notice(
+                            "Redacted CSV copied to clipboard; paste to save it.",
+                        );
+                    }
+                    Err(_) => page.owner.set_audit_notice(
+                        "Protected audit history cannot be exported",
+                    ),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     fn set_section(&mut self, section: Section, cx: &mut Context<Self>) {
+        if self.section != section {
+            #[cfg(target_os = "linux")]
+            {
+                self.pending_revocation = None;
+                self.audit_clear_pending = false;
+            }
+        }
         self.section = section;
         self.notice = None;
         cx.notify();
@@ -1640,6 +1763,42 @@ impl Render for ControlCenterPage {
                         .child("Cancel revocation"),
                 );
             }
+            controls = controls
+                .child(
+                    Button::new("owner-audit-export")
+                        .accessibility_label("Copy redacted audit history CSV")
+                        .on_click(cx.listener(|page, _, _, cx| {
+                            page.export_owner_audit(cx);
+                        }))
+                        .child("Copy redacted history CSV"),
+                )
+                .child(
+                    Button::new("owner-audit-clear")
+                        .accessibility_label(if self.audit_clear_pending {
+                            "Confirm permanent audit history deletion"
+                        } else {
+                            "Clear private audit history"
+                        })
+                        .on_click(cx.listener(|page, _, _, cx| {
+                            page.clear_owner_audit(cx);
+                        }))
+                        .child(if self.audit_clear_pending {
+                            "Confirm clear history"
+                        } else {
+                            "Clear audit history"
+                        }),
+                );
+            if self.audit_clear_pending {
+                controls = controls.child(
+                    Button::new("owner-audit-cancel")
+                        .on_click(cx.listener(|page, _, _, cx| {
+                            page.audit_clear_pending = false;
+                            page.owner.set_audit_notice("History deletion cancelled");
+                            cx.notify();
+                        }))
+                        .child("Cancel clear"),
+                );
+            }
             Some(controls)
         };
         #[cfg(not(target_os = "linux"))]
@@ -1686,4 +1845,21 @@ fn map_receive_failure(failure: LinuxFileTransferReceiveFailure) -> FileTransfer
         LinuxFileTransferReceiveFailure::Integrity => FileTransferFailure::Integrity,
         LinuxFileTransferReceiveFailure::Storage => FileTransferFailure::Storage,
     }
+}
+
+#[cfg(target_os = "linux")]
+fn audit_history_rows(history: &AuditHistory) -> Vec<String> {
+    history
+        .entries()
+        .iter()
+        .map(|event| {
+            format!(
+                "{} · {} · {} · revision {}",
+                event.occurred_hour(),
+                event.action().label(),
+                event.outcome().label(),
+                event.revision()
+            )
+        })
+        .collect()
 }
