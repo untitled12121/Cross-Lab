@@ -5,6 +5,8 @@ use std::{collections::VecDeque, env, path::PathBuf, sync::Arc};
 use crosslab_agent::{ClipboardPlatformError, ClipboardRequest};
 #[cfg(target_os = "linux")]
 use crosslab_protocol::TransferId;
+#[cfg(target_os = "linux")]
+use crosslab_identity::DeviceId;
 
 #[cfg(feature = "development-provisioning")]
 use crate::features::devices::TrustDisplay;
@@ -27,7 +29,7 @@ use crate::{
         },
         file_transfer::{FileTransferFailure, FileTransferFeatureState, FileTransferStage},
         owner::OwnerFeatureState,
-        pairing::{DesktopPairingInvitation, DesktopPairingStage, load_existing_product_identity},
+        pairing::{DesktopPairingInvitation, DesktopPairingStage, load_existing_product_identity, revoke_product_peer},
     },
     pages::control_center::{
         _components::{
@@ -79,6 +81,10 @@ pub struct ControlCenterPage {
     pairing_invitation: Option<DesktopPairingInvitation>,
     pairing_generation: u64,
     pairing_busy: bool,
+    #[cfg(target_os = "linux")]
+    pending_revocation: Option<DeviceId>,
+    #[cfg(target_os = "linux")]
+    revocation_busy: bool,
     notice: Option<String>,
 }
 
@@ -129,6 +135,8 @@ impl ControlCenterPage {
                         identity.owner_id().to_owned(),
                         identity.local_device_id().to_owned(),
                         identity.trusted_peer_ids().to_vec(),
+                        identity.trusted_peer_device_ids().to_vec(),
+                        identity.revoked_peer_ids().to_vec(),
                     ),
                     Ok(None) => {}
                     Err(error) => {
@@ -168,6 +176,10 @@ impl ControlCenterPage {
             pairing_invitation: None,
             pairing_generation: 0,
             pairing_busy: false,
+            #[cfg(target_os = "linux")]
+            pending_revocation: None,
+            #[cfg(target_os = "linux")]
+            revocation_busy: false,
             notice: None,
         };
         #[cfg(target_os = "linux")]
@@ -378,6 +390,71 @@ impl ControlCenterPage {
         .detach();
     }
 
+    #[cfg(target_os = "linux")]
+    fn revoke_owner_device(&mut self, device_id: DeviceId, cx: &mut Context<Self>) {
+        if self.revocation_busy {
+            return;
+        }
+        if self.pending_revocation != Some(device_id) {
+            self.pending_revocation = Some(device_id);
+            self.notice = Some("Press Confirm revoke to permanently deny this device.".to_owned());
+            cx.notify();
+            return;
+        }
+
+        self.pending_revocation = None;
+        self.revocation_busy = true;
+        self.notice = Some("Signing and saving terminal revocation…".to_owned());
+        let existing = self.product_presence.as_ref().map(Arc::clone);
+        cx.notify();
+
+        cx.spawn(async move |this, cx| {
+            let result = revoke_product_peer(device_id).await;
+            let invalidation_error = if result.is_ok() {
+                if let Some(controller) = existing {
+                    controller
+                        .invalidate_for_revocation()
+                        .await
+                        .err()
+                        .map(|error| error.to_string())
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            let _ = this.update(cx, |page, cx| {
+                page.revocation_busy = false;
+                match result {
+                    Ok(identity) => {
+                        page.owner.set_product_identity(
+                            identity.owner_id().to_owned(),
+                            identity.local_device_id().to_owned(),
+                            identity.trusted_peer_ids().to_vec(),
+                            identity.trusted_peer_device_ids().to_vec(),
+                            identity.revoked_peer_ids().to_vec(),
+                        );
+                        page.product_presence = None;
+                        page.clipboard.set_available(false);
+                        page.file_transfer.set_available(false);
+                        if invalidation_error.is_none() {
+                            page.start_product_presence(cx);
+                            page.notice = Some("Device trust revoked and saved.".to_owned());
+                        } else {
+                            page.notice = Some(
+                                "Revocation saved; stop Cross-Lab and restart to finish session teardown."
+                                    .to_owned(),
+                            );
+                        }
+                    }
+                    Err(error) => page.notice = Some(error.to_string()),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     fn set_section(&mut self, section: Section, cx: &mut Context<Self>) {
         self.section = section;
         self.notice = None;
@@ -428,6 +505,8 @@ impl ControlCenterPage {
                         invitation.owner_id().to_owned(),
                         invitation.local_device_id().to_owned(),
                         invitation.trusted_peer_ids().to_vec(),
+                        invitation.trusted_peer_device_ids().to_vec(),
+                        invitation.revoked_peer_ids().to_vec(),
                     );
                     page.pairing_invitation = Some(invitation);
                     page.notice = None;
@@ -455,6 +534,8 @@ impl ControlCenterPage {
                                 identity.owner_id().to_owned(),
                                 identity.local_device_id().to_owned(),
                                 identity.trusted_peer_ids().to_vec(),
+                                identity.trusted_peer_device_ids().to_vec(),
+                                identity.revoked_peer_ids().to_vec(),
                             );
                         }
                         page.notice = match stage {
@@ -1507,6 +1588,60 @@ impl Render for ControlCenterPage {
             .as_ref()
             .map(|invitation| pairing_invitation_panel(invitation, cx));
 
+        #[cfg(target_os = "linux")]
+        let owner_controls = {
+            let mut controls = div().flex().flex_col().gap(px(appearance.spacing.md));
+            let peers: Vec<_> = self
+                .owner
+                .trusted_peer_device_ids()
+                .iter()
+                .copied()
+                .zip(self.owner.trusted_peer_ids().iter().cloned())
+                .take(24)
+                .collect();
+            for (index, (device_id, preview)) in peers.into_iter().enumerate() {
+                let confirming = self.pending_revocation == Some(device_id);
+                controls = controls.child(
+                    Button::new(format!("owner-revoke-{index}"))
+                        .accessibility_label(if confirming {
+                            "Confirm permanent device revocation"
+                        } else {
+                            "Revoke trusted device"
+                        })
+                        .disabled(self.revocation_busy)
+                        .on_click(cx.listener(move |page, _, _, cx| {
+                            page.revoke_owner_device(device_id, cx);
+                        }))
+                        .h(px(appearance.metrics.control_height_default))
+                        .px(px(appearance.spacing.lg))
+                        .border_1()
+                        .border_color(theme.border)
+                        .bg(theme.secondary)
+                        .text_color(theme.secondary_foreground)
+                        .focus_visible(|style| style.border_color(theme.ring))
+                        .child(if confirming {
+                            format!("Confirm revoke {preview}")
+                        } else {
+                            format!("Revoke {preview}")
+                        }),
+                );
+            }
+            if self.pending_revocation.is_some() {
+                controls = controls.child(
+                    Button::new("owner-cancel-revoke")
+                        .on_click(cx.listener(|page, _, _, cx| {
+                            page.pending_revocation = None;
+                            page.notice = None;
+                            cx.notify();
+                        }))
+                        .child("Cancel revocation"),
+                );
+            }
+            Some(controls)
+        };
+        #[cfg(not(target_os = "linux"))]
+        let owner_controls = None;
+
         let content = match self.section {
             Section::Devices => devices_content(
                 &self.devices,
@@ -1517,7 +1652,12 @@ impl Render for ControlCenterPage {
                 self.notice.as_deref(),
                 cx,
             ),
-            Section::Owner => owner_content(&self.owner, cx),
+            Section::Owner => owner_content(
+                &self.owner,
+                owner_controls,
+                self.notice.as_deref(),
+                cx,
+            ),
         };
 
         control_center_layout(navigation, content, cx)

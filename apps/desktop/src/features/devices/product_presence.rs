@@ -56,7 +56,7 @@ impl DesktopProductPresenceController {
         };
 
         let identity = ProductIdentityState::decode(&payload)?;
-        if identity.trusted_peers().is_empty() {
+        if identity.active_trusted_peer_count() == 0 {
             return Ok(None);
         }
 
@@ -250,6 +250,15 @@ impl DesktopProductPresenceController {
         self.agent
             .complete_clipboard_write(request_id, result)
             .await
+    }
+
+    pub async fn invalidate_for_revocation(&self) -> Result<(), DesktopPresenceError> {
+        let policy = self.agent.fail_closed_policy().await;
+        let disconnect = self.agent.disconnect();
+        let discovery = self.send_control(DiscoveryControl::Stop);
+        policy?;
+        disconnect?;
+        discovery
     }
 
     pub fn disconnect(&self) -> Result<(), DesktopPresenceError> {

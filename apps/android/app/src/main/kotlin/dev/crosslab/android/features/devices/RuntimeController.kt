@@ -151,6 +151,25 @@ class RuntimeController(
         return changed
     }
 
+    fun reloadTrust(): Boolean {
+        var succeeded = true
+        update {
+            if (it.lifecycle == RuntimeLifecycle.SHUTDOWN) return@update null
+            port.stop()
+            if (it.lifecycle == RuntimeLifecycle.RUNNING) {
+                succeeded = runCatching { port.start() }.isSuccess
+            }
+            if (!succeeded) {
+                runCatching { port.stop() }
+            }
+            it.copy(
+                lifecycle = if (succeeded) it.lifecycle else RuntimeLifecycle.STOPPED,
+                snapshot = port.snapshot(),
+            )
+        }
+        return succeeded
+    }
+
     fun shutdown() {
         var didShutdown = false
         update {

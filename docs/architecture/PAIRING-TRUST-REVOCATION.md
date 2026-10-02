@@ -360,3 +360,9 @@ Phase 1 must reject/test at minimum:
 This specification addresses `TM-002`, `TM-003`, `TM-004`, `TM-009`, `TM-014`, `TM-018`, `TM-019`, and `TM-022`.
 
 Changes to pairing authentication, trust-transition authority, revocation semantics, or reauthorization after revocation are architecture-sensitive and require an ADR when material.
+
+## Product persistence profile (ADR-0022)
+
+Phase 2 stores signed terminal revocation evidence alongside the original paired credential and `PairingTrustTransition`, not as an unsigned boolean or silent deletion. Product identity schema v3 appends a one-byte optional revocation indicator and the exact existing signed `TrustTransition v1` fields for each peer. Full encoding is governed by the accepted ADR-0022.
+
+On reload, the owner authority and transition signature/revision are verified before revoked entries become usable records. Tombstones remain in the bounded store to reject future reuse of a revoked logical DeviceId. Active session/operation authority is invalidated after an atomic persist-before-apply transition; any unverified/corrupt store fails closed. UI displays abbreviated IDs but commits against full locally validated identifiers. Linux and Android physical denial/reconnect testing is required before completing Phase 2.

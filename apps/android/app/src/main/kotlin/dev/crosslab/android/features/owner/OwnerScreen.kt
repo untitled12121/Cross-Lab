@@ -11,6 +11,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
@@ -19,15 +23,21 @@ import dev.crosslab.android.features.appearance.ThemeDocument
 import dev.crosslab.android.features.appearance.toComposeColor
 import dev.crosslab.android.features.appearance.toTextStyle
 import dev.crosslab.android.features.devices.RuntimeControllerState
+import dev.crosslab.android.components.ui.ControlButton
 
 @Composable
 fun OwnerScreen(
     theme: ThemeDocument,
     runtime: RuntimeControllerState,
     trustedPeerIds: List<String>,
+    revokedPeerIds: List<String>,
+    canRevokePeers: Boolean,
+    revocationNotice: String?,
+    onRevokePeer: (Int) -> Unit,
 ) {
     val colors = theme.colors
     val snapshot = runtime.snapshot
+    var pendingRevoke by remember { mutableIntStateOf(-1) }
 
     Column(
         modifier =
@@ -75,10 +85,48 @@ fun OwnerScreen(
             InfoRow(theme, "Paired devices", trustedPeerIds.size.toString())
             trustedPeerIds.take(24).forEachIndexed { index, peerId ->
                 InfoRow(theme, "Trusted device ${index + 1}", peerId)
+                if (canRevokePeers) {
+                    if (pendingRevoke == index) {
+                        BasicText(
+                            text = "Revoke this device permanently? Its existing credentials will no longer grant access.",
+                            style = theme.typography.scales.caption.toTextStyle()
+                                .copy(color = colors.destructive.toComposeColor()),
+                        )
+                        ControlButton(
+                            theme = theme,
+                            label = "Confirm revocation",
+                            destructive = true,
+                            onClick = {
+                                pendingRevoke = -1
+                                onRevokePeer(index)
+                            },
+                        )
+                        ControlButton(
+                            theme = theme,
+                            label = "Cancel",
+                            onClick = { pendingRevoke = -1 },
+                        )
+                    } else {
+                        ControlButton(
+                            theme = theme,
+                            label = "Revoke ${peerId}",
+                            destructive = true,
+                            onClick = { pendingRevoke = index },
+                        )
+                    }
+                }
             }
             if (trustedPeerIds.size > 24) {
                 InfoRow(theme, "More paired devices", "${trustedPeerIds.size - 24} not shown")
             }
+            if (trustedPeerIds.isNotEmpty() && !canRevokePeers) {
+                InfoRow(theme, "Revocation", "Owner signing authority unavailable")
+            }
+            InfoRow(theme, "Revoked devices", revokedPeerIds.size.toString())
+            revokedPeerIds.take(24).forEachIndexed { index, peerId ->
+                InfoRow(theme, "Revoked ${index + 1}", peerId)
+            }
+            revocationNotice?.let { InfoRow(theme, "Revocation result", it) }
         }
 
         BasicText(

@@ -6,7 +6,12 @@ use gpui_kit::{
     App, Div, ParentElement as _, Styled as _, component::theme::ActiveTheme as _, div, px,
 };
 
-pub(crate) fn owner_content(state: &OwnerFeatureState, cx: &App) -> Div {
+pub(crate) fn owner_content(
+    state: &OwnerFeatureState,
+    controls: Option<Div>,
+    notice: Option<&str>,
+    cx: &App,
+) -> Div {
     let theme = cx.theme();
     let appearance = active_theme(cx);
 
@@ -64,8 +69,27 @@ pub(crate) fn owner_content(state: &OwnerFeatureState, cx: &App) -> Div {
                     state.trusted_peer_ids().iter().take(24).enumerate().map(|(index, id)| {
                         info_row(&format!("Trusted device {}", index + 1), id, cx)
                     }),
+                )
+                .child(info_row(
+                    "Revoked devices",
+                    &state.revoked_peer_ids().len().to_string(),
+                    cx,
+                ))
+                .children(
+                    state.revoked_peer_ids().iter().take(24).enumerate().map(|(index, id)| {
+                        info_row(&format!("Revoked device {}", index + 1), id, cx)
+                    }),
                 ),
         )
+        .child(controls.unwrap_or_else(div))
+        .child(match notice {
+            Some(value) => div()
+                .border_1()
+                .border_color(theme.border)
+                .p(px(appearance.spacing.md))
+                .child(value.to_owned()),
+            None => div(),
+        })
         .child(
             div()
                 .border_1()

@@ -1,6 +1,7 @@
 # ADR-0021: Owner-authorized Android notification mirror v3
 
-**Status:** Proposed  
+**Status:** Accepted
+**Accepted:** 2026-10-02 (owner approval)  
 **Date:** 2026-10-02  
 **Scope:** Phase 2 Linux + Android only
 
@@ -8,7 +9,7 @@
 
 The Master Architecture reserves `notifications.read` version 3 without defining a product wire profile. The first Phase 2 use case is explicitly owner-enabled Android-to-Linux mirroring. Android requires separate OS Notification Access through a `NotificationListenerService`. Linux receiver must not treat notification data as authentication, permission or executable instructions. The normal foreground-only Android presence lifecycle cannot promise background delivery.
 
-## Decision (proposed)
+## Decision
 
 - Android is the **source**; Linux is the **consumer**. No Linux-to-Android mirroring, remote actions, or automatic reply in v3.0. No mandatory cloud.
 - Exact protected capability: `notifications.read`, version `3.0`; request operation `subscribe` (NonRetryable) evaluated by Android's existing per-peer, exact-rule policy. No rule means deny; `Ask` is not implicit approval. Linux may request only an authenticated, negotiated, currently available subscription.
@@ -41,4 +42,4 @@ Use a narrow Android `NotificationListenerService` adapter, shared Rust bounded 
 
 ## Consequences
 
-The first mirror is permission-first and explicit rather than pretending background notifications work under every Android lifecycle. **This proposal must be accepted before changes are made to the public protocol.**
+The first mirror is permission-first and explicit rather than pretending background notifications work under every Android lifecycle. The exact codec and golden tests remain required before publishing the v3.0 wire contract.

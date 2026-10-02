@@ -1,6 +1,7 @@
 # ADR-0023: Privacy-bounded owner audit/history store
 
-**Status:** Proposed  
+**Status:** Accepted
+**Accepted:** 2026-10-02 (owner approval)  
 **Date:** 2026-10-02  
 **Scope:** Phase 2 Linux and Android
 
@@ -8,7 +9,7 @@
 
 `AUDIT-PRIVACY.md` defines audit classes and prohibited sensitive contents, but only in-memory simulator evidence exists. Owner-visible history requires a durability, integrity/currentness, deletion, and failure contract separate from identity/policy/transfer state.
 
-## Decision (proposed)
+## Decision
 
 - A dedicated shared typed audit event model and narrow platform store service; never embed audit bytes in the identity, owner-policy or clipboard/transfer state. Version each event and snapshot.
 - First product event types: pairing started/failed/completed/cancelled, device trust added/revoked, session authenticated/disconnected, owner permission changed, transfer terminal result, notification subscription enabled/disabled. Use public action/capability IDs, coarse timestamp, revision, redacted peer-display reference, and an explicit outcome code only when useful.
@@ -40,4 +41,4 @@ Keep separate Linux/Android platform adapters; use audited, tested local file re
 
 ## Consequences
 
-Provides a small owner-visible record without becoming a second store of personal data. **Proposal only: no persistent audit format is authorized until reviewed.**
+Provides a small owner-visible record without becoming a second store of personal data. The owner-approved architecture requires an exact bounded persistent codec, platform-currentness schema, and regression tests before shipping the store.

@@ -224,7 +224,7 @@ private class DiscoverySession(
             runCatching { nsdManager.stopServiceDiscovery(this) }
         }
         if (multicastLock?.isHeld == true) {
-            runCatching { multicastLock.release() }
+            runCatching { multicastLock?.release() }
         }
     }
 }

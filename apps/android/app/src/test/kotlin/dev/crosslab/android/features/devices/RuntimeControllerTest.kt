@@ -112,6 +112,28 @@ class RuntimeControllerTest {
     }
 
     @Test
+    fun trustReloadRestartsOnlyAfterClosingPriorRuntime() {
+        val port = FakeRuntimePort()
+        val controller = RuntimeController(port)
+        controller.onForeground()
+        assertEquals(true, controller.reloadTrust())
+        assertEquals(2, port.starts)
+        assertEquals(1, port.stops)
+        assertEquals(RuntimeLifecycle.RUNNING, controller.state().lifecycle)
+    }
+
+    @Test
+    fun trustReloadFailureRemainsStopped() {
+        val port = FakeRuntimePort()
+        val controller = RuntimeController(port)
+        controller.onForeground()
+        port.failNextStart = true
+        assertEquals(false, controller.reloadTrust())
+        assertEquals(RuntimeLifecycle.STOPPED, controller.state().lifecycle)
+        assertEquals(2, port.stops)
+    }
+
+    @Test
     fun shutdownStopsOnceAndPreventsRestart() {
         val port = FakeRuntimePort()
         val controller = RuntimeController(port)
@@ -128,6 +150,7 @@ class RuntimeControllerTest {
 
     private class FakeRuntimePort : RuntimePort {
         var starts = 0
+        var failNextStart = false
         var stops = 0
         var networkLost = 0
         var networkAvailable = 0
@@ -139,6 +162,10 @@ class RuntimeControllerTest {
 
         override fun start() {
             starts += 1
+            if (failNextStart) {
+                failNextStart = false
+                throw IllegalStateException("simulated secure runtime start failure")
+            }
         }
 
         override fun stop() {

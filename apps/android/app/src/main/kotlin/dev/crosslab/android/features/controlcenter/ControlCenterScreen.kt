@@ -62,6 +62,10 @@ fun ControlCenterScreen(
     onFetchClipboard: () -> Unit,
     pairing: PairingJoinerState,
     trustedPeerIds: List<String>,
+    revokedPeerIds: List<String>,
+    canRevokePeers: Boolean,
+    revocationNotice: String?,
+    onRevokePeer: (Int) -> Unit,
     onPairingBootstrapScanned: (MobilePairingBootstrap) -> Unit,
     onCancelPairing: () -> Unit,
 ) {
@@ -179,6 +183,10 @@ fun ControlCenterScreen(
                     theme = theme,
                     runtime = runtime,
                     trustedPeerIds = trustedPeerIds,
+                    revokedPeerIds = revokedPeerIds,
+                    canRevokePeers = canRevokePeers,
+                    revocationNotice = revocationNotice,
+                    onRevokePeer = onRevokePeer,
                 )
         }
     }

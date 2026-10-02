@@ -41,6 +41,7 @@ impl ProductIdentityPresentation {
             trusted_peer_ids: identity
                 .trusted_peers()
                 .iter()
+                .filter(|peer| peer.revocation().is_none())
                 .map(|peer| short_hex(peer.credential().device_id().as_bytes()))
                 .collect(),
         }
@@ -90,7 +91,7 @@ pub async fn persist_product_pairing_commit(
     identity.validate_providers(&root, &issuer, &local)?;
 
     let next = identity.with_paired_peer(commit.peer_credential(), commit.peer_transition())?;
-    store.commit_payload(next.encode()).await?;
+    store.commit_payload_if_current(&payload, next.encode()).await?;
     Ok(ProductIdentityPresentation::from_identity(&next))
 }
 
@@ -126,6 +127,7 @@ impl DesktopPairingInvitation {
         let trusted_peer_ids = identity
             .trusted_peers()
             .iter()
+            .filter(|peer| peer.revocation().is_none())
             .map(|peer| short_hex(peer.credential().device_id().as_bytes()))
             .collect();
         let issuer = LinuxEd25519Signer::load_required(LinuxSigningSlot::DeviceSigning).await?;

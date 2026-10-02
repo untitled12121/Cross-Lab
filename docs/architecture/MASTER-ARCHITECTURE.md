@@ -1,8 +1,8 @@
 # Cross-Lab Master Architecture & Development Plan
 
 **Document status:** Architecture Baseline — Source of Truth  
-**Revision:** 2.10  
-**Date:** 2026-09-26  
+**Revision:** 2.11  
+**Date:** 2026-10-02  
 **Project:** Cross-Lab  
 **Scope:** Architecture, security boundaries, repository structure, protocol foundations, platform strategy, development phases, and technology evaluation rules
 
@@ -25,6 +25,8 @@ The following rules apply:
 - Research repositories are reference material. Their code, protocols, and architecture must not be copied blindly.
 - License compatibility, security implications, platform support, maintenance status, and performance impact must be reviewed before code is reused or adapted.
 - The smallest architecture that cleanly satisfies the current milestone is preferred over speculative extensibility.
+
+Revision 2.11 accepts ADR-0021 (permission-gated Android notification mirror to Linux), ADR-0022 (signed terminal revocation persisted in product identity schema v3), and ADR-0023 (private bounded owner audit/history storage). Accepted designs do not by themselves prove platform availability, wire golden vectors or device evidence; those remain verified implementation gates.
 
 Revision 2.10 incorporates accepted ADR-0020 resumable single-file transfer profile v2. Revision 2.9 incorporated ADR-0018 text clipboard profile v1 and ADR-0019 platform owner-policy store boundary in addition to the existing pairing, identity-store, and trusted-session decisions. File transfer v2 is an explicit single-file push profile that reuses authenticated control, exact policy, fresh session-bound `OperationId` authority, and bounded unidirectional data streams. Resume state may survive reconnect, but session/transport authority never does. Detailed encoding and platform mechanics live in the focused ADR/specification documents; this document records the governing architecture and dependency boundaries.
 

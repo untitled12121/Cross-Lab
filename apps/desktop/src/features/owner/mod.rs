@@ -30,6 +30,8 @@ impl OwnerPresentation {
 pub struct OwnerFeatureState {
     current: Option<OwnerPresentation>,
     trusted_peer_ids: Vec<String>,
+    trusted_peer_device_ids: Vec<DeviceId>,
+    revoked_peer_ids: Vec<String>,
 }
 
 impl OwnerFeatureState {
@@ -37,6 +39,8 @@ impl OwnerFeatureState {
         Self {
             current: None,
             trusted_peer_ids: Vec::new(),
+            trusted_peer_device_ids: Vec::new(),
+            revoked_peer_ids: Vec::new(),
         }
     }
 
@@ -44,6 +48,8 @@ impl OwnerFeatureState {
         Self {
             current: OwnerPresentation::from_runtime(status),
             trusted_peer_ids: Vec::new(),
+            trusted_peer_device_ids: Vec::new(),
+            revoked_peer_ids: Vec::new(),
         }
     }
 
@@ -60,16 +66,28 @@ impl OwnerFeatureState {
         owner_id: String,
         local_device_id: String,
         trusted_peer_ids: Vec<String>,
+        trusted_peer_device_ids: Vec<DeviceId>,
+        revoked_peer_ids: Vec<String>,
     ) {
         self.current = Some(OwnerPresentation {
             owner_id,
             local_device_id,
         });
         self.trusted_peer_ids = trusted_peer_ids;
+        self.trusted_peer_device_ids = trusted_peer_device_ids;
+        self.revoked_peer_ids = revoked_peer_ids;
     }
 
     pub fn trusted_peer_ids(&self) -> &[String] {
         &self.trusted_peer_ids
+    }
+
+    pub fn trusted_peer_device_ids(&self) -> &[DeviceId] {
+        &self.trusted_peer_device_ids
+    }
+
+    pub fn revoked_peer_ids(&self) -> &[String] {
+        &self.revoked_peer_ids
     }
 
     pub const fn current(&self) -> Option<&OwnerPresentation> {
@@ -104,6 +122,8 @@ mod tests {
             "owner".to_owned(),
             "local".to_owned(),
             vec!["peer".to_owned()],
+            vec![DeviceId::from_bytes([0xaa; 32])],
+            Vec::new(),
         );
         state.clear();
         assert_eq!(state.trusted_peer_ids(), &["peer".to_owned()]);

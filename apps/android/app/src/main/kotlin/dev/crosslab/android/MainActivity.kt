@@ -27,6 +27,9 @@ class MainActivity : ComponentActivity() {
     private val fileTransferState = mutableStateOf(FileTransferState.initial(false))
     private val pairingState = mutableStateOf(PairingJoinerState.idle())
     private val trustedPeerIds = mutableStateOf<List<String>>(emptyList())
+    private val trustedPeerDeviceIds = mutableStateOf<List<ByteArray>>(emptyList())
+    private val revokedPeerIds = mutableStateOf<List<String>>(emptyList())
+    private val revocationNotice = mutableStateOf<String?>(null)
     private val identityWorker = Executors.newSingleThreadExecutor()
     private var runtimeSubscription: AutoCloseable? = null
     private var clipboardSubscription: AutoCloseable? = null
@@ -130,6 +133,35 @@ class MainActivity : ComponentActivity() {
                 onFetchClipboard = app.clipboardController::fetch,
                 pairing = pairingState.value,
                 trustedPeerIds = trustedPeerIds.value,
+                revokedPeerIds = revokedPeerIds.value,
+                canRevokePeers = app.identityRepository.canRevokePeers,
+                revocationNotice = revocationNotice.value,
+                onRevokePeer = { index ->
+                    val id = trustedPeerDeviceIds.value.getOrNull(index)?.copyOf()
+                    if (id != null) {
+                        identityWorker.execute {
+                            val result = runCatching {
+                                app.identityRepository.revokePeer(id)
+                                check(app.runtimeController.reloadTrust()) {
+                                    "Device revoked, but session restart failed. Restart Cross-Lab."
+                                }
+                            }
+                            val identity = runCatching {
+                                app.identityRepository.load()
+                            }.getOrNull()
+                            if (!isDestroyed) runOnUiThread {
+                                if (!isDestroyed) {
+                                    updateTrustedPeerState(identity)
+                                    revocationNotice.value =
+                                        result.fold(
+                                            onSuccess = { "Trust revoked and saved." },
+                                            onFailure = { "Revocation could not complete. Check device status and secure storage." },
+                                        )
+                                }
+                            }
+                        }
+                    }
+                },
                 onPairingBootstrapScanned = app.pairingController::begin,
                 onCancelPairing = app.pairingController::cancel,
             )
@@ -138,15 +170,21 @@ class MainActivity : ComponentActivity() {
 
     private fun refreshTrustedPeers(app: CrossLabApplication) {
         identityWorker.execute {
-            val peers =
-                runCatching { app.identityRepository.load()?.trustedPeerIds.orEmpty() }
-                    .getOrDefault(emptyList())
+            val identity = runCatching { app.identityRepository.load() }.getOrNull()
             if (!isDestroyed) {
                 runOnUiThread {
-                    if (!isDestroyed) trustedPeerIds.value = peers
+                    if (!isDestroyed) updateTrustedPeerState(identity)
                 }
             }
         }
+    }
+
+    private fun updateTrustedPeerState(
+        identity: uniffi.crosslab_mobile_ffi.MobileProductIdentity?,
+    ) {
+        trustedPeerIds.value = identity?.trustedPeerIds.orEmpty()
+        trustedPeerDeviceIds.value = identity?.trustedPeerDeviceIds.orEmpty()
+        revokedPeerIds.value = identity?.revokedPeerIds.orEmpty()
     }
 
     override fun onDestroy() {
