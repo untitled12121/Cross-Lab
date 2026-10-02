@@ -41,4 +41,4 @@ Keep separate Linux/Android platform adapters; use audited, tested local file re
 
 ## Consequences
 
-Provides a small owner-visible record without becoming a second store of personal data. The owner-approved architecture requires an exact bounded persistent codec, platform-currentness schema, and regression tests before shipping the store.
+Provides a small owner-visible record without becoming a second store of personal data. The owner-approved architecture requires an exact bounded persistent codec, platform-currentness schema, and regression tests before shipping the store. Initial privacy-safe typed history snapshot and golden tests: `docs/protocol/OWNER-AUDIT-V1.md`. Independently currentness-protected platform storage and owner-controlled history UX remain uncompleted gates.

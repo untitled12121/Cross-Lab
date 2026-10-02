@@ -42,4 +42,4 @@ Use a narrow Android `NotificationListenerService` adapter, shared Rust bounded 
 
 ## Consequences
 
-The first mirror is permission-first and explicit rather than pretending background notifications work under every Android lifecycle. The exact codec and golden tests remain required before publishing the v3.0 wire contract.
+The first mirror is permission-first and explicit rather than pretending background notifications work under every Android lifecycle. The exact codec and golden tests remain required before publishing the v3.0 wire contract. Initial bounded codec and golden tests: `docs/protocol/NOTIFICATIONS-V3.md`. OS listener, runtime event delivery and owner permissions UX are separate uncompleted gates.
