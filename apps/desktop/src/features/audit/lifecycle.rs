@@ -16,7 +16,11 @@ pub(crate) struct AuditIntent {
 
 impl AuditIntent {
     pub(crate) const fn new(action: AuditAction, outcome: AuditOutcome, revision: u64) -> Self {
-        Self { action, outcome, revision }
+        Self {
+            action,
+            outcome,
+            revision,
+        }
     }
 }
 
@@ -59,12 +63,14 @@ impl AuditLifecycle {
                 event(AuditAction::PairingCompleted, AuditOutcome::Succeeded),
                 event(AuditAction::PeerTrusted, AuditOutcome::Succeeded),
             ],
-            DesktopPairingStage::Failed | DesktopPairingStage::Expired => {
-                [event(AuditAction::PairingFailed, AuditOutcome::Failed), None]
-            }
-            DesktopPairingStage::Cancelled => {
-                [event(AuditAction::PairingCancelled, AuditOutcome::Cancelled), None]
-            }
+            DesktopPairingStage::Failed | DesktopPairingStage::Expired => [
+                event(AuditAction::PairingFailed, AuditOutcome::Failed),
+                None,
+            ],
+            DesktopPairingStage::Cancelled => [
+                event(AuditAction::PairingCancelled, AuditOutcome::Cancelled),
+                None,
+            ],
             _ => [None, None],
         }
     }
@@ -88,14 +94,15 @@ impl AuditLifecycle {
     pub(crate) fn permission(&mut self, revision: u64) -> Option<AuditIntent> {
         let previous = self.policy_revision.replace(revision)?;
         (revision > previous).then(|| {
-            AuditIntent::new(AuditAction::PermissionChanged, AuditOutcome::Succeeded, revision)
+            AuditIntent::new(
+                AuditAction::PermissionChanged,
+                AuditOutcome::Succeeded,
+                revision,
+            )
         })
     }
 
-    pub(crate) fn notification(
-        &mut self,
-        next: NotificationInboxStatus,
-    ) -> Option<AuditIntent> {
+    pub(crate) fn notification(&mut self, next: NotificationInboxStatus) -> Option<AuditIntent> {
         let previous = self.subscription;
         if previous == next {
             return None;
@@ -179,14 +186,21 @@ mod tests {
         assert_eq!(tracker.permission(4), None);
         assert_eq!(
             tracker.permission(5),
-            Some(AuditIntent::new(AuditAction::PermissionChanged, AuditOutcome::Succeeded, 5))
+            Some(AuditIntent::new(
+                AuditAction::PermissionChanged,
+                AuditOutcome::Succeeded,
+                5
+            ))
         );
         assert_eq!(
             tracker.notification(NotificationInboxStatus::AwaitingApproval),
             None
         );
         assert_eq!(
-            tracker.notification(NotificationInboxStatus::Denied).unwrap().outcome,
+            tracker
+                .notification(NotificationInboxStatus::Denied)
+                .unwrap()
+                .outcome,
             AuditOutcome::Denied
         );
         assert_eq!(
@@ -194,12 +208,18 @@ mod tests {
             None
         );
         assert_eq!(
-            tracker.notification(NotificationInboxStatus::Active).unwrap().action,
+            tracker
+                .notification(NotificationInboxStatus::Active)
+                .unwrap()
+                .action,
             AuditAction::NotificationSubscriptionEnabled
         );
         assert_eq!(tracker.notification(NotificationInboxStatus::Active), None);
         assert_eq!(
-            tracker.notification(NotificationInboxStatus::Idle).unwrap().action,
+            tracker
+                .notification(NotificationInboxStatus::Idle)
+                .unwrap()
+                .action,
             AuditAction::NotificationSubscriptionDisabled
         );
     }
@@ -211,24 +231,22 @@ mod tests {
             tracker.pairing_started().action,
             AuditAction::PairingStarted
         );
+        assert_eq!(tracker.pairing(DesktopPairingStage::Waiting), [None, None]);
         assert_eq!(
-            tracker.pairing(DesktopPairingStage::Waiting),
-            [None, None]
-        );
-        assert_eq!(
-            tracker.pairing(DesktopPairingStage::Paired)[0].unwrap().action,
+            tracker.pairing(DesktopPairingStage::Paired)[0]
+                .unwrap()
+                .action,
             AuditAction::PairingCompleted
         );
-        assert_eq!(
-            tracker.pairing(DesktopPairingStage::Paired),
-            [None, None]
-        );
+        assert_eq!(tracker.pairing(DesktopPairingStage::Paired), [None, None]);
         assert_eq!(
             tracker.pairing_started().action,
             AuditAction::PairingStarted
         );
         assert_eq!(
-            tracker.pairing(DesktopPairingStage::Failed)[0].unwrap().outcome,
+            tracker.pairing(DesktopPairingStage::Failed)[0]
+                .unwrap()
+                .outcome,
             AuditOutcome::Failed
         );
     }
@@ -237,17 +255,31 @@ mod tests {
     fn transfer_outcomes_do_not_embed_names_or_log_duplicate_events() {
         let mut tracker = AuditLifecycle::default();
         assert_eq!(tracker.transfer(true, FileTransferStage::Idle, None), None);
-        assert_eq!(tracker.transfer(true, FileTransferStage::Transferring, None), None);
+        assert_eq!(
+            tracker.transfer(true, FileTransferStage::Transferring, None),
+            None
+        );
         let denied = tracker
-            .transfer(true, FileTransferStage::Failed, Some(FileTransferFailure::Denied))
+            .transfer(
+                true,
+                FileTransferStage::Failed,
+                Some(FileTransferFailure::Denied),
+            )
             .unwrap();
         assert_eq!(denied.action, AuditAction::TransferEnded);
         assert_eq!(denied.outcome, AuditOutcome::Denied);
         assert_eq!(
-            tracker.transfer(true, FileTransferStage::Failed, Some(FileTransferFailure::Denied)),
+            tracker.transfer(
+                true,
+                FileTransferStage::Failed,
+                Some(FileTransferFailure::Denied)
+            ),
             None
         );
-        assert_eq!(tracker.transfer(false, FileTransferStage::Preparing, None), None);
+        assert_eq!(
+            tracker.transfer(false, FileTransferStage::Preparing, None),
+            None
+        );
         assert_eq!(
             tracker
                 .transfer(false, FileTransferStage::Completed, None)

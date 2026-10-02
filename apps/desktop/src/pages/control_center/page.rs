@@ -121,16 +121,20 @@ impl ControlCenterPage {
                     .await
             }
             .await;
-            if this.update(cx, |page, cx| {
-                match initial {
-                    Ok(history) => page.owner.set_audit_rows(
-                        audit_history_rows(&history),
-                        history.dropped_count(),
-                    ),
-                    Err(_) => page.owner.set_audit_notice("Protected audit history unavailable"),
-                }
-                cx.notify();
-            }).is_err() {
+            if this
+                .update(cx, |page, cx| {
+                    match initial {
+                        Ok(history) => page
+                            .owner
+                            .set_audit_rows(audit_history_rows(&history), history.dropped_count()),
+                        Err(_) => page
+                            .owner
+                            .set_audit_notice("Protected audit history unavailable"),
+                    }
+                    cx.notify();
+                })
+                .is_err()
+            {
                 return;
             }
 
@@ -148,8 +152,9 @@ impl ControlCenterPage {
                     }
                 }
                 .await;
-                if this.update(cx, |page, cx| {
-                    match result {
+                if this
+                    .update(cx, |page, cx| {
+                        match result {
                         Ok(history) => page.owner.set_audit_rows(
                             audit_history_rows(&history),
                             history.dropped_count(),
@@ -158,8 +163,10 @@ impl ControlCenterPage {
                             "Protected audit write unavailable; recent history may be incomplete",
                         ),
                     }
-                    cx.notify();
-                }).is_err() {
+                        cx.notify();
+                    })
+                    .is_err()
+                {
                     return;
                 }
             }
@@ -272,7 +279,11 @@ impl ControlCenterPage {
 
     #[cfg(target_os = "linux")]
     fn enqueue_audit(&mut self, intent: AuditIntent) {
-        if self.audit_tx.try_send(AuditCommand::Record(intent)).is_err() {
+        if self
+            .audit_tx
+            .try_send(AuditCommand::Record(intent))
+            .is_err()
+        {
             self.owner.note_audit_queue_drop();
         }
     }
@@ -379,15 +390,18 @@ impl ControlCenterPage {
                     page.devices.update_permissions(&initial_permissions);
                     page.notification_inbox = initial_notifications;
                     if let Some(event) = page.audit_lifecycle.session(
-                        initial.runtime().is_some_and(|runtime| runtime.session_id().is_some()),
+                        initial
+                            .runtime()
+                            .is_some_and(|runtime| runtime.session_id().is_some()),
                     ) {
                         page.enqueue_audit(event);
                     }
                     let _ = page
                         .audit_lifecycle
                         .permission(initial_permissions.policy_revision());
-                    if let Some(event) =
-                        page.audit_lifecycle.notification(page.notification_inbox.phase())
+                    if let Some(event) = page
+                        .audit_lifecycle
+                        .notification(page.notification_inbox.phase())
                     {
                         page.enqueue_audit(event);
                     }
