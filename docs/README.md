@@ -75,7 +75,6 @@ The Phase 0 baseline currently includes accepted ADR-0001 through ADR-0006. See 
 - [`BUILD.md`](./development/BUILD.md) — unified local build, setup, and device-install commands.
 - [`ROADMAP.md`](./development/ROADMAP.md) — concise phase/milestone navigation.
 - [`WORKFLOW.md`](./development/WORKFLOW.md) — repository continuity and verification workflow.
-- [`BUILD.md`](./development/BUILD.md) — normal Linux desktop + Android product build and physical-test setup.
 
 These files should stay concise and operational. Completed design history belongs in plans, ADRs, or focused specifications rather than accumulating in `CURRENT.md`.
 

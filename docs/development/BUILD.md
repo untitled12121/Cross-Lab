@@ -78,7 +78,7 @@ On Ubuntu 24.04/Debian-based Linux, the GitHub CI desktop build installs these s
 
 ```bash
 sudo apt-get update
-sudo apt-get install --no-install-recommends \
+sudo apt-get install -y --no-install-recommends \
   clang gcc g++ libfontconfig-dev libwayland-dev libx11-xcb-dev \
   libxkbcommon-x11-dev libssl-dev libzstd-dev libvulkan1
 ```
