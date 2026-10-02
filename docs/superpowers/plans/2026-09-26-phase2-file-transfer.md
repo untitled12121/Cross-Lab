@@ -1,6 +1,6 @@
 # Phase 2 Resumable File Transfer
 
-**Status:** Active — Task 1 implemented; ADR-0020 accepted; PR #65-#69 shared runtime complete; PR #70-#73 Linux storage/receive/service/product flow merged; Task 5 Android platform adapter active
+**Status:** Active — Tasks 1–5 implemented, ADR-0020 accepted, shared runtime and Linux product flow merged, Android Task 5 merged as PR #75; Task 6 Android Compose flow active
 **Date:** 2026-09-26
 **Base:** PR #61 merged as `61ae275356201245a7dcac95d11bd598d2c3045e`  
 **Foundation:** PR #62 merged as `e338d10911ccdb908bc495150f048503086c0ce2`; exact implementation head `e663909443d208c712ccb7f6e1e74fb8dab26ab8` passed full Rust + Android CI `36258390585`.
@@ -93,9 +93,9 @@ PR #70 completed the first platform slice with a private atomic retained-state s
 - atomic/non-clobbering finalization where platform semantics permit;
 - clean cancellation and restart behavior.
 
-## Task 5 — Android platform adapter — Active
+## Task 5 — Android platform adapter — Implemented
 
-Active branch / draft PR `phase2-android-file-transfer-adapter` / #75 starts from merged PR #73 / `main` `881a5dc0f50943d2cc312a5396afecc07c6a1073`.
+PR #75 merged the Android SAF/ContentResolver platform adapter from the PR #73 baseline into main as `f048b13e4e93298dc1ad2fa1bb12a64ffcbc3aa2`. Exact head `b6683540891cfa20d409e565f8b9dfb85d25836b` passed full Rust + Android CI `36912713661`.
 
 The adapter slice keeps capability/UI authority separate while establishing the reusable mobile boundary:
 
@@ -109,7 +109,11 @@ The adapter slice keeps capability/UI authority separate while establishing the 
 - keep Android production `files.transfer` advertisement disabled until Task 6 wires the complete owner-selection/progress/cancel/retry Compose path;
 - require no broad storage privilege for the transfer feature.
 
-## Task 6 — Product UI
+## Task 6 — Product UI — Active
+
+Active branch `phase2-android-file-transfer-ui` builds the Android native control-center path with ActivityResultContracts.OpenDocument and CreateDocument. A destination prompt carries the exact inbound RequestId from launch to result, preventing stale Save As results from authorizing a newer offer. The transfer worker keeps content URIs local and redacted, and the publication gate allows cancellation after data finish but before publication begins. A matching retained partial or completion tombstone is surfaced separately: the owner can explicitly resume the prior destination or reauthorize the same document via OpenDocument rather than accidentally creating a new target for an old TransferId. No remote path selection or preview is added.
+
+
 
 Expose the smallest clear controls:
 

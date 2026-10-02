@@ -52,11 +52,15 @@ class AndroidFileTransferReceiver internal constructor(
         }
     private var offset = initialOffset
     private var terminal = false
+    private val publication = TransferPublicationGate()
     private val expectedSize = offer.fileSize().toSafeLong()
+
+    fun requestCancellation(): Boolean = publication.cancel()
 
     @Synchronized
     fun write(bytes: ByteArray): ULong {
         check(!terminal) { "file transfer receiver is closed" }
+        if (publication.cancelled()) throw FileTransferPreparationCancelled()
         val active = checkNotNull(file)
         if (bytes.size > FILE_TRANSFER_IO_CHUNK_BYTES) {
             throw FileTransferStorageUnavailable("file transfer chunk exceeds 64 KiB")
@@ -99,8 +103,9 @@ class AndroidFileTransferReceiver internal constructor(
     }
 
     @Synchronized
-    fun finish() {
+    fun finish(onPublishing: () -> Unit = {}) {
         check(!terminal) { "file transfer receiver is closed" }
+        if (publication.cancelled()) throw FileTransferPreparationCancelled()
         if (offset != expectedSize) {
             failIntegrity()
             throw FileTransferIntegrityFailure()
@@ -136,6 +141,8 @@ class AndroidFileTransferReceiver internal constructor(
             throw FileTransferIntegrityFailure(error)
         }
 
+        if (!publication.beginPublication()) throw FileTransferPreparationCancelled()
+        onPublishing()
         adapter.publish(partial, destinationUri)
         adapter.completed(sourceDeviceId, offer)
         runCatching { partial.delete() }
@@ -164,5 +171,27 @@ class AndroidFileTransferReceiver internal constructor(
         runCatching { partial.delete() }
         runCatching { adapter.invalidate(offer) }
         terminal = true
+    }
+}
+
+internal class TransferPublicationGate {
+    private var cancelled = false
+    private var publishing = false
+
+    @Synchronized
+    fun cancel(): Boolean {
+        if (publishing) return false
+        cancelled = true
+        return true
+    }
+
+    @Synchronized
+    fun cancelled(): Boolean = cancelled
+
+    @Synchronized
+    fun beginPublication(): Boolean {
+        if (cancelled || publishing) return false
+        publishing = true
+        return true
     }
 }

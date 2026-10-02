@@ -105,6 +105,10 @@ class AndroidFileTransferAdapter(
     }
 
     @Synchronized
+    fun canResume(sourceDeviceId: ByteArray, offer: MobileFileTransferOffer): Boolean =
+        state.find(sourceDeviceId, offer).kind() != MobileFileTransferRecoveryKind.NONE
+
+    @Synchronized
     fun prepareReceive(
         sourceDeviceId: ByteArray,
         offer: MobileFileTransferOffer,
