@@ -28,6 +28,9 @@ Cross-Lab has accepted the following ADRs:
 | ADR-0018 | Text clipboard capability profile v1 | Accepted |
 | ADR-0019 | Platform owner-policy store boundary | Accepted |
 | ADR-0020 | Resumable single-file transfer profile v2 | Accepted |
+| ADR-0021 | Owner-authorized Android notification mirror v3 | Accepted |
+| ADR-0022 | Durable signed product device revocation | Accepted |
+| ADR-0023 | Privacy-bounded owner audit/history store | Accepted |
 
 
 The governing architecture is `docs/architecture/MASTER-ARCHITECTURE.md`.

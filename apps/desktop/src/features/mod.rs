@@ -1,4 +1,6 @@
 pub mod appearance;
+#[cfg(target_os = "linux")]
+pub mod audit;
 pub mod clipboard;
 pub mod devices;
 #[cfg(target_os = "linux")]

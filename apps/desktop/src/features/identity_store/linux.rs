@@ -52,6 +52,37 @@ impl LinuxIdentityStore {
     }
 
     pub async fn commit_payload(&self, payload: Vec<u8>) -> Result<u64, LinuxIdentityStoreError> {
+        self.commit_payload_checked(None, payload).await
+    }
+
+    pub async fn commit_payload_if_current(
+        &self,
+        expected_payload: &[u8],
+        payload: Vec<u8>,
+    ) -> Result<u64, LinuxIdentityStoreError> {
+        self.commit_payload_checked(Some(expected_payload), payload)
+            .await
+    }
+
+    async fn commit_payload_checked(
+        &self,
+        expected_payload: Option<&[u8]>,
+        payload: Vec<u8>,
+    ) -> Result<u64, LinuxIdentityStoreError> {
+        let parent = self
+            .path
+            .parent()
+            .ok_or(LinuxIdentityStoreError::InvalidPath)?;
+        fs::create_dir_all(parent)?;
+        set_private_dir(parent)?;
+        let lock = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .mode_private()
+            .open(self.path.with_extension("lock"))?;
+        lock.lock()?;
+
         let current = self.read_bundle()?;
         let current_envelope = current
             .as_ref()
@@ -68,6 +99,13 @@ impl LinuxIdentityStore {
             self.verify_anchor(anchor).await?;
         }
 
+        if expected_payload.is_some_and(|expected| {
+            current_envelope.as_ref().map(|envelope| envelope.payload()) != Some(expected)
+        }) {
+            return Err(LinuxIdentityStoreError::Store(
+                IdentityStoreError::RevisionConflict,
+            ));
+        }
         let commit = prepare_commit(current_envelope.as_ref(), payload)?;
         let next_anchor = commit.anchor();
         self.create_anchor(next_anchor).await?;

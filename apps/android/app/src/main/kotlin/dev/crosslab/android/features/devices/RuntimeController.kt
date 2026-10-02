@@ -19,6 +19,13 @@ interface RuntimePort {
         effect: RuntimePermissionEffect,
     ): Boolean = false
 
+    fun setPermissionForPeer(
+        peerDeviceId: String,
+        capabilityId: String,
+        operation: String,
+        effect: RuntimePermissionEffect,
+    ): Boolean = false
+
     fun snapshot(): RuntimeSnapshot = RuntimeSnapshot.disconnected()
 
     fun observeSnapshots(listener: (RuntimeSnapshot) -> Unit): AutoCloseable {
@@ -149,6 +156,43 @@ class RuntimeController(
             it.copy(snapshot = port.snapshot())
         }
         return changed
+    }
+
+    fun setPermissionForPeer(
+        peerDeviceId: String,
+        capabilityId: String,
+        operation: String,
+        effect: RuntimePermissionEffect,
+    ): Boolean {
+        var changed = false
+        update {
+            if (it.lifecycle != RuntimeLifecycle.RUNNING ||
+                it.snapshot.session != RuntimeSession.ACTIVE ||
+                it.snapshot.peerDeviceId != peerDeviceId
+            ) return@update null
+            changed = port.setPermissionForPeer(peerDeviceId, capabilityId, operation, effect)
+            it.copy(snapshot = port.snapshot())
+        }
+        return changed
+    }
+
+    fun reloadTrust(): Boolean {
+        var succeeded = true
+        update {
+            if (it.lifecycle == RuntimeLifecycle.SHUTDOWN) return@update null
+            port.stop()
+            if (it.lifecycle == RuntimeLifecycle.RUNNING) {
+                succeeded = runCatching { port.start() }.isSuccess
+            }
+            if (!succeeded) {
+                runCatching { port.stop() }
+            }
+            it.copy(
+                lifecycle = if (succeeded) it.lifecycle else RuntimeLifecycle.STOPPED,
+                snapshot = port.snapshot(),
+            )
+        }
+        return succeeded
     }
 
     fun shutdown() {

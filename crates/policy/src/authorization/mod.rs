@@ -148,6 +148,34 @@ impl AuthorizationContext {
         }
     }
 
+    pub const fn session_id(&self) -> SessionId {
+        self.session_id
+    }
+
+    pub const fn source_device_id(&self) -> DeviceId {
+        self.source_device_id
+    }
+
+    pub const fn trust_revision(&self) -> u64 {
+        self.trust_revision
+    }
+
+    pub const fn trust_state(&self) -> TrustState {
+        self.trust_state
+    }
+
+    pub const fn capability_id(&self) -> &CapabilityId {
+        &self.capability_id
+    }
+
+    pub const fn negotiated_version(&self) -> CapabilityVersion {
+        self.negotiated_version
+    }
+
+    pub const fn operation(&self) -> &OperationName {
+        &self.operation
+    }
+
     pub fn with_local_time(mut self, local_time: ApprovalInstant) -> Self {
         self.local_time = Some(local_time);
         self

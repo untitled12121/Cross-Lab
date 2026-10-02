@@ -4,8 +4,10 @@ import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import java.net.Inet4Address
 import java.net.Inet6Address
 import java.net.InetAddress
 import java.nio.charset.StandardCharsets
@@ -31,6 +33,7 @@ internal enum class PairingDiscoveryFailure {
     START_FAILED,
     RESOLVE_FAILED,
     PROFILE_MISMATCH,
+    NO_IPV4_ROUTE,
     TIMEOUT,
 }
 
@@ -109,6 +112,10 @@ private class DiscoverySession(
 
     override fun onDiscoveryStarted(regType: String) {
         discoveryStarted = true
+        if (finished.get()) {
+            // Cancellation may win before the asynchronous start callback arrives.
+            runCatching { nsdManager.stopServiceDiscovery(this) }
+        }
     }
 
     override fun onServiceFound(serviceInfo: NsdServiceInfo) {
@@ -167,16 +174,24 @@ private class DiscoverySession(
                     }
 
                     override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
-                        val host = serviceInfo.host
                         val port = serviceInfo.port
-                        if (host == null ||
-                            port !in 1..65535 ||
+                        if (port !in 1..65535 ||
                             !hasExactPairingTxtProfile(serviceInfo.attributes)
                         ) {
                             fail(PairingDiscoveryFailure.PROFILE_MISMATCH)
                             return
                         }
-
+                        val addresses =
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                                serviceInfo.hostAddresses + listOfNotNull(serviceInfo.host)
+                            } else {
+                                listOfNotNull(serviceInfo.host)
+                            }
+                        val host = firstIpv4(addresses)
+                        if (host == null) {
+                            fail(PairingDiscoveryFailure.NO_IPV4_ROUTE)
+                            return
+                        }
                         complete(PairingResolvedRoute(host = host, port = port))
                     }
                 },
@@ -209,7 +224,7 @@ private class DiscoverySession(
             runCatching { nsdManager.stopServiceDiscovery(this) }
         }
         if (multicastLock?.isHeld == true) {
-            multicastLock.release()
+            runCatching { multicastLock?.release() }
         }
     }
 }
@@ -219,3 +234,6 @@ internal fun hasExactPairingTxtProfile(attributes: Map<String, ByteArray>): Bool
     val version = attributes["v"] ?: return false
     return version.contentEquals("1".toByteArray(StandardCharsets.US_ASCII))
 }
+
+internal fun firstIpv4(addresses: List<InetAddress>): InetAddress? =
+    addresses.firstOrNull { it is Inet4Address }

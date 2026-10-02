@@ -7,9 +7,14 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.os.Build
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import dev.crosslab.android.features.audit.AndroidAuditStore
+import dev.crosslab.android.features.audit.AndroidAuditRecorder
 import dev.crosslab.android.features.clipboard.ClipboardController
 import dev.crosslab.android.features.clipboard.UnavailableClipboardPort
 import dev.crosslab.android.features.devices.MobileRuntimePort
@@ -23,6 +28,8 @@ import dev.crosslab.android.features.filetransfer.FileTransferController
 import dev.crosslab.android.features.filetransfer.UnavailableFileTransferPort
 import dev.crosslab.android.features.pairing.PairingJoinerController
 import dev.crosslab.android.features.permissions.AndroidPolicyStore
+import dev.crosslab.android.features.notifications.NotificationPublisher
+import dev.crosslab.android.features.notifications.AndroidNotificationConsent
 
 class CrossLabApplication : Application(), DefaultLifecycleObserver {
     lateinit var runtimeController: RuntimeController
@@ -37,6 +44,17 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
     lateinit var identityStore: AndroidIdentityStore
         private set
 
+    lateinit var auditStore: AndroidAuditStore
+        private set
+
+    lateinit var auditRecorder: AndroidAuditRecorder
+        private set
+
+    private val auditObservations = mutableListOf<AutoCloseable>()
+
+    lateinit var notificationConsent: AndroidNotificationConsent
+        private set
+
     lateinit var localDeviceSigner: AndroidEd25519Signer
         private set
 
@@ -48,6 +66,28 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
 
     lateinit var pairingController: PairingJoinerController
         private set
+
+    private var notificationPublisher: NotificationPublisher? = null
+    private val consentRestart = ThreadPoolExecutor(
+        1, 1, 0L, TimeUnit.MILLISECONDS, ArrayBlockingQueue<Runnable>(1),
+        { task -> Thread(task, "crosslab-consent-restart").apply { isDaemon = true } },
+        ThreadPoolExecutor.DiscardOldestPolicy(),
+    )
+
+    fun notificationPublisher(): NotificationPublisher? = notificationPublisher
+
+    fun notificationPermissionChanged() {
+        // Immediate capture gate; reload of protected trust/role state is off the UI thread.
+        notificationPublisher?.disableNotifications()
+        consentRestart.execute {
+            if (::runtimeController.isInitialized &&
+                runtimeController.state().lifecycle ==
+                    dev.crosslab.android.features.devices.RuntimeLifecycle.RUNNING
+            ) {
+                runtimeController.reloadTrust()
+            }
+        }
+    }
 
     private lateinit var connectivityManager: ConnectivityManager
 
@@ -65,6 +105,9 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
     override fun onCreate() {
         super<Application>.onCreate()
         identityStore = AndroidIdentityStore(this)
+        auditStore = AndroidAuditStore(this)
+        auditRecorder = AndroidAuditRecorder(auditStore)
+        notificationConsent = AndroidNotificationConsent(this)
         policyStore = AndroidPolicyStore(this)
         localDeviceSigner = AndroidEd25519Signer(this, AndroidSigningSlot.LOCAL_DEVICE)
         identityRepository =
@@ -78,10 +121,16 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
         val developmentProvisioning = developmentProvisioningPath()
         val productPresence =
             if (developmentProvisioning == null) {
-                ProductPresencePort(this, identityRepository, policyStore)
+                ProductPresencePort(
+                    this,
+                    identityRepository,
+                    policyStore,
+                    notificationConsent,
+                )
             } else {
                 null
             }
+        notificationPublisher = productPresence
         runtimeController =
             RuntimeController(
                 productPresence ?: MobileRuntimePort(checkNotNull(developmentProvisioning)),
@@ -96,6 +145,13 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
                 identityRepository = identityRepository,
                 onPaired = runtimeController::reconnectPeer,
             )
+
+        auditObservations += runtimeController.observe { auditRecorder.runtime(it.snapshot) }
+        auditObservations += pairingController.observe { auditRecorder.pairing(it.stage) }
+        auditObservations += fileTransferController.observe { auditRecorder.transfer(it) }
+        productPresence?.let { presence ->
+            auditObservations += presence.observeSubscription(auditRecorder::subscription)
+        }
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
 
         connectivityManager = getSystemService(ConnectivityManager::class.java)
@@ -132,10 +188,14 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
     override fun onTerminate() {
         connectivityManager.unregisterNetworkCallback(networkCallback)
         ProcessLifecycleOwner.get().lifecycle.removeObserver(this)
+        auditObservations.forEach(AutoCloseable::close)
+        auditObservations.clear()
         pairingController.close()
         clipboardController.shutdown()
         fileTransferController.shutdown()
         runtimeController.shutdown()
+        auditRecorder.close()
+        consentRestart.shutdownNow()
         super.onTerminate()
     }
 }

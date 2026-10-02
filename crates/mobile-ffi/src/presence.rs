@@ -4,8 +4,9 @@ use std::{
 };
 
 use crosslab_agent::{
-    ClipboardAvailability, FileTransferAvailability, PermissionSnapshot, PresenceAgentError,
-    PresencePhase, TrustedPresenceAgent, TrustedSessionRoute,
+    ClipboardAvailability, FileTransferAvailability, NotificationRole, PermissionSnapshot,
+    PlatformNotification, PresenceAgentError, PresencePhase, TrustedPresenceAgent,
+    TrustedSessionRoute,
 };
 use crosslab_crypto::SigningProvider;
 use crosslab_identity_store::ProductIdentityState;
@@ -116,6 +117,27 @@ impl std::error::Error for MobilePresenceError {}
 
 const POLICY_APPLY_TIMEOUT: Duration = Duration::from_secs(5);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct MobilePresenceAvailability {
+    pub clipboard_read: bool,
+    pub clipboard_write: bool,
+    pub file_transfer: bool,
+    pub notification_source: bool,
+    pub notification_content: bool,
+}
+
+impl MobilePresenceAvailability {
+    fn notification_role(self) -> NotificationRole {
+        if self.notification_source {
+            NotificationRole::Source {
+                content_enabled: self.notification_content,
+            }
+        } else {
+            NotificationRole::Disabled
+        }
+    }
+}
+
 #[derive(uniffi::Object)]
 pub struct MobileTrustedPresenceAgent {
     agent: Mutex<Option<Arc<TrustedPresenceAgent>>>,
@@ -151,9 +173,7 @@ impl MobileTrustedPresenceAgent {
         local_device_signer: Arc<dyn MobileSigningProvider>,
         policy_envelope: Option<Vec<u8>>,
         policy_anchor: Option<Vec<u8>>,
-        clipboard_read_available: bool,
-        clipboard_write_available: bool,
-        file_transfer_available: bool,
+        availability: MobilePresenceAvailability,
     ) -> Result<Self, MobilePresenceError> {
         let identity = ProductIdentityState::decode(&identity_payload)
             .map_err(|_| MobilePresenceError::Identity)?;
@@ -164,12 +184,14 @@ impl MobileTrustedPresenceAgent {
         };
         let signer = ForeignSigningProvider::new(local_device_signer)?;
         let signer: Arc<dyn SigningProvider + Send + Sync> = Arc::new(signer);
-        let agent = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
+        let role = availability.notification_role();
+        let agent = TrustedPresenceAgent::spawn_with_policy_and_notifications(
             identity,
             signer,
             policy,
-            ClipboardAvailability::new(clipboard_read_available, clipboard_write_available),
-            FileTransferAvailability::new(file_transfer_available),
+            ClipboardAvailability::new(availability.clipboard_read, availability.clipboard_write),
+            FileTransferAvailability::new(availability.file_transfer),
+            role,
         )?;
         let status = agent.subscribe_status();
         let clipboard_requests = agent
@@ -215,6 +237,45 @@ impl MobileTrustedPresenceAgent {
             file_transfer_offer_runtime: Mutex::new(file_transfer_offer_runtime),
             file_transfer_operation_runtime: Mutex::new(file_transfer_operation_runtime),
             policy_runtime: Mutex::new(policy_runtime),
+        })
+    }
+
+    pub fn notification_subscribed(&self) -> bool {
+        self.agent_handle()
+            .is_ok_and(|agent| agent.notification_subscribed())
+    }
+
+    pub fn disable_notifications(&self) -> bool {
+        self.agent_handle()
+            .is_ok_and(|agent| agent.disable_notifications().is_ok())
+    }
+
+    pub fn notification_posted(
+        &self,
+        key: String,
+        app_label: String,
+        title: Option<String>,
+        preview: Option<String>,
+        protected: bool,
+    ) -> bool {
+        self.agent_handle().is_ok_and(|agent| {
+            agent
+                .publish_notification(PlatformNotification::Posted {
+                    key,
+                    app_label,
+                    title,
+                    preview,
+                    protected,
+                })
+                .is_ok()
+        })
+    }
+
+    pub fn notification_removed(&self, key: String) -> bool {
+        self.agent_handle().is_ok_and(|agent| {
+            agent
+                .publish_notification(PlatformNotification::Removed { key })
+                .is_ok()
         })
     }
 
@@ -883,5 +944,41 @@ impl From<MobileProductIdentityError> for MobilePresenceError {
 impl From<MobilePolicyStoreError> for MobilePresenceError {
     fn from(_: MobilePolicyStoreError) -> Self {
         Self::PolicyStore
+    }
+}
+
+// The OS listener and owner consent must both be present before this record is
+// built by the Android platform adapter.
+#[cfg(test)]
+mod presence_availability_tests {
+    use super::*;
+
+    #[test]
+    fn notification_content_flag_never_creates_a_source() {
+        let mut availability = MobilePresenceAvailability {
+            clipboard_read: false,
+            clipboard_write: false,
+            file_transfer: false,
+            notification_source: false,
+            notification_content: true,
+        };
+        assert!(matches!(
+            availability.notification_role(),
+            NotificationRole::Disabled
+        ));
+        availability.notification_source = true;
+        assert!(matches!(
+            availability.notification_role(),
+            NotificationRole::Source {
+                content_enabled: true
+            }
+        ));
+        availability.notification_content = false;
+        assert!(matches!(
+            availability.notification_role(),
+            NotificationRole::Source {
+                content_enabled: false
+            }
+        ));
     }
 }

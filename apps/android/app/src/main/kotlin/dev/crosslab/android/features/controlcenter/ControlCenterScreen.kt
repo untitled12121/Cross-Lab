@@ -33,6 +33,7 @@ import dev.crosslab.android.features.devices.RuntimeControllerState
 import dev.crosslab.android.features.devices.RuntimeLifecycle
 import dev.crosslab.android.features.filetransfer.FileTransferState
 import dev.crosslab.android.features.owner.OwnerScreen
+import dev.crosslab.android.features.notifications.NotificationOwnerConsent
 import dev.crosslab.android.features.pairing.PairingJoinerState
 import uniffi.crosslab_mobile_ffi.MobilePairingBootstrap
 
@@ -61,6 +62,23 @@ fun ControlCenterScreen(
     onSendClipboard: () -> Unit,
     onFetchClipboard: () -> Unit,
     pairing: PairingJoinerState,
+    trustedPeerIds: List<String>,
+    inventoryGeneration: Int,
+    revokedPeerIds: List<String>,
+    canRevokePeers: Boolean,
+    revocationNotice: String?,
+    onRevokePeer: (Int, Int) -> Unit,
+    auditRows: List<String>,
+    auditDropped: Long,
+    auditNotice: String?,
+    onClearAudit: () -> Unit,
+    onExportAudit: () -> Unit,
+    notificationConsent: NotificationOwnerConsent,
+    onToggleNotificationOwner: () -> Unit,
+    onToggleNotificationContent: () -> Unit,
+    onOpenNotificationAccess: () -> Unit,
+    notificationNotice: String?,
+    onSetNotificationPeerPermission: (String, Boolean) -> Unit,
     onPairingBootstrapScanned: (MobilePairingBootstrap) -> Unit,
     onCancelPairing: () -> Unit,
 ) {
@@ -177,6 +195,23 @@ fun ControlCenterScreen(
                 OwnerScreen(
                     theme = theme,
                     runtime = runtime,
+                    trustedPeerIds = trustedPeerIds,
+                    inventoryGeneration = inventoryGeneration,
+                    revokedPeerIds = revokedPeerIds,
+                    canRevokePeers = canRevokePeers,
+                    revocationNotice = revocationNotice,
+                    onRevokePeer = onRevokePeer,
+                    auditRows = auditRows,
+                    auditDropped = auditDropped,
+                    auditNotice = auditNotice,
+                    onClearAudit = onClearAudit,
+                    onExportAudit = onExportAudit,
+                    notificationConsent = notificationConsent,
+                    onToggleNotificationOwner = onToggleNotificationOwner,
+                    onToggleNotificationContent = onToggleNotificationContent,
+                    onOpenNotificationAccess = onOpenNotificationAccess,
+                    notificationNotice = notificationNotice,
+                    onSetNotificationPeerPermission = onSetNotificationPeerPermission,
                 )
         }
     }

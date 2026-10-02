@@ -112,6 +112,82 @@ class RuntimeControllerTest {
     }
 
     @Test
+    fun peerBoundPermissionNeverAppliesAfterSessionSwitch() {
+        val port = FakeRuntimePort()
+        val controller = RuntimeController(port)
+        val first =
+            RuntimeSnapshot.disconnected().copy(
+                peerDeviceId = "first-trusted-id",
+                session = RuntimeSession.ACTIVE,
+                trust = RuntimeTrust.TRUSTED,
+            )
+        val second = first.copy(peerDeviceId = "different-trusted-id")
+        port.emit(first)
+        controller.onForeground()
+        assertEquals(
+            false,
+            controller.setPermissionForPeer(
+                "different-trusted-id",
+                "notifications.read",
+                "subscribe",
+                RuntimePermissionEffect.ALLOW,
+            ),
+        )
+        assertEquals(
+            true,
+            controller.setPermissionForPeer(
+                "first-trusted-id",
+                "notifications.read",
+                "subscribe",
+                RuntimePermissionEffect.ALLOW,
+            ),
+        )
+        port.emit(second)
+        assertEquals(
+            false,
+            controller.setPermissionForPeer(
+                "first-trusted-id",
+                "notifications.read",
+                "subscribe",
+                RuntimePermissionEffect.ALLOW,
+            ),
+        )
+        assertEquals(1, port.peerPermissionEdits)
+        controller.onBackground()
+        assertEquals(
+            false,
+            controller.setPermissionForPeer(
+                "different-trusted-id",
+                "notifications.read",
+                "subscribe",
+                RuntimePermissionEffect.ALLOW,
+            ),
+        )
+    }
+
+    @Test
+    fun trustReloadRestartsOnlyAfterClosingPriorRuntime() {
+        val port = FakeRuntimePort()
+        val controller = RuntimeController(port)
+        controller.onForeground()
+        assertEquals(true, controller.reloadTrust())
+        assertEquals(2, port.starts)
+        assertEquals(1, port.stops)
+        assertEquals(RuntimeLifecycle.RUNNING, controller.state().lifecycle)
+    }
+
+    @Test
+    fun trustReloadFailureRemainsStopped() {
+        val port = FakeRuntimePort()
+        val controller = RuntimeController(port)
+        controller.onForeground()
+        port.failNextStart = true
+        assertEquals(false, controller.reloadTrust())
+        assertEquals(RuntimeLifecycle.STOPPED, controller.state().lifecycle)
+        assertEquals(2, port.stops)
+    }
+
+    @Test
     fun shutdownStopsOnceAndPreventsRestart() {
         val port = FakeRuntimePort()
         val controller = RuntimeController(port)
@@ -128,17 +204,23 @@ class RuntimeControllerTest {
 
     private class FakeRuntimePort : RuntimePort {
         var starts = 0
+        var failNextStart = false
         var stops = 0
         var networkLost = 0
         var networkAvailable = 0
         var disconnects = 0
         var reconnects = 0
         var permissionEdits = 0
+        var peerPermissionEdits = 0
         private var current = RuntimeSnapshot.disconnected()
         private val snapshotListeners = CopyOnWriteArraySet<(RuntimeSnapshot) -> Unit>()
 
         override fun start() {
             starts += 1
+            if (failNextStart) {
+                failNextStart = false
+                throw IllegalStateException("simulated secure runtime start failure")
+            }
         }
 
         override fun stop() {
@@ -167,6 +249,19 @@ class RuntimeControllerTest {
             effect: RuntimePermissionEffect,
         ): Boolean {
             permissionEdits += 1
+            return true
+        }
+
+        override fun setPermissionForPeer(
+            peerDeviceId: String,
+            capabilityId: String,
+            operation: String,
+            effect: RuntimePermissionEffect,
+        ): Boolean {
+            if (current.peerDeviceId != peerDeviceId || current.session != RuntimeSession.ACTIVE) {
+                return false
+            }
+            peerPermissionEdits += 1
             return true
         }
 

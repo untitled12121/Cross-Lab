@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crosslab_crypto::{Signature, SigningProvider, SigningProviderError, VerifyingKey};
+use crosslab_identity::DeviceId;
 use crosslab_identity_store::{ProductIdentityError, ProductIdentityState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Error)]
@@ -29,13 +30,26 @@ pub trait MobileSigningProvider: Send + Sync {
     fn sign(&self, message: Vec<u8>) -> Result<Vec<u8>, MobileSigningCallbackError>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
 pub struct MobileProductIdentity {
     pub created: bool,
     pub payload: Vec<u8>,
     pub owner_id: String,
     pub local_device_id: String,
     pub trusted_peer_count: u64,
+    pub trusted_peer_ids: Vec<String>,
+    pub trusted_peer_device_ids: Vec<Vec<u8>>,
+    pub revoked_peer_ids: Vec<String>,
+}
+
+impl core::fmt::Debug for MobileProductIdentity {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("MobileProductIdentity")
+            .field("created", &self.created)
+            .field("trusted_peer_count", &self.trusted_peer_count)
+            .finish_non_exhaustive()
+    }
 }
 
 impl MobileProductIdentity {
@@ -45,7 +59,25 @@ impl MobileProductIdentity {
             payload: state.encode(),
             owner_id: short_hex(state.owner_id().as_bytes()),
             local_device_id: short_hex(state.local_device_id().as_bytes()),
-            trusted_peer_count: state.trusted_peers().len() as u64,
+            trusted_peer_count: state.active_trusted_peer_count() as u64,
+            trusted_peer_ids: state
+                .trusted_peers()
+                .iter()
+                .filter(|peer| peer.revocation().is_none())
+                .map(|peer| short_hex(peer.credential().device_id().as_bytes()))
+                .collect(),
+            trusted_peer_device_ids: state
+                .trusted_peers()
+                .iter()
+                .filter(|peer| peer.revocation().is_none())
+                .map(|peer| peer.credential().device_id().as_bytes().to_vec())
+                .collect(),
+            revoked_peer_ids: state
+                .trusted_peers()
+                .iter()
+                .filter(|peer| peer.revocation().is_some())
+                .map(|peer| short_hex(peer.credential().device_id().as_bytes()))
+                .collect(),
         }
     }
 }
@@ -118,6 +150,25 @@ pub fn product_identity_load_or_create(
     Ok(MobileProductIdentity::from_state(&state, created))
 }
 
+#[uniffi::export]
+pub fn product_identity_revoke_peer(
+    current_payload: Vec<u8>,
+    peer_device_id: Vec<u8>,
+    device_signing_signer: Arc<dyn MobileSigningProvider>,
+    local_device_signer: Arc<dyn MobileSigningProvider>,
+) -> Result<MobileProductIdentity, MobileProductIdentityError> {
+    let bytes: [u8; 32] = peer_device_id
+        .try_into()
+        .map_err(|_| MobileProductIdentityError::Malformed)?;
+    let identity = ProductIdentityState::decode(&current_payload)?;
+    let local = ForeignSigningProvider::new(local_device_signer)?;
+    identity.validate_local_device_provider(&local)?;
+    let issuer = ForeignSigningProvider::new(device_signing_signer)?;
+    let next = identity.with_revoked_peer(DeviceId::from_bytes(bytes), &issuer)?;
+    next.validate_local_device_provider(&local)?;
+    Ok(MobileProductIdentity::from_state(&next, false))
+}
+
 pub(crate) struct ForeignSigningProvider {
     inner: Arc<dyn MobileSigningProvider>,
     verifying_key: VerifyingKey,
@@ -166,6 +217,8 @@ impl From<ProductIdentityError> for MobileProductIdentityError {
             ProductIdentityError::UnsupportedSchema => Self::UnsupportedSchema,
             ProductIdentityError::ProviderMismatch => Self::ProviderMismatch,
             ProductIdentityError::PeerLimit
+            | ProductIdentityError::PeerNotFound
+            | ProductIdentityError::Revocation(_)
             | ProductIdentityError::PeerOwnerMismatch
             | ProductIdentityError::LocalDeviceAsPeer
             | ProductIdentityError::DuplicatePeer
@@ -183,4 +236,104 @@ fn short_hex(bytes: &[u8; 32]) -> String {
         write!(&mut output, "{byte:02x}").expect("writing to String cannot fail");
     }
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crosslab_crypto::SigningKey;
+    use crosslab_identity::{DeviceCredential, DeviceId};
+    use crosslab_policy::{PairingTrustTransition, TransitionId};
+
+    struct TestSigner(SigningKey);
+
+    impl MobileSigningProvider for TestSigner {
+        fn public_key(&self) -> Result<Vec<u8>, MobileSigningCallbackError> {
+            Ok(self.0.verifying_key().to_bytes().to_vec())
+        }
+
+        fn sign(&self, message: Vec<u8>) -> Result<Vec<u8>, MobileSigningCallbackError> {
+            Ok(self.0.sign_message(&message).to_bytes().to_vec())
+        }
+    }
+
+    #[test]
+    fn mobile_revoke_requires_real_issuer_and_hides_revoked_from_active_list() {
+        let root = SigningKey::from_secret_bytes([0x21; 32]);
+        let issuer = SigningKey::from_secret_bytes([0x22; 32]);
+        let local = SigningKey::from_secret_bytes([0x23; 32]);
+        let peer = SigningKey::from_secret_bytes([0x24; 32]);
+        let mut identity = ProductIdentityState::bootstrap(&root, &issuer, &local).unwrap();
+        let authority = identity.authority_state().unwrap();
+        let credential = DeviceCredential::issue(
+            identity.owner_id(),
+            DeviceId::from_bytes([0x25; 32]),
+            &peer,
+            0,
+            &authority,
+            &issuer,
+        )
+        .unwrap();
+        let paired = PairingTrustTransition::issue(
+            &credential,
+            TransitionId::from_bytes([0x26; 32]),
+            [0x27; 32],
+            &authority,
+            &issuer,
+        )
+        .unwrap();
+        identity.add_paired_peer(credential, paired).unwrap();
+
+        let local_signer: Arc<dyn MobileSigningProvider> = Arc::new(TestSigner(local));
+        let issuer_signer: Arc<dyn MobileSigningProvider> = Arc::new(TestSigner(issuer));
+        let result = product_identity_revoke_peer(
+            identity.encode(),
+            credential.device_id().as_bytes().to_vec(),
+            issuer_signer,
+            local_signer,
+        )
+        .unwrap();
+        assert_eq!(result.trusted_peer_count, 0);
+        assert!(result.trusted_peer_ids.is_empty());
+        assert!(result.trusted_peer_device_ids.is_empty());
+        assert_eq!(result.revoked_peer_ids, vec!["2525252525252525"]);
+        let restored = ProductIdentityState::decode(&result.payload).unwrap();
+        assert_eq!(restored.active_trusted_peer_count(), 0);
+    }
+
+    #[test]
+    fn mobile_peer_inventory_is_presentable_but_debug_redacted() {
+        let root = SigningKey::from_secret_bytes([0x31; 32]);
+        let issuer = SigningKey::from_secret_bytes([0x32; 32]);
+        let local = SigningKey::from_secret_bytes([0x33; 32]);
+        let peer = SigningKey::from_secret_bytes([0x34; 32]);
+        let mut identity = ProductIdentityState::bootstrap(&root, &issuer, &local).unwrap();
+        let authority = identity.authority_state().unwrap();
+        let credential = DeviceCredential::issue(
+            identity.owner_id(),
+            DeviceId::from_bytes([0x45; 32]),
+            &peer,
+            0,
+            &authority,
+            &issuer,
+        )
+        .unwrap();
+        let transition = PairingTrustTransition::issue(
+            &credential,
+            TransitionId::from_bytes([0x46; 32]),
+            [0x47; 32],
+            &authority,
+            &issuer,
+        )
+        .unwrap();
+        identity.add_paired_peer(credential, transition).unwrap();
+
+        let snapshot = MobileProductIdentity::from_state(&identity, false);
+        assert_eq!(snapshot.trusted_peer_count, 1);
+        assert_eq!(snapshot.trusted_peer_ids, vec!["4545454545454545"]);
+        let debug = format!("{snapshot:?}");
+        assert!(!debug.contains("45454545"));
+        assert!(!debug.contains(&format!("{:?}", snapshot.payload)));
+        assert!(!debug.contains(&snapshot.owner_id));
+    }
 }

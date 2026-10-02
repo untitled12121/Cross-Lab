@@ -1,6 +1,7 @@
 package dev.crosslab.android.features.pairing
 
 import dev.crosslab.android.features.networking.androidNsdServiceType
+import java.net.InetAddress
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -8,6 +9,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PairingNsdDiscoveryProfileTest {
+    @Test
+    fun ipv4RouteIsPreferredOverUnreachableIpv6ForIpv4Listener() {
+        val ipv6 = InetAddress.getByAddress(ByteArray(16))
+        val ipv4 = InetAddress.getByAddress(byteArrayOf(192.toByte(), 0, 2, 1))
+        assertEquals(ipv4, firstIpv4(listOf(ipv6, ipv4)))
+        assertNull(firstIpv4(listOf(ipv6)))
+    }
+
     @Test
     fun androidServiceTypeKeepsDnsSdTypeAndDropsLocalDomain() {
         assertEquals(

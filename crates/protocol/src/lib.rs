@@ -6,6 +6,7 @@ mod data_stream;
 mod feature;
 mod file_transfer;
 mod framing;
+mod notification;
 mod version;
 pub mod wire;
 
@@ -34,6 +35,13 @@ pub use file_transfer::{
     valid_resume_offset,
 };
 pub use framing::{FrameError, FrameLimit, decode_frame, encode_frame};
+pub use notification::{
+    MAX_NOTIFICATION_APP_LABEL_BYTES, MAX_NOTIFICATION_PREVIEW_BYTES, MAX_NOTIFICATION_TITLE_BYTES,
+    MAX_NOTIFICATION_WIRE_BYTES, NOTIFICATION_CAPABILITY_ID, NOTIFICATION_POSTED_EVENT_TYPE,
+    NOTIFICATION_PROFILE_V3, NOTIFICATION_REMOVED_EVENT_TYPE, NOTIFICATION_SUBSCRIBE_OPERATION,
+    NotificationId, NotificationPayload, NotificationPosted, NotificationProfileError,
+    validate_notification_subscribe,
+};
 pub use version::{
     MAX_PROTOCOL_RANGES, ProtocolRange, ProtocolVersion, VersionNegotiationError,
     negotiate_protocol_version,
