@@ -111,7 +111,7 @@ The adapter slice keeps capability/UI authority separate while establishing the 
 
 ## Task 6 — Product UI — Active
 
-Active branch `phase2-android-file-transfer-ui` builds the Android native control-center path with ActivityResultContracts.OpenDocument and CreateDocument. A destination prompt carries the exact inbound RequestId from launch to result, preventing stale Save As results from authorizing a newer offer. The transfer worker keeps content URIs local and redacted, and the publication gate allows cancellation after data finish but before publication begins. No remote path selection or preview is added.
+Active branch `phase2-android-file-transfer-ui` builds the Android native control-center path with ActivityResultContracts.OpenDocument and CreateDocument. A destination prompt carries the exact inbound RequestId from launch to result, preventing stale Save As results from authorizing a newer offer. The transfer worker keeps content URIs local and redacted, and the publication gate allows cancellation after data finish but before publication begins. A matching retained partial or completion tombstone is surfaced separately: the owner can explicitly resume the prior destination or reauthorize the same document via OpenDocument rather than accidentally creating a new target for an old TransferId. No remote path selection or preview is added.
 
 
 

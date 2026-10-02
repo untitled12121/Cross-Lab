@@ -4,7 +4,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -36,6 +35,8 @@ fun FileTransferPanel(
     onToggleRetainAccess: () -> Unit,
     onSend: () -> Unit,
     onAccept: (String, String) -> Unit,
+    onResume: (String) -> Unit,
+    onReauthorize: (String) -> Unit,
     onDecline: () -> Unit,
     onCancel: () -> Unit,
     onRetry: () -> Unit,
@@ -89,7 +90,7 @@ fun FileTransferPanel(
         }
 
         Spacer(Modifier.height(theme.spacing.md.toFloat().dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(theme.spacing.sm.toFloat().dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(theme.spacing.sm.toFloat().dp)) {
             ControlButton(
                 theme = theme,
                 label = "Send file",
@@ -121,16 +122,33 @@ fun FileTransferPanel(
                     .copy(color = colors.foreground.toComposeColor()),
             )
             Spacer(Modifier.height(theme.spacing.xs.toFloat().dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(theme.spacing.sm.toFloat().dp)) {
-                ControlButton(
-                    theme = theme,
-                    label = "Choose destination",
-                    onClick = {
-                        state.pendingRequestId?.let { id ->
-                            onAccept(state.displayName ?: "received-file", id)
-                        }
-                    },
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(theme.spacing.sm.toFloat().dp)) {
+                if (state.resumeAvailable) {
+                    ControlButton(
+                        theme = theme,
+                        label = "Resume saved destination",
+                        onClick = {
+                            state.pendingRequestId?.let(onResume)
+                        },
+                    )
+                    ControlButton(
+                        theme = theme,
+                        label = "Reauthorize document",
+                        onClick = {
+                            state.pendingRequestId?.let(onReauthorize)
+                        },
+                    )
+                } else {
+                    ControlButton(
+                        theme = theme,
+                        label = "Choose destination",
+                        onClick = {
+                            state.pendingRequestId?.let { id ->
+                                onAccept(state.displayName ?: "received-file", id)
+                            }
+                        },
+                    )
+                }
                 ControlButton(
                     theme = theme,
                     label = "Decline",

@@ -62,6 +62,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             var retainFileAccess by remember { mutableStateOf(false) }
             var pendingReceiveRequest by remember { mutableStateOf<String?>(null) }
+            var reauthorizeRequest by remember { mutableStateOf<String?>(null) }
             var selectedPeer by remember { mutableStateOf<String?>(null) }
             val chooseSource =
                 rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -84,6 +85,14 @@ class MainActivity : ComponentActivity() {
                         app.fileTransferController.accept(uri, requestId, retainFileAccess)
                     }
                 }
+            val reauthorizeDocument =
+                rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                    val requestId = reauthorizeRequest
+                    reauthorizeRequest = null
+                    if (uri != null && requestId != null) {
+                        app.fileTransferController.accept(uri, requestId, retainFileAccess)
+                    }
+                }
             ControlCenterScreen(
                 theme = theme,
                 runtime = runtimeState.value,
@@ -98,6 +107,11 @@ class MainActivity : ComponentActivity() {
                 onChooseFileDestination = { name, id ->
                     pendingReceiveRequest = id
                     chooseDestination.launch(name)
+                },
+                onResumeFile = { id -> app.fileTransferController.resume(id) },
+                onReauthorizeFile = { id ->
+                    reauthorizeRequest = id
+                    reauthorizeDocument.launch(arrayOf("*/*"))
                 },
                 onCancelFile = { app.fileTransferController.cancel() },
                 onDeclineFile = { app.fileTransferController.decline() },

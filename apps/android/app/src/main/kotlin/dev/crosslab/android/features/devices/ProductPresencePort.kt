@@ -58,6 +58,8 @@ class ProductPresencePort(
     override fun acceptFile(uri: android.net.Uri, requestId: String, retainWriteGrant: Boolean) =
         fileTransfer?.acceptFile(uri, requestId, retainWriteGrant) ?: false
 
+    override fun resumeFile(requestId: String) = fileTransfer?.resumeFile(requestId) ?: false
+
     override fun declineFile() = fileTransfer?.declineFile() ?: false
 
     override fun cancelFile() = fileTransfer?.cancelFile() ?: false

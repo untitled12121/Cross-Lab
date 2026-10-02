@@ -25,6 +25,7 @@ data class FileTransferState(
     val canCancel: Boolean = false,
     val canRetry: Boolean = false,
     val pendingRequestId: String? = null,
+    val resumeAvailable: Boolean = false,
     val failure: FileTransferFailure? = null,
 ) {
     companion object {
@@ -48,6 +49,8 @@ interface FileTransferPort {
     fun retryFile(): Boolean = false
 
     fun acceptFile(uri: Uri, requestId: String, retainWriteGrant: Boolean): Boolean = false
+
+    fun resumeFile(requestId: String): Boolean = false
 
     fun declineFile(): Boolean = false
 
@@ -80,6 +83,8 @@ class FileTransferController(private val port: FileTransferPort) {
 
     fun accept(uri: Uri, requestId: String, retainWriteGrant: Boolean) =
         port.acceptFile(uri, requestId, retainWriteGrant)
+
+    fun resume(requestId: String) = port.resumeFile(requestId)
 
     fun decline() = port.declineFile()
 

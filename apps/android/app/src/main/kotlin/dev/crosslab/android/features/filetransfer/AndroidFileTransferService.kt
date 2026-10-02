@@ -8,7 +8,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 import uniffi.crosslab_mobile_ffi.MobileFileTransferDataEvent
 import uniffi.crosslab_mobile_ffi.MobileFileTransferDataKind
 import uniffi.crosslab_mobile_ffi.MobileFileTransferOffer
-import uniffi.crosslab_mobile_ffi.MobileFileTransferRequest
 import uniffi.crosslab_mobile_ffi.MobileFileTransferTerminalOutcome
 import uniffi.crosslab_mobile_ffi.MobileTrustedPresenceAgent
 
@@ -18,6 +17,7 @@ internal class IncomingOffer(
     val requestId: ByteArray,
     val sourceId: ByteArray,
     val offer: MobileFileTransferOffer,
+    val canResume: Boolean,
 )
 
 internal class ActiveFileReceive(
@@ -106,13 +106,24 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
         return beginSend(selection)
     }
 
-    override fun acceptFile(uri: Uri, requestId: String, retainWriteGrant: Boolean): Boolean {
+    override fun acceptFile(uri: Uri, requestId: String, retainWriteGrant: Boolean): Boolean =
+        beginReceive(uri, requestId, retainWriteGrant)
+
+    override fun resumeFile(requestId: String): Boolean =
+        beginReceive(null, requestId, false)
+
+    private fun beginReceive(
+        uri: Uri?,
+        requestId: String,
+        retainWriteGrant: Boolean,
+    ): Boolean {
         val input: ReceiveSelection
         synchronized(lock) {
             val active = agent ?: return false
             if (!connected || preparing != null || receiving != null) return false
             val request = pending ?: return false
-            if (request.requestId.toHex() != requestId) return false
+            if (request.requestId.toHex() != requestId ||
+                (uri == null && !request.canResume)) return false
             pending = null
             preparing = request
             input = ReceiveSelection(active, session, request, uri, retainWriteGrant)
@@ -276,8 +287,11 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
             val incoming = try {
                 active.waitFileTransferRequest(WAIT_MS)
             } catch (_: Throwable) { return } ?: continue
-            val request = IncomingOffer(incoming.requestId(), incoming.sourceDeviceId(),
-                incoming.offer())
+            val sourceId = incoming.sourceDeviceId()
+            val offer = incoming.offer()
+            val resumeAvailable =
+                runCatching { adapter.canResume(sourceId, offer) }.getOrDefault(false)
+            val request = IncomingOffer(incoming.requestId(), sourceId, offer, resumeAvailable)
             val accept = synchronized(lock) {
                 if (!isAgentLocked(active, token)) return
                 if (!connected || pending != null || preparing != null ||
@@ -286,7 +300,8 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
                     pending = request
                     publishLocked(state(request.offer, FileTransferDirection.RECEIVE,
                         FileTransferStage.WAITING_DESTINATION, canCancel = true,
-                        pendingRequestId = request.requestId.toHex()))
+                        pendingRequestId = request.requestId.toHex(),
+                        resumeAvailable = request.canResume))
                     true
                 }
             }
@@ -387,7 +402,15 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
                         FileTransferStage.FINALIZING, received.transferred, canCancel = true))
                 }
                 try {
-                    received.receiver.finish()
+                    received.receiver.finish {
+                        synchronized(lock) {
+                            if (receiving === received) {
+                                publishLocked(state(received.request.offer,
+                                    FileTransferDirection.RECEIVE, FileTransferStage.FINALIZING,
+                                    received.transferred, canCancel = false))
+                            }
+                        }
+                    }
                     active.completeFileTransferResult(received.request.offer.transferId(),
                         MobileFileTransferTerminalOutcome.COMPLETED)
                     synchronized(lock) {
@@ -490,19 +513,21 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
         canCancel: Boolean = false,
         canRetry: Boolean = false,
         pendingRequestId: String? = null,
+        resumeAvailable: Boolean = false,
         failure: FileTransferFailure? = null,
     ) = FileTransferState(
         available = true, direction = direction, stage = stage,
         displayName = offer?.displayName(), transferredBytes = transferred,
         totalBytes = offer?.fileSize() ?: 0uL, canCancel = canCancel,
-        canRetry = canRetry, pendingRequestId = pendingRequestId, failure = failure,
+        canRetry = canRetry, pendingRequestId = pendingRequestId,
+        resumeAvailable = resumeAvailable, failure = failure,
     )
 
     private class ReceiveSelection(
         val agent: MobileTrustedPresenceAgent,
         val token: Long,
         val request: IncomingOffer,
-        val uri: Uri,
+        val uri: Uri?,
         val retainGrant: Boolean,
     )
 }

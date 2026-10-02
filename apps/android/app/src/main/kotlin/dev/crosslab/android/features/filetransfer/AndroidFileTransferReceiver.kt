@@ -103,7 +103,7 @@ class AndroidFileTransferReceiver internal constructor(
     }
 
     @Synchronized
-    fun finish() {
+    fun finish(onPublishing: () -> Unit = {}) {
         check(!terminal) { "file transfer receiver is closed" }
         if (publication.cancelled()) throw FileTransferPreparationCancelled()
         if (offset != expectedSize) {
@@ -142,6 +142,7 @@ class AndroidFileTransferReceiver internal constructor(
         }
 
         if (!publication.beginPublication()) throw FileTransferPreparationCancelled()
+        onPublishing()
         adapter.publish(partial, destinationUri)
         adapter.completed(sourceDeviceId, offer)
         runCatching { partial.delete() }
