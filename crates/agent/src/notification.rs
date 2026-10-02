@@ -131,7 +131,9 @@ impl NotificationMirror {
     }
 
     pub fn cancel_request(&mut self, request_id: RequestId) -> bool {
-        let matching = self.subscription.is_some_and(|active| active.request_id == request_id);
+        let matching = self
+            .subscription
+            .is_some_and(|active| active.request_id == request_id);
         if matching {
             self.close();
         }
@@ -384,7 +386,9 @@ mod tests {
     fn platform_keys_never_leave_as_identifiers_and_clear_on_close() {
         let mut mirror = NotificationMirror::default();
         let policy = policy(Some(RuleEffect::Allow));
-        mirror.subscribe(request_id(), &context(1), &policy, consent()).unwrap();
+        mirror
+            .subscribe(request_id(), &context(1), &policy, consent())
+            .unwrap();
         assert!(mirror.submit_platform(
             PlatformNotification::Posted {
                 key: "private.platform.notification.id".to_owned(),
@@ -445,7 +449,9 @@ mod tests {
             content_enabled: true,
             ..consent()
         };
-        mirror.subscribe(request_id(), &context(1), &policy, consent).unwrap();
+        mirror
+            .subscribe(request_id(), &context(1), &policy, consent)
+            .unwrap();
         assert!(mirror.submit_platform(
             PlatformNotification::Posted {
                 key: "private-message-key".to_owned(),
@@ -509,7 +515,9 @@ mod tests {
     fn content_stays_redacted_and_queue_is_bounded() {
         let mut mirror = NotificationMirror::default();
         let policy = policy(Some(RuleEffect::Allow));
-        mirror.subscribe(request_id(), &context(1), &policy, consent()).unwrap();
+        mirror
+            .subscribe(request_id(), &context(1), &policy, consent())
+            .unwrap();
         for id in 0..66 {
             assert!(mirror.enqueue(posted(id), &context(1), &policy, consent()));
         }
@@ -574,7 +582,9 @@ mod tests {
     fn duplicate_identifier_is_coalesced_and_optout_drops_private_queue() {
         let mut mirror = NotificationMirror::default();
         let policy = policy(Some(RuleEffect::Allow));
-        mirror.subscribe(request_id(), &context(1), &policy, consent()).unwrap();
+        mirror
+            .subscribe(request_id(), &context(1), &policy, consent())
+            .unwrap();
         mirror.enqueue(posted(2), &context(1), &policy, consent());
         mirror.enqueue(posted(2), &context(1), &policy, consent());
         assert_eq!(mirror.pending.len(), 1);
