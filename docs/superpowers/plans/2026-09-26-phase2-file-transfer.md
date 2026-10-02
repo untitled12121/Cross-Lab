@@ -1,6 +1,6 @@
 # Phase 2 Resumable File Transfer
 
-**Status:** Active — Tasks 1–5 implemented, ADR-0020 accepted, shared runtime and Linux product flow merged, Android Task 5 merged as PR #75; Task 6 Android Compose flow active
+**Status:** Software implementation merged through PR #76, including Android Compose Task 6; hardware/interoperability evidence pending. Phase 3 remains out of scope
 **Date:** 2026-09-26
 **Base:** PR #61 merged as `61ae275356201245a7dcac95d11bd598d2c3045e`  
 **Foundation:** PR #62 merged as `e338d10911ccdb908bc495150f048503086c0ce2`; exact implementation head `e663909443d208c712ccb7f6e1e74fb8dab26ab8` passed full Rust + Android CI `36258390585`.
@@ -109,9 +109,9 @@ The adapter slice keeps capability/UI authority separate while establishing the 
 - keep Android production `files.transfer` advertisement disabled until Task 6 wires the complete owner-selection/progress/cancel/retry Compose path;
 - require no broad storage privilege for the transfer feature.
 
-## Task 6 — Product UI — Active
+## Task 6 — Product UI — Implemented in software
 
-Active branch `phase2-android-file-transfer-ui` builds the Android native control-center path with ActivityResultContracts.OpenDocument and CreateDocument. A destination prompt carries the exact inbound RequestId from launch to result, preventing stale Save As results from authorizing a newer offer. The transfer worker keeps content URIs local and redacted, and the publication gate allows cancellation after data finish but before publication begins. A matching retained partial or completion tombstone is surfaced separately: the owner can explicitly resume the prior destination or reauthorize the same document via OpenDocument rather than accidentally creating a new target for an old TransferId. No remote path selection or preview is added.
+PR #76 merged as `83d1a6df8f36441f4607b5ec3bacf41b12413f77`, after Rust + Android exact-head CI `36962148029` passed. Its Android native control-center path uses ActivityResultContracts.OpenDocument and CreateDocument. A destination prompt carries the exact inbound RequestId from launch to result, preventing stale Save As results from authorizing a newer offer. The transfer worker keeps content URIs local and redacted, and the publication gate allows cancellation after data finish but before publication begins. A matching retained partial or completion tombstone is surfaced separately: the owner can explicitly resume the prior destination or reauthorize the same document via OpenDocument rather than accidentally creating a new target for an old TransferId. No remote path selection or preview is added.
 
 
 
