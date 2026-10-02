@@ -249,13 +249,29 @@ impl CapabilityChannels {
     }
 }
 
+pub(super) struct NotificationChannels {
+    inbox_tx: watch::Sender<NotificationInboxSnapshot>,
+    active_tx: watch::Sender<bool>,
+}
+
+impl NotificationChannels {
+    pub(super) fn new(
+        inbox_tx: watch::Sender<NotificationInboxSnapshot>,
+        active_tx: watch::Sender<bool>,
+    ) -> Self {
+        Self {
+            inbox_tx,
+            active_tx,
+        }
+    }
+}
+
 pub(super) struct AgentChannels {
     policy_rx: watch::Receiver<PolicyState>,
     command_rx: mpsc::Receiver<AgentCommand>,
     status_tx: watch::Sender<PresenceSnapshot>,
     permissions_tx: watch::Sender<PermissionSnapshot>,
-    notification_tx: watch::Sender<NotificationInboxSnapshot>,
-    notification_active_tx: watch::Sender<bool>,
+    notifications: NotificationChannels,
     capabilities: CapabilityChannels,
     availability: RuntimeAvailability,
 }
@@ -266,8 +282,7 @@ impl AgentChannels {
         command_rx: mpsc::Receiver<AgentCommand>,
         status_tx: watch::Sender<PresenceSnapshot>,
         permissions_tx: watch::Sender<PermissionSnapshot>,
-        notification_tx: watch::Sender<NotificationInboxSnapshot>,
-        notification_active_tx: watch::Sender<bool>,
+        notifications: NotificationChannels,
         capabilities: CapabilityChannels,
         availability: RuntimeAvailability,
     ) -> Self {
@@ -276,8 +291,7 @@ impl AgentChannels {
             command_rx,
             status_tx,
             permissions_tx,
-            notification_tx,
-            notification_active_tx,
+            notifications,
             capabilities,
             availability,
         }
@@ -288,6 +302,14 @@ struct CandidateState {
     route: TrustedSessionRoute,
     failures: usize,
     retry_at: Instant,
+}
+
+struct NotificationEventState<'a> {
+    inbox: &'a mut NotificationInbox,
+    inbox_tx: &'a watch::Sender<NotificationInboxSnapshot>,
+    mirror: &'a mut NotificationMirror,
+    active_tx: &'a watch::Sender<bool>,
+    role: NotificationRole,
 }
 
 struct ConnectedRuntime {
@@ -573,6 +595,7 @@ enum ConnectedEvent {
     Runtime(NodeEvent),
     ClipboardTimeout,
     FileTransferTimeout,
+    NotificationTimeout,
     StatusChanged,
     TransportClosed,
 }
@@ -589,8 +612,10 @@ pub(super) async fn run_agent(
         mut command_rx,
         status_tx,
         permissions_tx,
-        notification_tx,
-        notification_active_tx,
+        notifications: NotificationChannels {
+            inbox_tx: notification_tx,
+            active_tx: notification_active_tx,
+        },
         capabilities,
         availability,
     } = channels;
@@ -684,6 +709,9 @@ pub(super) async fn run_agent(
                     }
                     _ = wait_retry(clipboard.next_deadline()) => ConnectedEvent::ClipboardTimeout,
                     _ = wait_retry(file_transfer.next_deadline()) => ConnectedEvent::FileTransferTimeout,
+                    _ = wait_retry(notification_inbox.next_deadline()) => {
+                        ConnectedEvent::NotificationTimeout
+                    },
                     _ = connection.closed.changed() => ConnectedEvent::TransportClosed
                 }
             };
@@ -787,13 +815,15 @@ pub(super) async fn run_agent(
                         &mut connected,
                         &mut clipboard,
                         &mut file_transfer,
-                        &mut notification_inbox,
-                        &notification_tx,
-                        &mut notification_source,
-                        &notification_active_tx,
+                        NotificationEventState {
+                            inbox: &mut notification_inbox,
+                            inbox_tx: &notification_tx,
+                            mirror: &mut notification_source,
+                            active_tx: &notification_active_tx,
+                            role: availability.notifications,
+                        },
                         &security,
                         &policy,
-                        availability.notifications,
                     )
                     .await;
                     if session_closed {
@@ -811,6 +841,14 @@ pub(super) async fn run_agent(
                 }
                 ConnectedEvent::FileTransferTimeout => {
                     expire_file_transfer_offers(&mut connected, &mut file_transfer).await;
+                }
+                ConnectedEvent::NotificationTimeout => {
+                    if let Some(request_id) = notification_inbox.expire(Instant::now()) {
+                        notification_tx.send_replace(notification_inbox.snapshot());
+                        if let Some(connection) = connected.as_ref().filter(|c| !c.reconnecting) {
+                            let _ = connection.actor.send_cancel(request_id).await;
+                        }
+                    }
                 }
                 ConnectedEvent::StatusChanged => {
                     if let Some(connection) = connected.as_ref() {
@@ -2286,14 +2324,17 @@ async fn handle_runtime_event(
     connected: &mut Option<ConnectedRuntime>,
     clipboard: &mut ClipboardRuntimeState,
     file_transfer: &mut FileTransferRuntimeState,
-    notification_inbox: &mut NotificationInbox,
-    notification_tx: &watch::Sender<NotificationInboxSnapshot>,
-    notification_source: &mut NotificationMirror,
-    notification_active_tx: &watch::Sender<bool>,
+    notifications: NotificationEventState<'_>,
     security: &AgentSecurity,
     policy: &PolicyState,
-    role: NotificationRole,
 ) {
+    let NotificationEventState {
+        inbox: notification_inbox,
+        inbox_tx: notification_tx,
+        mirror: notification_source,
+        active_tx: notification_active_tx,
+        role,
+    } = notifications;
     match event {
         NodeEvent::RequestDispatched(request) => {
             let request_id = request.request_id();

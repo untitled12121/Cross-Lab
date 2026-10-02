@@ -600,7 +600,7 @@ impl ControlCenterPage {
     fn request_notification_subscription(&mut self, cx: &mut Context<Self>) {
         self.notice = Some(match self.product_presence.as_ref() {
             Some(controller) => match controller.request_notifications() {
-                Ok(()) => "Subscription requested; awaiting Android approval.".to_owned(),
+                Ok(()) => "Subscription requested; waiting for Android's policy response.".to_owned(),
                 Err(error) => error.to_string(),
             },
             None => "Connect a trusted Android device first.".to_owned(),

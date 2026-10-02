@@ -99,6 +99,7 @@ pub(crate) fn owner_content(
                         NotificationInboxStatus::AwaitingApproval => "Awaiting Android",
                         NotificationInboxStatus::Active => "Active",
                         NotificationInboxStatus::Denied => "Not authorized",
+                        NotificationInboxStatus::TimedOut => "Subscription timed out",
                     },
                     cx,
                 ))

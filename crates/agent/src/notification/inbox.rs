@@ -1,4 +1,6 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, time::Duration};
+
+use tokio::time::Instant;
 
 use crosslab_policy::SessionId;
 use crosslab_protocol::{Event, NotificationPayload, NotificationProfileError, RequestId};
@@ -6,6 +8,7 @@ use crosslab_protocol::{Event, NotificationPayload, NotificationProfileError, Re
 use super::parse_notification_event;
 
 pub const MAX_VISIBLE_NOTIFICATIONS: usize = 64;
+const SUBSCRIPTION_RESPONSE_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotificationInboxStatus {
@@ -13,6 +16,7 @@ pub enum NotificationInboxStatus {
     AwaitingApproval,
     Active,
     Denied,
+    TimedOut,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -59,7 +63,7 @@ impl NotificationInboxSnapshot {
 
 pub struct NotificationInbox {
     status: NotificationInboxStatus,
-    pending: Option<(RequestId, SessionId)>,
+    pending: Option<(RequestId, SessionId, Instant)>,
     active: Option<SessionId>,
     events: VecDeque<NotificationPayload>,
     skipped: u64,
@@ -92,7 +96,11 @@ impl NotificationInbox {
 
     pub fn begin(&mut self, request_id: RequestId, session_id: SessionId) {
         self.reset();
-        self.pending = Some((request_id, session_id));
+        self.pending = Some((
+            request_id,
+            session_id,
+            Instant::now() + SUBSCRIPTION_RESPONSE_TIMEOUT,
+        ));
         self.status = NotificationInboxStatus::AwaitingApproval;
     }
 
@@ -102,7 +110,9 @@ impl NotificationInbox {
         session_id: SessionId,
         approved: bool,
     ) -> bool {
-        if self.pending != Some((request_id, session_id)) {
+        if self.pending.map(|(id, session, _)| (id, session))
+            != Some((request_id, session_id))
+        {
             return false;
         }
         self.pending = None;
@@ -113,6 +123,20 @@ impl NotificationInbox {
             self.status = NotificationInboxStatus::Denied;
         }
         true
+    }
+
+    pub fn next_deadline(&self) -> Option<Instant> {
+        self.pending.map(|(_, _, deadline)| deadline)
+    }
+
+    pub fn expire(&mut self, now: Instant) -> Option<RequestId> {
+        let (request_id, _, deadline) = self.pending?;
+        if now < deadline {
+            return None;
+        }
+        self.pending = None;
+        self.status = NotificationInboxStatus::TimedOut;
+        Some(request_id)
     }
 
     pub fn receive(
@@ -151,7 +175,7 @@ impl NotificationInbox {
         if self.active.is_some_and(|active| Some(active) != session)
             || self
                 .pending
-                .is_some_and(|(_, pending)| Some(pending) != session)
+                .is_some_and(|(_, pending, _)| Some(pending) != session)
         {
             self.reset();
         }
@@ -242,6 +266,23 @@ mod tests {
                 .unwrap()
         );
         assert_eq!(inbox.entries().len(), MAX_VISIBLE_NOTIFICATIONS - 1);
+    }
+
+    #[test]
+    fn late_subscription_response_cannot_activate_expired_session() {
+        let mut inbox = NotificationInbox::default();
+        let session = SessionId::from_bytes([3; 32]);
+        let request_id = RequestId::from_bytes([5; 16]);
+        inbox.begin(request_id, session);
+        let deadline = inbox.next_deadline().unwrap();
+
+        assert_eq!(inbox.expire(deadline - Duration::from_nanos(1)), None);
+        assert_eq!(inbox.expire(deadline), Some(request_id));
+        assert_eq!(inbox.status(), NotificationInboxStatus::TimedOut);
+        assert!(inbox.next_deadline().is_none());
+        assert!(!inbox.complete(request_id, session, true));
+        assert!(!inbox.receive(&posted(1), session).unwrap());
+        assert!(inbox.entries().is_empty());
     }
 
     #[test]
