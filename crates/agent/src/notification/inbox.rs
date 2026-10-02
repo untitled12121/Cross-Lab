@@ -110,7 +110,19 @@ impl NotificationInbox {
         session_id: SessionId,
         approved: bool,
     ) -> bool {
-        if self.pending.map(|(id, session, _)| (id, session)) != Some((request_id, session_id)) {
+        self.complete_at(request_id, session_id, approved, Instant::now())
+    }
+
+    fn complete_at(
+        &mut self,
+        request_id: RequestId,
+        session_id: SessionId,
+        approved: bool,
+        now: Instant,
+    ) -> bool {
+        if !self.pending.is_some_and(|(id, session, deadline)| {
+            id == request_id && session == session_id && now < deadline
+        }) {
             return false;
         }
         self.pending = None;
@@ -281,6 +293,32 @@ mod tests {
         assert!(!inbox.complete(request_id, session, true));
         assert!(!inbox.receive(&posted(1), session).unwrap());
         assert!(inbox.entries().is_empty());
+    }
+
+    #[test]
+    fn response_arriving_at_deadline_cannot_win_timeout_select_race() {
+        let mut inbox = NotificationInbox::default();
+        let session = SessionId::from_bytes([7; 32]);
+        let request = RequestId::from_bytes([8; 16]);
+        inbox.begin(request, session);
+        let deadline = inbox.next_deadline().unwrap();
+
+        assert!(!inbox.complete_at(request, session, true, deadline));
+        assert_eq!(inbox.status(), NotificationInboxStatus::AwaitingApproval);
+        assert_eq!(inbox.next_deadline(), Some(deadline));
+        assert_eq!(inbox.expire(deadline), Some(request));
+        assert_eq!(inbox.status(), NotificationInboxStatus::TimedOut);
+        assert!(!inbox.receive(&posted(1), session).unwrap());
+
+        inbox.begin(request, session);
+        let new_deadline = inbox.next_deadline().unwrap();
+        assert!(inbox.complete_at(
+            request,
+            session,
+            true,
+            new_deadline - Duration::from_nanos(1),
+        ));
+        assert_eq!(inbox.status(), NotificationInboxStatus::Active);
     }
 
     #[test]

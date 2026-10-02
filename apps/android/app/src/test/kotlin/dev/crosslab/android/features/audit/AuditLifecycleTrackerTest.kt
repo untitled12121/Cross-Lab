@@ -38,6 +38,24 @@ class AuditLifecycleTrackerTest {
         assertEquals(2uL, tracker.permissionCommitted(2uL).single().revision)
     }
 
+    @Test fun directFailureAndOppositeDirectionAreDistinctTerminals() {
+        val tracker = AuditLifecycleTracker()
+        val failure = FileTransferState(
+            available = true,
+            direction = FileTransferDirection.SEND,
+            stage = FileTransferStage.FAILED,
+            failure = FileTransferFailure.DENIED,
+            displayName = "SENSITIVE.txt",
+        )
+        assertEquals(MobileAuditOutcome.DENIED, tracker.transfer(failure).single().outcome)
+        assertTrue(tracker.transfer(failure).isEmpty())
+        assertEquals(MobileAuditAction.TRANSFER_ENDED,
+            tracker.transfer(failure.copy(direction = FileTransferDirection.RECEIVE)).single().action)
+        val resumed = tracker.transfer(failure).single()
+        assertEquals(MobileAuditAction.TRANSFER_ENDED, resumed.action)
+        assertTrue(!resumed.toString().contains("SENSITIVE"))
+    }
+
     @Test fun transitionsProduceOnlyRedactedTypedIntentsOnce() {
         val tracker = AuditLifecycleTracker()
         assertTrue(tracker.pairing(PairingJoinerStage.IDLE).isEmpty())

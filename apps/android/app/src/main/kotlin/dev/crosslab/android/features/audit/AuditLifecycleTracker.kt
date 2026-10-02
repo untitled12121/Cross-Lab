@@ -4,6 +4,7 @@ import dev.crosslab.android.features.devices.RuntimeSecurity
 import dev.crosslab.android.features.devices.RuntimeSession
 import dev.crosslab.android.features.devices.RuntimeSnapshot
 import dev.crosslab.android.features.devices.RuntimeTrust
+import dev.crosslab.android.features.filetransfer.FileTransferDirection
 import dev.crosslab.android.features.filetransfer.FileTransferStage
 import dev.crosslab.android.features.filetransfer.FileTransferState
 import dev.crosslab.android.features.filetransfer.FileTransferFailure
@@ -24,6 +25,7 @@ internal class AuditLifecycleTracker {
     private var previousPolicyRevision: ULong? = null
     private var lastRecordedPolicyRevision: ULong? = null
     private var previousTransfer = FileTransferStage.IDLE
+    private var previousTransferDirection: FileTransferDirection? = null
     private var previousSubscription = false
 
     @Synchronized
@@ -99,13 +101,13 @@ internal class AuditLifecycleTracker {
     @Synchronized
     fun transfer(state: FileTransferState): List<AuditIntent> {
         val stage = state.stage
-        val prior = previousTransfer
+        val duplicate = stage == previousTransfer &&
+            state.direction == previousTransferDirection
         previousTransfer = stage
+        previousTransferDirection = state.direction
         val terminal = stage == FileTransferStage.COMPLETED ||
             stage == FileTransferStage.CANCELLED || stage == FileTransferStage.FAILED
-        if (stage == prior || prior == FileTransferStage.IDLE || !terminal) {
-            return emptyList()
-        }
+        if (duplicate || !terminal) return emptyList()
         val outcome = when (stage) {
             FileTransferStage.COMPLETED -> MobileAuditOutcome.SUCCEEDED
             FileTransferStage.CANCELLED -> MobileAuditOutcome.CANCELLED

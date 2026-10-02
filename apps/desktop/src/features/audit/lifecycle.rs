@@ -145,9 +145,7 @@ impl AuditLifecycle {
         } else {
             self.receive_stage.replace(stage)
         };
-        if previous == Some(stage)
-            || previous.is_none_or(|previous| previous == FileTransferStage::Idle)
-        {
+        if previous == Some(stage) {
             return None;
         }
         let outcome = match stage {
@@ -248,6 +246,25 @@ mod tests {
                 .unwrap()
                 .outcome,
             AuditOutcome::Failed
+        );
+    }
+
+    #[test]
+    fn direct_terminal_failure_is_audited_once_without_payloads() {
+        let mut tracker = AuditLifecycle::default();
+        let failed = tracker
+            .transfer(true, FileTransferStage::Failed, Some(FileTransferFailure::Denied))
+            .unwrap();
+        assert_eq!(failed.action, AuditAction::TransferEnded);
+        assert_eq!(failed.outcome, AuditOutcome::Denied);
+        assert_eq!(failed.revision, 0);
+        assert_eq!(
+            tracker.transfer(
+                true,
+                FileTransferStage::Failed,
+                Some(FileTransferFailure::Denied)
+            ),
+            None
         );
     }
 
