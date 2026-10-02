@@ -4,6 +4,7 @@ import android.net.Uri
 import java.util.concurrent.atomic.AtomicBoolean
 import uniffi.crosslab_mobile_ffi.MobileFileTransferAcceptanceKind
 import uniffi.crosslab_mobile_ffi.MobileFileTransferChunkOutcome
+import uniffi.crosslab_mobile_ffi.MobileFileTransferException
 import uniffi.crosslab_mobile_ffi.MobileFileTransferOffer
 import uniffi.crosslab_mobile_ffi.MobileFileTransferSourceStream
 import uniffi.crosslab_mobile_ffi.MobileFileTransferTerminalOutcome
@@ -112,9 +113,16 @@ internal class AndroidFileTransferSender(
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
             stopped(transferred)
-        } catch (_: Throwable) {
-            if (cancelled.get()) stopped(transferred)
-            else SendTerminal(FileTransferStage.FAILED, transferred, FileTransferFailure.NETWORK)
+        } catch (error: Throwable) {
+            if (cancelled.get() || error is MobileFileTransferException.Cancelled) {
+                stopped(transferred)
+            } else {
+                SendTerminal(
+                    FileTransferStage.FAILED,
+                    transferred,
+                    fileTransferFailure(error, FileTransferFailure.NETWORK),
+                )
+            }
         } finally {
             stream = null
         }

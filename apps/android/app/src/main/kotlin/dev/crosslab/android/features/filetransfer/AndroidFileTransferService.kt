@@ -5,6 +5,7 @@ import android.net.Uri
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import uniffi.crosslab_mobile_ffi.MobileFileTransferException
 import uniffi.crosslab_mobile_ffi.MobileFileTransferDataEvent
 import uniffi.crosslab_mobile_ffi.MobileFileTransferDataKind
 import uniffi.crosslab_mobile_ffi.MobileFileTransferOffer
@@ -267,15 +268,21 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
             } else {
                 input.agent.completeFileTransferReady(input.request.requestId, preparation.resumeOffset)
             }
-        } catch (_: Throwable) {
+        } catch (error: Throwable) {
             prepared?.receiver?.cancel()
             synchronized(lock) {
                 if (currentSession(input.agent, input.token) &&
                     (preparing === input.request || receiving?.request === input.request)) {
                     preparing = null
                     if (receiving?.request === input.request) receiving = null
-                    publishLocked(state(input.request.offer, FileTransferDirection.RECEIVE,
-                        FileTransferStage.FAILED, failure = FileTransferFailure.STORAGE))
+                    val cancelled = error is MobileFileTransferException.Cancelled
+                    publishLocked(state(
+                        input.request.offer,
+                        FileTransferDirection.RECEIVE,
+                        if (cancelled) FileTransferStage.CANCELLED else FileTransferStage.FAILED,
+                        failure = if (cancelled) null else
+                            fileTransferFailure(error, FileTransferFailure.STORAGE),
+                    ))
                 }
             }
             runCatching { input.agent.declineFileTransferRequest(input.request.requestId) }
@@ -411,8 +418,11 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
                             }
                         }
                     }
-                    active.completeFileTransferResult(received.request.offer.transferId(),
-                        MobileFileTransferTerminalOutcome.COMPLETED)
+                    // Publication is durable even if the peer loses the terminal acknowledgement.
+                    runCatching {
+                        active.completeFileTransferResult(received.request.offer.transferId(),
+                            MobileFileTransferTerminalOutcome.COMPLETED)
+                    }
                     synchronized(lock) {
                         if (receiving !== received) return
                         receiving = null

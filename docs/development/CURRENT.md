@@ -10,14 +10,14 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 
 ## Canonical Baseline
 
-- Current `main` after PR #76: `83d1a6df8f36441f4607b5ec3bacf41b12413f77`. PR #76 exact head `ec3b565eae323dbaedc5daf5a5c7f17264594025` passed full Rust + Android CI `36962148029` before merge.
+- Current `main` after PR #77: `45a29a62cb35ee873546bcd7e53d22d89a45335c`. Exact-head `eb2a3269f7b3f29b9f5b5a87389208c1de16de4b` Rust + Android CI `36963485925` passed before merge; post-merge main CI `36966030595` also passed. Rust CI 16m17s baseline → 11m01s first optimized run → 9m14s post-merge warm-cache run, based on logged job start/completion times.
 - PR #49 — Linux Add Device QR invitation UI + Android CameraX/ML Kit scanner: merged as `445bbf32178dff94f339fc1ae80447967f5da215`; exact-head CI `35533414673` green on `7d3176ffd4387d3e29982ae5fe641249d6d33445`.
 - PR #50 — shared product pairing coordinator + durable reciprocal trust persistence: merged as `3af825e6f78bef4512168f587f452c1b0267b6a7`; exact-head CI `35567548228` and Fuzz Smoke `35567548208` green on `ec59f99f7c09898aa2533d8b40bd4e980fa2b022`.
 - PR #51 — ADR-0016 LAN discovery profile + versioned product-pairing wire + provisional Quinn pairing channel: merged as `cf2add350ffa60056d74ac57b0a187a0297d8777`; exact-head CI `35593397861` and Fuzz Smoke `35593397844` green on `2702cc0c926cf044c65aef0376f573aaedae8c6f`.
 - PR #52 — bounded DNS-SD discovery adapters: merged as `2881a8cb042207bf55a1ede9f2dc61f30ccd4eb9`; exact-head CI `35598750651` green on `2ef9ab362fb9fa59d7693662ec8de2f65e5031af`.
 - PR #53 — product pairing network/platform lifecycle: merged as `9453b0e7f3e67578c79615acb1034c849a82603d`; implementation head `cc099fd7bf3335f51f54d4e09f2d002ab136e4e0` and documentation head `c5570add764ac1e223b08bdb63737abd3b182a25` both passed the full Rust + Android gate (`35641211049` / `35643137494`).
 - Master Architecture revision 2.10 governs accepted ADR-0020 resumable single-file transfer v2 in addition to the established pairing, trusted-session, clipboard, and owner-policy-store architecture.
-- Physical-evidence continuation branch: `m10-task10-real-device-evidence`.
+- Remaining real-device evidence lives in `docs/research/M10-platform-evidence.md` and `docs/research/Phase2-file-transfer-device-evidence.md`. The old `m10-task10-real-device-evidence` branch is not present; the current pre-hardware checkpoint is `phase2-device-evidence-checkpoint`.
 - M10 evidence protocol: `docs/research/M10-platform-evidence.md`.
 - Product pairing implementation plan: `docs/superpowers/plans/2026-09-20-product-add-device-pairing.md`.
 - PR #55 — trusted-session platform presence lifecycle: merged as `6abb3984a36be276aa439e9e1dabb42ffaa4a8b3`; exact-head `91a96966a55c52b6b72c7e5f9b8dc686f8cf0211` passed Rust + Android CI `35859170053`.
@@ -38,7 +38,7 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 - PR #70 — Linux file-transfer storage/source adapter: merged as `eb32d79c94418ce46d70f8f91e05ec521f3ad504`; exact head `e653883b90ca7af4faddc6a635b9ccabdfb56779` passed full Rust + Android CI `36393985966`.
 - PR #71 — Linux receive/publication adapter: merged as `5c8b57c38b1e18771e1df4f872bfa4b5c077f784`; exact head `e1ec4cab51427e47f0318e73fc41d1cc1696ffea` passed full Rust + Android CI `36397884328`.
 - PR #72 — Linux authenticated receive service/worker: merged as `c833a4f9827b4e0cc05999e02c0dac621499800f`; exact head `08ea2cf4361dc9c5634743cebb07a05d4e88966e` passed full Rust + Android CI `36472517377`.
-- Linux file-transfer product flow merged on PR #73; Android SAF/ContentResolver + UniFFI adapter merged on PR #75; Android Compose owner-controlled file-transfer product flow (explicit picker, correlated RequestId, retained-partial Resume/Reauthorize, progress/cancel/retry, guarded publication) merged on PR #76 as `83d1a6df8f36441f4607b5ec3bacf41b12413f77` after full CI `36962148029` succeeded. **Software merged; real Android↔Linux hardware/evidence remains pending.** Active maintenance branch `ci/cache-rust-checks` reduces repeated Rust CI compilation without dropping any audit, fmt, check, UniFFI, desktop, Clippy, or test gate. CI previously spent ~16m17s including ~3m compiling cargo-audit; warm-cache effect must be measured and documented after successful full gate.
+- PRs #73, #75 and #76 merged Linux/Android file-transfer and owner-controlled Compose UI; PR #77 merged Rust CI caching and checksum-verified audit install. Warm-cache main Rust CI took 9m14s versus the previous 16m17s baseline (~43% shorter). The active pre-hardware readiness PR #78 corrects Android post-publication completion acknowledgement handling, adds typed permission/capability/local-storage error reporting, verifies the normal (non-development) Linux/Android build instructions, and records pending real-device evidence. Prior exact-head `7278601cbdb43984b7b268989a12e8dcdaf4c18b` passed full CI `36974109486`; this subsequent typed-error/UI-status checkpoint requires its own exact-head Rust + Android gate. Full Phase 2 remains open: hardware evidence, roadmap notifications, owner-facing audit/history and device-removal/revocation controls are still pending. Darkmatter/System-dark remains blocked until an authoritative palette is supplied. No Phase 3 work.
 - ADR-0018, ADR-0019, and ADR-0020 are accepted. Clipboard and the Linux file-transfer product path are implemented; Android file-transfer platform integration is active.
 
 ## Implemented M10 Product Path
@@ -137,10 +137,10 @@ Phase 3 adaptive networking does not begin until Phase 2 is complete.
 
 ## Exact Next Task
 
-1. validate `ci/cache-rust-checks` on full exact-head Rust + Android CI: pin smart Rust cache v2.9.2 and checksummed prebuilt cargo-audit v0.22.2 instead of source compilation; keep every existing gate;
-2. inspect cache restore/save and timing on the first run, merge only once the exact head is green, then measure at least one warm-cache PR/main run before reporting a real speedup;
-3. verify owner-hardware Linux↔Android QR/camera/LAN, trust, and end-to-end file-transfer scenarios (cancel, integrity, restart/resume, storage denied); physical evidence cannot be inferred from CI;
-4. do not start Phase 3 before the Phase 2 evidence gates are complete.
+1. Verify the pre-hardware readiness checkpoint on full exact-head Rust + Android CI and merge it to `main` when green; confirm reproducible **normal**, non-development Linux desktop and Android build commands in `docs/development/BUILD.md`.
+2. Owner runs normal QR pairing/LAN and Linux↔Android clipboard and bidirectional transfer tests, including permission default-deny, interruption/resume and content-provider publication. Record redacted hardware evidence separately in `docs/research/M10-platform-evidence.md` and `docs/research/Phase2-file-transfer-device-evidence.md`; never mark pending rows passed from CI alone.
+3. In subsequent approved Phase 2 feature slices, design and implement the roadmap's still-missing notifications, owner-facing audit/history, and device-removal/revocation product controls. Do not pretend the entire Phase 2 MVP is completed by the initial hardware run.
+4. Darkmatter/System-dark awaits the authoritative owner palette. Do not substitute invented values. Stop before Phase 3.
 
 ## Efficient Verification Workflow
 

@@ -160,6 +160,10 @@ File-transfer-specific regression coverage must include:
 - destination collision/non-clobber behavior;
 - bounded memory/queues and backpressure.
 
+## Physical-device verification
+
+Software implementation through PR #76 has passed host Rust + Android CI. The manual cross-platform device gate is **not completed** by those runs. Follow `docs/research/Phase2-file-transfer-device-evidence.md` on normal owner-paired Linux and Android product builds to record explicit bidirectional send, SAF owner destination approval, default-deny policy, cancel/reconnect/retry, 1 MiB resume checkpoint and publication/provider behavior. The separate synthetic-development-provisioning M10 runbook does not activate the normal Android file-transfer product adapter. Leave every physical result pending until collected and redacted by the owner.
+
 ## Scope boundary
 
 Do not add folder sync, deduplication, content-defined chunking, remote filesystem browsing, background broad storage access, cloud storage dependency, or Phase 3 adaptive networking in this slice.
