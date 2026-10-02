@@ -32,8 +32,13 @@ class AndroidAuditStore(context: Context) {
 
     @Synchronized
     fun read(): MobileAuditHistory {
-        val now = currentHour()
-        return auditHistoryLoad(readBundle()?.payload, now)
+        val previous = readBundle()
+        val history = auditHistoryLoad(previous?.payload, currentHour())
+        if (previous != null && !MessageDigest.isEqual(previous.payload, history.payload)) {
+            // Expired entries must not remain on disk after the owner reads history.
+            commit(previous, history.payload)
+        }
+        return history
     }
 
     @Synchronized

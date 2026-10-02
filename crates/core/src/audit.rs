@@ -323,10 +323,16 @@ mod tests {
         assert_eq!(AuditHistory::decode(&bytes, 120), Ok(history));
         let mut corrupt = bytes;
         corrupt[HEADER_LEN] = 255;
-        assert_eq!(AuditHistory::decode(&corrupt, 120), Err(AuditError::InvalidCode));
+        assert_eq!(
+            AuditHistory::decode(&corrupt, 120),
+            Err(AuditError::InvalidCode)
+        );
         corrupt[HEADER_LEN] = 2;
         corrupt.push(0);
-        assert_eq!(AuditHistory::decode(&corrupt, 120), Err(AuditError::Malformed));
+        assert_eq!(
+            AuditHistory::decode(&corrupt, 120),
+            Err(AuditError::Malformed)
+        );
         assert_eq!(
             AuditHistory::decode(&vec![0; MAX_AUDIT_SNAPSHOT_BYTES + 1], 120),
             Err(AuditError::Oversized)

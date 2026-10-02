@@ -4,9 +4,9 @@ use std::{collections::VecDeque, env, path::PathBuf, sync::Arc};
 #[cfg(target_os = "linux")]
 use crosslab_agent::{ClipboardPlatformError, ClipboardRequest};
 #[cfg(target_os = "linux")]
-use crosslab_identity::DeviceId;
-#[cfg(target_os = "linux")]
 use crosslab_core::{AuditAction, AuditHistory, AuditOutcome};
+#[cfg(target_os = "linux")]
+use crosslab_identity::DeviceId;
 #[cfg(target_os = "linux")]
 use crosslab_protocol::TransferId;
 
@@ -166,11 +166,12 @@ impl ControlCenterPage {
             .await;
             let _ = this.update(cx, |page, cx| {
                 match result {
-                    Ok(history) => page.owner.set_audit_rows(
-                        audit_history_rows(&history),
-                        history.dropped_count(),
-                    ),
-                    Err(_) => page.owner.set_audit_notice("Protected audit history unavailable"),
+                    Ok(history) => page
+                        .owner
+                        .set_audit_rows(audit_history_rows(&history), history.dropped_count()),
+                    Err(_) => page
+                        .owner
+                        .set_audit_notice("Protected audit history unavailable"),
                 }
                 cx.notify();
             });
@@ -532,11 +533,12 @@ impl ControlCenterPage {
             .await;
             let _ = this.update(cx, |page, cx| {
                 match result {
-                    Ok(history) => page.owner.set_audit_rows(
-                        audit_history_rows(&history),
-                        history.dropped_count(),
-                    ),
-                    Err(_) => page.owner.set_audit_notice("Audit history could not be cleared"),
+                    Ok(history) => page
+                        .owner
+                        .set_audit_rows(audit_history_rows(&history), history.dropped_count()),
+                    Err(_) => page
+                        .owner
+                        .set_audit_notice("Audit history could not be cleared"),
                 }
                 cx.notify();
             });
@@ -551,9 +553,7 @@ impl ControlCenterPage {
                 let history = LinuxAuditStore::from_environment()?
                     .load(current_hour()?)
                     .await?;
-                Ok::<String, crate::features::audit::LinuxAuditError>(
-                    history.export_redacted_csv(),
-                )
+                Ok::<String, crate::features::audit::LinuxAuditError>(history.export_redacted_csv())
             }
             .await;
             let _ = this.update(cx, |page, cx| {
@@ -564,9 +564,9 @@ impl ControlCenterPage {
                             "Redacted CSV copied to clipboard; paste to save it.",
                         );
                     }
-                    Err(_) => page.owner.set_audit_notice(
-                        "Protected audit history cannot be exported",
-                    ),
+                    Err(_) => page
+                        .owner
+                        .set_audit_notice("Protected audit history cannot be exported"),
                 }
                 cx.notify();
             });

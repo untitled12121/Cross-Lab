@@ -25,6 +25,13 @@ pub(crate) fn current_hour() -> Result<u64, LinuxAuditError> {
         / 3600)
 }
 
+#[derive(Clone, Copy)]
+enum AuditChange {
+    Record(AuditAction, AuditOutcome, u64),
+    Clear,
+    Prune,
+}
+
 #[derive(Debug)]
 pub(crate) struct LinuxAuditStore {
     path: PathBuf,
@@ -32,19 +39,17 @@ pub(crate) struct LinuxAuditStore {
 
 impl LinuxAuditStore {
     pub(crate) fn from_environment() -> Result<Self, LinuxAuditError> {
-        let state = env::var_os("XDG_STATE_HOME").map(PathBuf::from).or_else(|| {
-            env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state"))
-        }).ok_or(LinuxAuditError::Path)?;
+        let state = env::var_os("XDG_STATE_HOME")
+            .map(PathBuf::from)
+            .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state")))
+            .ok_or(LinuxAuditError::Path)?;
         Ok(Self {
             path: state.join("crosslab/audit/history-v1.bin"),
         })
     }
 
     pub(crate) async fn load(&self, hour: u64) -> Result<AuditHistory, LinuxAuditError> {
-        match self.load_protected().await? {
-            Some(envelope) => AuditHistory::decode(envelope.payload(), hour).map_err(Into::into),
-            None => Ok(AuditHistory::default()),
-        }
+        self.mutate(hour, AuditChange::Prune).await
     }
 
     pub(crate) async fn record(
@@ -54,17 +59,18 @@ impl LinuxAuditStore {
         revision: u64,
         hour: u64,
     ) -> Result<AuditHistory, LinuxAuditError> {
-        self.mutate(hour, Some((action, outcome, revision))).await
+        self.mutate(hour, AuditChange::Record(action, outcome, revision))
+            .await
     }
 
     pub(crate) async fn clear(&self, hour: u64) -> Result<AuditHistory, LinuxAuditError> {
-        self.mutate(hour, None).await
+        self.mutate(hour, AuditChange::Clear).await
     }
 
     async fn mutate(
         &self,
         hour: u64,
-        new_event: Option<(AuditAction, AuditOutcome, u64)>,
+        change: AuditChange,
     ) -> Result<AuditHistory, LinuxAuditError> {
         let parent = self.path.parent().ok_or(LinuxAuditError::Path)?;
         fs::create_dir_all(parent)?;
@@ -82,12 +88,26 @@ impl LinuxAuditStore {
             Some(envelope) => AuditHistory::decode(envelope.payload(), hour)?,
             None => AuditHistory::default(),
         };
-        if let Some((action, outcome, revision)) = new_event {
-            history.record(crosslab_core::AuditRecord::new(action, outcome, hour, revision), hour)?;
-        } else {
-            history.clear();
+        match change {
+            AuditChange::Record(action, outcome, revision) => {
+                history.record(
+                    crosslab_core::AuditRecord::new(action, outcome, hour, revision),
+                    hour,
+                )?;
+            }
+            AuditChange::Clear => history.clear(),
+            AuditChange::Prune => {}
         }
-        let next = prepare_commit(previous.as_ref(), history.encode())?;
+
+        let payload = history.encode();
+        if matches!(change, AuditChange::Prune)
+            && previous
+                .as_ref()
+                .is_none_or(|envelope| envelope.payload() == payload)
+        {
+            return Ok(history);
+        }
+        let next = prepare_commit(previous.as_ref(), payload)?;
         let anchor = next.anchor();
         self.create_anchor(anchor).await?;
 
@@ -135,19 +155,23 @@ impl LinuxAuditStore {
     async fn create_anchor(&self, anchor: IdentityStoreAnchor) -> Result<(), LinuxAuditError> {
         let keyring = Keyring::new().await?;
         let revision = anchor.revision().to_string();
-        keyring.create_item(
-            "Cross-Lab private owner audit anchor",
-            &[APP, AUDIT_KIND, ("revision", revision.as_str())],
-            &anchor.protected_digest(),
-            true,
-        ).await?;
+        keyring
+            .create_item(
+                "Cross-Lab private owner audit anchor",
+                &[APP, AUDIT_KIND, ("revision", revision.as_str())],
+                &anchor.protected_digest(),
+                true,
+            )
+            .await?;
         Ok(())
     }
 
     async fn delete_anchor(&self, revision: u64) -> Result<(), LinuxAuditError> {
         let keyring = Keyring::new().await?;
         let revision = revision.to_string();
-        keyring.delete(&[APP, AUDIT_KIND, ("revision", revision.as_str())]).await?;
+        keyring
+            .delete(&[APP, AUDIT_KIND, ("revision", revision.as_str())])
+            .await?;
         Ok(())
     }
 
@@ -158,7 +182,8 @@ impl LinuxAuditStore {
             Err(error) => return Err(error.into()),
         };
         let mut bytes = Vec::new();
-        file.take((MAX_FIELD * 2 + 16) as u64 + 1).read_to_end(&mut bytes)?;
+        file.take((MAX_FIELD * 2 + 16) as u64 + 1)
+            .read_to_end(&mut bytes)?;
         Ok(Some(AuditBundle::decode(&bytes)?))
     }
 
@@ -207,16 +232,24 @@ impl core::fmt::Display for LinuxAuditError {
 }
 
 impl From<std::io::Error> for LinuxAuditError {
-    fn from(error: std::io::Error) -> Self { Self::Io(error) }
+    fn from(error: std::io::Error) -> Self {
+        Self::Io(error)
+    }
 }
 impl From<oo7::Error> for LinuxAuditError {
-    fn from(error: oo7::Error) -> Self { Self::Keyring(error) }
+    fn from(error: oo7::Error) -> Self {
+        Self::Keyring(error)
+    }
 }
 impl From<IdentityStoreError> for LinuxAuditError {
-    fn from(error: IdentityStoreError) -> Self { Self::Store(error) }
+    fn from(error: IdentityStoreError) -> Self {
+        Self::Store(error)
+    }
 }
 impl From<AuditError> for LinuxAuditError {
-    fn from(error: AuditError) -> Self { Self::Audit(error) }
+    fn from(error: AuditError) -> Self {
+        Self::Audit(error)
+    }
 }
 
 struct AuditBundle {
@@ -235,20 +268,35 @@ impl AuditBundle {
     }
 
     fn decode(bytes: &[u8]) -> Result<Self, LinuxAuditError> {
-        if !bytes.starts_with(MAGIC) { return Err(LinuxAuditError::Malformed); }
+        if !bytes.starts_with(MAGIC) {
+            return Err(LinuxAuditError::Malformed);
+        }
         let mut offset = MAGIC.len();
         let mut next = || -> Result<Vec<u8>, LinuxAuditError> {
-            let len_bytes = bytes.get(offset..offset + 4).ok_or(LinuxAuditError::Malformed)?;
-            let len = u32::from_be_bytes(len_bytes.try_into().map_err(|_| LinuxAuditError::Malformed)?) as usize;
-            if len > MAX_FIELD { return Err(LinuxAuditError::Malformed); }
+            let len_bytes = bytes
+                .get(offset..offset + 4)
+                .ok_or(LinuxAuditError::Malformed)?;
+            let len = u32::from_be_bytes(
+                len_bytes
+                    .try_into()
+                    .map_err(|_| LinuxAuditError::Malformed)?,
+            ) as usize;
+            if len > MAX_FIELD {
+                return Err(LinuxAuditError::Malformed);
+            }
             offset += 4;
-            let data = bytes.get(offset..offset + len).ok_or(LinuxAuditError::Malformed)?.to_vec();
+            let data = bytes
+                .get(offset..offset + len)
+                .ok_or(LinuxAuditError::Malformed)?
+                .to_vec();
             offset += len;
             Ok(data)
         };
         let envelope = next()?;
         let anchor = next()?;
-        if offset != bytes.len() { return Err(LinuxAuditError::Malformed); }
+        if offset != bytes.len() {
+            return Err(LinuxAuditError::Malformed);
+        }
         Ok(Self { envelope, anchor })
     }
 }
