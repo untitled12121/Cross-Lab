@@ -112,17 +112,13 @@ impl DesktopProductPresenceController {
     }
 
     pub fn request_notifications(&self) -> Result<(), DesktopPresenceError> {
-        let available = self
-            .status
-            .borrow()
-            .runtime()
-            .is_some_and(|status| {
-                status.session_id().is_some()
-                    && status
-                        .negotiated_capability_ids()
-                        .iter()
-                        .any(|id| id.as_str() == crosslab_protocol::NOTIFICATION_CAPABILITY_ID)
-            });
+        let available = self.status.borrow().runtime().is_some_and(|status| {
+            status.session_id().is_some()
+                && status
+                    .negotiated_capability_ids()
+                    .iter()
+                    .any(|id| id.as_str() == crosslab_protocol::NOTIFICATION_CAPABILITY_ID)
+        });
         if !available {
             return Err(DesktopPresenceError::PeerUnavailable);
         }

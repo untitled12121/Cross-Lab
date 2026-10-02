@@ -180,9 +180,9 @@ impl NotificationInbox {
 
 #[cfg(test)]
 mod tests {
-    use crosslab_protocol::{NotificationId, NotificationPosted};
-    use crosslab_policy::CapabilityId;
     use super::*;
+    use crosslab_policy::CapabilityId;
+    use crosslab_protocol::{NotificationId, NotificationPosted};
 
     fn posted(id: u8) -> Event {
         let entry = NotificationPayload::Posted(
@@ -192,7 +192,8 @@ mod tests {
                 None,
                 None,
                 true,
-            ).unwrap()
+            )
+            .unwrap(),
         );
         super::super::notification_event(&entry).unwrap()
     }
@@ -208,7 +209,11 @@ mod tests {
         assert!(!inbox.complete(request, SessionId::from_bytes([9; 32]), true));
         assert!(inbox.complete(request, session, true));
         assert!(inbox.receive(&posted(3), session).unwrap());
-        assert!(!inbox.receive(&posted(4), SessionId::from_bytes([9; 32])).unwrap());
+        assert!(
+            !inbox
+                .receive(&posted(4), SessionId::from_bytes([9; 32]))
+                .unwrap()
+        );
         inbox.ensure_session(None);
         assert!(inbox.entries().is_empty());
         assert!(!inbox.receive(&posted(3), session).unwrap());
@@ -229,7 +234,14 @@ mod tests {
         assert!(inbox.receive(&posted(69), session).unwrap());
         assert_eq!(inbox.entries().len(), MAX_VISIBLE_NOTIFICATIONS);
         let removed = NotificationPayload::Removed(NotificationId::from_bytes([69; 16]));
-        assert!(inbox.receive(&super::super::notification_event(&removed).unwrap(), session).unwrap());
+        assert!(
+            inbox
+                .receive(
+                    &super::super::notification_event(&removed).unwrap(),
+                    session
+                )
+                .unwrap()
+        );
         assert_eq!(inbox.entries().len(), MAX_VISIBLE_NOTIFICATIONS - 1);
     }
 

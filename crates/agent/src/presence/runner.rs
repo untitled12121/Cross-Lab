@@ -11,14 +11,13 @@ use crosslab_core::{MAX_SESSION_DISCOVERY_CANDIDATES, should_initiate_session};
 use crosslab_crypto::SigningProvider;
 use crosslab_identity::{DeviceCredential, DeviceId, OwnerAuthorityState};
 use crosslab_policy::{
-    AuthorizationContext, CapabilityId, CapabilityVersion, CapabilityVersionRange,
-    LocalCapability, NetworkClass, OperationId, OperationName, PolicyState, TrustRecord, UsePolicy,
+    AuthorizationContext, CapabilityId, CapabilityVersion, CapabilityVersionRange, LocalCapability,
+    NetworkClass, OperationId, OperationName, PolicyState, TrustRecord, UsePolicy,
 };
 use crosslab_protocol::{
     CapabilityAdvertisement, ControlResponseResult, FILE_TRANSFER_CAPABILITY_ID, FeatureSet,
-    FileTransferAcceptance,
-    FileTransferOffer, FileTransferResult, FileTransferTerminalOutcome, ProtocolErrorCode,
-    ProtocolRange, RequestId, StreamId, TransferId,
+    FileTransferAcceptance, FileTransferOffer, FileTransferResult, FileTransferTerminalOutcome,
+    ProtocolErrorCode, ProtocolRange, RequestId, StreamId, TransferId,
 };
 use crosslab_runtime::{
     NodeEvent, RuntimeActor, RuntimeActorConfig, RuntimeActorSession, RuntimeNode,
@@ -46,13 +45,6 @@ use crate::{
         resource_failure as clipboard_resource_failure,
         write_completion as clipboard_write_completion, write_request as clipboard_write_request,
     },
-    notification::{
-        NotificationInbox, NotificationInboxSnapshot, NotificationInboxStatus, NotificationMirror,
-        NotificationRole, PlatformNotification, notification_advertisement,
-        notification_capabilities, notification_event, notification_event_subscriptions,
-        notification_subscribe_request, validate_notification_request,
-        validate_notification_response,
-    },
     file_transfer::{
         FileTransferAvailability, FileTransferCancellation, FileTransferChunkError,
         FileTransferDataChunk, FileTransferDataEvent, FileTransferOperationError,
@@ -73,6 +65,13 @@ use crate::{
         source_stream_open as file_transfer_source_stream_open,
         terminal_result as file_transfer_terminal_result,
         terminal_result_event as file_transfer_terminal_result_event,
+    },
+    notification::{
+        NotificationInbox, NotificationInboxSnapshot, NotificationInboxStatus, NotificationMirror,
+        NotificationRole, PlatformNotification, notification_advertisement,
+        notification_capabilities, notification_event, notification_event_subscriptions,
+        notification_subscribe_request, validate_notification_request,
+        validate_notification_response,
     },
 };
 
@@ -633,9 +632,10 @@ pub(super) async fn run_agent(
             .filter(|connection| !connection.reconnecting)
             .and_then(|connection| notification_source_context(connection, &security));
         let still_authorized = source_context.as_ref().is_some_and(|context| {
-            availability.notifications.source_consent().is_some_and(|consent| {
-                notification_source.revalidate(context, &policy, consent)
-            })
+            availability
+                .notifications
+                .source_consent()
+                .is_some_and(|consent| notification_source.revalidate(context, &policy, consent))
         });
         if !still_authorized {
             notification_source.close();
@@ -701,10 +701,14 @@ pub(super) async fn run_agent(
                     if let (Some(context), Some(consent), Some(connection)) = (
                         context,
                         availability.notifications.source_consent(),
-                        connected.as_ref().filter(|connection| !connection.reconnecting),
+                        connected
+                            .as_ref()
+                            .filter(|connection| !connection.reconnecting),
                     ) {
                         if notification_source.submit_platform(event, &context, &policy, consent) {
-                            while let Some(payload) = notification_source.take_next(&context, &policy, consent) {
+                            while let Some(payload) =
+                                notification_source.take_next(&context, &policy, consent)
+                            {
                                 let outcome = match notification_event(&payload) {
                                     Ok(event) => connection.actor.send_event(event).await,
                                     Err(_) => break,
@@ -1376,9 +1380,7 @@ fn notification_source_context(
         return None;
     }
     let trust = security.peer_trust(source_device)?;
-    let capability = CapabilityId::parse(
-        crosslab_protocol::NOTIFICATION_CAPABILITY_ID,
-    ).ok()?;
+    let capability = CapabilityId::parse(crosslab_protocol::NOTIFICATION_CAPABILITY_ID).ok()?;
     Some(AuthorizationContext::new(
         source_device,
         destination_device,
@@ -1388,11 +1390,7 @@ fn notification_source_context(
         OperationName::parse(crosslab_protocol::NOTIFICATION_SUBSCRIBE_OPERATION).ok()?,
         trust.state(),
         trust.trust_revision(),
-        LocalCapability::new(
-            capability,
-            CapabilityVersionRange::new(3, 0, 0).ok()?,
-            true,
-        ),
+        LocalCapability::new(capability, CapabilityVersionRange::new(3, 0, 0).ok()?, true),
         NetworkClass::Local,
     ))
 }
@@ -1426,7 +1424,12 @@ async fn start_notification_subscription(
         return;
     }
     for subscription in notification_event_subscriptions() {
-        if connection.actor.subscribe_event(subscription).await.is_err() {
+        if connection
+            .actor
+            .subscribe_event(subscription)
+            .await
+            .is_err()
+        {
             return;
         }
     }
@@ -2294,31 +2297,42 @@ async fn handle_runtime_event(
     match event {
         NodeEvent::RequestDispatched(request) => {
             let request_id = request.request_id();
-            if request.capability_id().as_str()
-                == crosslab_protocol::NOTIFICATION_CAPABILITY_ID
-            {
+            if request.capability_id().as_str() == crosslab_protocol::NOTIFICATION_CAPABILITY_ID {
                 let result = match validate_notification_request(&request) {
                     Err(failure) => failure,
                     Ok(()) => {
                         let context = connected
                             .as_ref()
                             .filter(|connection| !connection.reconnecting)
-                            .and_then(|connection| notification_source_context(connection, security));
+                            .and_then(|connection| {
+                                notification_source_context(connection, security)
+                            });
                         match (context, role.source_consent()) {
                             (Some(context), Some(consent))
-                                if notification_source.subscribe(&context, policy, consent).is_ok() =>
+                                if notification_source
+                                    .subscribe(&context, policy, consent)
+                                    .is_ok() =>
                             {
                                 ControlResponseResult::Success(Vec::new())
                             }
-                            _ => ControlResponseResult::Error(crosslab_protocol::ProtocolFailure::new(
-                                ProtocolErrorCode::AuthorizationDenied,
-                                None,
-                            )),
+                            _ => ControlResponseResult::Error(
+                                crosslab_protocol::ProtocolFailure::new(
+                                    ProtocolErrorCode::AuthorizationDenied,
+                                    None,
+                                ),
+                            ),
                         }
                     }
                 };
-                if let Some(connection) = connected.as_ref().filter(|connection| !connection.reconnecting) {
-                    if connection.actor.send_response(request_id, result).await.is_ok()
+                if let Some(connection) = connected
+                    .as_ref()
+                    .filter(|connection| !connection.reconnecting)
+                {
+                    if connection
+                        .actor
+                        .send_response(request_id, result)
+                        .await
+                        .is_ok()
                         && notification_source.is_subscribed()
                     {
                         notification_active_tx.send_replace(true);

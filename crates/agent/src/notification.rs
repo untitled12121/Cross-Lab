@@ -27,7 +27,9 @@ pub(crate) use wire::{
 pub enum NotificationRole {
     #[default]
     Disabled,
-    Source { content_enabled: bool },
+    Source {
+        content_enabled: bool,
+    },
     Receiver,
 }
 
@@ -74,7 +76,9 @@ pub enum PlatformNotification {
         preview: Option<String>,
         protected: bool,
     },
-    Removed { key: String },
+    Removed {
+        key: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -188,16 +192,16 @@ impl NotificationMirror {
                 } else {
                     (title, preview)
                 };
-                let Ok(posted) = NotificationPosted::new(
-                    id,
-                    app_label,
-                    title,
-                    preview,
-                    redacted,
-                ) else {
+                let Ok(posted) = NotificationPosted::new(id, app_label, title, preview, redacted)
+                else {
                     return false;
                 };
-                if !self.enqueue(NotificationPayload::Posted(posted), context, policy, consent) {
+                if !self.enqueue(
+                    NotificationPayload::Posted(posted),
+                    context,
+                    policy,
+                    consent,
+                ) {
                     return false;
                 }
                 if existing.is_none() {
@@ -209,14 +213,12 @@ impl NotificationMirror {
                 true
             }
             PlatformNotification::Removed { key } => {
-                let Some(position) = self
-                    .source_ids
-                    .iter()
-                    .position(|(old, _)| old == &key)
-                else {
+                let Some(position) = self.source_ids.iter().position(|(old, _)| old == &key) else {
                     return false;
                 };
-                let (_, id) = self.source_ids.remove(position)
+                let (_, id) = self
+                    .source_ids
+                    .remove(position)
                     .expect("bounded position found");
                 self.enqueue(NotificationPayload::Removed(id), context, policy, consent)
             }

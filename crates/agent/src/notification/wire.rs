@@ -138,8 +138,12 @@ mod tests {
     fn subscriptions_are_empty_nonretryable_and_exact_v3() {
         let request = notification_subscribe_request(RequestId::from_bytes([1; 16]));
         assert!(validate_notification_request(&request).is_ok());
-        assert!(!validate_notification_response(&ControlResponseResult::Success(vec![0])));
-        assert!(validate_notification_response(&ControlResponseResult::Success(Vec::new())));
+        assert!(!validate_notification_response(
+            &ControlResponseResult::Success(vec![0])
+        ));
+        assert!(validate_notification_response(
+            &ControlResponseResult::Success(Vec::new())
+        ));
         let malformed = ControlRequest::new(
             request.request_id(),
             capability(),
@@ -162,13 +166,16 @@ mod tests {
 
     #[test]
     fn event_scope_type_and_version_are_bounded() {
-        let p = NotificationPayload::Posted(NotificationPosted::new(
-            NotificationId::from_bytes([2; 16]),
-            "Messages".to_owned(),
-            None,
-            None,
-            true,
-        ).unwrap());
+        let p = NotificationPayload::Posted(
+            NotificationPosted::new(
+                NotificationId::from_bytes([2; 16]),
+                "Messages".to_owned(),
+                None,
+                None,
+                true,
+            )
+            .unwrap(),
+        );
         let event = notification_event(&p).unwrap();
         assert_eq!(parse_notification_event(&event), Ok(Some(p)));
         let mismatched = Event::capability(
@@ -176,7 +183,8 @@ mod tests {
             capability(),
             event_type(NOTIFICATION_REMOVED_EVENT_TYPE),
             event.body().to_vec(),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(
             parse_notification_event(&mismatched),
             Err(NotificationProfileError::Malformed)

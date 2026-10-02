@@ -4,9 +4,9 @@ use std::{
 };
 
 use crosslab_agent::{
-    ClipboardAvailability, FileTransferAvailability, PermissionSnapshot, PresenceAgentError,
-    PresencePhase, TrustedPresenceAgent, TrustedSessionRoute, NotificationRole,
-    PlatformNotification,
+    ClipboardAvailability, FileTransferAvailability, NotificationRole, PermissionSnapshot,
+    PlatformNotification, PresenceAgentError, PresencePhase, TrustedPresenceAgent,
+    TrustedSessionRoute,
 };
 use crosslab_crypto::SigningProvider;
 use crosslab_identity_store::ProductIdentityState;
@@ -248,19 +248,23 @@ impl MobileTrustedPresenceAgent {
         protected: bool,
     ) -> bool {
         self.agent_handle().is_ok_and(|agent| {
-            agent.publish_notification(PlatformNotification::Posted {
-                key,
-                app_label,
-                title,
-                preview,
-                protected,
-            }).is_ok()
+            agent
+                .publish_notification(PlatformNotification::Posted {
+                    key,
+                    app_label,
+                    title,
+                    preview,
+                    protected,
+                })
+                .is_ok()
         })
     }
 
     pub fn notification_removed(&self, key: String) -> bool {
         self.agent_handle().is_ok_and(|agent| {
-            agent.publish_notification(PlatformNotification::Removed { key }).is_ok()
+            agent
+                .publish_notification(PlatformNotification::Removed { key })
+                .is_ok()
         })
     }
 

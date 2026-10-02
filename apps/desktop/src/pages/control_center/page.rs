@@ -46,10 +46,10 @@ use crate::{
     },
 };
 
-#[cfg(target_os = "linux")]
-use gpui_kit::PathPromptOptions;
 use crosslab_agent::NotificationInboxSnapshot;
 use crosslab_agent::NotificationInboxStatus;
+#[cfg(target_os = "linux")]
+use gpui_kit::PathPromptOptions;
 use gpui_kit::{
     ClipboardItem, Context, InteractiveElement as _, IntoElement, ParentElement as _, Render,
     Styled as _, Window, base::Button, component::theme::ActiveTheme as _, div, px,
@@ -1861,15 +1861,13 @@ impl Render for ControlCenterPage {
                 self.notice.as_deref(),
                 cx,
             ),
-            Section::Owner => {
-                owner_content(
-                    &self.owner,
-                    owner_controls,
-                    self.notice.as_deref(),
-                    &self.notification_inbox,
-                    cx,
-                )
-            }
+            Section::Owner => owner_content(
+                &self.owner,
+                owner_controls,
+                self.notice.as_deref(),
+                &self.notification_inbox,
+                cx,
+            ),
         };
 
         control_center_layout(navigation, content, cx)

@@ -26,13 +26,13 @@ use crate::{
     clipboard::{
         ClipboardAvailability, ClipboardOperationError, ClipboardPlatformError, ClipboardRequest,
     },
-    notification::{NotificationInboxSnapshot, NotificationRole},
-    notification::PlatformNotification,
     file_transfer::{
         FileTransferAvailability, FileTransferCancellation, FileTransferChunkError,
         FileTransferDataEvent, FileTransferOperationError, FileTransferRequest,
         FileTransferSourceStream,
     },
+    notification::PlatformNotification,
+    notification::{NotificationInboxSnapshot, NotificationRole},
 };
 
 const COMMAND_CAPACITY: usize = 64;
