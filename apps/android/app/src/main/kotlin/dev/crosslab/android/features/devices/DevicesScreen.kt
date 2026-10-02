@@ -2,6 +2,8 @@ package dev.crosslab.android.features.devices
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,6 +30,8 @@ import dev.crosslab.android.features.appearance.toComposeColor
 import dev.crosslab.android.features.appearance.toTextStyle
 import dev.crosslab.android.features.clipboard.ClipboardPanel
 import dev.crosslab.android.features.clipboard.ClipboardState
+import dev.crosslab.android.features.filetransfer.FileTransferPanel
+import dev.crosslab.android.features.filetransfer.FileTransferState
 import dev.crosslab.android.features.pairing.PairingJoinerStage
 import dev.crosslab.android.features.pairing.PairingJoinerState
 import dev.crosslab.android.features.pairing.PairingScannerPanel
@@ -39,6 +43,14 @@ fun DevicesScreen(
     devices: DevicesState,
     runtime: RuntimeControllerState,
     clipboard: ClipboardState,
+    fileTransfer: FileTransferState,
+    retainFileAccess: Boolean,
+    onToggleRetainFileAccess: () -> Unit,
+    onSendFile: () -> Unit,
+    onChooseFileDestination: (String, String) -> Unit,
+    onCancelFile: () -> Unit,
+    onDeclineFile: () -> Unit,
+    onRetryFile: () -> Unit,
     onDisconnect: () -> Unit,
     onReconnect: () -> Unit,
     onSendClipboard: () -> Unit,
@@ -56,6 +68,7 @@ fun DevicesScreen(
         modifier =
             Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(theme.spacing.xl.toFloat().dp),
     ) {
         Row(
@@ -149,6 +162,14 @@ fun DevicesScreen(
                 device = device,
                 presence = presence,
                 clipboard = clipboard,
+                fileTransfer = fileTransfer,
+                retainFileAccess = retainFileAccess,
+                onToggleRetainFileAccess = onToggleRetainFileAccess,
+                onSendFile = onSendFile,
+                onChooseFileDestination = onChooseFileDestination,
+                onCancelFile = onCancelFile,
+                onDeclineFile = onDeclineFile,
+                onRetryFile = onRetryFile,
                 onSendClipboard = onSendClipboard,
                 onFetchClipboard = onFetchClipboard,
             )
@@ -232,6 +253,14 @@ private fun DevicePanel(
     device: DevicePresentation,
     presence: PresenceDisplay,
     clipboard: ClipboardState,
+    fileTransfer: FileTransferState,
+    retainFileAccess: Boolean,
+    onToggleRetainFileAccess: () -> Unit,
+    onSendFile: () -> Unit,
+    onChooseFileDestination: (String, String) -> Unit,
+    onCancelFile: () -> Unit,
+    onDeclineFile: () -> Unit,
+    onRetryFile: () -> Unit,
     onSendClipboard: () -> Unit,
     onFetchClipboard: () -> Unit,
 ) {
@@ -304,6 +333,18 @@ private fun DevicePanel(
             state = clipboard,
             onSend = onSendClipboard,
             onFetch = onFetchClipboard,
+        )
+        FileTransferPanel(
+            theme = theme,
+            device = device,
+            state = fileTransfer,
+            retainAccess = retainFileAccess,
+            onToggleRetainAccess = onToggleRetainFileAccess,
+            onSend = onSendFile,
+            onAccept = onChooseFileDestination,
+            onDecline = onDeclineFile,
+            onCancel = onCancelFile,
+            onRetry = onRetryFile,
         )
     }
 }

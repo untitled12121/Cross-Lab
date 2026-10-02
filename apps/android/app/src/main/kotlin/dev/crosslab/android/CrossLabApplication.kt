@@ -19,6 +19,8 @@ import dev.crosslab.android.features.identity.AndroidIdentityStore
 import dev.crosslab.android.features.identity.AndroidProductIdentityRepository
 import dev.crosslab.android.features.identity.AndroidSigningSlot
 import dev.crosslab.android.features.devices.RuntimeController
+import dev.crosslab.android.features.filetransfer.FileTransferController
+import dev.crosslab.android.features.filetransfer.UnavailableFileTransferPort
 import dev.crosslab.android.features.pairing.PairingJoinerController
 import dev.crosslab.android.features.permissions.AndroidPolicyStore
 
@@ -27,6 +29,9 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
         private set
 
     lateinit var clipboardController: ClipboardController
+        private set
+
+    lateinit var fileTransferController: FileTransferController
         private set
 
     lateinit var identityStore: AndroidIdentityStore
@@ -83,6 +88,8 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
             )
         clipboardController =
             ClipboardController(productPresence ?: UnavailableClipboardPort)
+        fileTransferController =
+            FileTransferController(productPresence ?: UnavailableFileTransferPort)
         pairingController =
             PairingJoinerController(
                 context = this,
@@ -127,6 +134,7 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
         ProcessLifecycleOwner.get().lifecycle.removeObserver(this)
         pairingController.close()
         clipboardController.shutdown()
+        fileTransferController.shutdown()
         runtimeController.shutdown()
         super.onTerminate()
     }

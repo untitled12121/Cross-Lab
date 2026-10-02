@@ -11,6 +11,9 @@ import dev.crosslab.android.features.clipboard.ClipboardPort
 import dev.crosslab.android.features.clipboard.ClipboardResult
 import dev.crosslab.android.features.clipboard.LocalClipboardRead
 import dev.crosslab.android.features.clipboard.LocalClipboardWrite
+import dev.crosslab.android.features.filetransfer.AndroidFileTransferService
+import dev.crosslab.android.features.filetransfer.FileTransferPort
+import dev.crosslab.android.features.filetransfer.FileTransferState
 import dev.crosslab.android.features.identity.AndroidProductIdentityRepository
 import dev.crosslab.android.features.permissions.AndroidPolicyStore
 import dev.crosslab.android.features.permissions.PolicyStoreUnavailable
@@ -32,9 +35,32 @@ class ProductPresencePort(
     context: Context,
     private val identityRepository: AndroidProductIdentityRepository,
     private val policyStore: AndroidPolicyStore,
-) : RuntimePort, ClipboardPort {
+) : RuntimePort, ClipboardPort, FileTransferPort {
     override val peerControlAvailable: Boolean = true
     override val clipboardAvailable: Boolean = true
+    private val fileTransfer = runCatching { AndroidFileTransferService(context) }.getOrNull()
+    override val fileTransferAvailable: Boolean
+        get() = fileTransfer != null
+
+    override fun fileTransferState(): FileTransferState =
+        fileTransfer?.fileTransferState() ?: FileTransferState.initial(false)
+
+    override fun observeFileTransfer(listener: (FileTransferState) -> Unit): AutoCloseable =
+        fileTransfer?.observeFileTransfer(listener) ?: AutoCloseable {
+            // No live adapter to unsubscribe.
+        }.also { listener(FileTransferState.initial(false)) }
+
+    override fun sendFile(uri: android.net.Uri, retainReadGrant: Boolean) =
+        fileTransfer?.sendFile(uri, retainReadGrant) ?: false
+
+    override fun retryFile() = fileTransfer?.retryFile() ?: false
+
+    override fun acceptFile(uri: android.net.Uri, requestId: String, retainWriteGrant: Boolean) =
+        fileTransfer?.acceptFile(uri, requestId, retainWriteGrant) ?: false
+
+    override fun declineFile() = fileTransfer?.declineFile() ?: false
+
+    override fun cancelFile() = fileTransfer?.cancelFile() ?: false
 
     private val discovery = AndroidTrustedSessionDiscovery(context)
     private val clipboard = AndroidClipboardAdapter(context)
@@ -311,6 +337,7 @@ class ProductPresencePort(
         events.shutdownNow()
         clipboardEvents.shutdownNow()
         clipboardWorkers.shutdownNow()
+        fileTransfer?.close()
         listeners.clear()
     }
 
@@ -345,7 +372,7 @@ class ProductPresencePort(
                     policyAnchor = policy?.anchor,
                     clipboardReadAvailable = clipboardAvailable,
                     clipboardWriteAvailable = clipboardAvailable,
-                    fileTransferAvailable = false,
+                    fileTransferAvailable = fileTransferAvailable,
                 )
             }.getOrElse {
                 publishLocked(
@@ -367,6 +394,7 @@ class ProductPresencePort(
         generation += 1
         val token = generation
         agent = active
+        fileTransfer?.attach(active)
         discoveryInfo = info
         ensureDiscoveryLocked(active)
         publishLocked(
@@ -387,6 +415,7 @@ class ProductPresencePort(
         val active = agent
         agent = null
         if (active != null) {
+            fileTransfer?.detach(active)
             runCatching { active.shutdown() }
         }
     }
@@ -610,6 +639,13 @@ class ProductPresencePort(
     }
 
     private fun publishLocked(snapshot: RuntimeSnapshot) {
+        agent?.let { active ->
+            fileTransfer?.sessionConnected(
+                active,
+                snapshot.session == RuntimeSession.ACTIVE &&
+                    snapshot.capabilityIds.contains("files.transfer"),
+            )
+        }
         current = snapshot
         listeners.forEach { it(snapshot) }
     }

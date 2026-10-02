@@ -31,6 +31,7 @@ import dev.crosslab.android.features.devices.DevicesScreen
 import dev.crosslab.android.features.devices.DevicesState
 import dev.crosslab.android.features.devices.RuntimeControllerState
 import dev.crosslab.android.features.devices.RuntimeLifecycle
+import dev.crosslab.android.features.filetransfer.FileTransferState
 import dev.crosslab.android.features.owner.OwnerScreen
 import dev.crosslab.android.features.pairing.PairingJoinerState
 import uniffi.crosslab_mobile_ffi.MobilePairingBootstrap
@@ -45,6 +46,14 @@ fun ControlCenterScreen(
     theme: ThemeDocument,
     runtime: RuntimeControllerState,
     clipboard: ClipboardState,
+    fileTransfer: FileTransferState,
+    retainFileAccess: Boolean,
+    onToggleRetainFileAccess: () -> Unit,
+    onSendFile: () -> Unit,
+    onChooseFileDestination: (String, String) -> Unit,
+    onCancelFile: () -> Unit,
+    onDeclineFile: () -> Unit,
+    onRetryFile: () -> Unit,
     onDisconnect: () -> Unit,
     onReconnect: () -> Unit,
     onSendClipboard: () -> Unit,
@@ -143,6 +152,14 @@ fun ControlCenterScreen(
                     devices = DevicesState.from(runtime.snapshot),
                     runtime = runtime,
                     clipboard = clipboard,
+                    fileTransfer = fileTransfer,
+                    retainFileAccess = retainFileAccess,
+                    onToggleRetainFileAccess = onToggleRetainFileAccess,
+                    onSendFile = onSendFile,
+                    onChooseFileDestination = onChooseFileDestination,
+                    onCancelFile = onCancelFile,
+                    onDeclineFile = onDeclineFile,
+                    onRetryFile = onRetryFile,
                     onDisconnect = onDisconnect,
                     onReconnect = onReconnect,
                     onSendClipboard = onSendClipboard,
