@@ -15,8 +15,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 use super::{
     runner::{
         AgentChannels, AgentCommand, AgentSecurity, CapabilityChannels, NotificationChannels,
-        RuntimeAvailability,
-        run_agent,
+        RuntimeAvailability, run_agent,
     },
     types::{
         PermissionSnapshot, PresenceAgentError, PresenceDiscoveryInfo, PresencePhase,
@@ -210,10 +209,7 @@ impl TrustedPresenceAgent {
                             command_rx,
                             status_tx,
                             permissions_tx,
-                            NotificationChannels::new(
-                                notification_tx,
-                                notification_active_tx,
-                            ),
+                            NotificationChannels::new(notification_tx, notification_active_tx),
                             CapabilityChannels::new(
                                 clipboard_requests_tx,
                                 file_transfer_requests_tx,

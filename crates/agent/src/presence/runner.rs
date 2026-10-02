@@ -612,10 +612,11 @@ pub(super) async fn run_agent(
         mut command_rx,
         status_tx,
         permissions_tx,
-        notifications: NotificationChannels {
-            inbox_tx: notification_tx,
-            active_tx: notification_active_tx,
-        },
+        notifications:
+            NotificationChannels {
+                inbox_tx: notification_tx,
+                active_tx: notification_active_tx,
+            },
         capabilities,
         availability,
     } = channels;

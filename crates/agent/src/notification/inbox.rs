@@ -110,9 +110,7 @@ impl NotificationInbox {
         session_id: SessionId,
         approved: bool,
     ) -> bool {
-        if self.pending.map(|(id, session, _)| (id, session))
-            != Some((request_id, session_id))
-        {
+        if self.pending.map(|(id, session, _)| (id, session)) != Some((request_id, session_id)) {
             return false;
         }
         self.pending = None;
