@@ -30,7 +30,7 @@ Material changes to trust, protocol, privilege, recovery, transport, update, com
 
 [`architecture/`](./architecture/) contains the system design and focused normative specifications:
 
-- [`MASTER-ARCHITECTURE.md`](./architecture/MASTER-ARCHITECTURE.md) — Revision 2.1 source of truth.
+- [`MASTER-ARCHITECTURE.md`](./architecture/MASTER-ARCHITECTURE.md) — Revision 2.10 source of truth.
 - [`CORE-SIMULATOR.md`](./architecture/CORE-SIMULATOR.md) — Phase 1 deterministic simulator specification.
 - [`IDENTITY-AND-KEYS.md`](./architecture/IDENTITY-AND-KEYS.md) — owner/device identities, authority hierarchy, credentials, rotation, and epochs.
 - [`PAIRING-TRUST-REVOCATION.md`](./architecture/PAIRING-TRUST-REVOCATION.md) — pairing bootstrap, trust lifecycle, and revocation.
@@ -41,7 +41,7 @@ Material changes to trust, protocol, privilege, recovery, transport, update, com
 - [`AUDIT-PRIVACY.md`](./architecture/AUDIT-PRIVACY.md) — audit, privacy, and redaction requirements.
 - [`PLUGIN-SECURITY.md`](./architecture/PLUGIN-SECURITY.md) — reserved future plugin authority boundary.
 
-Phase 0 specifications were authored during the Revision 2.0 planning baseline and then reviewed and accepted into Master Architecture Revision 2.1 through ADR-0001 through ADR-0006 and the Phase 0 closeout. Where a completed Phase 0 document retains its original milestone/revision provenance or conditional proposal wording, the accepted ADR and Revision 2.1 baseline are authoritative for implementation.
+Phase 0 specifications were authored during the Revision 2.0 planning baseline and then reviewed and accepted into the master architecture through ADR-0001 through ADR-0006 and the Phase 0 closeout. Later accepted ADRs and master revision 2.10 supersede earlier revisions. Where a completed Phase 0 document retains its original milestone/revision provenance or conditional proposal wording, the accepted ADR and Revision 2.1 baseline are authoritative for implementation.
 
 ## Protocol
 
@@ -75,6 +75,7 @@ The Phase 0 baseline currently includes accepted ADR-0001 through ADR-0006. See 
 - [`BUILD.md`](./development/BUILD.md) — unified local build, setup, and device-install commands.
 - [`ROADMAP.md`](./development/ROADMAP.md) — concise phase/milestone navigation.
 - [`WORKFLOW.md`](./development/WORKFLOW.md) — repository continuity and verification workflow.
+- [`BUILD.md`](./development/BUILD.md) — normal Linux desktop + Android product build and physical-test setup.
 
 These files should stay concise and operational. Completed design history belongs in plans, ADRs, or focused specifications rather than accumulating in `CURRENT.md`.
 
@@ -88,7 +89,7 @@ docs/plans/
 └── phase-1/   # active Core Simulator implementation milestones
 ```
 
-Phase 0 is closed. New implementation planning belongs under `phase-1/` until the Core Simulator phase is complete.
+Phase 0 is closed and Phase 1 M1–M9 are complete. Phase 2 implementation plans currently live under `superpowers/plans/`; use the active plan linked from `development/CURRENT.md`.
 
 ## Research Repositories
 

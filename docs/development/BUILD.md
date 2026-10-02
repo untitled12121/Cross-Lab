@@ -72,13 +72,47 @@ If `cargo crosslab build` reports that the Android SDK is not ready, run `cargo 
 
 `cargo crosslab setup` installs the Rust Android target automatically. If no compatible Android SDK is found, it can bootstrap Cross-Lab's pinned command-line SDK into a user-owned data directory and install the required platform, build-tools, platform-tools, and NDK. The Android SDK license is shown/accepted interactively; Cross-Lab does not accept it silently or install privileged operating-system packages.
 
-## M10 physical-device build
+## Linux prerequisites
 
-For the physical Linux + Android evidence build:
+On Ubuntu 24.04/Debian-based Linux, the GitHub CI desktop build installs these system packages. Other Linux distributions need equivalent compiler, Wayland/X11, font, TLS and Vulkan runtime/development packages:
+
+```bash
+sudo apt-get update
+sudo apt-get install --no-install-recommends \
+  clang gcc g++ libfontconfig-dev libwayland-dev libx11-xcb-dev \
+  libxkbcommon-x11-dev libssl-dev libzstd-dev libvulkan1
+```
+
+Install a supported Java 17 runtime for the Android Gradle build. Use the repository's pinned Rust toolchain (`rust-toolchain.toml`) and the project SDK/NDK setup rather than mixing SDK versions.
+
+## Normal Linux + Android product build and test
+
+**Use normal builds for QR pairing, LAN discovery, permissions, clipboard and file transfer.** M10 development provisioning is a separate synthetic-credential test mode. It bypasses the Android `ProductPresencePort` path, so it **cannot** test the actual file-transfer product flow.
+
+From a clean checkout of the intended tested `main` commit, on a Linux workstation:
+
+```bash
+cargo crosslab setup
+cargo crosslab doctor
+cargo crosslab build desktop
+cargo crosslab build android
+cargo crosslab install android
+cargo crosslab run desktop
+```
+
+The desktop binary is `target/debug/crosslab-desktop`; the normal Android **arm64-v8a** APK is `apps/android/app/build/outputs/apk/debug/app-debug.apk`. The `install android` command requires an attached, authorized arm64 Android device with USB debugging and `adb` available. You may also build with `cargo crosslab` to build both without installing. Do **not** pass `--development`, `--dev`, or `-PcrosslabDevelopmentProvisioning=true` for these product tests.
+
+After normal pairing on both devices, connect over a reachable local network (avoid AP/client isolation), confirm a trusted active session, and explicitly allow the intended peer's `files.transfer / receive` permission. Default deny remains the correct starting state. Test using disposable files rather than private documents.
+
+Fill in the real-device results in [M10 platform evidence](../research/M10-platform-evidence.md) and [Phase 2 transfer evidence](../research/Phase2-file-transfer-device-evidence.md). Do not paste pairing QR payloads, IP addresses, tokens, real file paths or contents into the evidence record. Code/CI success does not replace actual hardware observations.
+
+## Synthetic M10 lifecycle evidence only
+
+For the older development-provisioned lifecycle and explicit revocation test **only**, use:
 
 ```bash
 cargo crosslab build --development
 cargo crosslab install android --development
 ```
 
-The existing secret-safe provisioning procedure remains in `docs/research/M10-platform-evidence.md`.
+Follow the secret-safe temporary-credential instructions in `docs/research/M10-platform-evidence.md`. These builds are not valid for normal owner-pairing or file-transfer product testing.

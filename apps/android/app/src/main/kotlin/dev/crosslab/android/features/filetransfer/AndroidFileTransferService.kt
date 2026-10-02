@@ -411,8 +411,11 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
                             }
                         }
                     }
-                    active.completeFileTransferResult(received.request.offer.transferId(),
-                        MobileFileTransferTerminalOutcome.COMPLETED)
+                    // Publication is durable even if the peer loses the terminal acknowledgement.
+                    runCatching {
+                        active.completeFileTransferResult(received.request.offer.transferId(),
+                            MobileFileTransferTerminalOutcome.COMPLETED)
+                    }
                     synchronized(lock) {
                         if (receiving !== received) return
                         receiving = null
