@@ -14,7 +14,7 @@ use crosslab_protocol::TransferId;
 use crate::features::devices::TrustDisplay;
 #[cfg(target_os = "linux")]
 use crate::features::{
-    audit::{LinuxAuditStore, current_hour},
+    audit::{AuditIntent, AuditLifecycle, LinuxAuditStore, current_hour},
     devices::{DesktopPresenceError, DesktopProductPresenceController},
     file_transfer::{
         LinuxFileTransferReceiveFailure, LinuxFileTransferReceiveStatus,
@@ -55,6 +55,12 @@ use gpui_kit::{
     Styled as _, Window, base::Button, component::theme::ActiveTheme as _, div, px,
 };
 
+#[cfg(target_os = "linux")]
+enum AuditCommand {
+    Record(AuditIntent),
+    Clear,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Section {
     Devices,
@@ -69,6 +75,10 @@ pub struct ControlCenterPage {
     owner: OwnerFeatureState,
     notification_inbox: NotificationInboxSnapshot,
     runtime: DesktopRuntimeController,
+    #[cfg(target_os = "linux")]
+    audit_lifecycle: AuditLifecycle,
+    #[cfg(target_os = "linux")]
+    audit_tx: tokio::sync::mpsc::Sender<AuditCommand>,
     #[cfg(target_os = "linux")]
     product_presence: Option<Arc<DesktopProductPresenceController>>,
     #[cfg(target_os = "linux")]
@@ -101,6 +111,61 @@ pub struct ControlCenterPage {
 
 impl ControlCenterPage {
     pub fn new(cx: &mut Context<Self>) -> Self {
+        #[cfg(target_os = "linux")]
+        let (audit_tx, mut audit_rx) = tokio::sync::mpsc::channel::<AuditCommand>(64);
+        #[cfg(target_os = "linux")]
+        cx.spawn(async move |this, cx| {
+            let initial = async {
+                LinuxAuditStore::from_environment()?
+                    .load(current_hour()?)
+                    .await
+            }
+            .await;
+            if this.update(cx, |page, cx| {
+                match initial {
+                    Ok(history) => page.owner.set_audit_rows(
+                        audit_history_rows(&history),
+                        history.dropped_count(),
+                    ),
+                    Err(_) => page.owner.set_audit_notice("Protected audit history unavailable"),
+                }
+                cx.notify();
+            }).is_err() {
+                return;
+            }
+
+            while let Some(command) = audit_rx.recv().await {
+                let result = async {
+                    let store = LinuxAuditStore::from_environment()?;
+                    let hour = current_hour()?;
+                    match command {
+                        AuditCommand::Record(intent) => {
+                            store
+                                .record(intent.action, intent.outcome, intent.revision, hour)
+                                .await
+                        }
+                        AuditCommand::Clear => store.clear(hour).await,
+                    }
+                }
+                .await;
+                if this.update(cx, |page, cx| {
+                    match result {
+                        Ok(history) => page.owner.set_audit_rows(
+                            audit_history_rows(&history),
+                            history.dropped_count(),
+                        ),
+                        Err(_) => page.owner.set_audit_notice(
+                            "Protected audit write unavailable; recent history may be incomplete",
+                        ),
+                    }
+                    cx.notify();
+                }).is_err() {
+                    return;
+                }
+            }
+        })
+        .detach();
+
         let runtime = DesktopRuntimeController::from_environment();
         let mut status = runtime.subscribe_status();
         let devices = status.borrow().as_ref().map_or_else(
@@ -159,28 +224,6 @@ impl ControlCenterPage {
         })
         .detach();
 
-        #[cfg(target_os = "linux")]
-        cx.spawn(async move |this, cx| {
-            let result = async {
-                LinuxAuditStore::from_environment()?
-                    .load(current_hour()?)
-                    .await
-            }
-            .await;
-            let _ = this.update(cx, |page, cx| {
-                match result {
-                    Ok(history) => page
-                        .owner
-                        .set_audit_rows(audit_history_rows(&history), history.dropped_count()),
-                    Err(_) => page
-                        .owner
-                        .set_audit_notice("Protected audit history unavailable"),
-                }
-                cx.notify();
-            });
-        })
-        .detach();
-
         let mut page = Self {
             section: Section::Devices,
             devices,
@@ -189,6 +232,10 @@ impl ControlCenterPage {
             owner,
             notification_inbox: NotificationInboxSnapshot::default(),
             runtime,
+            #[cfg(target_os = "linux")]
+            audit_lifecycle: AuditLifecycle::default(),
+            #[cfg(target_os = "linux")]
+            audit_tx,
             #[cfg(target_os = "linux")]
             product_presence: None,
             #[cfg(target_os = "linux")]
@@ -221,6 +268,28 @@ impl ControlCenterPage {
         #[cfg(target_os = "linux")]
         page.start_product_presence(cx);
         page
+    }
+
+    #[cfg(target_os = "linux")]
+    fn enqueue_audit(&mut self, intent: AuditIntent) {
+        if self.audit_tx.try_send(AuditCommand::Record(intent)).is_err() {
+            self.owner.note_audit_queue_drop();
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn record_transfer_audit(&mut self, sending: bool) {
+        let operation = if sending {
+            self.file_transfer.send()
+        } else {
+            self.file_transfer.receive()
+        };
+        if let Some(intent) =
+            self.audit_lifecycle
+                .transfer(sending, operation.stage(), operation.failure())
+        {
+            self.enqueue_audit(intent);
+        }
     }
 
     #[cfg(target_os = "linux")]
@@ -309,6 +378,19 @@ impl ControlCenterPage {
                     page.devices.update_presence(&initial);
                     page.devices.update_permissions(&initial_permissions);
                     page.notification_inbox = initial_notifications;
+                    if let Some(event) = page.audit_lifecycle.session(
+                        initial.runtime().is_some_and(|runtime| runtime.session_id().is_some()),
+                    ) {
+                        page.enqueue_audit(event);
+                    }
+                    let _ = page
+                        .audit_lifecycle
+                        .permission(initial_permissions.policy_revision());
+                    if let Some(event) =
+                        page.audit_lifecycle.notification(page.notification_inbox.phase())
+                    {
+                        page.enqueue_audit(event);
+                    }
                     page.clipboard.set_available(true);
                     page.file_transfer.set_available(true);
                     if let Some(runtime) = initial.runtime() {
@@ -333,6 +415,13 @@ impl ControlCenterPage {
                         if this
                             .update(cx, |page, cx| {
                                 page.devices.update_presence(&snapshot);
+                                if let Some(event) = page.audit_lifecycle.session(
+                                    snapshot
+                                        .runtime()
+                                        .is_some_and(|runtime| runtime.session_id().is_some()),
+                                ) {
+                                    page.enqueue_audit(event);
+                                }
                                 if let Some(runtime) = snapshot.runtime() {
                                     page.owner.update_runtime(runtime);
                                 }
@@ -351,6 +440,12 @@ impl ControlCenterPage {
                         if this
                             .update(cx, |page, cx| {
                                 page.notification_inbox = snapshot;
+                                if let Some(event) =
+                                    page.audit_lifecycle
+                                        .notification(page.notification_inbox.phase())
+                                {
+                                    page.enqueue_audit(event);
+                                }
                                 cx.notify();
                             })
                             .is_err()
@@ -366,6 +461,11 @@ impl ControlCenterPage {
                         if this
                             .update(cx, |page, cx| {
                                 page.devices.update_permissions(&snapshot);
+                                if let Some(event) =
+                                    page.audit_lifecycle.permission(snapshot.policy_revision())
+                                {
+                                    page.enqueue_audit(event);
+                                }
                                 cx.notify();
                             })
                             .is_err()
@@ -387,7 +487,9 @@ impl ControlCenterPage {
                                 let Ok(result) = result else {
                                     return;
                                 };
-                                let _ = controller.complete_clipboard_read(request_id, result).await;
+                                let _ = controller
+                                    .complete_clipboard_read(request_id, result)
+                                    .await;
                             }
                             ClipboardRequest::Write { request_id, text } => {
                                 if this
@@ -398,7 +500,9 @@ impl ControlCenterPage {
                                 {
                                     return;
                                 }
-                                let _ = controller.complete_clipboard_write(request_id, Ok(())).await;
+                                let _ = controller
+                                    .complete_clipboard_write(request_id, Ok(()))
+                                    .await;
                             }
                         }
                     }
@@ -546,26 +650,13 @@ impl ControlCenterPage {
             return;
         }
         self.audit_clear_pending = false;
-        cx.spawn(async move |this, cx| {
-            let result = async {
-                LinuxAuditStore::from_environment()?
-                    .clear(current_hour()?)
-                    .await
-            }
-            .await;
-            let _ = this.update(cx, |page, cx| {
-                match result {
-                    Ok(history) => page
-                        .owner
-                        .set_audit_rows(audit_history_rows(&history), history.dropped_count()),
-                    Err(_) => page
-                        .owner
-                        .set_audit_notice("Audit history could not be cleared"),
-                }
-                cx.notify();
-            });
-        })
-        .detach();
+        if self.audit_tx.try_send(AuditCommand::Clear).is_err() {
+            self.owner
+                .set_audit_notice("Audit clear could not be queued; please retry");
+        } else {
+            self.owner.set_audit_notice("Clearing protected history…");
+        }
+        cx.notify();
     }
 
     #[cfg(target_os = "linux")]
@@ -630,8 +721,19 @@ impl ControlCenterPage {
 
         if let Some(mut invitation) = self.pairing_invitation.take()
             && !invitation.status().terminal()
+            && invitation.cancel().is_ok()
         {
-            let _ = invitation.cancel();
+            #[cfg(target_os = "linux")]
+            self.enqueue_audit(AuditIntent::new(
+                AuditAction::PairingCancelled,
+                AuditOutcome::Cancelled,
+                0,
+            ));
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let event = self.audit_lifecycle.pairing_started();
+            self.enqueue_audit(event);
         }
         self.pairing_generation = self.pairing_generation.wrapping_add(1);
         let generation = self.pairing_generation;
@@ -649,6 +751,12 @@ impl ControlCenterPage {
                         }
                         page.pairing_busy = false;
                         page.pairing_invitation = None;
+                        #[cfg(target_os = "linux")]
+                        page.enqueue_audit(AuditIntent::new(
+                            AuditAction::PairingFailed,
+                            AuditOutcome::Failed,
+                            0,
+                        ));
                         page.notice = Some(error.to_string());
                         cx.notify();
                     });
@@ -690,6 +798,10 @@ impl ControlCenterPage {
                     .update(cx, |page, cx| {
                         if page.pairing_generation != generation {
                             return;
+                        }
+                        #[cfg(target_os = "linux")]
+                        for event in page.audit_lifecycle.pairing(stage).into_iter().flatten() {
+                            page.enqueue_audit(event);
                         }
                         if let Some(identity) = latest_identity {
                             page.owner.set_product_identity(
@@ -865,6 +977,7 @@ impl ControlCenterPage {
                 incoming.offer().display_name().to_owned(),
                 incoming.offer().file_size(),
             );
+            self.record_transfer_audit(false);
         }
     }
 
@@ -922,12 +1035,14 @@ impl ControlCenterPage {
             .unwrap_or("Selected file")
             .to_owned();
         self.file_transfer.begin_send(display_name);
+        self.record_transfer_audit(true);
 
         match controller.start_file_transfer_send(path) {
             Ok(handle) => self.track_file_transfer_send(handle, cx),
             Err(error) => {
                 self.file_transfer
                     .send_failed(0, 0, FileTransferFailure::Failed);
+                self.record_transfer_audit(true);
                 self.notice = Some(error.to_string());
                 cx.notify();
             }
@@ -949,12 +1064,14 @@ impl ControlCenterPage {
             .unwrap_or("Selected file")
             .to_owned();
         self.file_transfer.begin_send(display_name);
+        self.record_transfer_audit(true);
 
         match controller.retry_file_transfer_send(token) {
             Ok(handle) => self.track_file_transfer_send(handle, cx),
             Err(error) => {
                 self.file_transfer
                     .send_failed(0, 0, FileTransferFailure::Failed);
+                self.record_transfer_audit(true);
                 self.notice = Some(error.to_string());
                 cx.notify();
             }
@@ -1069,6 +1186,7 @@ impl ControlCenterPage {
                     Err(DesktopPresenceError::FileTransferCancelled) => {
                         page.file_transfer
                             .receive_cancelled(0, page.file_transfer.receive().total_bytes());
+                        page.record_transfer_audit(false);
                         page.notice = None;
                     }
                     Err(error @ DesktopPresenceError::FileTransferConnection) => {
@@ -1077,6 +1195,7 @@ impl ControlCenterPage {
                             page.file_transfer.receive().total_bytes(),
                             FileTransferFailure::Connection,
                         );
+                        page.record_transfer_audit(false);
                         page.notice = Some(error.to_string());
                     }
                     Err(error) => {
@@ -1086,6 +1205,7 @@ impl ControlCenterPage {
                             page.file_transfer.receive().total_bytes(),
                             FileTransferFailure::Storage,
                         );
+                        page.record_transfer_audit(false);
                         page.notice = Some(error.to_string());
                     }
                 }
@@ -1120,6 +1240,7 @@ impl ControlCenterPage {
         let total_bytes = incoming.offer().file_size();
         self.pending_file_transfers.pop_front();
         self.file_transfer.receive_cancelled(0, total_bytes);
+        self.record_transfer_audit(false);
         self.notice = None;
         self.surface_next_file_transfer();
         cx.notify();
@@ -1224,6 +1345,7 @@ impl ControlCenterPage {
                 self.notice = None;
             }
         }
+        self.record_transfer_audit(true);
     }
 
     #[cfg(target_os = "linux")]
@@ -1315,6 +1437,7 @@ impl ControlCenterPage {
                 self.surface_next_file_transfer();
             }
         }
+        self.record_transfer_audit(false);
     }
 
     #[cfg(feature = "development-provisioning")]

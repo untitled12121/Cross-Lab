@@ -111,6 +111,16 @@ class ProductPresencePort(
     private val discovery = AndroidTrustedSessionDiscovery(context)
     private val clipboard = AndroidClipboardAdapter(context)
     private val listeners = CopyOnWriteArraySet<(RuntimeSnapshot) -> Unit>()
+    private val subscriptionListeners = CopyOnWriteArraySet<(Boolean) -> Unit>()
+
+    @Volatile
+    private var subscribed = false
+
+    override fun observeSubscription(listener: (Boolean) -> Unit): AutoCloseable {
+        subscriptionListeners += listener
+        listener(subscribed)
+        return AutoCloseable { subscriptionListeners -= listener }
+    }
     private val events =
         Executors.newSingleThreadExecutor { task ->
             Thread(task, "crosslab-presence-events").apply { isDaemon = true }
@@ -398,6 +408,7 @@ class ProductPresencePort(
         clipboardWorkers.shutdownNow()
         fileTransfer?.close()
         listeners.clear()
+        subscriptionListeners.clear()
     }
 
     private fun startAgentLocked() {
@@ -704,6 +715,14 @@ class ProductPresencePort(
     }
 
     private fun publishLocked(snapshot: RuntimeSnapshot) {
+        val activeSubscription =
+            snapshot.session == RuntimeSession.ACTIVE &&
+                agent?.notificationSubscribed() == true &&
+                notificationConsent.current(foreground = true).locallyAvailable()
+        if (activeSubscription != subscribed) {
+            subscribed = activeSubscription
+            subscriptionListeners.forEach { it(subscribed) }
+        }
         agent?.let { active ->
             fileTransfer?.sessionConnected(
                 active,

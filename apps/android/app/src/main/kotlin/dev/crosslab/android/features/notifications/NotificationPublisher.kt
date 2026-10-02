@@ -17,4 +17,6 @@ interface NotificationPublisher {
     fun removed(key: String): Boolean
 
     fun disableNotifications()
+
+    fun observeSubscription(listener: (Boolean) -> Unit): AutoCloseable
 }

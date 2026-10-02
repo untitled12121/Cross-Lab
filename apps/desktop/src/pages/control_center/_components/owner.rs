@@ -149,6 +149,11 @@ pub(crate) fn owner_content(
                     &state.audit_dropped().to_string(),
                     cx,
                 ))
+                .child(info_row(
+                    "Unqueued events",
+                    &state.audit_queue_dropped().to_string(),
+                    cx,
+                ))
                 .children(
                     state
                         .audit_rows()

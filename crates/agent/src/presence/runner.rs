@@ -641,8 +641,15 @@ pub(super) async fn run_agent(
     let mut connecting_instance: Option<String> = None;
     let mut network_available = true;
     let mut auto_connect = true;
+    let mut advertised_notification_active = false;
 
     loop {
+        let active = *notification_active_tx.borrow();
+        if active != advertised_notification_active {
+            advertised_notification_active = active;
+            status_tx.send_modify(|_| {});
+        }
+
         // Never carry private notification state into another authenticated session.
         let session = connected
             .as_ref()

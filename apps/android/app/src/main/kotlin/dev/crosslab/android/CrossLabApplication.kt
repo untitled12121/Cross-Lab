@@ -7,10 +7,14 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.os.Build
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import dev.crosslab.android.features.audit.AndroidAuditStore
+import dev.crosslab.android.features.audit.AndroidAuditRecorder
 import dev.crosslab.android.features.clipboard.ClipboardController
 import dev.crosslab.android.features.clipboard.UnavailableClipboardPort
 import dev.crosslab.android.features.devices.MobileRuntimePort
@@ -43,6 +47,11 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
     lateinit var auditStore: AndroidAuditStore
         private set
 
+    lateinit var auditRecorder: AndroidAuditRecorder
+        private set
+
+    private val auditObservations = mutableListOf<AutoCloseable>()
+
     lateinit var notificationConsent: AndroidNotificationConsent
         private set
 
@@ -59,13 +68,24 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
         private set
 
     private var notificationPublisher: NotificationPublisher? = null
+    private val consentRestart = ThreadPoolExecutor(
+        1, 1, 0L, TimeUnit.MILLISECONDS, ArrayBlockingQueue<Runnable>(1),
+        { task -> Thread(task, "crosslab-consent-restart").apply { isDaemon = true } },
+        ThreadPoolExecutor.DiscardOldestPolicy(),
+    )
 
     fun notificationPublisher(): NotificationPublisher? = notificationPublisher
 
     fun notificationPermissionChanged() {
+        // Immediate capture gate; reload of protected trust/role state is off the UI thread.
         notificationPublisher?.disableNotifications()
-        if (runtimeController.state().lifecycle == dev.crosslab.android.features.devices.RuntimeLifecycle.RUNNING) {
-            runtimeController.reloadTrust()
+        consentRestart.execute {
+            if (::runtimeController.isInitialized &&
+                runtimeController.state().lifecycle ==
+                    dev.crosslab.android.features.devices.RuntimeLifecycle.RUNNING
+            ) {
+                runtimeController.reloadTrust()
+            }
         }
     }
 
@@ -86,6 +106,7 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
         super<Application>.onCreate()
         identityStore = AndroidIdentityStore(this)
         auditStore = AndroidAuditStore(this)
+        auditRecorder = AndroidAuditRecorder(auditStore)
         notificationConsent = AndroidNotificationConsent(this)
         policyStore = AndroidPolicyStore(this)
         localDeviceSigner = AndroidEd25519Signer(this, AndroidSigningSlot.LOCAL_DEVICE)
@@ -124,6 +145,13 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
                 identityRepository = identityRepository,
                 onPaired = runtimeController::reconnectPeer,
             )
+
+        auditObservations += runtimeController.observe { auditRecorder.runtime(it.snapshot) }
+        auditObservations += pairingController.observe { auditRecorder.pairing(it.stage) }
+        auditObservations += fileTransferController.observe { auditRecorder.transfer(it) }
+        productPresence?.let { presence ->
+            auditObservations += presence.observeSubscription(auditRecorder::subscription)
+        }
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
 
         connectivityManager = getSystemService(ConnectivityManager::class.java)
@@ -160,10 +188,14 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
     override fun onTerminate() {
         connectivityManager.unregisterNetworkCallback(networkCallback)
         ProcessLifecycleOwner.get().lifecycle.removeObserver(this)
+        auditObservations.forEach(AutoCloseable::close)
+        auditObservations.clear()
         pairingController.close()
         clipboardController.shutdown()
         fileTransferController.shutdown()
         runtimeController.shutdown()
+        auditRecorder.close()
+        consentRestart.shutdownNow()
         super.onTerminate()
     }
 }

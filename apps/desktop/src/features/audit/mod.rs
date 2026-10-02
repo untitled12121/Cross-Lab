@@ -1,3 +1,7 @@
+mod lifecycle;
+
+pub(crate) use lifecycle::{AuditIntent, AuditLifecycle};
+
 use std::{
     env,
     fs::{self, File, OpenOptions},

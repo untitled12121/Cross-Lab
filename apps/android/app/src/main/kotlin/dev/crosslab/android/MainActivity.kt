@@ -48,6 +48,7 @@ class MainActivity : ComponentActivity() {
     private val notificationNotice = mutableStateOf<String?>(null)
     private val identityWorker = Executors.newSingleThreadExecutor()
     private var runtimeSubscription: AutoCloseable? = null
+    private var auditSubscription: AutoCloseable? = null
     private var clipboardSubscription: AutoCloseable? = null
     private var fileTransferSubscription: AutoCloseable? = null
     private var pairingSubscription: AutoCloseable? = null
@@ -57,7 +58,20 @@ class MainActivity : ComponentActivity() {
 
         val app = application as CrossLabApplication
         refreshTrustedPeers(app)
-        refreshAudit(app)
+        auditSubscription = app.auditRecorder.observe { status ->
+            if (!isDestroyed) runOnUiThread {
+                if (!isDestroyed) {
+                    status.history?.let { updateAudit(it) }
+                    auditNotice.value =
+                        when {
+                            status.unavailable -> "Audit write unavailable; recent events may be missing."
+                            status.droppedEvents > 0 ->
+                                "${status.droppedEvents} recent audit events were dropped."
+                            else -> auditNotice.value
+                        }
+                }
+            }
+        }
         refreshNotificationConsent(app)
         runtimeState.value = app.runtimeController.state()
         runtimeSubscription =
@@ -183,8 +197,7 @@ class MainActivity : ComponentActivity() {
                 auditDropped = auditDropped.value,
                 auditNotice = auditNotice.value,
                 onClearAudit = {
-                    identityWorker.execute {
-                        val result = runCatching { app.auditStore.clear() }
+                    app.auditRecorder.clear { result ->
                         if (!isDestroyed) runOnUiThread {
                             if (!isDestroyed) {
                                 auditNotice.value = if (result.isSuccess) {
@@ -203,12 +216,14 @@ class MainActivity : ComponentActivity() {
                     app.notificationConsent.setOwnerEnabled(
                         !app.notificationConsent.ownerEnabled,
                     )
+                    app.notificationPermissionChanged()
                     refreshNotificationConsent(app)
                 },
                 onToggleNotificationContent = {
                     app.notificationConsent.setContentEnabled(
                         !app.notificationConsent.contentEnabled,
                     )
+                    app.notificationPermissionChanged()
                     refreshNotificationConsent(app)
                 },
                 onOpenNotificationAccess = {
@@ -226,17 +241,6 @@ class MainActivity : ComponentActivity() {
                                 else RuntimePermissionEffect.DENY,
                             )
                         }
-                        val audit = if (permitted.getOrDefault(false)) {
-                            runCatching {
-                                app.auditStore.record(
-                                    MobileAuditAction.PERMISSION_CHANGED,
-                                    MobileAuditOutcome.SUCCEEDED,
-                                    revision = app.runtimeController.state().snapshot.policyRevision,
-                                )
-                            }
-                        } else {
-                            null
-                        }
                         if (!isDestroyed) runOnUiThread {
                             if (!isDestroyed) {
                                 notificationNotice.value =
@@ -245,11 +249,7 @@ class MainActivity : ComponentActivity() {
                                     } else {
                                         "Peer permission could not be changed."
                                     }
-                                audit?.getOrNull()?.let { updateAudit(it) }
-                                if (audit?.isFailure == true) {
-                                    auditNotice.value = "Permission saved; audit unavailable."
-                                }
-                            }
+                             }
                         }
                     }
                 },
@@ -268,16 +268,12 @@ class MainActivity : ComponentActivity() {
                                 val reloaded = runCatching {
                                     app.runtimeController.reloadTrust()
                                 }.getOrDefault(false)
-                                val savedAudit = runCatching {
-                                    app.auditStore.record(
-                                        MobileAuditAction.PEER_REVOKED,
-                                        MobileAuditOutcome.SUCCEEDED,
-                                    )
-                                }
-                                if (!isDestroyed) runOnUiThread {
-                                    if (!isDestroyed) {
-                                        savedAudit.getOrNull()?.let { updateAudit(it) }
-                                        if (savedAudit.isFailure) {
+                                app.auditRecorder.record(
+                                    MobileAuditAction.PEER_REVOKED,
+                                    MobileAuditOutcome.SUCCEEDED,
+                                ) { savedAudit ->
+                                    if (!isDestroyed && savedAudit.isFailure) runOnUiThread {
+                                        if (!isDestroyed) {
                                             auditNotice.value =
                                                 "Device revoked; audit history unavailable."
                                         }
@@ -320,20 +316,6 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private fun refreshAudit(app: CrossLabApplication) {
-        identityWorker.execute {
-            val result = runCatching { app.auditStore.read() }
-            if (!isDestroyed) runOnUiThread {
-                if (!isDestroyed) {
-                    result.getOrNull()?.let { updateAudit(it) }
-                    if (result.isFailure) {
-                        auditNotice.value = "Protected audit history unavailable."
-                    }
-                }
-            }
-        }
-    }
-
     private fun updateAudit(history: uniffi.crosslab_mobile_ffi.MobileAuditHistory) {
         auditRows.value = history.rows
         auditDropped.value = history.droppedCount.toLong()
@@ -360,6 +342,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        auditSubscription?.close()
+        auditSubscription = null
         runtimeSubscription?.close()
         runtimeSubscription = null
         clipboardSubscription?.close()

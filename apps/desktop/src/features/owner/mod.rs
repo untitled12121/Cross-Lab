@@ -34,6 +34,7 @@ pub struct OwnerFeatureState {
     revoked_peer_ids: Vec<String>,
     audit_rows: Vec<String>,
     audit_dropped: u64,
+    audit_queue_dropped: u64,
     audit_notice: Option<String>,
 }
 
@@ -46,6 +47,7 @@ impl OwnerFeatureState {
             revoked_peer_ids: Vec::new(),
             audit_rows: Vec::new(),
             audit_dropped: 0,
+            audit_queue_dropped: 0,
             audit_notice: None,
         }
     }
@@ -117,6 +119,15 @@ impl OwnerFeatureState {
         self.audit_dropped
     }
 
+    pub fn note_audit_queue_drop(&mut self) {
+        self.audit_queue_dropped = self.audit_queue_dropped.saturating_add(1);
+        self.audit_notice = Some("Some audit events could not be queued".to_owned());
+    }
+
+    pub const fn audit_queue_dropped(&self) -> u64 {
+        self.audit_queue_dropped
+    }
+
     pub fn audit_notice(&self) -> Option<&str> {
         self.audit_notice.as_deref()
     }
@@ -167,6 +178,9 @@ mod tests {
         state.clear();
         assert_eq!(state.audit_rows(), &["peer-revoked".to_owned()]);
         assert_eq!(state.audit_dropped(), 2);
+        state.note_audit_queue_drop();
+        state.clear();
+        assert_eq!(state.audit_queue_dropped(), 1);
     }
 
     #[test]

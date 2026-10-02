@@ -104,7 +104,7 @@ The desktop binary is `target/debug/crosslab-desktop`; the normal Android **arm6
 
 After normal pairing on both devices, connect over a reachable local network (avoid AP/client isolation), confirm a trusted active session, and explicitly allow the intended peer's `files.transfer / receive` permission. Default deny remains the correct starting state. Test using disposable files rather than private documents.
 
-Fill in the real-device results in [M10 platform evidence](../research/M10-platform-evidence.md) and [Phase 2 transfer evidence](../research/Phase2-file-transfer-device-evidence.md). Do not paste pairing QR payloads, IP addresses, tokens, real file paths or contents into the evidence record. Code/CI success does not replace actual hardware observations.
+Record the normal product gate in [Phase 2 product acceptance](../research/Phase2-product-acceptance.md), with the [detailed file-transfer matrix](../research/Phase2-file-transfer-device-evidence.md) where applicable. Keep synthetic-only [M10 platform evidence](../research/M10-platform-evidence.md) separate. The irreversible **terminal device revocation** scenario must be last, using disposable test identity material. Never copy pairing QR payloads, raw identifiers, addresses, keys, private file paths or contents into evidence. Code/CI success does not replace actual hardware observations.
 
 ## Synthetic M10 lifecycle evidence only
 
