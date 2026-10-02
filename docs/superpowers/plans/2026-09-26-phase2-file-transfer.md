@@ -1,6 +1,6 @@
 # Phase 2 Resumable File Transfer
 
-**Status:** Active — Task 1 implemented; ADR-0020 accepted; PR #65-#69 shared runtime complete; PR #70-#72 Linux storage/receive/service merged; PR #73 Linux native product UI + retention cleanup active
+**Status:** Active — Task 1 implemented; ADR-0020 accepted; PR #65-#69 shared runtime complete; PR #70-#73 Linux storage/receive/service/product flow merged; Task 5 Android platform adapter active
 **Date:** 2026-09-26
 **Base:** PR #61 merged as `61ae275356201245a7dcac95d11bd598d2c3045e`  
 **Foundation:** PR #62 merged as `e338d10911ccdb908bc495150f048503086c0ce2`; exact implementation head `e663909443d208c712ccb7f6e1e74fb8dab26ab8` passed full Rust + Android CI `36258390585`.
@@ -82,9 +82,9 @@ After ADR-0020 acceptance:
 - expire abandoned partial transfers — bounded count/age pruning model implemented on PR #69; platform cleanup policy remains Tasks 4/5;
 - never retain payload bytes in logs/history.
 
-## Task 4 — Linux platform adapter — Active
+## Task 4 — Linux platform adapter — Implemented
 
-PR #70 completed the first platform slice with a private atomic retained-state store, opaque/redacted Linux path locators, symlink-safe source opening checks, full streaming BLAKE3 preparation, and bounded 64 KiB resume reads. PR #71 completed private adjacent receive partials, fsync-before-durable 1 MiB checkpoint advancement, restart truncation/fail-closed recovery, exact whole-file BLAKE3 verification, completion tombstones, crash recovery across publication, and atomic non-clobber publication. PR #72 merged authenticated source binding plus the bounded Linux worker/service that consumes both agent queues, restores retained transfer state, drives receive/terminal handling, and exposes owner destination approval as a typed boundary. Active PR #73 adds native source/save prompts, bounded sender hashing/streaming, stable retry identity, progress/cancel/retry presentation, capability advertisement only with the complete product path, and bounded age-based cleanup of partial/completed retained state. Its current cancellation checkpoint explicitly releases pending source offers, reports typed destination request/transfer cancellation through a bounded product channel, consumes already-issued stream authority when acceptance races cancellation, correlates save prompts by exact request ID, releases accepted platform receivers on session/policy/disconnect/operation-expiry cleanup while preserving retained resume state, adds an explicit owner decline path that returns typed `Cancelled` without minting stream authority or storage state, makes destination cancellation valid from `Ready` through active streaming and the pre-publication finished-stream window with exact operation/stream revocation and retained resume state, suppresses already-buffered events for cancelled stream identities, preserves source terminal correlation across transport-close/result ordering, keeps integrity/storage aborts on a separate atomic stream-failure path, avoids stale prompt resurrection after session loss, binds same-`TransferId` sender retry to the exact original offer identity so a changed local source cannot mutate retained transfer identity, drops path-bearing send state after terminal completion/source invalidation, and introduces a non-cancellable finalizing state once payload transmission has finished.
+PR #70 completed the first platform slice with a private atomic retained-state store, opaque/redacted Linux path locators, symlink-safe source opening checks, full streaming BLAKE3 preparation, and bounded 64 KiB resume reads. PR #71 completed private adjacent receive partials, fsync-before-durable 1 MiB checkpoint advancement, restart truncation/fail-closed recovery, exact whole-file BLAKE3 verification, completion tombstones, crash recovery across publication, and atomic non-clobber publication. PR #72 merged authenticated source binding plus the bounded Linux worker/service that consumes both agent queues, restores retained transfer state, drives receive/terminal handling, and exposes owner destination approval as a typed boundary. PR #73 completed native source/save prompts, bounded sender hashing/streaming, stable retry identity, progress/cancel/retry presentation, capability advertisement only with the complete product path, bounded age-based cleanup of partial/completed retained state, and the Ready-cancellation control-path repair. Its current cancellation checkpoint explicitly releases pending source offers, reports typed destination request/transfer cancellation through a bounded product channel, consumes already-issued stream authority when acceptance races cancellation, correlates save prompts by exact request ID, releases accepted platform receivers on session/policy/disconnect/operation-expiry cleanup while preserving retained resume state, adds an explicit owner decline path that returns typed `Cancelled` without minting stream authority or storage state, makes destination cancellation valid from `Ready` through active streaming and the pre-publication finished-stream window with exact operation/stream revocation and retained resume state, suppresses already-buffered events for cancelled stream identities, preserves source terminal correlation across transport-close/result ordering, keeps integrity/storage aborts on a separate atomic stream-failure path, avoids stale prompt resurrection after session loss, binds same-`TransferId` sender retry to the exact original offer identity so a changed local source cannot mutate retained transfer identity, drops path-bearing send state after terminal completion/source invalidation, and introduces a non-cancellable finalizing state once payload transmission has finished.
 
 - explicit native file selection/save destination;
 - no peer-supplied path authority;
@@ -93,14 +93,21 @@ PR #70 completed the first platform slice with a private atomic retained-state s
 - atomic/non-clobbering finalization where platform semantics permit;
 - clean cancellation and restart behavior.
 
-## Task 5 — Android platform adapter
+## Task 5 — Android platform adapter — Active
 
-- use Storage Access Framework / ContentResolver boundaries;
+Active branch / draft PR `phase2-android-file-transfer-adapter` / #75 starts from merged PR #73 / `main` `881a5dc0f50943d2cc312a5396afecc07c6a1073`.
+
+The adapter slice keeps capability/UI authority separate while establishing the reusable mobile boundary:
+
+- expose narrow UniFFI file-transfer request/cancellation/data/operation objects plus shared streaming BLAKE3 and retained-state helpers;
+- use Storage Access Framework / ContentResolver boundaries for owner-selected source and destination documents;
+- keep content URIs local to Android and redacted from normal debug output;
 - retain URI permission only after explicit owner grant where required;
-- keep content URIs local to Android;
-- bounded streaming I/O without whole-file buffering;
-- partial-state recovery compatible with app lifecycle;
-- no broad storage privilege for the transfer feature.
+- keep resumable partial bytes app-private and no-backup, with shared source-bound retained metadata and 1 MiB durable checkpoints;
+- stream source hashing, source reads, receive writes, verification, and final publication with bounded 64 KiB buffers;
+- truncate bytes beyond the last durable checkpoint after lifecycle restart and fail closed when a retained partial is shorter than its checkpoint;
+- keep Android production `files.transfer` advertisement disabled until Task 6 wires the complete owner-selection/progress/cancel/retry Compose path;
+- require no broad storage privilege for the transfer feature.
 
 ## Task 6 — Product UI
 

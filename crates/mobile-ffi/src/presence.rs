@@ -4,8 +4,8 @@ use std::{
 };
 
 use crosslab_agent::{
-    ClipboardAvailability, PermissionSnapshot, PresenceAgentError, PresencePhase,
-    TrustedPresenceAgent, TrustedSessionRoute,
+    ClipboardAvailability, FileTransferAvailability, PermissionSnapshot, PresenceAgentError,
+    PresencePhase, TrustedPresenceAgent, TrustedSessionRoute,
 };
 use crosslab_crypto::SigningProvider;
 use crosslab_identity_store::ProductIdentityState;
@@ -17,6 +17,14 @@ use crate::{
     clipboard::{
         MobileClipboardError, MobileClipboardOperationResult, MobileClipboardPlatformFailure,
         MobileClipboardRequest, request_id,
+    },
+    file_transfer::{
+        MobileFileTransferAcceptance, MobileFileTransferCancellation,
+        MobileFileTransferChunkOutcome, MobileFileTransferDataEvent, MobileFileTransferError,
+        MobileFileTransferOffer, MobileFileTransferRequest, MobileFileTransferResult,
+        MobileFileTransferSourceStream, MobileFileTransferTerminalOutcome,
+        request_id as file_request_id, stream_id as file_stream_id,
+        transfer_id as file_transfer_id,
     },
     network::socket_addr,
     policy_store::{MobilePolicyStoreError, decode_policy_store},
@@ -113,10 +121,19 @@ pub struct MobileTrustedPresenceAgent {
     agent: Mutex<Option<Arc<TrustedPresenceAgent>>>,
     status: Mutex<tokio::sync::watch::Receiver<crosslab_agent::PresenceSnapshot>>,
     clipboard_requests: Mutex<tokio::sync::mpsc::Receiver<crosslab_agent::ClipboardRequest>>,
+    file_transfer_requests: Mutex<tokio::sync::mpsc::Receiver<crosslab_agent::FileTransferRequest>>,
+    file_transfer_cancellations:
+        Mutex<tokio::sync::mpsc::Receiver<crosslab_agent::FileTransferCancellation>>,
+    file_transfer_data: Mutex<tokio::sync::mpsc::Receiver<crosslab_agent::FileTransferDataEvent>>,
     wait_runtime: Mutex<Runtime>,
     clipboard_wait_runtime: Mutex<Runtime>,
     clipboard_operation_runtime: Mutex<Runtime>,
     clipboard_completion_runtime: Mutex<Runtime>,
+    file_transfer_request_wait_runtime: Mutex<Runtime>,
+    file_transfer_cancellation_wait_runtime: Mutex<Runtime>,
+    file_transfer_data_wait_runtime: Mutex<Runtime>,
+    file_transfer_offer_runtime: Mutex<Runtime>,
+    file_transfer_operation_runtime: Mutex<Runtime>,
     policy_runtime: Mutex<Runtime>,
 }
 
@@ -136,6 +153,7 @@ impl MobileTrustedPresenceAgent {
         policy_anchor: Option<Vec<u8>>,
         clipboard_read_available: bool,
         clipboard_write_available: bool,
+        file_transfer_available: bool,
     ) -> Result<Self, MobilePresenceError> {
         let identity = ProductIdentityState::decode(&identity_payload)
             .map_err(|_| MobilePresenceError::Identity)?;
@@ -146,31 +164,56 @@ impl MobileTrustedPresenceAgent {
         };
         let signer = ForeignSigningProvider::new(local_device_signer)?;
         let signer: Arc<dyn SigningProvider + Send + Sync> = Arc::new(signer);
-        let agent = TrustedPresenceAgent::spawn_with_policy_and_clipboard(
+        let agent = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
             identity,
             signer,
             policy,
             ClipboardAvailability::new(clipboard_read_available, clipboard_write_available),
+            FileTransferAvailability::new(file_transfer_available),
         )?;
         let status = agent.subscribe_status();
         let clipboard_requests = agent
             .take_clipboard_requests()
+            .map_err(|_| MobilePresenceError::StateUnavailable)?;
+        let file_transfer_requests = agent
+            .take_file_transfer_requests()
+            .map_err(|_| MobilePresenceError::StateUnavailable)?;
+        let file_transfer_cancellations = agent
+            .take_file_transfer_cancellations()
+            .map_err(|_| MobilePresenceError::StateUnavailable)?;
+        let file_transfer_data = agent
+            .take_file_transfer_data()
             .map_err(|_| MobilePresenceError::StateUnavailable)?;
         let agent = Arc::new(agent);
         let wait_runtime = blocking_runtime()?;
         let clipboard_wait_runtime = blocking_runtime()?;
         let clipboard_operation_runtime = blocking_runtime()?;
         let clipboard_completion_runtime = blocking_runtime()?;
+        let file_transfer_request_wait_runtime = blocking_runtime()?;
+        let file_transfer_cancellation_wait_runtime = blocking_runtime()?;
+        let file_transfer_data_wait_runtime = blocking_runtime()?;
+        let file_transfer_offer_runtime = blocking_runtime()?;
+        let file_transfer_operation_runtime = blocking_runtime()?;
         let policy_runtime = blocking_runtime()?;
 
         Ok(Self {
             agent: Mutex::new(Some(agent)),
             status: Mutex::new(status),
             clipboard_requests: Mutex::new(clipboard_requests),
+            file_transfer_requests: Mutex::new(file_transfer_requests),
+            file_transfer_cancellations: Mutex::new(file_transfer_cancellations),
+            file_transfer_data: Mutex::new(file_transfer_data),
             wait_runtime: Mutex::new(wait_runtime),
             clipboard_wait_runtime: Mutex::new(clipboard_wait_runtime),
             clipboard_operation_runtime: Mutex::new(clipboard_operation_runtime),
             clipboard_completion_runtime: Mutex::new(clipboard_completion_runtime),
+            file_transfer_request_wait_runtime: Mutex::new(file_transfer_request_wait_runtime),
+            file_transfer_cancellation_wait_runtime: Mutex::new(
+                file_transfer_cancellation_wait_runtime,
+            ),
+            file_transfer_data_wait_runtime: Mutex::new(file_transfer_data_wait_runtime),
+            file_transfer_offer_runtime: Mutex::new(file_transfer_offer_runtime),
+            file_transfer_operation_runtime: Mutex::new(file_transfer_operation_runtime),
             policy_runtime: Mutex::new(policy_runtime),
         })
     }
@@ -349,6 +392,306 @@ impl MobileTrustedPresenceAgent {
         failure: MobileClipboardPlatformFailure,
     ) -> Result<(), MobileClipboardError> {
         self.finish_clipboard_write(request_id_bytes, Err(failure.into()))
+    }
+
+    pub fn wait_file_transfer_request(
+        &self,
+        timeout_ms: u64,
+    ) -> Result<Option<Arc<MobileFileTransferRequest>>, MobileFileTransferError> {
+        let mut requests = self
+            .file_transfer_requests
+            .lock()
+            .map_err(|_| MobileFileTransferError::StateUnavailable)?;
+        let runtime = self
+            .file_transfer_request_wait_runtime
+            .lock()
+            .map_err(|_| MobileFileTransferError::StateUnavailable)?;
+        let request = runtime.block_on(async {
+            tokio::time::timeout(Duration::from_millis(timeout_ms), requests.recv()).await
+        });
+        match request {
+            Ok(Some(request)) => Ok(Some(Arc::new(MobileFileTransferRequest::from_agent(
+                request,
+            )))),
+            Ok(None) => Err(MobileFileTransferError::Closed),
+            Err(_) => Ok(None),
+        }
+    }
+
+    pub fn wait_file_transfer_cancellation(
+        &self,
+        timeout_ms: u64,
+    ) -> Result<Option<Arc<MobileFileTransferCancellation>>, MobileFileTransferError> {
+        let mut cancellations = self
+            .file_transfer_cancellations
+            .lock()
+            .map_err(|_| MobileFileTransferError::StateUnavailable)?;
+        let runtime = self
+            .file_transfer_cancellation_wait_runtime
+            .lock()
+            .map_err(|_| MobileFileTransferError::StateUnavailable)?;
+        let cancellation = runtime.block_on(async {
+            tokio::time::timeout(Duration::from_millis(timeout_ms), cancellations.recv()).await
+        });
+        match cancellation {
+            Ok(Some(cancellation)) => Ok(Some(Arc::new(
+                MobileFileTransferCancellation::from_agent(cancellation),
+            ))),
+            Ok(None) => Err(MobileFileTransferError::Closed),
+            Err(_) => Ok(None),
+        }
+    }
+
+    pub fn wait_file_transfer_data(
+        &self,
+        timeout_ms: u64,
+    ) -> Result<Option<Arc<MobileFileTransferDataEvent>>, MobileFileTransferError> {
+        let mut data = self
+            .file_transfer_data
+            .lock()
+            .map_err(|_| MobileFileTransferError::StateUnavailable)?;
+        let runtime = self
+            .file_transfer_data_wait_runtime
+            .lock()
+            .map_err(|_| MobileFileTransferError::StateUnavailable)?;
+        let event = runtime.block_on(async {
+            tokio::time::timeout(Duration::from_millis(timeout_ms), data.recv()).await
+        });
+        match event {
+            Ok(Some(event)) => Ok(Some(Arc::new(MobileFileTransferDataEvent::from_agent(
+                event,
+            )))),
+            Ok(None) => Err(MobileFileTransferError::Closed),
+            Err(_) => Ok(None),
+        }
+    }
+
+    pub fn send_file_offer(
+        &self,
+        offer: Arc<MobileFileTransferOffer>,
+    ) -> Result<Arc<MobileFileTransferAcceptance>, MobileFileTransferError> {
+        let agent = self
+            .agent_handle()
+            .map_err(|_| MobileFileTransferError::Closed)?;
+        let runtime = self
+            .file_transfer_offer_runtime
+            .lock()
+            .map_err(|_| MobileFileTransferError::StateUnavailable)?;
+        runtime
+            .block_on(agent.send_file_offer(offer.offer().clone()))
+            .map(MobileFileTransferAcceptance::from_agent)
+            .map(Arc::new)
+            .map_err(MobileFileTransferError::from)
+    }
+
+    pub fn cancel_file_offer(
+        &self,
+        transfer_id_bytes: Vec<u8>,
+    ) -> Result<(), MobileFileTransferError> {
+        let agent = self
+            .agent_handle()
+            .map_err(|_| MobileFileTransferError::Closed)?;
+        let runtime = self
+            .file_transfer_operation_runtime
+            .lock()
+            .map_err(|_| MobileFileTransferError::StateUnavailable)?;
+        runtime
+            .block_on(agent.cancel_file_transfer_offer(file_transfer_id(transfer_id_bytes)?))
+            .map_err(MobileFileTransferError::from)
+    }
+
+    pub fn decline_file_transfer_request(
+        &self,
+        request_id_bytes: Vec<u8>,
+    ) -> Result<(), MobileFileTransferError> {
+        let agent = self
+            .agent_handle()
+            .map_err(|_| MobileFileTransferError::Closed)?;
+        let runtime = self
+            .file_transfer_operation_runtime
+            .lock()
+            .map_err(|_| MobileFileTransferError::StateUnavailable)?;
+        runtime
+            .block_on(agent.decline_file_transfer_request(file_request_id(request_id_bytes)?))
+            .map_err(MobileFileTransferError::from)
+    }
+
+    pub fn complete_file_transfer_ready(
+        &self,
+        request_id_bytes: Vec<u8>,
+        resume_offset: u64,
+    ) -> Result<(), MobileFileTransferError> {
+        let agent = self
+            .agent_handle()
+            .map_err(|_| MobileFileTransferError::Closed)?;
+        let runtime = self
+            .file_transfer_operation_runtime
+            .lock()
+            .map_err(|_| MobileFileTransferError::StateUnavailable)?;
+        runtime
+            .block_on(
+                agent.complete_file_transfer_ready(
+                    file_request_id(request_id_bytes)?,
+                    resume_offset,
+                ),
+            )
+            .map_err(MobileFileTransferError::from)
+    }
+
+    pub fn complete_file_transfer_already_complete(
+        &self,
+        request_id_bytes: Vec<u8>,
+    ) -> Result<(), MobileFileTransferError> {
+        let agent = self
+            .agent_handle()
+            .map_err(|_| MobileFileTransferError::Closed)?;
+        let runtime = self
+            .file_transfer_operation_runtime
+            .lock()
+            .map_err(|_| MobileFileTransferError::StateUnavailable)?;
+        runtime
+            .block_on(
+                agent.complete_file_transfer_already_complete(file_request_id(request_id_bytes)?),
+            )
+            .map_err(MobileFileTransferError::from)
+    }
+
+    pub fn open_file_transfer_stream(
+        &self,
+        transfer_id_bytes: Vec<u8>,
+    ) -> Result<Arc<MobileFileTransferSourceStream>, MobileFileTransferError> {
+        let agent = self
+            .agent_handle()
+            .map_err(|_| MobileFileTransferError::Closed)?;
+        let runtime = self
+            .file_transfer_operation_runtime
+            .lock()
+            .map_err(|_| MobileFileTransferError::StateUnavailable)?;
+        runtime
+            .block_on(agent.open_file_transfer_stream(file_transfer_id(transfer_id_bytes)?))
+            .map(MobileFileTransferSourceStream::from_agent)
+            .map(Arc::new)
+            .map_err(MobileFileTransferError::from)
+    }
+
+    pub fn send_file_transfer_chunk(
+        &self,
+        stream: Arc<MobileFileTransferSourceStream>,
+        bytes: Vec<u8>,
+    ) -> MobileFileTransferChunkOutcome {
+        let Ok(agent) = self.agent_handle() else {
+            return MobileFileTransferChunkOutcome::Closed;
+        };
+        let Ok(runtime) = self.file_transfer_operation_runtime.lock() else {
+            return MobileFileTransferChunkOutcome::Closed;
+        };
+        match runtime.block_on(agent.send_file_transfer_chunk(stream.stream(), bytes)) {
+            Ok(()) => MobileFileTransferChunkOutcome::Sent,
+            Err(crosslab_agent::FileTransferChunkError::Backpressure(_)) => {
+                MobileFileTransferChunkOutcome::Backpressure
+            }
+            Err(crosslab_agent::FileTransferChunkError::TooLarge(_)) => {
+                MobileFileTransferChunkOutcome::TooLarge
+            }
+            Err(crosslab_agent::FileTransferChunkError::Closed(_)) => {
+                MobileFileTransferChunkOutcome::Closed
+            }
+        }
+    }
+
+    pub fn finish_file_transfer_stream(
+        &self,
+        stream: Arc<MobileFileTransferSourceStream>,
+    ) -> Result<Arc<MobileFileTransferResult>, MobileFileTransferError> {
+        let agent = self
+            .agent_handle()
+            .map_err(|_| MobileFileTransferError::Closed)?;
+        let runtime = self
+            .file_transfer_operation_runtime
+            .lock()
+            .map_err(|_| MobileFileTransferError::StateUnavailable)?;
+        runtime
+            .block_on(agent.finish_file_transfer_stream(stream.stream()))
+            .map(MobileFileTransferResult::from_agent)
+            .map(Arc::new)
+            .map_err(MobileFileTransferError::from)
+    }
+
+    pub fn cancel_file_transfer_send(
+        &self,
+        stream: Arc<MobileFileTransferSourceStream>,
+    ) -> Result<Arc<MobileFileTransferResult>, MobileFileTransferError> {
+        let agent = self
+            .agent_handle()
+            .map_err(|_| MobileFileTransferError::Closed)?;
+        let runtime = self
+            .file_transfer_operation_runtime
+            .lock()
+            .map_err(|_| MobileFileTransferError::StateUnavailable)?;
+        runtime
+            .block_on(agent.cancel_file_transfer_send(stream.stream()))
+            .map(MobileFileTransferResult::from_agent)
+            .map(Arc::new)
+            .map_err(MobileFileTransferError::from)
+    }
+
+    pub fn cancel_file_transfer_receive(
+        &self,
+        transfer_id_bytes: Vec<u8>,
+    ) -> Result<Option<Vec<u8>>, MobileFileTransferError> {
+        let agent = self
+            .agent_handle()
+            .map_err(|_| MobileFileTransferError::Closed)?;
+        let runtime = self
+            .file_transfer_operation_runtime
+            .lock()
+            .map_err(|_| MobileFileTransferError::StateUnavailable)?;
+        runtime
+            .block_on(agent.cancel_file_transfer_receive(file_transfer_id(transfer_id_bytes)?))
+            .map(|stream| stream.map(|stream_id| stream_id.to_bytes().to_vec()))
+            .map_err(MobileFileTransferError::from)
+    }
+
+    pub fn fail_file_transfer_receive(
+        &self,
+        stream_id_bytes: Vec<u8>,
+        transfer_id_bytes: Vec<u8>,
+        outcome: MobileFileTransferTerminalOutcome,
+    ) -> Result<(), MobileFileTransferError> {
+        let agent = self
+            .agent_handle()
+            .map_err(|_| MobileFileTransferError::Closed)?;
+        let runtime = self
+            .file_transfer_operation_runtime
+            .lock()
+            .map_err(|_| MobileFileTransferError::StateUnavailable)?;
+        runtime
+            .block_on(agent.fail_file_transfer_receive(
+                file_stream_id(stream_id_bytes)?,
+                file_transfer_id(transfer_id_bytes)?,
+                outcome.into(),
+            ))
+            .map_err(MobileFileTransferError::from)
+    }
+
+    pub fn complete_file_transfer_result(
+        &self,
+        transfer_id_bytes: Vec<u8>,
+        outcome: MobileFileTransferTerminalOutcome,
+    ) -> Result<(), MobileFileTransferError> {
+        let agent = self
+            .agent_handle()
+            .map_err(|_| MobileFileTransferError::Closed)?;
+        let runtime = self
+            .file_transfer_operation_runtime
+            .lock()
+            .map_err(|_| MobileFileTransferError::StateUnavailable)?;
+        runtime
+            .block_on(agent.complete_file_transfer_result(
+                file_transfer_id(transfer_id_bytes)?,
+                outcome.into(),
+            ))
+            .map_err(MobileFileTransferError::from)
     }
 
     pub fn snapshot(&self) -> Result<MobilePresenceSnapshot, MobilePresenceError> {
