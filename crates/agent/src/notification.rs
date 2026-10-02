@@ -6,7 +6,7 @@ use crosslab_policy::{
 };
 use crosslab_protocol::{
     NOTIFICATION_CAPABILITY_ID, NOTIFICATION_SUBSCRIBE_OPERATION, NotificationId,
-    NotificationPayload, NotificationPosted,
+    NotificationPayload, NotificationPosted, RequestId,
 };
 
 #[path = "notification/inbox.rs"]
@@ -89,6 +89,7 @@ pub enum NotificationMirrorError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Subscription {
+    request_id: RequestId,
     session_id: SessionId,
     source_device_id: DeviceId,
     trust_revision: u64,
@@ -107,6 +108,7 @@ impl NotificationMirror {
     /// The caller must supply the verified active session's authorization context.
     pub fn subscribe(
         &mut self,
+        request_id: RequestId,
         context: &AuthorizationContext,
         policy: &PolicyState,
         consent: NotificationConsent,
@@ -119,12 +121,21 @@ impl NotificationMirror {
             return Err(NotificationMirrorError::NotAuthorized);
         }
         self.subscription = Some(Subscription {
+            request_id,
             session_id: context.session_id(),
             source_device_id: context.source_device_id(),
             trust_revision: context.trust_revision(),
             policy_revision: policy.revision(),
         });
         Ok(())
+    }
+
+    pub fn cancel_request(&mut self, request_id: RequestId) -> bool {
+        let matching = self.subscription.is_some_and(|active| active.request_id == request_id);
+        if matching {
+            self.close();
+        }
+        matching
     }
 
     /// A policy/session/OS permission change discards all pending private payloads.
@@ -352,6 +363,10 @@ mod tests {
         }
     }
 
+    fn request_id() -> RequestId {
+        RequestId::from_bytes([0x44; 16])
+    }
+
     fn posted(id: u8) -> NotificationPayload {
         NotificationPayload::Posted(
             NotificationPosted::new(
@@ -369,7 +384,7 @@ mod tests {
     fn platform_keys_never_leave_as_identifiers_and_clear_on_close() {
         let mut mirror = NotificationMirror::default();
         let policy = policy(Some(RuleEffect::Allow));
-        mirror.subscribe(&context(1), &policy, consent()).unwrap();
+        mirror.subscribe(request_id(), &context(1), &policy, consent()).unwrap();
         assert!(mirror.submit_platform(
             PlatformNotification::Posted {
                 key: "private.platform.notification.id".to_owned(),
@@ -407,6 +422,22 @@ mod tests {
     }
 
     #[test]
+    fn cancellation_only_revokes_matching_subscription() {
+        let mut mirror = NotificationMirror::default();
+        let policy = policy(Some(RuleEffect::Allow));
+        let approved = RequestId::from_bytes([0x44; 16]);
+        mirror
+            .subscribe(approved, &context(1), &policy, consent())
+            .unwrap();
+
+        assert!(!mirror.cancel_request(RequestId::from_bytes([0x45; 16])));
+        assert!(mirror.is_subscribed());
+        assert!(mirror.cancel_request(approved));
+        assert!(!mirror.is_subscribed());
+        assert!(!mirror.cancel_request(approved));
+    }
+
+    #[test]
     fn platform_private_flag_overrides_optional_text_consent() {
         let mut mirror = NotificationMirror::default();
         let policy = policy(Some(RuleEffect::Allow));
@@ -414,7 +445,7 @@ mod tests {
             content_enabled: true,
             ..consent()
         };
-        mirror.subscribe(&context(1), &policy, consent).unwrap();
+        mirror.subscribe(request_id(), &context(1), &policy, consent).unwrap();
         assert!(mirror.submit_platform(
             PlatformNotification::Posted {
                 key: "private-message-key".to_owned(),
@@ -443,7 +474,7 @@ mod tests {
         for effect in [None, Some(RuleEffect::Ask), Some(RuleEffect::Deny)] {
             let mut mirror = NotificationMirror::default();
             assert_eq!(
-                mirror.subscribe(&context(1), &policy(effect), consent()),
+                mirror.subscribe(request_id(), &context(1), &policy(effect), consent()),
                 Err(NotificationMirrorError::NotAuthorized)
             );
         }
@@ -468,7 +499,7 @@ mod tests {
         ] {
             let mut mirror = NotificationMirror::default();
             assert_eq!(
-                mirror.subscribe(&context(1), &policy, consent),
+                mirror.subscribe(request_id(), &context(1), &policy, consent),
                 Err(NotificationMirrorError::Unavailable)
             );
         }
@@ -478,7 +509,7 @@ mod tests {
     fn content_stays_redacted_and_queue_is_bounded() {
         let mut mirror = NotificationMirror::default();
         let policy = policy(Some(RuleEffect::Allow));
-        mirror.subscribe(&context(1), &policy, consent()).unwrap();
+        mirror.subscribe(request_id(), &context(1), &policy, consent()).unwrap();
         for id in 0..66 {
             assert!(mirror.enqueue(posted(id), &context(1), &policy, consent()));
         }
@@ -501,7 +532,7 @@ mod tests {
         let mut mirror = NotificationMirror::default();
         let old_policy = policy(Some(RuleEffect::Allow));
         mirror
-            .subscribe(&context(1), &old_policy, consent())
+            .subscribe(request_id(), &context(1), &old_policy, consent())
             .unwrap();
         mirror.enqueue(posted(4), &context(1), &old_policy, consent());
         assert!(
@@ -515,7 +546,7 @@ mod tests {
                 .is_none()
         );
         mirror
-            .subscribe(&context(1), &old_policy, consent())
+            .subscribe(request_id(), &context(1), &old_policy, consent())
             .unwrap();
         mirror.enqueue(posted(4), &context(1), &old_policy, consent());
         let mut new_policy = old_policy.clone();
@@ -543,7 +574,7 @@ mod tests {
     fn duplicate_identifier_is_coalesced_and_optout_drops_private_queue() {
         let mut mirror = NotificationMirror::default();
         let policy = policy(Some(RuleEffect::Allow));
-        mirror.subscribe(&context(1), &policy, consent()).unwrap();
+        mirror.subscribe(request_id(), &context(1), &policy, consent()).unwrap();
         mirror.enqueue(posted(2), &context(1), &policy, consent());
         mirror.enqueue(posted(2), &context(1), &policy, consent());
         assert_eq!(mirror.pending.len(), 1);

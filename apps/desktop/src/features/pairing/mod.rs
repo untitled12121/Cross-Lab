@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use crosslab_core::{
     PairingInstant, PairingInvitation, PairingInvitationCreateError, PairingInvitationError,
 };
+use crosslab_identity::DeviceId;
 use crosslab_identity_store::{ProductIdentityError, ProductIdentityState};
 use crosslab_runtime::ProductPairingCommit;
 use qrcode_rs::{Color, EcLevel, QrCode};
@@ -31,6 +32,8 @@ pub struct ProductIdentityPresentation {
     owner_id: String,
     local_device_id: String,
     trusted_peer_ids: Vec<String>,
+    trusted_peer_device_ids: Vec<DeviceId>,
+    revoked_peer_ids: Vec<String>,
 }
 
 impl ProductIdentityPresentation {
@@ -42,6 +45,18 @@ impl ProductIdentityPresentation {
                 .trusted_peers()
                 .iter()
                 .filter(|peer| peer.revocation().is_none())
+                .map(|peer| short_hex(peer.credential().device_id().as_bytes()))
+                .collect(),
+            trusted_peer_device_ids: identity
+                .trusted_peers()
+                .iter()
+                .filter(|peer| peer.revocation().is_none())
+                .map(|peer| peer.credential().device_id())
+                .collect(),
+            revoked_peer_ids: identity
+                .trusted_peers()
+                .iter()
+                .filter(|peer| peer.revocation().is_some())
                 .map(|peer| short_hex(peer.credential().device_id().as_bytes()))
                 .collect(),
         }
@@ -57,6 +72,14 @@ impl ProductIdentityPresentation {
 
     pub fn trusted_peer_ids(&self) -> &[String] {
         &self.trusted_peer_ids
+    }
+
+    pub fn trusted_peer_device_ids(&self) -> &[DeviceId] {
+        &self.trusted_peer_device_ids
+    }
+
+    pub fn revoked_peer_ids(&self) -> &[String] {
+        &self.revoked_peer_ids
     }
 }
 
@@ -97,6 +120,30 @@ pub async fn persist_product_pairing_commit(
     Ok(ProductIdentityPresentation::from_identity(&next))
 }
 
+/// Sign with the owner's delegated device-signing key, persist the tombstone
+/// before allowing any session teardown or visible success.
+pub async fn revoke_product_peer(
+    device_id: DeviceId,
+) -> Result<ProductIdentityPresentation, DesktopPairingError> {
+    let store = LinuxIdentityStore::from_environment()?;
+    let payload = store
+        .load_payload()
+        .await?
+        .ok_or(DesktopPairingError::IdentityMissing)?;
+
+    let root = LinuxEd25519Signer::load_required(LinuxSigningSlot::OwnerRoot).await?;
+    let issuer = LinuxEd25519Signer::load_required(LinuxSigningSlot::DeviceSigning).await?;
+    let local = LinuxEd25519Signer::load_required(LinuxSigningSlot::LocalDevice).await?;
+    let identity = ProductIdentityState::decode(&payload)?;
+    identity.validate_providers(&root, &issuer, &local)?;
+
+    let next = identity.with_revoked_peer(device_id, &issuer)?;
+    store
+        .commit_payload_if_current(&payload, next.encode())
+        .await?;
+    Ok(ProductIdentityPresentation::from_identity(&next))
+}
+
 pub struct DesktopPairingInvitation {
     service: LinuxProductPairingService,
     created_at: Instant,
@@ -104,6 +151,8 @@ pub struct DesktopPairingInvitation {
     owner_id: String,
     local_device_id: String,
     trusted_peer_ids: Vec<String>,
+    trusted_peer_device_ids: Vec<DeviceId>,
+    revoked_peer_ids: Vec<String>,
 }
 
 impl DesktopPairingInvitation {
@@ -124,14 +173,7 @@ impl DesktopPairingInvitation {
         let modules = QrModules::from_qr(&qr);
         drop(code);
 
-        let owner_id = short_hex(identity.owner_id().as_bytes());
-        let local_device_id = short_hex(identity.local_device_id().as_bytes());
-        let trusted_peer_ids = identity
-            .trusted_peers()
-            .iter()
-            .filter(|peer| peer.revocation().is_none())
-            .map(|peer| short_hex(peer.credential().device_id().as_bytes()))
-            .collect();
+        let display = ProductIdentityPresentation::from_identity(&identity);
         let issuer = LinuxEd25519Signer::load_required(LinuxSigningSlot::DeviceSigning).await?;
         let service =
             LinuxProductPairingService::start(invitation, &identity, issuer, created_at).await?;
@@ -140,9 +182,11 @@ impl DesktopPairingInvitation {
             service,
             created_at,
             modules,
-            owner_id,
-            local_device_id,
-            trusted_peer_ids,
+            owner_id: display.owner_id,
+            local_device_id: display.local_device_id,
+            trusted_peer_ids: display.trusted_peer_ids,
+            trusted_peer_device_ids: display.trusted_peer_device_ids,
+            revoked_peer_ids: display.revoked_peer_ids,
         })
     }
 
@@ -156,6 +200,14 @@ impl DesktopPairingInvitation {
 
     pub fn trusted_peer_ids(&self) -> &[String] {
         &self.trusted_peer_ids
+    }
+
+    pub fn trusted_peer_device_ids(&self) -> &[DeviceId] {
+        &self.trusted_peer_device_ids
+    }
+
+    pub fn revoked_peer_ids(&self) -> &[String] {
+        &self.revoked_peer_ids
     }
 
     pub const fn modules(&self) -> &QrModules {
@@ -315,7 +367,46 @@ fn short_hex(bytes: &[u8; 32]) -> String {
 
 #[cfg(test)]
 mod tests {
+    use crosslab_crypto::SigningKey;
+    use crosslab_identity::DeviceCredential;
+    use crosslab_policy::{PairingTrustTransition, TransitionId};
+
     use super::*;
+
+    #[test]
+    fn inventory_preserves_full_peer_ids_and_signed_revocation_tombstones() {
+        let root = SigningKey::generate().unwrap();
+        let issuer = SigningKey::generate().unwrap();
+        let local = SigningKey::generate().unwrap();
+        let mut identity = ProductIdentityState::bootstrap(&root, &issuer, &local).unwrap();
+        let peer = DeviceId::from_bytes([0x42; 32]);
+        let key = SigningKey::generate().unwrap();
+        let authority = identity.authority_state().unwrap();
+        let credential =
+            DeviceCredential::issue(identity.owner_id(), peer, &key, 0, &authority, &issuer)
+                .unwrap();
+        let transition = PairingTrustTransition::issue(
+            &credential,
+            TransitionId::from_bytes([0x43; 32]),
+            [0x44; 32],
+            &authority,
+            &issuer,
+        )
+        .unwrap();
+        identity.add_paired_peer(credential, transition).unwrap();
+
+        let active = ProductIdentityPresentation::from_identity(&identity);
+        assert_eq!(active.trusted_peer_ids(), &["4242424242424242".to_owned()]);
+        assert_eq!(active.trusted_peer_device_ids(), &[peer]);
+        assert!(active.revoked_peer_ids().is_empty());
+
+        let revoked = identity.with_revoked_peer(peer, &issuer).unwrap();
+        let loaded = ProductIdentityState::decode(&revoked.encode()).unwrap();
+        let display = ProductIdentityPresentation::from_identity(&loaded);
+        assert!(display.trusted_peer_ids().is_empty());
+        assert!(display.trusted_peer_device_ids().is_empty());
+        assert_eq!(display.revoked_peer_ids(), &["4242424242424242".to_owned()]);
+    }
 
     #[test]
     fn qr_modules_index_row_major() {

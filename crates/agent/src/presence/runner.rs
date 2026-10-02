@@ -2310,7 +2310,7 @@ async fn handle_runtime_event(
                         match (context, role.source_consent()) {
                             (Some(context), Some(consent))
                                 if notification_source
-                                    .subscribe(&context, policy, consent)
+                                    .subscribe(request_id, &context, policy, consent)
                                     .is_ok() =>
                             {
                                 ControlResponseResult::Success(Vec::new())
@@ -2452,9 +2452,9 @@ async fn handle_runtime_event(
             }
         }
         NodeEvent::RequestCancelled(request_id) => {
-            // Cancellation never grants persistent subscription authority.
-            notification_source.close();
-            notification_active_tx.send_replace(false);
+            if notification_source.cancel_request(request_id) {
+                notification_active_tx.send_replace(false);
+            }
             clipboard.inbound.remove(&request_id);
             if let Some(request) = file_transfer.inbound.remove(&request_id) {
                 file_transfer.notify_request_cancelled(request_id, request.offer().transfer_id());
