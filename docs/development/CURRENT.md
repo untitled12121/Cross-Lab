@@ -2,6 +2,18 @@
 
 This file is the durable resume guide for active Cross-Lab development. Git/code/tests are factual state; this file records the intended handoff.
 
+## Active agent workflow and owner handoff (2026-10-02)
+
+**Read the root [AGENTS.md](../../AGENTS.md) at the start of every coding session.** The requested development mode is **batch-first**: spend roughly an hour of active effort on an integrated, reviewable feature set when the work warrants it. Make small local recovery commits, but do not push/retrigger broad CI for every tiny change. Use focused checks for sensitive boundaries while coding; after the batch run format/lint/build/tests as relevant, then make one consolidated push, examine CI once complete, and consolidate fixes. Preserve a Git checkpoint when context may be lost. Docs-only changes may use `[skip ci]` where CI has no useful work.
+
+**Owner's first actual hardware attempt:** Normal Linux and Android applications both built/launched. Linux Devices → Add Device displayed `product pairing QUIC bind failed`; the QR was not available, preventing the Android QR camera (which opened) from completing pairing. The Android SDK bootstrap separately encountered lost executable permissions and a nonexistent `platforms;android-37` request. Avoid using development-provisioning mode to validate normal pairing/clipboard/file transfer.
+
+**Active code:** PR [#79](https://github.com/untitled12121/Cross-Lab/pull/79), branch `fix/phase2-linux-pairing-sdk-bootstrap`, head as initially pushed `b2b119d965be4f4230e74defa76eff324a8e2d1d`. Contains Tokio-owned QUIC pairing bind with startup readiness, SDK execute-permission and `platforms/android-37.0` correction, and regressions. Treat PR/CI state as dynamic: **check GitHub, do not assume merged/green**. Physical QR/LAN/pairing tests remain unverified.
+
+**Full Phase 2 target:** Finish reliable Linux↔Android discovery/pairing, authenticated presence/reconnect, per-device policy, clipboard, resumable file transfer, notifications, owner-visible privacy-safe audit/history, production device revocation/removal, and evidence on actual devices. The broad UI redesign can follow functional fixes, but Phase 2 release UX must be usable and accurate. Notifications need an approved compatibility/security ADR; Android→Linux v1 was suggested, **not approved**. Existing architecture requires explicit approval for material wire/trust/storage changes. Keep Phase 3 out of scope. Do not mark Phase 2 complete without CI plus owner-hardware evidence. Darkmatter/System-dark remains palette-blocked.
+
+**Exact resume action:** Inspect `main`, active PR #79, CI result, and actual code; fix any CI failures in a consolidated batch; once available have the owner retest normal desktop-generated QR and Android pairing, then proceed with the remaining Phase 2 implementation in cohesive batches. Keep `CURRENT.md` updated at verified milestones.
+
 ## Current Phase
 
 **M10 Linux + Android implementation is complete in code; physical Linux/Android camera/LAN evidence remains pending. Phase 2 Linux + Android MVP is the active implementation phase. Phase 3 adaptive networking remains explicitly out of scope until Phase 2 is complete.**
