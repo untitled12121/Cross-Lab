@@ -155,3 +155,11 @@ During implementation, prefer long coherent coding sessions over short update/pu
 5. work in coherent verifiable milestones, use focused checks while iterating, batch related edits into one push, and update this file;
 6. require the full exact-head Rust + Android gate before merge, but do not poll CI continuously after a push;
 7. keep physical-device evidence separate from CI claims.
+
+## 2026-10-02 Owner Hardware Bring-up — Open Fix
+
+- Physical Linux product UI reports `product pairing QUIC bind failed`; QR is absent, so real Android scanning/pairing cannot yet complete. Cause isolated to the Linux pairing service attempting Quinn bind on the GPUI caller before entering a Tokio runtime. The feature-branch fix moves QUIC binding and Avahi advertisement startup into the worker runtime and reports startup success before rendering the QR.
+- User-local Android SDK bootstrap also failed due missing extracted executable bits and outdated `platforms;android-37` package selection. The feature branch restores CLI owner-execute bits, uses `android sdk install platforms/android-37.0` (as in the pinned CI configuration), and adds offline regression checks.
+- Branch: `fix/phase2-linux-pairing-sdk-bootstrap`. Desktop pairing runtime regression and SDK bootstrap tests were added; CI and physical retest results are **not yet verified**.
+- Required next evidence: build normal product mode on Linux and Android, regenerate/scan real QR, verify Avahi advertisement and discovery, establish reciprocal durable trust, and validate authenticated presence/clipboard/files against the existing evidence matrices. Do not expose raw QR payloads, peer keys, credentials, or private file metadata in logs/screenshots.
+- Phase 2 remains **open**, independently requiring notifications, privacy-conscious owner audit/history, production device revocation/removal and corresponding Android/Linux UX and physical verification. The notification protocol needs a reviewed/approved ADR before implementation. Darkmatter/System-dark palette remains owner-blocked. Phase 3 remains out of scope.
