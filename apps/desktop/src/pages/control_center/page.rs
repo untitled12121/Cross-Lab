@@ -128,6 +128,7 @@ impl ControlCenterPage {
                     Ok(Some(identity)) => page.owner.set_product_identity(
                         identity.owner_id().to_owned(),
                         identity.local_device_id().to_owned(),
+                        identity.trusted_peer_ids().to_vec(),
                     ),
                     Ok(None) => {}
                     Err(error) => {
@@ -426,6 +427,7 @@ impl ControlCenterPage {
                     page.owner.set_product_identity(
                         invitation.owner_id().to_owned(),
                         invitation.local_device_id().to_owned(),
+                        invitation.trusted_peer_ids().to_vec(),
                     );
                     page.pairing_invitation = Some(invitation);
                     page.notice = None;
@@ -438,10 +440,22 @@ impl ControlCenterPage {
 
             while status.changed().await.is_ok() {
                 let stage = *status.borrow_and_update();
+                let latest_identity = if stage == DesktopPairingStage::Paired {
+                    load_existing_product_identity().await.ok().flatten()
+                } else {
+                    None
+                };
                 if this
                     .update(cx, |page, cx| {
                         if page.pairing_generation != generation {
                             return;
+                        }
+                        if let Some(identity) = latest_identity {
+                            page.owner.set_product_identity(
+                                identity.owner_id().to_owned(),
+                                identity.local_device_id().to_owned(),
+                                identity.trusted_peer_ids().to_vec(),
+                            );
                         }
                         page.notice = match stage {
                             DesktopPairingStage::Paired => {

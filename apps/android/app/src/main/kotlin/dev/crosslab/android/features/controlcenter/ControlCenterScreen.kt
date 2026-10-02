@@ -61,6 +61,7 @@ fun ControlCenterScreen(
     onSendClipboard: () -> Unit,
     onFetchClipboard: () -> Unit,
     pairing: PairingJoinerState,
+    trustedPeerIds: List<String>,
     onPairingBootstrapScanned: (MobilePairingBootstrap) -> Unit,
     onCancelPairing: () -> Unit,
 ) {
@@ -177,6 +178,7 @@ fun ControlCenterScreen(
                 OwnerScreen(
                     theme = theme,
                     runtime = runtime,
+                    trustedPeerIds = trustedPeerIds,
                 )
         }
     }

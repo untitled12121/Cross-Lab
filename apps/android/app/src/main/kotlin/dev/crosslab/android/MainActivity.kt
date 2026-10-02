@@ -17,13 +17,17 @@ import dev.crosslab.android.features.controlcenter.ControlCenterScreen
 import dev.crosslab.android.features.devices.RuntimeControllerState
 import dev.crosslab.android.features.devices.RuntimeSession
 import dev.crosslab.android.features.filetransfer.FileTransferState
+import dev.crosslab.android.features.pairing.PairingJoinerStage
 import dev.crosslab.android.features.pairing.PairingJoinerState
+import java.util.concurrent.Executors
 
 class MainActivity : ComponentActivity() {
     private val runtimeState = mutableStateOf(RuntimeControllerState.initial())
     private val clipboardState = mutableStateOf(ClipboardState.initial(false))
     private val fileTransferState = mutableStateOf(FileTransferState.initial(false))
     private val pairingState = mutableStateOf(PairingJoinerState.idle())
+    private val trustedPeerIds = mutableStateOf<List<String>>(emptyList())
+    private val identityWorker = Executors.newSingleThreadExecutor()
     private var runtimeSubscription: AutoCloseable? = null
     private var clipboardSubscription: AutoCloseable? = null
     private var fileTransferSubscription: AutoCloseable? = null
@@ -33,6 +37,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         val app = application as CrossLabApplication
+        refreshTrustedPeers(app)
         runtimeState.value = app.runtimeController.state()
         runtimeSubscription =
             app.runtimeController.observe { state ->
@@ -52,6 +57,9 @@ class MainActivity : ComponentActivity() {
         pairingSubscription =
             app.pairingController.observe { state ->
                 runOnUiThread { pairingState.value = state }
+                if (state.stage == PairingJoinerStage.PAIRED) {
+                    refreshTrustedPeers(app)
+                }
             }
 
         val theme =
@@ -121,9 +129,23 @@ class MainActivity : ComponentActivity() {
                 onSendClipboard = app.clipboardController::send,
                 onFetchClipboard = app.clipboardController::fetch,
                 pairing = pairingState.value,
+                trustedPeerIds = trustedPeerIds.value,
                 onPairingBootstrapScanned = app.pairingController::begin,
                 onCancelPairing = app.pairingController::cancel,
             )
+        }
+    }
+
+    private fun refreshTrustedPeers(app: CrossLabApplication) {
+        identityWorker.execute {
+            val peers =
+                runCatching { app.identityRepository.load()?.trustedPeerIds.orEmpty() }
+                    .getOrDefault(emptyList())
+            if (!isDestroyed) {
+                runOnUiThread {
+                    if (!isDestroyed) trustedPeerIds.value = peers
+                }
+            }
         }
     }
 
@@ -136,6 +158,7 @@ class MainActivity : ComponentActivity() {
         fileTransferSubscription = null
         pairingSubscription?.close()
         pairingSubscription = null
+        identityWorker.shutdown()
         super.onDestroy()
     }
 }

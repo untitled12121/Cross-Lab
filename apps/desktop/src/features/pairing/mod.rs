@@ -30,6 +30,7 @@ const INVITATION_LIFETIME: Duration = Duration::from_secs(5 * 60);
 pub struct ProductIdentityPresentation {
     owner_id: String,
     local_device_id: String,
+    trusted_peer_ids: Vec<String>,
 }
 
 impl ProductIdentityPresentation {
@@ -37,6 +38,11 @@ impl ProductIdentityPresentation {
         Self {
             owner_id: short_hex(identity.owner_id().as_bytes()),
             local_device_id: short_hex(identity.local_device_id().as_bytes()),
+            trusted_peer_ids: identity
+                .trusted_peers()
+                .iter()
+                .map(|peer| short_hex(peer.credential().device_id().as_bytes()))
+                .collect(),
         }
     }
 
@@ -46,6 +52,10 @@ impl ProductIdentityPresentation {
 
     pub fn local_device_id(&self) -> &str {
         &self.local_device_id
+    }
+
+    pub fn trusted_peer_ids(&self) -> &[String] {
+        &self.trusted_peer_ids
     }
 }
 
@@ -90,6 +100,7 @@ pub struct DesktopPairingInvitation {
     modules: QrModules,
     owner_id: String,
     local_device_id: String,
+    trusted_peer_ids: Vec<String>,
 }
 
 impl DesktopPairingInvitation {
@@ -112,6 +123,11 @@ impl DesktopPairingInvitation {
 
         let owner_id = short_hex(identity.owner_id().as_bytes());
         let local_device_id = short_hex(identity.local_device_id().as_bytes());
+        let trusted_peer_ids = identity
+            .trusted_peers()
+            .iter()
+            .map(|peer| short_hex(peer.credential().device_id().as_bytes()))
+            .collect();
         let issuer = LinuxEd25519Signer::load_required(LinuxSigningSlot::DeviceSigning).await?;
         let service =
             LinuxProductPairingService::start(invitation, &identity, issuer, created_at).await?;
@@ -122,6 +138,7 @@ impl DesktopPairingInvitation {
             modules,
             owner_id,
             local_device_id,
+            trusted_peer_ids,
         })
     }
 
@@ -131,6 +148,10 @@ impl DesktopPairingInvitation {
 
     pub fn local_device_id(&self) -> &str {
         &self.local_device_id
+    }
+
+    pub fn trusted_peer_ids(&self) -> &[String] {
+        &self.trusted_peer_ids
     }
 
     pub const fn modules(&self) -> &QrModules {

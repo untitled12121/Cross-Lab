@@ -29,13 +29,24 @@ pub trait MobileSigningProvider: Send + Sync {
     fn sign(&self, message: Vec<u8>) -> Result<Vec<u8>, MobileSigningCallbackError>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
 pub struct MobileProductIdentity {
     pub created: bool,
     pub payload: Vec<u8>,
     pub owner_id: String,
     pub local_device_id: String,
     pub trusted_peer_count: u64,
+    pub trusted_peer_ids: Vec<String>,
+}
+
+impl core::fmt::Debug for MobileProductIdentity {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("MobileProductIdentity")
+            .field("created", &self.created)
+            .field("trusted_peer_count", &self.trusted_peer_count)
+            .finish_non_exhaustive()
+    }
 }
 
 impl MobileProductIdentity {
@@ -46,6 +57,11 @@ impl MobileProductIdentity {
             owner_id: short_hex(state.owner_id().as_bytes()),
             local_device_id: short_hex(state.local_device_id().as_bytes()),
             trusted_peer_count: state.trusted_peers().len() as u64,
+            trusted_peer_ids: state
+                .trusted_peers()
+                .iter()
+                .map(|peer| short_hex(peer.credential().device_id().as_bytes()))
+                .collect(),
         }
     }
 }
@@ -183,4 +199,48 @@ fn short_hex(bytes: &[u8; 32]) -> String {
         write!(&mut output, "{byte:02x}").expect("writing to String cannot fail");
     }
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crosslab_crypto::SigningKey;
+    use crosslab_identity::{DeviceCredential, DeviceId};
+    use crosslab_policy::{PairingTrustTransition, TransitionId};
+
+    #[test]
+    fn mobile_peer_inventory_is_presentable_but_debug_redacted() {
+        let root = SigningKey::from_secret_bytes([0x31; 32]);
+        let issuer = SigningKey::from_secret_bytes([0x32; 32]);
+        let local = SigningKey::from_secret_bytes([0x33; 32]);
+        let peer = SigningKey::from_secret_bytes([0x34; 32]);
+        let mut identity = ProductIdentityState::bootstrap(&root, &issuer, &local).unwrap();
+        let authority = identity.authority_state().unwrap();
+        let credential = DeviceCredential::issue(
+            identity.owner_id(),
+            DeviceId::from_bytes([0x45; 32]),
+            &peer,
+            0,
+            &authority,
+            &issuer,
+        )
+        .unwrap();
+        let transition = PairingTrustTransition::issue(
+            &credential,
+            TransitionId::from_bytes([0x46; 32]),
+            [0x47; 32],
+            &authority,
+            &issuer,
+        )
+        .unwrap();
+        identity.add_paired_peer(credential, transition).unwrap();
+
+        let snapshot = MobileProductIdentity::from_state(&identity, false);
+        assert_eq!(snapshot.trusted_peer_count, 1);
+        assert_eq!(snapshot.trusted_peer_ids, vec!["4545454545454545"]);
+        let debug = format!("{snapshot:?}");
+        assert!(!debug.contains("45454545"));
+        assert!(!debug.contains(&format!("{:?}", snapshot.payload)));
+        assert!(!debug.contains(&snapshot.owner_id));
+    }
 }

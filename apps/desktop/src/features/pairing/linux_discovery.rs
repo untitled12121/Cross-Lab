@@ -11,7 +11,8 @@ const AVAHI_SERVER_PATH: &str = "/";
 const AVAHI_SERVER_INTERFACE: &str = "org.freedesktop.Avahi.Server";
 const AVAHI_ENTRY_GROUP_INTERFACE: &str = "org.freedesktop.Avahi.EntryGroup";
 const AVAHI_IF_UNSPEC: i32 = -1;
-const AVAHI_PROTO_UNSPEC: i32 = -1;
+// The provisional Quinn listener binds IPv4; do not advertise an unusable IPv6 route.
+const AVAHI_PROTO_INET: i32 = 0;
 const AVAHI_FLAGS_NONE: u32 = 0;
 
 pub struct LinuxPairingAdvertisement {
@@ -49,7 +50,7 @@ impl LinuxPairingAdvertisement {
                 "AddService",
                 &(
                     AVAHI_IF_UNSPEC,
-                    AVAHI_PROTO_UNSPEC,
+                    AVAHI_PROTO_INET,
                     AVAHI_FLAGS_NONE,
                     instance.as_str(),
                     service_type,
@@ -93,7 +94,9 @@ enum LinuxPairingDiscoveryErrorKind {
 
 impl fmt::Display for LinuxPairingDiscoveryError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("local pairing discovery is unavailable")
+        formatter.write_str(
+            "local pairing discovery is unavailable; check that Avahi is installed and running",
+        )
     }
 }
 
@@ -132,6 +135,11 @@ mod tests {
     #[test]
     fn advertisement_txt_contains_only_profile_version() {
         assert_eq!(advertisement_txt(), vec![b"v=1".to_vec()]);
+    }
+
+    #[test]
+    fn advertised_address_family_matches_ipv4_listener() {
+        assert_eq!(AVAHI_PROTO_INET, 0);
     }
 
     #[test]

@@ -54,7 +54,17 @@ pub(crate) fn owner_content(state: &OwnerFeatureState, cx: &App) -> Div {
                 .child(match state.current() {
                     Some(owner) => info_row("This device", owner.local_device_id(), cx),
                     None => info_row("This device", "Available after authentication", cx),
-                }),
+                })
+                .child(info_row(
+                    "Paired devices",
+                    &state.trusted_peer_ids().len().to_string(),
+                    cx,
+                ))
+                .children(
+                    state.trusted_peer_ids().iter().take(24).enumerate().map(|(index, id)| {
+                        info_row(&format!("Trusted device {}", index + 1), id, cx)
+                    }),
+                ),
         )
         .child(
             div()

@@ -2,6 +2,8 @@ package dev.crosslab.android.features.owner
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,6 +24,7 @@ import dev.crosslab.android.features.devices.RuntimeControllerState
 fun OwnerScreen(
     theme: ThemeDocument,
     runtime: RuntimeControllerState,
+    trustedPeerIds: List<String>,
 ) {
     val colors = theme.colors
     val snapshot = runtime.snapshot
@@ -30,6 +33,7 @@ fun OwnerScreen(
         modifier =
             Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(theme.spacing.xl.toFloat().dp),
     ) {
         BasicText(
@@ -68,6 +72,13 @@ fun OwnerScreen(
                 "This device",
                 snapshot.localDeviceId?.take(16) ?: "Available after authentication",
             )
+            InfoRow(theme, "Paired devices", trustedPeerIds.size.toString())
+            trustedPeerIds.take(24).forEachIndexed { index, peerId ->
+                InfoRow(theme, "Trusted device ${index + 1}", peerId)
+            }
+            if (trustedPeerIds.size > 24) {
+                InfoRow(theme, "More paired devices", "${trustedPeerIds.size - 24} not shown")
+            }
         }
 
         BasicText(
