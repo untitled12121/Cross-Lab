@@ -231,6 +231,18 @@ impl core::fmt::Display for LinuxAuditError {
     }
 }
 
+impl std::error::Error for LinuxAuditError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io(error) => Some(error),
+            Self::Keyring(error) => Some(error),
+            Self::Store(error) => Some(error),
+            Self::Audit(error) => Some(error),
+            Self::Path | Self::Clock | Self::Currentness | Self::Malformed => None,
+        }
+    }
+}
+
 impl From<std::io::Error> for LinuxAuditError {
     fn from(error: std::io::Error) -> Self {
         Self::Io(error)

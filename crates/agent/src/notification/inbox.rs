@@ -181,7 +181,6 @@ impl NotificationInbox {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crosslab_policy::CapabilityId;
     use crosslab_protocol::{NotificationId, NotificationPosted};
 
     fn posted(id: u8) -> Event {

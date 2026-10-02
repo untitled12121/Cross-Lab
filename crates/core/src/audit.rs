@@ -233,7 +233,7 @@ impl AuditHistory {
             return Err(AuditError::Malformed);
         }
         let mut events = VecDeque::with_capacity(count);
-        for chunk in bytes[HEADER_LEN..].chunks_exact(RECORD_LEN) {
+        for chunk in bytes[HEADER_LEN..].as_chunks::<RECORD_LEN>().0 {
             events.push_back(AuditRecord {
                 action: AuditAction::from_code(chunk[0])?,
                 outcome: AuditOutcome::from_code(chunk[1])?,
