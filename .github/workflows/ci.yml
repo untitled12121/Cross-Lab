@@ -24,6 +24,10 @@ jobs:
             libssl-dev libzstd-dev libvulkan1
       - name: Install Rust
         run: rustup toolchain install 1.98.1 --profile minimal --component clippy,rustfmt
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          cache-workspace-crates: true
       - name: Verify lockfile
         run: cargo metadata --locked --no-deps --format-version 1 > /dev/null
       - name: Verify unified build help
@@ -49,7 +53,11 @@ jobs:
               print(f"validated {path}")
           PY
       - name: Install cargo-audit
-        run: cargo install cargo-audit --version 0.22.2 --locked
+        uses: taiki-e/install-action@7f4eb899022d8fe70b20c4f3de697aa85c309026 # v2.85.11
+        with:
+          tool: cargo-audit@0.22.2
+          checksum: true
+          fallback: none
       - name: Audit dependencies
         run: cargo audit
       - name: Format

@@ -10,7 +10,7 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 
 ## Canonical Baseline
 
-- Current `main` after PR #75: `f048b13e4e93298dc1ad2fa1bb12a64ffcbc3aa2`. PR #75 exact head `b6683540891cfa20d409e565f8b9dfb85d25836b` passed Rust + Android CI `36912713661` before merge.
+- Current `main` after PR #76: `83d1a6df8f36441f4607b5ec3bacf41b12413f77`. PR #76 exact head `ec3b565eae323dbaedc5daf5a5c7f17264594025` passed full Rust + Android CI `36962148029` before merge.
 - PR #49 — Linux Add Device QR invitation UI + Android CameraX/ML Kit scanner: merged as `445bbf32178dff94f339fc1ae80447967f5da215`; exact-head CI `35533414673` green on `7d3176ffd4387d3e29982ae5fe641249d6d33445`.
 - PR #50 — shared product pairing coordinator + durable reciprocal trust persistence: merged as `3af825e6f78bef4512168f587f452c1b0267b6a7`; exact-head CI `35567548228` and Fuzz Smoke `35567548208` green on `ec59f99f7c09898aa2533d8b40bd4e980fa2b022`.
 - PR #51 — ADR-0016 LAN discovery profile + versioned product-pairing wire + provisional Quinn pairing channel: merged as `cf2add350ffa60056d74ac57b0a187a0297d8777`; exact-head CI `35593397861` and Fuzz Smoke `35593397844` green on `2702cc0c926cf044c65aef0376f573aaedae8c6f`.
@@ -38,7 +38,7 @@ M1-M9 are complete. M10 now includes the normal QR → bounded DNS-SD → provis
 - PR #70 — Linux file-transfer storage/source adapter: merged as `eb32d79c94418ce46d70f8f91e05ec521f3ad504`; exact head `e653883b90ca7af4faddc6a635b9ccabdfb56779` passed full Rust + Android CI `36393985966`.
 - PR #71 — Linux receive/publication adapter: merged as `5c8b57c38b1e18771e1df4f872bfa4b5c077f784`; exact head `e1ec4cab51427e47f0318e73fc41d1cc1696ffea` passed full Rust + Android CI `36397884328`.
 - PR #72 — Linux authenticated receive service/worker: merged as `c833a4f9827b4e0cc05999e02c0dac621499800f`; exact head `08ea2cf4361dc9c5634743cebb07a05d4e88966e` passed full Rust + Android CI `36472517377`.
-- PR #73 merged the Linux file-transfer product flow (`881a5dc0f50943d2cc312a5396afecc07c6a1073`); PR #75 merged the Android SAF/ContentResolver + UniFFI Task 5 adapter (`f048b13e4e93298dc1ad2fa1bb12a64ffcbc3aa2`), following Rust + Android exact-head CI `36912713661` green. Active Phase 2 branch / draft PR is `phase2-android-file-transfer-ui` / #76. First checkpoint `cbcbae05104ec8f6e002200a72c9c489ca2334a7` added explicit SAF Send/CreateDocument flow, exact inbound RequestId picker correlation, progress, cancel/retry, lifecycle-aware coordinator, guarded publication, and focused tests; CI `36961728447` was started. The next coherent pass adds explicit retained-partial Resume/Reauthorize destination controls (never accepting a fresh CreateDocument as a partial resume), disables Cancel when publication commits, and refines cancellation races. Android transfer remains unverified until a fresh exact-head full Rust + Android gate succeeds.
+- Linux file-transfer product flow merged on PR #73; Android SAF/ContentResolver + UniFFI adapter merged on PR #75; Android Compose owner-controlled file-transfer product flow (explicit picker, correlated RequestId, retained-partial Resume/Reauthorize, progress/cancel/retry, guarded publication) merged on PR #76 as `83d1a6df8f36441f4607b5ec3bacf41b12413f77` after full CI `36962148029` succeeded. **Software merged; real Android↔Linux hardware/evidence remains pending.** Active maintenance branch `ci/cache-rust-checks` reduces repeated Rust CI compilation without dropping any audit, fmt, check, UniFFI, desktop, Clippy, or test gate. CI previously spent ~16m17s including ~3m compiling cargo-audit; warm-cache effect must be measured and documented after successful full gate.
 - ADR-0018, ADR-0019, and ADR-0020 are accepted. Clipboard and the Linux file-transfer product path are implemented; Android file-transfer platform integration is active.
 
 ## Implemented M10 Product Path
@@ -137,10 +137,10 @@ Phase 3 adaptive networking does not begin until Phase 2 is complete.
 
 ## Exact Next Task
 
-1. verify Task 6 branch `phase2-android-file-transfer-ui` with full exact-head Rust + Android CI; repair only verified failures in coherent batches, and preserve significant code checkpoints;
-2. review Linux↔Android v2 cancellation and prepublication authority, request-correlated destination picker, retry/reconnect, partial recovery, content URI privacy, bounded streams and no broad storage access;
-3. once fully green, mark Task 6 PR ready, merge via merge commit, then checkpoint main;
-4. keep M10 physical QR/camera/LAN and file-transfer evidence as separately pending owner-hardware verification; stop before Phase 3.
+1. validate `ci/cache-rust-checks` on full exact-head Rust + Android CI: pin smart Rust cache v2.9.2 and checksummed prebuilt cargo-audit v0.22.2 instead of source compilation; keep every existing gate;
+2. inspect cache restore/save and timing on the first run, merge only once the exact head is green, then measure at least one warm-cache PR/main run before reporting a real speedup;
+3. verify owner-hardware Linux↔Android QR/camera/LAN, trust, and end-to-end file-transfer scenarios (cancel, integrity, restart/resume, storage denied); physical evidence cannot be inferred from CI;
+4. do not start Phase 3 before the Phase 2 evidence gates are complete.
 
 ## Efficient Verification Workflow
 
