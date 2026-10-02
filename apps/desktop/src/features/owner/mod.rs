@@ -53,15 +53,9 @@ impl OwnerFeatureState {
     }
 
     pub fn from_runtime(status: &RuntimeStatus) -> Self {
-        Self {
-            current: OwnerPresentation::from_runtime(status),
-            trusted_peer_ids: Vec::new(),
-            trusted_peer_device_ids: Vec::new(),
-            revoked_peer_ids: Vec::new(),
-            audit_rows: Vec::new(),
-            audit_dropped: 0,
-            audit_notice: None,
-        }
+        let mut state = Self::empty();
+        state.update_runtime(status);
+        state
     }
 
     pub fn update_runtime(&mut self, status: &RuntimeStatus) {

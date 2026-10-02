@@ -59,6 +59,7 @@ use gpui_kit::{
 enum AuditCommand {
     Record(AuditIntent),
     Clear,
+    Export(tokio::sync::oneshot::Sender<Result<String, ()>>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -139,6 +140,22 @@ impl ControlCenterPage {
             }
 
             while let Some(command) = audit_rx.recv().await {
+                let command = match command {
+                    AuditCommand::Export(reply) => {
+                        let result = async {
+                            let history = LinuxAuditStore::from_environment()?
+                                .load(current_hour()?)
+                                .await?;
+                            Ok::<String, crate::features::audit::LinuxAuditError>(
+                                history.export_redacted_csv(),
+                            )
+                        }
+                        .await;
+                        let _ = reply.send(result.map_err(|_| ()));
+                        continue;
+                    }
+                    command => command,
+                };
                 let result = async {
                     let store = LinuxAuditStore::from_environment()?;
                     let hour = current_hour()?;
@@ -149,6 +166,7 @@ impl ControlCenterPage {
                                 .await
                         }
                         AuditCommand::Clear => store.clear(hour).await,
+                        AuditCommand::Export(_) => unreachable!(),
                     }
                 }
                 .await;
@@ -595,32 +613,13 @@ impl ControlCenterPage {
             } else {
                 None
             };
-            let audit_result = if result.is_ok() {
-                Some(async {
-                    let store = LinuxAuditStore::from_environment()?;
-                    store.record(
+            let _ = this.update(cx, |page, cx| {
+                if result.is_ok() {
+                    page.enqueue_audit(AuditIntent::new(
                         AuditAction::PeerRevoked,
                         AuditOutcome::Succeeded,
                         0,
-                        current_hour()?,
-                    )
-                    .await
-                }
-                .await)
-            } else {
-                None
-            };
-            let _ = this.update(cx, |page, cx| {
-                if let Some(audit) = audit_result {
-                    match audit {
-                        Ok(history) => page.owner.set_audit_rows(
-                            audit_history_rows(&history),
-                            history.dropped_count(),
-                        ),
-                        Err(_) => page.owner.set_audit_notice(
-                            "Device trust updated; protected audit history unavailable",
-                        ),
-                    }
+                    ));
                 }
                 page.revocation_busy = false;
                 match result {
@@ -675,23 +674,24 @@ impl ControlCenterPage {
 
     #[cfg(target_os = "linux")]
     fn export_owner_audit(&mut self, cx: &mut Context<Self>) {
+        let (reply, result) = tokio::sync::oneshot::channel();
+        if self.audit_tx.try_send(AuditCommand::Export(reply)).is_err() {
+            self.owner
+                .set_audit_notice("Audit export could not be queued; please retry");
+            cx.notify();
+            return;
+        }
         cx.spawn(async move |this, cx| {
-            let result = async {
-                let history = LinuxAuditStore::from_environment()?
-                    .load(current_hour()?)
-                    .await?;
-                Ok::<String, crate::features::audit::LinuxAuditError>(history.export_redacted_csv())
-            }
-            .await;
+            let result = result.await;
             let _ = this.update(cx, |page, cx| {
                 match result {
-                    Ok(csv) => {
+                    Ok(Ok(csv)) => {
                         cx.write_to_clipboard(ClipboardItem::new_string(csv));
                         page.owner.set_audit_notice(
                             "Redacted CSV copied to clipboard; paste to save it.",
                         );
                     }
-                    Err(_) => page
+                    _ => page
                         .owner
                         .set_audit_notice("Protected audit history cannot be exported"),
                 }

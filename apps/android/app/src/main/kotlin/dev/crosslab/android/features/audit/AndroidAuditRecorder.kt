@@ -58,6 +58,9 @@ class AndroidAuditRecorder(
 
     internal fun subscription(active: Boolean) = enqueue(tracker.subscription(active))
 
+    internal fun permissionCommitted(revision: ULong) =
+        enqueue(tracker.permissionCommitted(revision))
+
     private fun enqueue(intents: List<AuditIntent>) {
         intents.forEach { record(it) }
     }
@@ -78,12 +81,31 @@ class AndroidAuditRecorder(
                 val result = runCatching {
                     store.record(intent.action, intent.outcome, intent.revision)
                 }
+                if (result.isFailure) dropped.incrementAndGet()
                 publish(AuditRecordingStatus(result.getOrNull(), dropped.get(), result.isFailure))
-                callback(result)
+                runCatching { callback(result) }
             }
         } catch (_: RejectedExecutionException) {
             publish(AuditRecordingStatus(null, dropped.incrementAndGet(), true))
             callback(Result.failure(IllegalStateException("audit writer queue full")))
+        }
+    }
+
+    /** Explicit export follows prior history writes and clears in recorder order. */
+    fun export(callback: (Result<String>) -> Unit) {
+        try {
+            writer.execute {
+                val result = runCatching { store.export() }
+                if (result.isFailure) {
+                    publish(AuditRecordingStatus(null, dropped.get(), true))
+                }
+                runCatching { callback(result) }
+            }
+        } catch (_: RejectedExecutionException) {
+            publish(AuditRecordingStatus(null, dropped.incrementAndGet(), true))
+            runCatching {
+                callback(Result.failure(IllegalStateException("audit writer queue full")))
+            }
         }
     }
 
@@ -93,17 +115,19 @@ class AndroidAuditRecorder(
             writer.execute {
                 val result = runCatching { store.clear() }
                 publish(AuditRecordingStatus(result.getOrNull(), dropped.get(), result.isFailure))
-                callback(result)
+                runCatching { callback(result) }
             }
         } catch (_: RejectedExecutionException) {
             publish(AuditRecordingStatus(null, dropped.incrementAndGet(), true))
-            callback(Result.failure(IllegalStateException("audit writer queue full")))
+            runCatching {
+                callback(Result.failure(IllegalStateException("audit writer queue full")))
+            }
         }
     }
 
     private fun publish(next: AuditRecordingStatus) {
         status = next
-        observers.forEach { it(next) }
+        observers.forEach { observer -> runCatching { observer(next) } }
     }
 
     override fun close() {

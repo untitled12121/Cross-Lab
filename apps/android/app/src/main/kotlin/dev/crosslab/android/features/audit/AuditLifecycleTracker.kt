@@ -22,6 +22,7 @@ internal class AuditLifecycleTracker {
     private var previousPairing = PairingJoinerStage.IDLE
     private var previousSession = false
     private var previousPolicyRevision: ULong? = null
+    private var lastRecordedPolicyRevision: ULong? = null
     private var previousTransfer = FileTransferStage.IDLE
     private var previousSubscription = false
 
@@ -64,11 +65,7 @@ internal class AuditLifecycleTracker {
         val prior = previousPolicyRevision
         if (active) {
             if (prior != null && snapshot.policyRevision > prior) {
-                events += AuditIntent(
-                    MobileAuditAction.PERMISSION_CHANGED,
-                    MobileAuditOutcome.SUCCEEDED,
-                    snapshot.policyRevision,
-                )
+                events += policyRevisionEvent(snapshot.policyRevision)
             }
             previousPolicyRevision = snapshot.policyRevision
         } else {
@@ -76,6 +73,27 @@ internal class AuditLifecycleTracker {
             previousPolicyRevision = null
         }
         return events
+    }
+
+    /** A durable edit must still be recorded if its session closed during reload. */
+    @Synchronized
+    fun permissionCommitted(revision: ULong): List<AuditIntent> {
+        previousPolicyRevision = revision
+        return policyRevisionEvent(revision)
+    }
+
+    // Invoked only by the synchronized transition handlers.
+    private fun policyRevisionEvent(revision: ULong): List<AuditIntent> {
+        val recorded = lastRecordedPolicyRevision
+        if (recorded != null && revision <= recorded) return emptyList()
+        lastRecordedPolicyRevision = revision
+        return listOf(
+            AuditIntent(
+                MobileAuditAction.PERMISSION_CHANGED,
+                MobileAuditOutcome.SUCCEEDED,
+                revision,
+            ),
+        )
     }
 
     @Synchronized

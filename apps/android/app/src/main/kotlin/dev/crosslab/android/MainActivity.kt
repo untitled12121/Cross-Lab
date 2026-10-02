@@ -141,20 +141,22 @@ class MainActivity : ComponentActivity() {
                     ActivityResultContracts.CreateDocument("text/csv"),
                 ) { uri ->
                     if (uri != null) {
-                        identityWorker.execute {
-                            val result = runCatching {
-                                val bytes = app.auditStore.export().toByteArray(Charsets.UTF_8)
-                                contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
-                                    ?: error("export output unavailable")
-                            }
-                            if (!isDestroyed) runOnUiThread {
-                                if (!isDestroyed) {
-                                    auditNotice.value =
-                                        if (result.isSuccess) {
-                                            "Redacted history exported."
-                                        } else {
-                                            "Could not export history."
-                                        }
+                        app.auditRecorder.export { csv ->
+                            identityWorker.execute {
+                                val result = csv.mapCatching { text ->
+                                    val bytes = text.toByteArray(Charsets.UTF_8)
+                                    contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                                        ?: error("export output unavailable")
+                                }
+                                if (!isDestroyed) runOnUiThread {
+                                    if (!isDestroyed) {
+                                        auditNotice.value =
+                                            if (result.isSuccess) {
+                                                "Redacted history exported."
+                                            } else {
+                                                "Could not export history."
+                                            }
+                                    }
                                 }
                             }
                         }
@@ -240,6 +242,19 @@ class MainActivity : ComponentActivity() {
                                 if (allow) RuntimePermissionEffect.ALLOW
                                 else RuntimePermissionEffect.DENY,
                             )
+                        }
+                        if (permitted.getOrDefault(false)) {
+                            val revision = runCatching {
+                                app.policyStore.load()?.anchorRevision()
+                            }.getOrNull()
+                            if (revision != null) {
+                                app.auditRecorder.permissionCommitted(revision)
+                            } else {
+                                app.auditRecorder.record(
+                                    MobileAuditAction.PERMISSION_CHANGED,
+                                    MobileAuditOutcome.SUCCEEDED,
+                                )
+                            }
                         }
                         if (!isDestroyed) runOnUiThread {
                             if (!isDestroyed) {
