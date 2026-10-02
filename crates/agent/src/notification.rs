@@ -5,9 +5,49 @@ use crosslab_policy::{
     AuthorizationContext, CapabilityVersion, DecisionEffect, PolicyState, SessionId, TrustState,
 };
 use crosslab_protocol::{
-    NOTIFICATION_CAPABILITY_ID, NOTIFICATION_SUBSCRIBE_OPERATION, NotificationPayload,
-    NotificationPosted,
+    NOTIFICATION_CAPABILITY_ID, NOTIFICATION_SUBSCRIBE_OPERATION, NotificationId,
+    NotificationPayload, NotificationPosted,
 };
+
+#[path = "notification/inbox.rs"]
+mod inbox;
+
+pub use inbox::{NotificationInbox, NotificationInboxSnapshot, NotificationInboxStatus};
+
+#[path = "notification/wire.rs"]
+mod wire;
+
+pub(crate) use wire::{
+    notification_advertisement, notification_capabilities, notification_event,
+    notification_event_subscriptions, notification_subscribe_request, parse_notification_event,
+    validate_notification_request, validate_notification_response,
+};
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum NotificationRole {
+    #[default]
+    Disabled,
+    Source { content_enabled: bool },
+    Receiver,
+}
+
+impl NotificationRole {
+    pub const fn enabled(self) -> bool {
+        !matches!(self, Self::Disabled)
+    }
+
+    pub const fn source_consent(self) -> Option<NotificationConsent> {
+        match self {
+            Self::Source { content_enabled } => Some(NotificationConsent {
+                os_access: true,
+                owner_enabled: true,
+                content_enabled,
+                runtime_active: true,
+            }),
+            _ => None,
+        }
+    }
+}
 
 pub const NOTIFICATION_QUEUE_CAPACITY: usize = 64;
 
@@ -23,6 +63,18 @@ impl NotificationConsent {
     pub const fn available(self) -> bool {
         self.os_access && self.owner_enabled && self.runtime_active
     }
+}
+
+/// Android platform keys are retained only in short-lived process memory.
+pub enum PlatformNotification {
+    Posted {
+        key: String,
+        app_label: String,
+        title: Option<String>,
+        preview: Option<String>,
+        protected: bool,
+    },
+    Removed { key: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +95,7 @@ struct Subscription {
 pub struct NotificationMirror {
     subscription: Option<Subscription>,
     pending: VecDeque<NotificationPayload>,
+    source_ids: VecDeque<(String, NotificationId)>,
     skipped: u64,
 }
 
@@ -89,6 +142,85 @@ impl NotificationMirror {
             self.close();
         }
         valid
+    }
+
+    pub const fn is_subscribed(&self) -> bool {
+        self.subscription.is_some()
+    }
+
+    /// Exclude protected/system-private OS notifications before invoking this.
+    pub fn submit_platform(
+        &mut self,
+        event: PlatformNotification,
+        context: &AuthorizationContext,
+        policy: &PolicyState,
+        consent: NotificationConsent,
+    ) -> bool {
+        if !self.revalidate(context, policy, consent) {
+            return false;
+        }
+        match event {
+            PlatformNotification::Posted {
+                key,
+                app_label,
+                title,
+                preview,
+                protected,
+            } => {
+                if key.is_empty() || key.len() > 256 {
+                    return false;
+                }
+                let existing = self
+                    .source_ids
+                    .iter()
+                    .find(|(old, _)| old == &key)
+                    .map(|(_, id)| *id);
+                let id = match existing {
+                    Some(id) => id,
+                    None => match NotificationId::generate() {
+                        Ok(id) => id,
+                        Err(_) => return false,
+                    },
+                };
+                let redacted = protected || !consent.content_enabled;
+                let (title, preview) = if redacted {
+                    (None, None)
+                } else {
+                    (title, preview)
+                };
+                let Ok(posted) = NotificationPosted::new(
+                    id,
+                    app_label,
+                    title,
+                    preview,
+                    redacted,
+                ) else {
+                    return false;
+                };
+                if !self.enqueue(NotificationPayload::Posted(posted), context, policy, consent) {
+                    return false;
+                }
+                if existing.is_none() {
+                    if self.source_ids.len() == NOTIFICATION_QUEUE_CAPACITY {
+                        let _ = self.source_ids.pop_front();
+                    }
+                    self.source_ids.push_back((key, id));
+                }
+                true
+            }
+            PlatformNotification::Removed { key } => {
+                let Some(position) = self
+                    .source_ids
+                    .iter()
+                    .position(|(old, _)| old == &key)
+                else {
+                    return false;
+                };
+                let (_, id) = self.source_ids.remove(position)
+                    .expect("bounded position found");
+                self.enqueue(NotificationPayload::Removed(id), context, policy, consent)
+            }
+        }
     }
 
     /// The platform adapter has already excluded protected/system-private notifications.
@@ -150,6 +282,7 @@ impl NotificationMirror {
     pub fn close(&mut self) {
         self.subscription = None;
         self.pending.clear();
+        self.source_ids.clear();
         self.skipped = 0;
     }
 }
@@ -228,6 +361,79 @@ mod tests {
             )
             .unwrap(),
         )
+    }
+
+    #[test]
+    fn platform_keys_never_leave_as_identifiers_and_clear_on_close() {
+        let mut mirror = NotificationMirror::default();
+        let policy = policy(Some(RuleEffect::Allow));
+        mirror.subscribe(&context(1), &policy, consent()).unwrap();
+        assert!(mirror.submit_platform(
+            PlatformNotification::Posted {
+                key: "private.platform.notification.id".to_owned(),
+                app_label: "Messages".to_owned(),
+                title: Some("Secret".to_owned()),
+                preview: Some("Preview".to_owned()),
+                protected: true,
+            },
+            &context(1),
+            &policy,
+            consent(),
+        ));
+        let first = mirror.take_next(&context(1), &policy, consent()).unwrap();
+        assert!(!first.encode().windows(7).any(|part| part == b"private"));
+        let NotificationPayload::Posted(posted) = first else {
+            panic!("expected posted");
+        };
+        assert!(posted.redacted());
+        assert!(posted.title().is_none());
+        assert!(mirror.submit_platform(
+            PlatformNotification::Removed {
+                key: "private.platform.notification.id".to_owned(),
+            },
+            &context(1),
+            &policy,
+            consent(),
+        ));
+        assert_eq!(
+            mirror.take_next(&context(1), &policy, consent()),
+            Some(NotificationPayload::Removed(posted.id())),
+        );
+        mirror.close();
+        assert!(mirror.source_ids.is_empty());
+        assert!(!mirror.is_subscribed());
+    }
+
+    #[test]
+    fn platform_private_flag_overrides_optional_text_consent() {
+        let mut mirror = NotificationMirror::default();
+        let policy = policy(Some(RuleEffect::Allow));
+        let consent = NotificationConsent {
+            content_enabled: true,
+            ..consent()
+        };
+        mirror.subscribe(&context(1), &policy, consent).unwrap();
+        assert!(mirror.submit_platform(
+            PlatformNotification::Posted {
+                key: "private-message-key".to_owned(),
+                app_label: "Messages".to_owned(),
+                title: Some("Secret".to_owned()),
+                preview: Some("Sensitive".to_owned()),
+                protected: true,
+            },
+            &context(1),
+            &policy,
+            consent,
+        ));
+        let NotificationPayload::Posted(posted) =
+            mirror.take_next(&context(1), &policy, consent).unwrap()
+        else {
+            panic!("expected posted notification");
+        };
+        assert!(posted.redacted());
+        assert!(posted.title().is_none());
+        assert!(posted.preview().is_none());
+        assert!(!format!("{posted:?}").contains("Secret"));
     }
 
     #[test]

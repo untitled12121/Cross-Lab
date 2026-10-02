@@ -24,6 +24,7 @@ import dev.crosslab.android.features.filetransfer.FileTransferController
 import dev.crosslab.android.features.filetransfer.UnavailableFileTransferPort
 import dev.crosslab.android.features.pairing.PairingJoinerController
 import dev.crosslab.android.features.permissions.AndroidPolicyStore
+import dev.crosslab.android.features.notifications.NotificationPublisher
 import dev.crosslab.android.features.notifications.AndroidNotificationConsent
 
 class CrossLabApplication : Application(), DefaultLifecycleObserver {
@@ -57,6 +58,17 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
     lateinit var pairingController: PairingJoinerController
         private set
 
+    private var notificationPublisher: NotificationPublisher? = null
+
+    fun notificationPublisher(): NotificationPublisher? = notificationPublisher
+
+    fun notificationPermissionChanged() {
+        notificationPublisher?.disableNotifications()
+        if (runtimeController.state().lifecycle == dev.crosslab.android.features.devices.RuntimeLifecycle.RUNNING) {
+            runtimeController.reloadTrust()
+        }
+    }
+
     private lateinit var connectivityManager: ConnectivityManager
 
     private val networkCallback =
@@ -88,10 +100,16 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
         val developmentProvisioning = developmentProvisioningPath()
         val productPresence =
             if (developmentProvisioning == null) {
-                ProductPresencePort(this, identityRepository, policyStore)
+                ProductPresencePort(
+                    this,
+                    identityRepository,
+                    policyStore,
+                    notificationConsent,
+                )
             } else {
                 null
             }
+        notificationPublisher = productPresence
         runtimeController =
             RuntimeController(
                 productPresence ?: MobileRuntimePort(checkNotNull(developmentProvisioning)),

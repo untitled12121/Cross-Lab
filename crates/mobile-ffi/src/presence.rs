@@ -5,7 +5,8 @@ use std::{
 
 use crosslab_agent::{
     ClipboardAvailability, FileTransferAvailability, PermissionSnapshot, PresenceAgentError,
-    PresencePhase, TrustedPresenceAgent, TrustedSessionRoute,
+    PresencePhase, TrustedPresenceAgent, TrustedSessionRoute, NotificationRole,
+    PlatformNotification,
 };
 use crosslab_crypto::SigningProvider;
 use crosslab_identity_store::ProductIdentityState;
@@ -154,6 +155,8 @@ impl MobileTrustedPresenceAgent {
         clipboard_read_available: bool,
         clipboard_write_available: bool,
         file_transfer_available: bool,
+        notification_source_available: bool,
+        notification_content_enabled: bool,
     ) -> Result<Self, MobilePresenceError> {
         let identity = ProductIdentityState::decode(&identity_payload)
             .map_err(|_| MobilePresenceError::Identity)?;
@@ -164,12 +167,20 @@ impl MobileTrustedPresenceAgent {
         };
         let signer = ForeignSigningProvider::new(local_device_signer)?;
         let signer: Arc<dyn SigningProvider + Send + Sync> = Arc::new(signer);
-        let agent = TrustedPresenceAgent::spawn_with_policy_and_capabilities(
+        let role = if notification_source_available {
+            NotificationRole::Source {
+                content_enabled: notification_content_enabled,
+            }
+        } else {
+            NotificationRole::Disabled
+        };
+        let agent = TrustedPresenceAgent::spawn_with_policy_and_notifications(
             identity,
             signer,
             policy,
             ClipboardAvailability::new(clipboard_read_available, clipboard_write_available),
             FileTransferAvailability::new(file_transfer_available),
+            role,
         )?;
         let status = agent.subscribe_status();
         let clipboard_requests = agent
@@ -215,6 +226,41 @@ impl MobileTrustedPresenceAgent {
             file_transfer_offer_runtime: Mutex::new(file_transfer_offer_runtime),
             file_transfer_operation_runtime: Mutex::new(file_transfer_operation_runtime),
             policy_runtime: Mutex::new(policy_runtime),
+        })
+    }
+
+    pub fn notification_subscribed(&self) -> bool {
+        self.agent_handle()
+            .is_ok_and(|agent| agent.notification_subscribed())
+    }
+
+    pub fn disable_notifications(&self) -> bool {
+        self.agent_handle()
+            .is_ok_and(|agent| agent.disable_notifications().is_ok())
+    }
+
+    pub fn notification_posted(
+        &self,
+        key: String,
+        app_label: String,
+        title: Option<String>,
+        preview: Option<String>,
+        protected: bool,
+    ) -> bool {
+        self.agent_handle().is_ok_and(|agent| {
+            agent.publish_notification(PlatformNotification::Posted {
+                key,
+                app_label,
+                title,
+                preview,
+                protected,
+            }).is_ok()
+        })
+    }
+
+    pub fn notification_removed(&self, key: String) -> bool {
+        self.agent_handle().is_ok_and(|agent| {
+            agent.publish_notification(PlatformNotification::Removed { key }).is_ok()
         })
     }
 

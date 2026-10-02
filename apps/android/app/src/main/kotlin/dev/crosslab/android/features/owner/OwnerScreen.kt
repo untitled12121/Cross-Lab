@@ -23,7 +23,9 @@ import dev.crosslab.android.features.appearance.ThemeDocument
 import dev.crosslab.android.features.appearance.toComposeColor
 import dev.crosslab.android.features.appearance.toTextStyle
 import dev.crosslab.android.features.devices.RuntimeControllerState
-import dev.crosslab.android.features.notifications.NotificationOwnerConsent
+import dev.crosslab.android.features.devices.RuntimeSession
+import dev.crosslab.android.features.devices.RuntimeTrust
+ import dev.crosslab.android.features.notifications.NotificationOwnerConsent
 import dev.crosslab.android.components.ui.ControlButton
 
 @Composable
@@ -45,6 +47,8 @@ fun OwnerScreen(
     onToggleNotificationOwner: () -> Unit,
     onToggleNotificationContent: () -> Unit,
     onOpenNotificationAccess: () -> Unit,
+    notificationNotice: String?,
+    onSetNotificationPeerPermission: (String, Boolean) -> Unit,
 ) {
     val colors = theme.colors
     val snapshot = runtime.snapshot
@@ -210,6 +214,37 @@ fun OwnerScreen(
                         RectangleShape,
                     ),
         ) {
+            val peer = runtime.snapshot.peerDeviceId
+            val active =
+                peer != null &&
+                    runtime.snapshot.session == RuntimeSession.ACTIVE &&
+                    runtime.snapshot.trust == RuntimeTrust.TRUSTED
+            val rule = runtime.snapshot.permissionRules
+                .firstOrNull {
+                    it.sourceDeviceId == peer &&
+                        it.capabilityId == "notifications.read" &&
+                        it.operation == "subscribe"
+                }
+            InfoRow(
+                theme,
+                "Peer notification policy",
+                if (!active) "Connect a trusted peer"
+                else rule?.effect?.name ?: "Default deny",
+            )
+            if (active && peer != null) {
+                ControlButton(
+                    theme = theme,
+                    label = "Allow this peer to request notifications",
+                    onClick = { onSetNotificationPeerPermission(peer, true) },
+                )
+                ControlButton(
+                    theme = theme,
+                    label = "Deny this peer's notification requests",
+                    destructive = true,
+                    onClick = { onSetNotificationPeerPermission(peer, false) },
+                )
+            }
+            notificationNotice?.let { InfoRow(theme, "Permission result", it) }
             InfoRow(
                 theme,
                 "Notification Access",

@@ -48,6 +48,8 @@ use crate::{
 
 #[cfg(target_os = "linux")]
 use gpui_kit::PathPromptOptions;
+use crosslab_agent::NotificationInboxSnapshot;
+use crosslab_agent::NotificationInboxStatus;
 use gpui_kit::{
     ClipboardItem, Context, InteractiveElement as _, IntoElement, ParentElement as _, Render,
     Styled as _, Window, base::Button, component::theme::ActiveTheme as _, div, px,
@@ -65,6 +67,7 @@ pub struct ControlCenterPage {
     clipboard: ClipboardFeatureState,
     file_transfer: FileTransferFeatureState,
     owner: OwnerFeatureState,
+    notification_inbox: NotificationInboxSnapshot,
     runtime: DesktopRuntimeController,
     #[cfg(target_os = "linux")]
     product_presence: Option<Arc<DesktopProductPresenceController>>,
@@ -184,6 +187,7 @@ impl ControlCenterPage {
             clipboard: ClipboardFeatureState::new(),
             file_transfer: FileTransferFeatureState::new(),
             owner,
+            notification_inbox: NotificationInboxSnapshot::default(),
             runtime,
             #[cfg(target_os = "linux")]
             product_presence: None,
@@ -257,6 +261,7 @@ impl ControlCenterPage {
             let controller = Arc::new(controller);
             let mut status = controller.subscribe_status();
             let mut permissions = controller.subscribe_permissions();
+            let mut notification_status = controller.subscribe_notifications();
             let mut clipboard_requests = match controller.take_clipboard_requests() {
                 Ok(requests) => requests,
                 Err(error) => {
@@ -297,11 +302,13 @@ impl ControlCenterPage {
             };
             let initial = status.borrow().clone();
             let initial_permissions = permissions.borrow().clone();
+            let initial_notifications = notification_status.borrow().clone();
             if this
                 .update(cx, |page, cx| {
                     page.presence_starting = false;
                     page.devices.update_presence(&initial);
                     page.devices.update_permissions(&initial_permissions);
+                    page.notification_inbox = initial_notifications;
                     page.clipboard.set_available(true);
                     page.file_transfer.set_available(true);
                     if let Some(runtime) = initial.runtime() {
@@ -329,6 +336,21 @@ impl ControlCenterPage {
                                 if let Some(runtime) = snapshot.runtime() {
                                     page.owner.update_runtime(runtime);
                                 }
+                                cx.notify();
+                            })
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                    changed = notification_status.changed() => {
+                        if changed.is_err() {
+                            return;
+                        }
+                        let snapshot = notification_status.borrow_and_update().clone();
+                        if this
+                            .update(cx, |page, cx| {
+                                page.notification_inbox = snapshot;
                                 cx.notify();
                             })
                             .is_err()
@@ -572,6 +594,18 @@ impl ControlCenterPage {
             });
         })
         .detach();
+    }
+
+    #[cfg(target_os = "linux")]
+    fn request_notification_subscription(&mut self, cx: &mut Context<Self>) {
+        self.notice = Some(match self.product_presence.as_ref() {
+            Some(controller) => match controller.request_notifications() {
+                Ok(()) => "Subscription requested; awaiting Android approval.".to_owned(),
+                Err(error) => error.to_string(),
+            },
+            None => "Connect a trusted Android device first.".to_owned(),
+        });
+        cx.notify();
     }
 
     fn set_section(&mut self, section: Section, cx: &mut Context<Self>) {
@@ -1765,6 +1799,19 @@ impl Render for ControlCenterPage {
             }
             controls = controls
                 .child(
+                    Button::new("owner-notifications-subscribe")
+                        .accessibility_label("Request Android notification mirroring")
+                        .disabled(matches!(
+                            self.notification_inbox.phase(),
+                            NotificationInboxStatus::Active
+                                | NotificationInboxStatus::AwaitingApproval
+                        ))
+                        .on_click(cx.listener(|page, _, _, cx| {
+                            page.request_notification_subscription(cx);
+                        }))
+                        .child("Request Android notifications"),
+                )
+                .child(
                     Button::new("owner-audit-export")
                         .accessibility_label("Copy redacted audit history CSV")
                         .on_click(cx.listener(|page, _, _, cx| {
@@ -1815,7 +1862,13 @@ impl Render for ControlCenterPage {
                 cx,
             ),
             Section::Owner => {
-                owner_content(&self.owner, owner_controls, self.notice.as_deref(), cx)
+                owner_content(
+                    &self.owner,
+                    owner_controls,
+                    self.notice.as_deref(),
+                    &self.notification_inbox,
+                    cx,
+                )
             }
         };
 

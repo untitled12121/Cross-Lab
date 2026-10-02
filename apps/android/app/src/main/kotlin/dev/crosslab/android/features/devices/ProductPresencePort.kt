@@ -16,6 +16,8 @@ import dev.crosslab.android.features.filetransfer.FileTransferPort
 import dev.crosslab.android.features.filetransfer.FileTransferState
 import dev.crosslab.android.features.identity.AndroidProductIdentityRepository
 import dev.crosslab.android.features.permissions.AndroidPolicyStore
+import dev.crosslab.android.features.notifications.AndroidNotificationConsent
+import dev.crosslab.android.features.notifications.NotificationPublisher
 import dev.crosslab.android.features.permissions.PolicyStoreUnavailable
 import uniffi.crosslab_mobile_ffi.MobileClipboardOutcome
 import uniffi.crosslab_mobile_ffi.MobileClipboardPlatformFailure
@@ -35,7 +37,8 @@ class ProductPresencePort(
     context: Context,
     private val identityRepository: AndroidProductIdentityRepository,
     private val policyStore: AndroidPolicyStore,
-) : RuntimePort, ClipboardPort, FileTransferPort {
+    private val notificationConsent: AndroidNotificationConsent,
+) : RuntimePort, ClipboardPort, FileTransferPort, NotificationPublisher {
     override val peerControlAvailable: Boolean = true
     override val clipboardAvailable: Boolean = true
     private val fileTransfer = runCatching { AndroidFileTransferService(context) }.getOrNull()
@@ -63,6 +66,46 @@ class ProductPresencePort(
     override fun declineFile() = fileTransfer?.declineFile() ?: false
 
     override fun cancelFile() = fileTransfer?.cancelFile() ?: false
+
+    override fun canCapture(): Boolean =
+        synchronized(lock) {
+            val active = agent ?: return@synchronized false
+            val allowed = notificationConsent.current(foreground = true).locallyAvailable()
+            if (!allowed) {
+                runCatching { active.disableNotifications() }
+                return@synchronized false
+            }
+            current.session == RuntimeSession.ACTIVE &&
+                runCatching { active.notificationSubscribed() }.getOrDefault(false)
+        }
+
+    override fun contentAllowed(): Boolean =
+        notificationConsent.current(foreground = true).permitsContent() && canCapture()
+
+    override fun posted(
+        key: String,
+        appLabel: String,
+        title: String?,
+        preview: String?,
+        protected: Boolean,
+    ): Boolean =
+        synchronized(lock) {
+            if (!canCapture()) return@synchronized false
+            runCatching { agent?.notificationPosted(key, appLabel, title, preview, protected) == true }
+                .getOrDefault(false)
+        }
+
+    override fun removed(key: String): Boolean =
+        synchronized(lock) {
+            if (!canCapture()) return@synchronized false
+            runCatching { agent?.notificationRemoved(key) == true }.getOrDefault(false)
+        }
+
+    override fun disableNotifications() {
+        synchronized(lock) {
+            agent?.let { runCatching { it.disableNotifications() } }
+        }
+    }
 
     private val discovery = AndroidTrustedSessionDiscovery(context)
     private val clipboard = AndroidClipboardAdapter(context)
@@ -245,6 +288,19 @@ class ProductPresencePort(
         return true
     }
 
+    override fun setPermissionForPeer(
+        peerDeviceId: String,
+        capabilityId: String,
+        operation: String,
+        effect: RuntimePermissionEffect,
+    ): Boolean =
+        synchronized(lock) {
+            if (current.peerDeviceId != peerDeviceId || current.session != RuntimeSession.ACTIVE) {
+                return@synchronized false
+            }
+            setPermission(capabilityId, operation, effect)
+        }
+
     override fun setPermission(
         capabilityId: String,
         operation: String,
@@ -365,6 +421,7 @@ class ProductPresencePort(
                     return
                 }
 
+        val notification = notificationConsent.current(foreground = true)
         val active =
             runCatching {
                 MobileTrustedPresenceAgent(
@@ -375,6 +432,8 @@ class ProductPresencePort(
                     clipboardReadAvailable = clipboardAvailable,
                     clipboardWriteAvailable = clipboardAvailable,
                     fileTransferAvailable = fileTransferAvailable,
+                    notificationSourceAvailable = notification.locallyAvailable(),
+                    notificationContentEnabled = notification.permitsContent(),
                 )
             }.getOrElse {
                 publishLocked(

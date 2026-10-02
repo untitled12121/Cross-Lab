@@ -77,6 +77,8 @@ fun ControlCenterScreen(
     onToggleNotificationOwner: () -> Unit,
     onToggleNotificationContent: () -> Unit,
     onOpenNotificationAccess: () -> Unit,
+    notificationNotice: String?,
+    onSetNotificationPeerPermission: (String, Boolean) -> Unit,
     onPairingBootstrapScanned: (MobilePairingBootstrap) -> Unit,
     onCancelPairing: () -> Unit,
 ) {
@@ -208,6 +210,8 @@ fun ControlCenterScreen(
                     onToggleNotificationOwner = onToggleNotificationOwner,
                     onToggleNotificationContent = onToggleNotificationContent,
                     onOpenNotificationAccess = onOpenNotificationAccess,
+                    notificationNotice = notificationNotice,
+                    onSetNotificationPeerPermission = onSetNotificationPeerPermission,
                 )
         }
     }

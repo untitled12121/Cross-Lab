@@ -20,7 +20,9 @@ pub use file_transfer::{
     MAX_FILE_TRANSFER_STATE_BYTES, MAX_RETAINED_FILE_TRANSFERS,
 };
 pub use notification::{
-    NOTIFICATION_QUEUE_CAPACITY, NotificationConsent, NotificationMirror, NotificationMirrorError,
+    NOTIFICATION_QUEUE_CAPACITY, NotificationConsent, NotificationInbox,
+    NotificationInboxSnapshot, NotificationInboxStatus, NotificationMirror, NotificationMirrorError,
+    NotificationRole, PlatformNotification,
 };
 pub use presence::{
     PermissionRule, PermissionSnapshot, PresenceAgentError, PresenceDiscoveryInfo, PresencePhase,

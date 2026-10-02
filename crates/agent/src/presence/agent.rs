@@ -26,6 +26,8 @@ use crate::{
     clipboard::{
         ClipboardAvailability, ClipboardOperationError, ClipboardPlatformError, ClipboardRequest,
     },
+    notification::{NotificationInboxSnapshot, NotificationRole},
+    notification::PlatformNotification,
     file_transfer::{
         FileTransferAvailability, FileTransferCancellation, FileTransferChunkError,
         FileTransferDataEvent, FileTransferOperationError, FileTransferRequest,
@@ -46,6 +48,8 @@ pub struct TrustedPresenceAgent {
     policy_tx: watch::Sender<PolicyState>,
     status: watch::Receiver<PresenceSnapshot>,
     permissions: watch::Receiver<PermissionSnapshot>,
+    notification_inbox: watch::Receiver<NotificationInboxSnapshot>,
+    notification_active: watch::Receiver<bool>,
     clipboard_requests: Mutex<Option<mpsc::Receiver<ClipboardRequest>>>,
     file_transfer_requests: Mutex<Option<mpsc::Receiver<FileTransferRequest>>>,
     file_transfer_cancellations: Mutex<Option<mpsc::Receiver<FileTransferCancellation>>>,
@@ -95,6 +99,24 @@ impl TrustedPresenceAgent {
         clipboard_availability: ClipboardAvailability,
         file_transfer_availability: FileTransferAvailability,
     ) -> Result<Self, PresenceAgentError> {
+        Self::spawn_with_policy_and_notifications(
+            identity,
+            signer,
+            policy,
+            clipboard_availability,
+            file_transfer_availability,
+            NotificationRole::Disabled,
+        )
+    }
+
+    pub fn spawn_with_policy_and_notifications(
+        identity: ProductIdentityState,
+        signer: Arc<dyn SigningProvider + Send + Sync>,
+        policy: PolicyState,
+        clipboard_availability: ClipboardAvailability,
+        file_transfer_availability: FileTransferAvailability,
+        notification_role: NotificationRole,
+    ) -> Result<Self, PresenceAgentError> {
         identity
             .validate_local_device_provider(signer.as_ref())
             .map_err(|_| PresenceAgentError::Identity)?;
@@ -127,6 +149,9 @@ impl TrustedPresenceAgent {
             watch::channel(PresenceSnapshot::new(PresencePhase::Discovering, None));
         let (permissions_tx, permissions) =
             watch::channel(PermissionSnapshot::from_policy(&policy));
+        let (notification_tx, notification_inbox) =
+            watch::channel(NotificationInboxSnapshot::default());
+        let (notification_active_tx, notification_active) = watch::channel(false);
         let (clipboard_requests_tx, clipboard_requests) = mpsc::channel(CLIPBOARD_REQUEST_CAPACITY);
         let (file_transfer_requests_tx, file_transfer_requests) =
             mpsc::channel(FILE_TRANSFER_REQUEST_CAPACITY);
@@ -184,6 +209,8 @@ impl TrustedPresenceAgent {
                             command_rx,
                             status_tx,
                             permissions_tx,
+                            notification_tx,
+                            notification_active_tx,
                             CapabilityChannels::new(
                                 clipboard_requests_tx,
                                 file_transfer_requests_tx,
@@ -193,6 +220,7 @@ impl TrustedPresenceAgent {
                             RuntimeAvailability::new(
                                 clipboard_availability,
                                 file_transfer_availability,
+                                notification_role,
                             ),
                         ),
                     )
@@ -211,6 +239,8 @@ impl TrustedPresenceAgent {
             policy_tx,
             status,
             permissions,
+            notification_inbox,
+            notification_active,
             clipboard_requests: Mutex::new(Some(clipboard_requests)),
             file_transfer_requests: Mutex::new(Some(file_transfer_requests)),
             file_transfer_cancellations: Mutex::new(Some(file_transfer_cancellations)),
@@ -246,6 +276,32 @@ impl TrustedPresenceAgent {
 
     pub fn subscribe_permissions(&self) -> watch::Receiver<PermissionSnapshot> {
         self.permissions.clone()
+    }
+
+    pub fn subscribe_notification_inbox(&self) -> watch::Receiver<NotificationInboxSnapshot> {
+        self.notification_inbox.clone()
+    }
+
+    pub fn request_notification_subscription(&self) -> Result<(), PresenceAgentError> {
+        self.send(AgentCommand::SubscribeNotifications)
+    }
+
+    pub fn notification_subscribed(&self) -> bool {
+        *self.notification_active.borrow()
+    }
+
+    pub fn publish_notification(
+        &self,
+        event: PlatformNotification,
+    ) -> Result<(), PresenceAgentError> {
+        if !self.notification_subscribed() {
+            return Err(PresenceAgentError::Closed);
+        }
+        self.send(AgentCommand::PublishNotification(event))
+    }
+
+    pub fn disable_notifications(&self) -> Result<(), PresenceAgentError> {
+        self.send(AgentCommand::DisableNotifications)
     }
 
     pub fn replace_policy(&self, policy: PolicyState) -> Result<(), PresenceAgentError> {

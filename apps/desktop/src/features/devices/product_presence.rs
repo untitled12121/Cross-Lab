@@ -11,8 +11,9 @@ use std::{
 
 use crosslab_agent::{
     ClipboardAvailability, ClipboardOperationError, ClipboardPlatformError, ClipboardRequest,
-    FileTransferAvailability, FileTransferOperationError, PermissionSnapshot, PresenceAgentError,
-    PresenceSnapshot, TrustedPresenceAgent, TrustedSessionRoute as AgentTrustedSessionRoute,
+    FileTransferAvailability, FileTransferOperationError, NotificationInboxSnapshot,
+    NotificationRole, PermissionSnapshot, PresenceAgentError, PresenceSnapshot,
+    TrustedPresenceAgent, TrustedSessionRoute as AgentTrustedSessionRoute,
 };
 use crosslab_identity_store::{ProductIdentityError, ProductIdentityState};
 use crosslab_policy::{CapabilityId, OperationName, PolicyError, RuleEffect};
@@ -62,12 +63,13 @@ impl DesktopProductPresenceController {
 
         let policy = LinuxPolicyStore::from_environment()?.load().await?;
         let signer = LinuxEd25519Signer::load_required(LinuxSigningSlot::LocalDevice).await?;
-        let agent = Arc::new(TrustedPresenceAgent::spawn_with_policy_and_capabilities(
+        let agent = Arc::new(TrustedPresenceAgent::spawn_with_policy_and_notifications(
             identity,
             Arc::new(signer),
             policy,
             ClipboardAvailability::new(true, true),
             FileTransferAvailability::new(true),
+            NotificationRole::Receiver,
         )?);
         let discovery_runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -103,6 +105,29 @@ impl DesktopProductPresenceController {
 
     pub fn subscribe_permissions(&self) -> watch::Receiver<PermissionSnapshot> {
         self.agent.subscribe_permissions()
+    }
+
+    pub fn subscribe_notifications(&self) -> watch::Receiver<NotificationInboxSnapshot> {
+        self.agent.subscribe_notification_inbox()
+    }
+
+    pub fn request_notifications(&self) -> Result<(), DesktopPresenceError> {
+        let available = self
+            .status
+            .borrow()
+            .runtime()
+            .is_some_and(|status| {
+                status.session_id().is_some()
+                    && status
+                        .negotiated_capability_ids()
+                        .iter()
+                        .any(|id| id.as_str() == crosslab_protocol::NOTIFICATION_CAPABILITY_ID)
+            });
+        if !available {
+            return Err(DesktopPresenceError::PeerUnavailable);
+        }
+        self.agent.request_notification_subscription()?;
+        Ok(())
     }
 
     pub fn take_clipboard_requests(

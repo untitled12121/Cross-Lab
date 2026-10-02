@@ -25,6 +25,7 @@ import dev.crosslab.android.features.filetransfer.FileTransferState
 import dev.crosslab.android.features.identity.revocationTarget
 import dev.crosslab.android.features.notifications.NotificationOwnerConsent
 import dev.crosslab.android.features.devices.RuntimeLifecycle
+import dev.crosslab.android.features.devices.RuntimePermissionEffect
 import dev.crosslab.android.features.pairing.PairingJoinerStage
 import dev.crosslab.android.features.pairing.PairingJoinerState
 import java.util.concurrent.Executors
@@ -44,6 +45,7 @@ class MainActivity : ComponentActivity() {
     private val auditNotice = mutableStateOf<String?>(null)
     private val notificationConsent =
         mutableStateOf(NotificationOwnerConsent(false, false, false, false, false))
+    private val notificationNotice = mutableStateOf<String?>(null)
     private val identityWorker = Executors.newSingleThreadExecutor()
     private var runtimeSubscription: AutoCloseable? = null
     private var clipboardSubscription: AutoCloseable? = null
@@ -211,6 +213,45 @@ class MainActivity : ComponentActivity() {
                 },
                 onOpenNotificationAccess = {
                     startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                },
+                notificationNotice = notificationNotice.value,
+                onSetNotificationPeerPermission = { expectedPeer, allow ->
+                    identityWorker.execute {
+                        val permitted = runCatching {
+                            app.runtimeController.setPermissionForPeer(
+                                expectedPeer,
+                                "notifications.read",
+                                "subscribe",
+                                if (allow) RuntimePermissionEffect.ALLOW
+                                else RuntimePermissionEffect.DENY,
+                            )
+                        }
+                        val audit = if (permitted.getOrDefault(false)) {
+                            runCatching {
+                                app.auditStore.record(
+                                    MobileAuditAction.PERMISSION_CHANGED,
+                                    MobileAuditOutcome.SUCCEEDED,
+                                    revision = app.runtimeController.state().snapshot.policyRevision,
+                                )
+                            }
+                        } else {
+                            null
+                        }
+                        if (!isDestroyed) runOnUiThread {
+                            if (!isDestroyed) {
+                                notificationNotice.value =
+                                    if (permitted.getOrDefault(false)) {
+                                        "Peer permission saved. A fresh subscription is required."
+                                    } else {
+                                        "Peer permission could not be changed."
+                                    }
+                                audit?.getOrNull()?.let { updateAudit(it) }
+                                if (audit?.isFailure == true) {
+                                    auditNotice.value = "Permission saved; audit unavailable."
+                                }
+                            }
+                        }
+                    }
                 },
                 onRevokePeer = { index, generation ->
                     val id = revocationTarget(

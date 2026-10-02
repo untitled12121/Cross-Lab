@@ -112,6 +112,60 @@ class RuntimeControllerTest {
     }
 
     @Test
+    fun peerBoundPermissionNeverAppliesAfterSessionSwitch() {
+        val port = FakeRuntimePort()
+        val controller = RuntimeController(port)
+        val first =
+            RuntimeSnapshot.disconnected().copy(
+                peerDeviceId = "first-trusted-id",
+                session = RuntimeSession.ACTIVE,
+                trust = RuntimeTrust.TRUSTED,
+            )
+        val second = first.copy(peerDeviceId = "different-trusted-id")
+        port.emit(first)
+        controller.onForeground()
+        assertEquals(
+            false,
+            controller.setPermissionForPeer(
+                "different-trusted-id",
+                "notifications.read",
+                "subscribe",
+                RuntimePermissionEffect.ALLOW,
+            ),
+        )
+        assertEquals(
+            true,
+            controller.setPermissionForPeer(
+                "first-trusted-id",
+                "notifications.read",
+                "subscribe",
+                RuntimePermissionEffect.ALLOW,
+            ),
+        )
+        port.emit(second)
+        assertEquals(
+            false,
+            controller.setPermissionForPeer(
+                "first-trusted-id",
+                "notifications.read",
+                "subscribe",
+                RuntimePermissionEffect.ALLOW,
+            ),
+        )
+        assertEquals(1, port.peerPermissionEdits)
+        controller.onBackground()
+        assertEquals(
+            false,
+            controller.setPermissionForPeer(
+                "different-trusted-id",
+                "notifications.read",
+                "subscribe",
+                RuntimePermissionEffect.ALLOW,
+            ),
+        )
+    }
+
+    @Test
     fun trustReloadRestartsOnlyAfterClosingPriorRuntime() {
         val port = FakeRuntimePort()
         val controller = RuntimeController(port)
@@ -157,6 +211,7 @@ class RuntimeControllerTest {
         var disconnects = 0
         var reconnects = 0
         var permissionEdits = 0
+        var peerPermissionEdits = 0
         private var current = RuntimeSnapshot.disconnected()
         private val snapshotListeners = CopyOnWriteArraySet<(RuntimeSnapshot) -> Unit>()
 
@@ -194,6 +249,19 @@ class RuntimeControllerTest {
             effect: RuntimePermissionEffect,
         ): Boolean {
             permissionEdits += 1
+            return true
+        }
+
+        override fun setPermissionForPeer(
+            peerDeviceId: String,
+            capabilityId: String,
+            operation: String,
+            effect: RuntimePermissionEffect,
+        ): Boolean {
+            if (current.peerDeviceId != peerDeviceId || current.session != RuntimeSession.ACTIVE) {
+                return false
+            }
+            peerPermissionEdits += 1
             return true
         }
 

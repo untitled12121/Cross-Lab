@@ -306,8 +306,9 @@ mod tests {
         let posted = notification();
         assert_eq!(NotificationPayload::decode(&posted.encode()), Ok(posted));
         let removed = NotificationPayload::Removed(NotificationId::from_bytes([2; 16]));
-        assert_eq!(NotificationPayload::decode(&removed.encode()), Ok(removed));
-        assert_eq!(removed.encode().len(), HEADER_LEN);
+        let encoded = removed.encode();
+        assert_eq!(encoded.len(), HEADER_LEN);
+        assert_eq!(NotificationPayload::decode(&encoded), Ok(removed));
     }
 
     #[test]

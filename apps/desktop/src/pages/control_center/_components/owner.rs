@@ -1,3 +1,6 @@
+use crosslab_agent::{NotificationInboxSnapshot, NotificationInboxStatus};
+use crosslab_protocol::NotificationPayload;
+
 use crate::features::{
     appearance::{active_theme, font_weight},
     owner::OwnerFeatureState,
@@ -10,6 +13,7 @@ pub(crate) fn owner_content(
     state: &OwnerFeatureState,
     controls: Option<Div>,
     notice: Option<&str>,
+    notifications: &NotificationInboxSnapshot,
     cx: &App,
 ) -> Div {
     let theme = cx.theme();
@@ -82,6 +86,52 @@ pub(crate) fn owner_content(
                 ),
         )
         .child(controls.unwrap_or_else(div))
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .border_1()
+                .border_color(theme.border)
+                .child(info_row(
+                    "Android notifications",
+                    match notifications.phase() {
+                        NotificationInboxStatus::Idle => "Not subscribed",
+                        NotificationInboxStatus::AwaitingApproval => "Awaiting Android",
+                        NotificationInboxStatus::Active => "Active",
+                        NotificationInboxStatus::Denied => "Not authorized",
+                    },
+                    cx,
+                ))
+                .child(info_row(
+                    "Visible notifications",
+                    &notifications.entries().len().to_string(),
+                    cx,
+                ))
+                .child(info_row(
+                    "Older notifications skipped",
+                    &notifications.skipped_count().to_string(),
+                    cx,
+                ))
+                .children(
+                    notifications
+                        .entries()
+                        .iter()
+                        .rev()
+                        .take(8)
+                        .filter_map(|notification| match notification {
+                            NotificationPayload::Posted(posted) => {
+                                let label = posted.title().unwrap_or(posted.app_label());
+                                let preview = posted.preview().unwrap_or(if posted.redacted() {
+                                    "Content hidden by owner preference"
+                                } else {
+                                    "No preview"
+                                });
+                                Some(info_row(label, preview, cx))
+                            }
+                            NotificationPayload::Removed(_) => None,
+                        }),
+                ),
+        )
         .child(
             div()
                 .flex()
