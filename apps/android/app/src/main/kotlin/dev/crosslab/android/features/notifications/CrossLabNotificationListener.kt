@@ -26,7 +26,8 @@ class CrossLabNotificationListener : NotificationListenerService() {
         if (!publisher.canCapture() || sbn == null) return
 
         val event = sbn.notification ?: return
-        if (event.visibility == Notification.VISIBILITY_SECRET ||
+        if (excludedNotificationSource(sbn.packageName, event.category) ||
+            event.visibility == Notification.VISIBILITY_SECRET ||
             sbn.isOngoing ||
             event.flags and Notification.FLAG_FOREGROUND_SERVICE != 0
         ) {
@@ -80,6 +81,14 @@ class CrossLabNotificationListener : NotificationListenerService() {
         super.onDestroy()
     }
 }
+
+/** Reject common OS sources and protected service/call categories before capture. */
+internal fun excludedNotificationSource(packageName: String, category: String?): Boolean =
+    packageName == "android" ||
+        packageName == "com.android.systemui" ||
+        category == Notification.CATEGORY_CALL ||
+        category == Notification.CATEGORY_SYSTEM ||
+        category == Notification.CATEGORY_SERVICE
 
 /** Bounded plain text only; skip controls and unpaired UTF-16 surrogates. */
 internal fun boundedDisplay(input: CharSequence?, maxBytes: Int): String? {
