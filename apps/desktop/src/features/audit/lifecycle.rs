@@ -253,7 +253,11 @@ mod tests {
     fn direct_terminal_failure_is_audited_once_without_payloads() {
         let mut tracker = AuditLifecycle::default();
         let failed = tracker
-            .transfer(true, FileTransferStage::Failed, Some(FileTransferFailure::Denied))
+            .transfer(
+                true,
+                FileTransferStage::Failed,
+                Some(FileTransferFailure::Denied),
+            )
             .unwrap();
         assert_eq!(failed.action, AuditAction::TransferEnded);
         assert_eq!(failed.outcome, AuditOutcome::Denied);
