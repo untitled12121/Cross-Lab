@@ -332,6 +332,14 @@ impl TrustTransition {
         self.signature
     }
 
+    pub const fn issuer_role(&self) -> AuthorityRole {
+        self.issuer_role
+    }
+
+    pub const fn issuer_key_id(&self) -> KeyId {
+        self.issuer_key_id
+    }
+
     fn unsigned_revocation(
         record: &TrustRecord,
         transition_id: TransitionId,

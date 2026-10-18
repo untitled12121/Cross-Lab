@@ -141,15 +141,9 @@ impl LinuxProductPairingService {
                 .map_err(ProductPairingNetworkError::from)?;
         let exchange = ProductPairingInviterExchange::new(pairing);
 
-        let server = ProductPairingQuicServer::bind(
-            SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
-            ProductPairingQuicTimeouts::default(),
-        )?;
-        let port = server.local_addr()?.port();
-        let advertisement = LinuxPairingAdvertisement::start(pairing_id, port).await?;
-
         let (command_tx, command_rx) = mpsc::channel(COMMAND_CAPACITY);
         let (status_tx, status) = watch::channel(DesktopPairingStage::Waiting);
+        let (startup_tx, startup_rx) = tokio::sync::oneshot::channel();
 
         thread::Builder::new()
             .name("crosslab-product-pairing".into())
@@ -158,24 +152,52 @@ impl LinuxProductPairingService {
                     .enable_all()
                     .build()
                 else {
+                    let _ = startup_tx.send(Err(LinuxPairingServiceError::Thread));
                     status_tx.send_replace(DesktopPairingStage::Failed);
                     return;
                 };
-                runtime.block_on(run_service(
-                    server,
-                    advertisement,
-                    exchange,
-                    ServiceContext {
-                        authority,
-                        issuer,
-                        started_at,
-                        status_tx,
-                    },
-                    command_rx,
-                ));
+                runtime.block_on(async move {
+                    let startup = async {
+                        let server = bind_pairing_listener()?;
+                        let port = server.local_addr()?;
+                        let advertisement =
+                            LinuxPairingAdvertisement::start(pairing_id, port.port()).await?;
+                        Ok::<_, LinuxPairingServiceError>((server, advertisement))
+                    }
+                    .await;
+                    let (server, advertisement) = match startup {
+                        Ok(started) => started,
+                        Err(error) => {
+                            let _ = startup_tx.send(Err(error));
+                            status_tx.send_replace(DesktopPairingStage::Failed);
+                            return;
+                        }
+                    };
+                    if startup_tx.send(Ok(())).is_err() {
+                        let _ = advertisement.stop().await;
+                        server.close();
+                        return;
+                    }
+                    run_service(
+                        server,
+                        advertisement,
+                        exchange,
+                        ServiceContext {
+                            authority,
+                            issuer,
+                            started_at,
+                            status_tx,
+                        },
+                        command_rx,
+                    )
+                    .await;
+                });
             })
             .map_err(|_| LinuxPairingServiceError::Thread)?;
 
+        startup_rx
+            .await
+            .map_err(|_| LinuxPairingServiceError::Thread)??;
         Ok(Self { command_tx, status })
     }
 
@@ -198,6 +220,13 @@ impl Drop for LinuxProductPairingService {
     fn drop(&mut self) {
         let _ = self.command_tx.try_send(ServiceCommand::Cancel);
     }
+}
+
+fn bind_pairing_listener() -> Result<ProductPairingQuicServer, ProductPairingQuicError> {
+    ProductPairingQuicServer::bind(
+        SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
+        ProductPairingQuicTimeouts::default(),
+    )
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -412,4 +441,26 @@ fn now(started_at: Instant) -> PairingInstant {
 enum ServiceRunError {
     Cancelled,
     Failed,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pairing_listener_binds_inside_its_runtime_thread() {
+        std::thread::spawn(|| {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            runtime.block_on(async {
+                let server = bind_pairing_listener().unwrap();
+                assert_ne!(server.local_addr().unwrap().port(), 0);
+                server.close();
+            });
+        })
+        .join()
+        .unwrap();
+    }
 }

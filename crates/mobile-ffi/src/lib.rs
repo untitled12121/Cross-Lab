@@ -2,6 +2,7 @@
 
 #![allow(unsafe_code)]
 
+mod audit;
 mod clipboard;
 #[cfg(feature = "development-provisioning")]
 mod development;
@@ -19,6 +20,7 @@ mod product_identity;
 mod runtime;
 mod session_discovery;
 
+pub use audit::{MobileAuditAction, MobileAuditError, MobileAuditHistory, MobileAuditOutcome};
 pub use clipboard::{
     MobileClipboardError, MobileClipboardOperationResult, MobileClipboardOutcome,
     MobileClipboardPlatformFailure, MobileClipboardRequest, MobileClipboardRequestKind,
@@ -45,8 +47,8 @@ pub use pairing_persistence::{MobileProductPairingCommit, MobileProductPairingJo
 pub use policy_store::{MobilePolicyCommit, MobilePolicyStoreError};
 pub use presence::{
     MobilePermissionEffect, MobilePermissionRule, MobilePermissionSnapshot,
-    MobilePresenceDiscovery, MobilePresenceError, MobilePresencePhase, MobilePresenceSnapshot,
-    MobileTrustedPresenceAgent,
+    MobilePresenceAvailability, MobilePresenceDiscovery, MobilePresenceError, MobilePresencePhase,
+    MobilePresenceSnapshot, MobileTrustedPresenceAgent,
 };
 pub use product_identity::{
     MobileProductIdentity, MobileProductIdentityError, MobileSigningCallbackError,

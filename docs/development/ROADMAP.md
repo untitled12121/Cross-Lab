@@ -44,7 +44,7 @@ Target:
 
 Implemented in software and host CI: discovery/trusted pairing, authenticated presence/reconnect, explicit device policies, clipboard read/write, and resumable single-file transfer (Linux GPUI + Android Compose). The owner still needs real Linux↔Android hardware evidence.
 
-**Not implemented as completed Phase 2 product capabilities:** notifications, a full owner-facing audit/history surface, and owner-facing device removal/revocation. Simulated/core/session revocation tests do not establish the complete platform product flow. These remain explicitly outstanding; do not report the full Phase 2 MVP or Cross-Lab 0.1 as finished just because the current pairing/clipboard/file-transfer slice passes CI.
+**Not completed Phase 2 product capabilities:** notifications and owner-facing audit/history. Signed, durable owner-device revocation is under implementation and not yet software/hardware verified; owner device removal and revocation device evidence remain pending. Simulated/core/session revocation tests do not establish the complete platform product flow. These remain explicitly outstanding; do not report the full Phase 2 MVP or Cross-Lab 0.1 as finished just because the current pairing/clipboard/file-transfer slice passes CI.
 
 Cross-Lab 0.1 succeeds when two real Linux/Android devices can perform the required MVP operations without mandatory cloud infrastructure.
 

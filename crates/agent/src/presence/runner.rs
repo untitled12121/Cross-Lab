@@ -11,13 +11,13 @@ use crosslab_core::{MAX_SESSION_DISCOVERY_CANDIDATES, should_initiate_session};
 use crosslab_crypto::SigningProvider;
 use crosslab_identity::{DeviceCredential, DeviceId, OwnerAuthorityState};
 use crosslab_policy::{
-    CapabilityId, CapabilityVersion, NetworkClass, OperationId, OperationName, PolicyState,
-    TrustRecord, UsePolicy,
+    AuthorizationContext, CapabilityId, CapabilityVersion, CapabilityVersionRange, LocalCapability,
+    NetworkClass, OperationId, OperationName, PolicyState, TrustRecord, UsePolicy,
 };
 use crosslab_protocol::{
-    CapabilityAdvertisement, FILE_TRANSFER_CAPABILITY_ID, FeatureSet, FileTransferAcceptance,
-    FileTransferOffer, FileTransferResult, FileTransferTerminalOutcome, ProtocolErrorCode,
-    ProtocolRange, RequestId, StreamId, TransferId,
+    CapabilityAdvertisement, ControlResponseResult, FILE_TRANSFER_CAPABILITY_ID, FeatureSet,
+    FileTransferAcceptance, FileTransferOffer, FileTransferResult, FileTransferTerminalOutcome,
+    ProtocolErrorCode, ProtocolRange, RequestId, StreamId, TransferId,
 };
 use crosslab_runtime::{
     NodeEvent, RuntimeActor, RuntimeActorConfig, RuntimeActorSession, RuntimeNode,
@@ -65,6 +65,13 @@ use crate::{
         source_stream_open as file_transfer_source_stream_open,
         terminal_result as file_transfer_terminal_result,
         terminal_result_event as file_transfer_terminal_result_event,
+    },
+    notification::{
+        NotificationInbox, NotificationInboxSnapshot, NotificationInboxStatus, NotificationMirror,
+        NotificationRole, PlatformNotification, notification_advertisement,
+        notification_capabilities, notification_event, notification_event_subscriptions,
+        notification_subscribe_request, validate_notification_request,
+        validate_notification_response,
     },
 };
 
@@ -118,6 +125,9 @@ pub(super) enum AgentCommand {
     NetworkAvailable,
     Disconnect,
     Reconnect,
+    SubscribeNotifications,
+    DisableNotifications,
+    PublishNotification(PlatformNotification),
     ClipboardWrite {
         text: String,
         reply: oneshot::Sender<Result<(), ClipboardOperationError>>,
@@ -199,16 +209,19 @@ pub(super) enum AgentCommand {
 pub(super) struct RuntimeAvailability {
     clipboard: ClipboardAvailability,
     file_transfer: FileTransferAvailability,
+    notifications: NotificationRole,
 }
 
 impl RuntimeAvailability {
     pub(super) const fn new(
         clipboard: ClipboardAvailability,
         file_transfer: FileTransferAvailability,
+        notifications: NotificationRole,
     ) -> Self {
         Self {
             clipboard,
             file_transfer,
+            notifications,
         }
     }
 }
@@ -236,11 +249,29 @@ impl CapabilityChannels {
     }
 }
 
+pub(super) struct NotificationChannels {
+    inbox_tx: watch::Sender<NotificationInboxSnapshot>,
+    active_tx: watch::Sender<bool>,
+}
+
+impl NotificationChannels {
+    pub(super) fn new(
+        inbox_tx: watch::Sender<NotificationInboxSnapshot>,
+        active_tx: watch::Sender<bool>,
+    ) -> Self {
+        Self {
+            inbox_tx,
+            active_tx,
+        }
+    }
+}
+
 pub(super) struct AgentChannels {
     policy_rx: watch::Receiver<PolicyState>,
     command_rx: mpsc::Receiver<AgentCommand>,
     status_tx: watch::Sender<PresenceSnapshot>,
     permissions_tx: watch::Sender<PermissionSnapshot>,
+    notifications: NotificationChannels,
     capabilities: CapabilityChannels,
     availability: RuntimeAvailability,
 }
@@ -251,6 +282,7 @@ impl AgentChannels {
         command_rx: mpsc::Receiver<AgentCommand>,
         status_tx: watch::Sender<PresenceSnapshot>,
         permissions_tx: watch::Sender<PermissionSnapshot>,
+        notifications: NotificationChannels,
         capabilities: CapabilityChannels,
         availability: RuntimeAvailability,
     ) -> Self {
@@ -259,6 +291,7 @@ impl AgentChannels {
             command_rx,
             status_tx,
             permissions_tx,
+            notifications,
             capabilities,
             availability,
         }
@@ -269,6 +302,14 @@ struct CandidateState {
     route: TrustedSessionRoute,
     failures: usize,
     retry_at: Instant,
+}
+
+struct NotificationEventState<'a> {
+    inbox: &'a mut NotificationInbox,
+    inbox_tx: &'a watch::Sender<NotificationInboxSnapshot>,
+    mirror: &'a mut NotificationMirror,
+    active_tx: &'a watch::Sender<bool>,
+    role: NotificationRole,
 }
 
 struct ConnectedRuntime {
@@ -554,6 +595,7 @@ enum ConnectedEvent {
     Runtime(NodeEvent),
     ClipboardTimeout,
     FileTransferTimeout,
+    NotificationTimeout,
     StatusChanged,
     TransportClosed,
 }
@@ -570,6 +612,11 @@ pub(super) async fn run_agent(
         mut command_rx,
         status_tx,
         permissions_tx,
+        notifications:
+            NotificationChannels {
+                inbox_tx: notification_tx,
+                active_tx: notification_active_tx,
+            },
         capabilities,
         availability,
     } = channels;
@@ -580,6 +627,8 @@ pub(super) async fn run_agent(
         file_transfer_data_tx,
     } = capabilities;
     let (connect_tx, mut connect_rx) = mpsc::channel(CONNECT_RESULT_CAPACITY);
+    let mut notification_inbox = NotificationInbox::default();
+    let mut notification_source = NotificationMirror::default();
     let mut clipboard = ClipboardRuntimeState::new(clipboard_requests_tx, availability.clipboard);
     let mut file_transfer = FileTransferRuntimeState::new(
         file_transfer_requests_tx,
@@ -592,8 +641,42 @@ pub(super) async fn run_agent(
     let mut connecting_instance: Option<String> = None;
     let mut network_available = true;
     let mut auto_connect = true;
+    let mut advertised_notification_active = false;
 
     loop {
+        let active = *notification_active_tx.borrow();
+        if active != advertised_notification_active {
+            advertised_notification_active = active;
+            status_tx.send_modify(|_| {});
+        }
+
+        // Never carry private notification state into another authenticated session.
+        let session = connected
+            .as_ref()
+            .filter(|connection| !connection.reconnecting)
+            .and_then(|connection| connection.status.borrow().session_id());
+        let previous = notification_inbox.snapshot();
+        notification_inbox.ensure_session(session);
+        if notification_inbox.snapshot() != previous {
+            notification_tx.send_replace(notification_inbox.snapshot());
+        }
+        let source_context = connected
+            .as_ref()
+            .filter(|connection| !connection.reconnecting)
+            .and_then(|connection| notification_source_context(connection, &security));
+        let still_authorized = source_context.as_ref().is_some_and(|context| {
+            availability
+                .notifications
+                .source_consent()
+                .is_some_and(|consent| notification_source.revalidate(context, &policy, consent))
+        });
+        if !still_authorized {
+            notification_source.close();
+            if *notification_active_tx.borrow() {
+                notification_active_tx.send_replace(false);
+            }
+        }
+
         let local_instance = current_instance(&discovery_instance);
         maybe_start_connect(
             &security,
@@ -634,11 +717,60 @@ pub(super) async fn run_agent(
                     }
                     _ = wait_retry(clipboard.next_deadline()) => ConnectedEvent::ClipboardTimeout,
                     _ = wait_retry(file_transfer.next_deadline()) => ConnectedEvent::FileTransferTimeout,
+                    _ = wait_retry(notification_inbox.next_deadline()) => {
+                        ConnectedEvent::NotificationTimeout
+                    },
                     _ = connection.closed.changed() => ConnectedEvent::TransportClosed
                 }
             };
 
             match event {
+                ConnectedEvent::Command(Some(AgentCommand::DisableNotifications)) => {
+                    notification_source.close();
+                    notification_active_tx.send_replace(false);
+                }
+                ConnectedEvent::Command(Some(AgentCommand::PublishNotification(event))) => {
+                    let context = connected
+                        .as_ref()
+                        .filter(|connection| !connection.reconnecting)
+                        .and_then(|connection| notification_source_context(connection, &security));
+                    if let (Some(context), Some(consent), Some(connection)) = (
+                        context,
+                        availability.notifications.source_consent(),
+                        connected
+                            .as_ref()
+                            .filter(|connection| !connection.reconnecting),
+                    ) {
+                        if notification_source.submit_platform(event, &context, &policy, consent) {
+                            while let Some(payload) =
+                                notification_source.take_next(&context, &policy, consent)
+                            {
+                                let outcome = match notification_event(&payload) {
+                                    Ok(event) => connection.actor.send_event(event).await,
+                                    Err(_) => break,
+                                };
+                                if outcome.is_err() {
+                                    notification_source.close();
+                                    break;
+                                }
+                            }
+                        }
+                    } else {
+                        notification_source.close();
+                    }
+                    if !notification_source.is_subscribed() {
+                        notification_active_tx.send_replace(false);
+                    }
+                }
+                ConnectedEvent::Command(Some(AgentCommand::SubscribeNotifications)) => {
+                    start_notification_subscription(
+                        connected.as_ref(),
+                        availability.notifications,
+                        &mut notification_inbox,
+                        &notification_tx,
+                    )
+                    .await;
+                }
                 ConnectedEvent::Command(command) => {
                     if handle_command(
                         command,
@@ -658,6 +790,10 @@ pub(super) async fn run_agent(
                     }
                 }
                 ConnectedEvent::PolicyChanged => {
+                    notification_source.close();
+                    notification_active_tx.send_replace(false);
+                    notification_inbox.reset();
+                    notification_tx.send_replace(notification_inbox.snapshot());
                     apply_policy_update(
                         &mut policy_rx,
                         &mut policy,
@@ -670,6 +806,10 @@ pub(super) async fn run_agent(
                     .await;
                 }
                 ConnectedEvent::PolicyClosed => {
+                    notification_source.close();
+                    notification_active_tx.send_replace(false);
+                    notification_inbox.reset();
+                    notification_tx.send_replace(notification_inbox.snapshot());
                     clipboard.cancel_all(ClipboardOperationError::Cancelled);
                     file_transfer.cancel_all(FileTransferOperationError::Cancelled);
                     stop_connected(connected.take()).await;
@@ -678,8 +818,22 @@ pub(super) async fn run_agent(
                 }
                 ConnectedEvent::Runtime(event) => {
                     let session_closed = matches!(event, NodeEvent::SessionClosed(_));
-                    handle_runtime_event(event, &mut connected, &mut clipboard, &mut file_transfer)
-                        .await;
+                    handle_runtime_event(
+                        event,
+                        &mut connected,
+                        &mut clipboard,
+                        &mut file_transfer,
+                        NotificationEventState {
+                            inbox: &mut notification_inbox,
+                            inbox_tx: &notification_tx,
+                            mirror: &mut notification_source,
+                            active_tx: &notification_active_tx,
+                            role: availability.notifications,
+                        },
+                        &security,
+                        &policy,
+                    )
+                    .await;
                     if session_closed {
                         mark_transport_lost(
                             &mut connected,
@@ -695,6 +849,14 @@ pub(super) async fn run_agent(
                 }
                 ConnectedEvent::FileTransferTimeout => {
                     expire_file_transfer_offers(&mut connected, &mut file_transfer).await;
+                }
+                ConnectedEvent::NotificationTimeout => {
+                    if let Some(request_id) = notification_inbox.expire(Instant::now()) {
+                        notification_tx.send_replace(notification_inbox.snapshot());
+                        if let Some(connection) = connected.as_ref().filter(|c| !c.reconnecting) {
+                            let _ = connection.actor.send_cancel(request_id).await;
+                        }
+                    }
                 }
                 ConnectedEvent::StatusChanged => {
                     if let Some(connection) = connected.as_ref() {
@@ -742,6 +904,10 @@ pub(super) async fn run_agent(
             }
             changed = policy_rx.changed() => {
                 if changed.is_err() {
+                    notification_source.close();
+                    notification_active_tx.send_replace(false);
+                    notification_inbox.reset();
+                    notification_tx.send_replace(notification_inbox.snapshot());
                     clipboard.cancel_all(ClipboardOperationError::Cancelled);
                     file_transfer.cancel_all(FileTransferOperationError::Cancelled);
                     stop_connected(connected.take()).await;
@@ -772,6 +938,7 @@ pub(super) async fn run_agent(
                         RuntimeAvailability::new(
                             clipboard.availability,
                             file_transfer.availability,
+                            availability.notifications,
                         ),
                     ).await.is_err() {
                         publish_failure(&status_tx, connected.as_ref());
@@ -795,6 +962,7 @@ pub(super) async fn run_agent(
                         RuntimeAvailability::new(
                             clipboard.availability,
                             file_transfer.availability,
+                            availability.notifications,
                         ),
                     ).await;
                 }
@@ -958,6 +1126,7 @@ async fn install_session(
         policy,
         availability.clipboard,
         availability.file_transfer,
+        availability.notifications,
     )
     .ok_or(())?;
 
@@ -975,6 +1144,7 @@ async fn install_session(
             .send_capabilities(runtime_advertisement(
                 availability.clipboard,
                 availability.file_transfer,
+                availability.notifications,
             ))
             .await
             .map_err(|_| ())?;
@@ -996,6 +1166,7 @@ async fn install_session(
         .send_capabilities(runtime_advertisement(
             availability.clipboard,
             availability.file_transfer,
+            availability.notifications,
         ))
         .await
         .is_err()
@@ -1082,6 +1253,11 @@ async fn handle_command(
             status_tx.send_replace(PresenceSnapshot::new(PresencePhase::Paused, None));
             false
         }
+        Some(
+            AgentCommand::SubscribeNotifications
+            | AgentCommand::DisableNotifications
+            | AgentCommand::PublishNotification(_),
+        ) => false,
         Some(AgentCommand::Reconnect) => {
             *auto_connect = true;
             publish_waiting(status_tx, connected.as_ref(), *network_available, true);
@@ -1231,6 +1407,89 @@ async fn handle_command(
             stop_connected(connected.take()).await;
             true
         }
+    }
+}
+
+fn notification_source_context(
+    connection: &ConnectedRuntime,
+    security: &AgentSecurity,
+) -> Option<AuthorizationContext> {
+    let status = connection.status.borrow();
+    let source_device = status.peer_device_id()?;
+    let destination_device = status.local_device_id()?;
+    let session = status.session_id()?;
+    if !status
+        .negotiated_capability_ids()
+        .iter()
+        .any(|id| id.as_str() == crosslab_protocol::NOTIFICATION_CAPABILITY_ID)
+    {
+        return None;
+    }
+    let trust = security.peer_trust(source_device)?;
+    let capability = CapabilityId::parse(crosslab_protocol::NOTIFICATION_CAPABILITY_ID).ok()?;
+    Some(AuthorizationContext::new(
+        source_device,
+        destination_device,
+        session,
+        capability.clone(),
+        CapabilityVersion::new(3, 0),
+        OperationName::parse(crosslab_protocol::NOTIFICATION_SUBSCRIBE_OPERATION).ok()?,
+        trust.state(),
+        trust.trust_revision(),
+        LocalCapability::new(capability, CapabilityVersionRange::new(3, 0, 0).ok()?, true),
+        NetworkClass::Local,
+    ))
+}
+
+async fn start_notification_subscription(
+    connected: Option<&ConnectedRuntime>,
+    role: NotificationRole,
+    inbox: &mut NotificationInbox,
+    status_tx: &watch::Sender<NotificationInboxSnapshot>,
+) {
+    if role != NotificationRole::Receiver
+        || matches!(
+            inbox.status(),
+            NotificationInboxStatus::Active | NotificationInboxStatus::AwaitingApproval
+        )
+    {
+        return;
+    }
+    let Some(connection) = connected.filter(|connection| !connection.reconnecting) else {
+        return;
+    };
+    let status = connection.status.borrow().clone();
+    let Some(session_id) = status.session_id() else {
+        return;
+    };
+    if !status
+        .negotiated_capability_ids()
+        .iter()
+        .any(|capability| capability.as_str() == crosslab_protocol::NOTIFICATION_CAPABILITY_ID)
+    {
+        return;
+    }
+    for subscription in notification_event_subscriptions() {
+        if connection
+            .actor
+            .subscribe_event(subscription)
+            .await
+            .is_err()
+        {
+            return;
+        }
+    }
+    let Ok(request_id) = RequestId::generate() else {
+        return;
+    };
+    if connection
+        .actor
+        .send_request(notification_subscribe_request(request_id))
+        .await
+        .is_ok()
+    {
+        inbox.begin(request_id, session_id);
+        status_tx.send_replace(inbox.snapshot());
     }
 }
 
@@ -2073,10 +2332,66 @@ async fn handle_runtime_event(
     connected: &mut Option<ConnectedRuntime>,
     clipboard: &mut ClipboardRuntimeState,
     file_transfer: &mut FileTransferRuntimeState,
+    notifications: NotificationEventState<'_>,
+    security: &AgentSecurity,
+    policy: &PolicyState,
 ) {
+    let NotificationEventState {
+        inbox: notification_inbox,
+        inbox_tx: notification_tx,
+        mirror: notification_source,
+        active_tx: notification_active_tx,
+        role,
+    } = notifications;
     match event {
         NodeEvent::RequestDispatched(request) => {
             let request_id = request.request_id();
+            if request.capability_id().as_str() == crosslab_protocol::NOTIFICATION_CAPABILITY_ID {
+                let result = match validate_notification_request(&request) {
+                    Err(failure) => failure,
+                    Ok(()) => {
+                        let context = connected
+                            .as_ref()
+                            .filter(|connection| !connection.reconnecting)
+                            .and_then(|connection| {
+                                notification_source_context(connection, security)
+                            });
+                        match (context, role.source_consent()) {
+                            (Some(context), Some(consent))
+                                if notification_source
+                                    .subscribe(request_id, &context, policy, consent)
+                                    .is_ok() =>
+                            {
+                                ControlResponseResult::Success(Vec::new())
+                            }
+                            _ => ControlResponseResult::Error(
+                                crosslab_protocol::ProtocolFailure::new(
+                                    ProtocolErrorCode::AuthorizationDenied,
+                                    None,
+                                ),
+                            ),
+                        }
+                    }
+                };
+                if let Some(connection) = connected
+                    .as_ref()
+                    .filter(|connection| !connection.reconnecting)
+                {
+                    if connection
+                        .actor
+                        .send_response(request_id, result)
+                        .await
+                        .is_ok()
+                        && notification_source.is_subscribed()
+                    {
+                        notification_active_tx.send_replace(true);
+                    } else {
+                        notification_source.close();
+                        notification_active_tx.send_replace(false);
+                    }
+                }
+                return;
+            }
             let result = if request.capability_id().as_str() == FILE_TRANSFER_CAPABILITY_ID {
                 let Some(source_device_id) = connected
                     .as_ref()
@@ -2143,7 +2458,19 @@ async fn handle_runtime_event(
             }
         }
         NodeEvent::Response(response) => {
-            if let Some(pending) = clipboard.outgoing.remove(&response.request_id()) {
+            let session = connected
+                .as_ref()
+                .filter(|connection| !connection.reconnecting)
+                .and_then(|connection| connection.status.borrow().session_id());
+            if session.is_some_and(|session| {
+                notification_inbox.complete(
+                    response.request_id(),
+                    session,
+                    validate_notification_response(response.result()),
+                )
+            }) {
+                notification_tx.send_replace(notification_inbox.snapshot());
+            } else if let Some(pending) = clipboard.outgoing.remove(&response.request_id()) {
                 let result = decode_clipboard_response(pending.kind(), response.result());
                 pending.finish(result);
             } else if let Some(pending) = file_transfer.outgoing.remove(&response.request_id()) {
@@ -2174,6 +2501,9 @@ async fn handle_runtime_event(
             }
         }
         NodeEvent::RequestCancelled(request_id) => {
+            if notification_source.cancel_request(request_id) {
+                notification_active_tx.send_replace(false);
+            }
             clipboard.inbound.remove(&request_id);
             if let Some(request) = file_transfer.inbound.remove(&request_id) {
                 file_transfer.notify_request_cancelled(request_id, request.offer().transfer_id());
@@ -2202,10 +2532,30 @@ async fn handle_runtime_event(
             }
         }
         NodeEvent::SessionClosed(_) => {
+            notification_source.close();
+            notification_active_tx.send_replace(false);
+            notification_inbox.reset();
+            notification_tx.send_replace(notification_inbox.snapshot());
             clipboard.cancel_all(ClipboardOperationError::Cancelled);
             file_transfer.cancel_all(FileTransferOperationError::Cancelled);
         }
         NodeEvent::Event(event) => {
+            let session = connected
+                .as_ref()
+                .filter(|connection| !connection.reconnecting)
+                .and_then(|connection| connection.status.borrow().session_id());
+            if let Some(session) = session {
+                match notification_inbox.receive(&event, session) {
+                    Ok(true) => {
+                        notification_tx.send_replace(notification_inbox.snapshot());
+                    }
+                    Err(_) => {
+                        notification_inbox.reset();
+                        notification_tx.send_replace(notification_inbox.snapshot());
+                    }
+                    Ok(false) => {}
+                }
+            }
             handle_file_transfer_result_event(&event, connected.as_ref(), file_transfer).await;
         }
         NodeEvent::Stream(RuntimeStreamEvent::Opened(stream)) => {
@@ -2494,6 +2844,7 @@ fn runtime_session(
     policy: &PolicyState,
     clipboard_availability: ClipboardAvailability,
     file_transfer_availability: FileTransferAvailability,
+    notification_role: NotificationRole,
 ) -> Option<(RuntimeActorSession, watch::Receiver<bool>)> {
     let (session, transport) = session.into_parts();
     let closed = transport.subscribe_closed();
@@ -2503,7 +2854,11 @@ fn runtime_session(
         session,
         Arc::new(transport),
         policy.clone(),
-        runtime_local_capabilities(clipboard_availability, file_transfer_availability),
+        runtime_local_capabilities(
+            clipboard_availability,
+            file_transfer_availability,
+            notification_role,
+        ),
         NetworkClass::Local,
         NonZeroUsize::new(RUNTIME_CAPACITY)?,
     )
@@ -2519,21 +2874,26 @@ fn runtime_session(
 fn runtime_local_capabilities(
     clipboard_availability: ClipboardAvailability,
     file_transfer_availability: FileTransferAvailability,
+    notification_role: NotificationRole,
 ) -> Vec<crosslab_policy::LocalCapability> {
     let mut capabilities = clipboard_local_capabilities(clipboard_availability);
     capabilities.extend(file_transfer_local_capabilities(file_transfer_availability));
+    capabilities.extend(notification_capabilities(notification_role.enabled()));
     capabilities
 }
 
 fn runtime_advertisement(
     clipboard_availability: ClipboardAvailability,
     file_transfer_availability: FileTransferAvailability,
+    notification_role: NotificationRole,
 ) -> CapabilityAdvertisement {
     let clipboard = clipboard_advertisement(clipboard_availability);
     let files = file_transfer_advertisement(file_transfer_availability);
-    let mut entries = Vec::with_capacity(clipboard.len() + files.len());
+    let notifications = notification_advertisement(notification_role.enabled());
+    let mut entries = Vec::with_capacity(clipboard.len() + files.len() + notifications.len());
     entries.extend_from_slice(clipboard.entries());
     entries.extend_from_slice(files.entries());
+    entries.extend_from_slice(notifications.entries());
     CapabilityAdvertisement::new(entries).expect("product capability advertisement is bounded")
 }
 

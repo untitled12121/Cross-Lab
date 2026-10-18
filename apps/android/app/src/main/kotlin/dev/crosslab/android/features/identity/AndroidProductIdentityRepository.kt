@@ -7,6 +7,7 @@ import uniffi.crosslab_mobile_ffi.productIdentityApplyPairingCommit
 import uniffi.crosslab_mobile_ffi.productIdentityFromJoinerCompletion
 import uniffi.crosslab_mobile_ffi.productIdentityLoad
 import uniffi.crosslab_mobile_ffi.productIdentityLoadOrCreate
+import uniffi.crosslab_mobile_ffi.productIdentityRevokePeer
 
 class AndroidProductIdentityRepository(
     private val store: AndroidIdentityStore,
@@ -54,7 +55,27 @@ class AndroidProductIdentityRepository(
                 deviceSigningSigner = deviceSigningSigner,
                 localDeviceSigner = localDeviceSigner,
             )
-        store.commitPayload(next.payload)
+        store.commitPayload(next.payload, expectedPayload = payload)
+        return next
+    }
+
+    val canRevokePeers: Boolean
+        get() = deviceSigningSigner.exists
+
+    @Synchronized
+    fun revokePeer(deviceId: ByteArray): MobileProductIdentity {
+        if (!deviceSigningSigner.exists) {
+            throw IdentityStoreUnavailable("device does not hold revocation authority")
+        }
+        val payload = store.loadPayload()
+            ?: throw IdentityStoreUnavailable("product identity is unavailable")
+        val next = productIdentityRevokePeer(
+            currentPayload = payload,
+            peerDeviceId = deviceId,
+            deviceSigningSigner = deviceSigningSigner,
+            localDeviceSigner = localDeviceSigner,
+        )
+        store.commitPayload(next.payload, expectedPayload = payload)
         return next
     }
 

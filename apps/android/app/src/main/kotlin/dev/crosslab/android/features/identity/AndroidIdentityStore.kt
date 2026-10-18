@@ -54,8 +54,16 @@ class AndroidIdentityStore(
     }
 
     @Synchronized
-    fun commitPayload(payload: ByteArray) {
+    fun commitPayload(payload: ByteArray, expectedPayload: ByteArray? = null) {
         val current = loadBundleOrNull()
+        if (expectedPayload != null) {
+            val actual = current?.let {
+                identityStorePayload(it.envelope, it.anchor)
+            } ?: throw IdentityStoreUnavailable("identity changed during update")
+            if (!MessageDigest.isEqual(actual, expectedPayload)) {
+                throw IdentityStoreUnavailable("identity changed during update")
+            }
+        }
         val commit = identityStorePrepareCommit(current?.envelope, payload)
         val revision = commit.revision.toLong()
         val alias = anchorAlias(revision)

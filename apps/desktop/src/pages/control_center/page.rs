@@ -4,12 +4,17 @@ use std::{collections::VecDeque, env, path::PathBuf, sync::Arc};
 #[cfg(target_os = "linux")]
 use crosslab_agent::{ClipboardPlatformError, ClipboardRequest};
 #[cfg(target_os = "linux")]
+use crosslab_core::{AuditAction, AuditHistory, AuditOutcome};
+#[cfg(target_os = "linux")]
+use crosslab_identity::DeviceId;
+#[cfg(target_os = "linux")]
 use crosslab_protocol::TransferId;
 
 #[cfg(feature = "development-provisioning")]
 use crate::features::devices::TrustDisplay;
 #[cfg(target_os = "linux")]
 use crate::features::{
+    audit::{AuditIntent, AuditLifecycle, LinuxAuditStore, current_hour},
     devices::{DesktopPresenceError, DesktopProductPresenceController},
     file_transfer::{
         LinuxFileTransferReceiveFailure, LinuxFileTransferReceiveStatus,
@@ -27,7 +32,10 @@ use crate::{
         },
         file_transfer::{FileTransferFailure, FileTransferFeatureState, FileTransferStage},
         owner::OwnerFeatureState,
-        pairing::{DesktopPairingInvitation, DesktopPairingStage, load_existing_product_identity},
+        pairing::{
+            DesktopPairingInvitation, DesktopPairingStage, load_existing_product_identity,
+            revoke_product_peer,
+        },
     },
     pages::control_center::{
         _components::{
@@ -38,12 +46,21 @@ use crate::{
     },
 };
 
+use crosslab_agent::NotificationInboxSnapshot;
+use crosslab_agent::NotificationInboxStatus;
 #[cfg(target_os = "linux")]
 use gpui_kit::PathPromptOptions;
 use gpui_kit::{
     ClipboardItem, Context, InteractiveElement as _, IntoElement, ParentElement as _, Render,
     Styled as _, Window, base::Button, component::theme::ActiveTheme as _, div, px,
 };
+
+#[cfg(target_os = "linux")]
+enum AuditCommand {
+    Record(AuditIntent),
+    Clear,
+    Export(tokio::sync::oneshot::Sender<Result<String, ()>>),
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Section {
@@ -57,7 +74,12 @@ pub struct ControlCenterPage {
     clipboard: ClipboardFeatureState,
     file_transfer: FileTransferFeatureState,
     owner: OwnerFeatureState,
+    notification_inbox: NotificationInboxSnapshot,
     runtime: DesktopRuntimeController,
+    #[cfg(target_os = "linux")]
+    audit_lifecycle: AuditLifecycle,
+    #[cfg(target_os = "linux")]
+    audit_tx: tokio::sync::mpsc::Sender<AuditCommand>,
     #[cfg(target_os = "linux")]
     product_presence: Option<Arc<DesktopProductPresenceController>>,
     #[cfg(target_os = "linux")]
@@ -79,11 +101,96 @@ pub struct ControlCenterPage {
     pairing_invitation: Option<DesktopPairingInvitation>,
     pairing_generation: u64,
     pairing_busy: bool,
+    #[cfg(target_os = "linux")]
+    pending_revocation: Option<DeviceId>,
+    #[cfg(target_os = "linux")]
+    revocation_busy: bool,
+    #[cfg(target_os = "linux")]
+    audit_clear_pending: bool,
     notice: Option<String>,
 }
 
 impl ControlCenterPage {
     pub fn new(cx: &mut Context<Self>) -> Self {
+        #[cfg(target_os = "linux")]
+        let (audit_tx, mut audit_rx) = tokio::sync::mpsc::channel::<AuditCommand>(64);
+        #[cfg(target_os = "linux")]
+        cx.spawn(async move |this, cx| {
+            let initial = async {
+                LinuxAuditStore::from_environment()?
+                    .load(current_hour()?)
+                    .await
+            }
+            .await;
+            if this
+                .update(cx, |page, cx| {
+                    match initial {
+                        Ok(history) => page
+                            .owner
+                            .set_audit_rows(audit_history_rows(&history), history.dropped_count()),
+                        Err(_) => page
+                            .owner
+                            .set_audit_notice("Protected audit history unavailable"),
+                    }
+                    cx.notify();
+                })
+                .is_err()
+            {
+                return;
+            }
+
+            while let Some(command) = audit_rx.recv().await {
+                let command = match command {
+                    AuditCommand::Export(reply) => {
+                        let result = async {
+                            let history = LinuxAuditStore::from_environment()?
+                                .load(current_hour()?)
+                                .await?;
+                            Ok::<String, crate::features::audit::LinuxAuditError>(
+                                history.export_redacted_csv(),
+                            )
+                        }
+                        .await;
+                        let _ = reply.send(result.map_err(|_| ()));
+                        continue;
+                    }
+                    command => command,
+                };
+                let result = async {
+                    let store = LinuxAuditStore::from_environment()?;
+                    let hour = current_hour()?;
+                    match command {
+                        AuditCommand::Record(intent) => {
+                            store
+                                .record(intent.action, intent.outcome, intent.revision, hour)
+                                .await
+                        }
+                        AuditCommand::Clear => store.clear(hour).await,
+                        AuditCommand::Export(_) => unreachable!(),
+                    }
+                }
+                .await;
+                if this
+                    .update(cx, |page, cx| {
+                        match result {
+                        Ok(history) => page.owner.set_audit_rows(
+                            audit_history_rows(&history),
+                            history.dropped_count(),
+                        ),
+                        Err(_) => page.owner.set_audit_notice(
+                            "Protected audit write unavailable; recent history may be incomplete",
+                        ),
+                    }
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        })
+        .detach();
+
         let runtime = DesktopRuntimeController::from_environment();
         let mut status = runtime.subscribe_status();
         let devices = status.borrow().as_ref().map_or_else(
@@ -128,6 +235,9 @@ impl ControlCenterPage {
                     Ok(Some(identity)) => page.owner.set_product_identity(
                         identity.owner_id().to_owned(),
                         identity.local_device_id().to_owned(),
+                        identity.trusted_peer_ids().to_vec(),
+                        identity.trusted_peer_device_ids().to_vec(),
+                        identity.revoked_peer_ids().to_vec(),
                     ),
                     Ok(None) => {}
                     Err(error) => {
@@ -145,7 +255,12 @@ impl ControlCenterPage {
             clipboard: ClipboardFeatureState::new(),
             file_transfer: FileTransferFeatureState::new(),
             owner,
+            notification_inbox: NotificationInboxSnapshot::default(),
             runtime,
+            #[cfg(target_os = "linux")]
+            audit_lifecycle: AuditLifecycle::default(),
+            #[cfg(target_os = "linux")]
+            audit_tx,
             #[cfg(target_os = "linux")]
             product_presence: None,
             #[cfg(target_os = "linux")]
@@ -167,11 +282,43 @@ impl ControlCenterPage {
             pairing_invitation: None,
             pairing_generation: 0,
             pairing_busy: false,
+            #[cfg(target_os = "linux")]
+            pending_revocation: None,
+            #[cfg(target_os = "linux")]
+            revocation_busy: false,
+            #[cfg(target_os = "linux")]
+            audit_clear_pending: false,
             notice: None,
         };
         #[cfg(target_os = "linux")]
         page.start_product_presence(cx);
         page
+    }
+
+    #[cfg(target_os = "linux")]
+    fn enqueue_audit(&mut self, intent: AuditIntent) {
+        if self
+            .audit_tx
+            .try_send(AuditCommand::Record(intent))
+            .is_err()
+        {
+            self.owner.note_audit_queue_drop();
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn record_transfer_audit(&mut self, sending: bool) {
+        let operation = if sending {
+            self.file_transfer.send()
+        } else {
+            self.file_transfer.receive()
+        };
+        if let Some(intent) =
+            self.audit_lifecycle
+                .transfer(sending, operation.stage(), operation.failure())
+        {
+            self.enqueue_audit(intent);
+        }
     }
 
     #[cfg(target_os = "linux")]
@@ -212,6 +359,7 @@ impl ControlCenterPage {
             let controller = Arc::new(controller);
             let mut status = controller.subscribe_status();
             let mut permissions = controller.subscribe_permissions();
+            let mut notification_status = controller.subscribe_notifications();
             let mut clipboard_requests = match controller.take_clipboard_requests() {
                 Ok(requests) => requests,
                 Err(error) => {
@@ -252,11 +400,29 @@ impl ControlCenterPage {
             };
             let initial = status.borrow().clone();
             let initial_permissions = permissions.borrow().clone();
+            let initial_notifications = notification_status.borrow().clone();
             if this
                 .update(cx, |page, cx| {
                     page.presence_starting = false;
                     page.devices.update_presence(&initial);
                     page.devices.update_permissions(&initial_permissions);
+                    page.notification_inbox = initial_notifications;
+                    if let Some(event) = page.audit_lifecycle.session(
+                        initial
+                            .runtime()
+                            .is_some_and(|runtime| runtime.session_id().is_some()),
+                    ) {
+                        page.enqueue_audit(event);
+                    }
+                    let _ = page
+                        .audit_lifecycle
+                        .permission(initial_permissions.policy_revision());
+                    if let Some(event) = page
+                        .audit_lifecycle
+                        .notification(page.notification_inbox.phase())
+                    {
+                        page.enqueue_audit(event);
+                    }
                     page.clipboard.set_available(true);
                     page.file_transfer.set_available(true);
                     if let Some(runtime) = initial.runtime() {
@@ -281,8 +447,36 @@ impl ControlCenterPage {
                         if this
                             .update(cx, |page, cx| {
                                 page.devices.update_presence(&snapshot);
+                                if let Some(event) = page.audit_lifecycle.session(
+                                    snapshot
+                                        .runtime()
+                                        .is_some_and(|runtime| runtime.session_id().is_some()),
+                                ) {
+                                    page.enqueue_audit(event);
+                                }
                                 if let Some(runtime) = snapshot.runtime() {
                                     page.owner.update_runtime(runtime);
+                                }
+                                cx.notify();
+                            })
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                    changed = notification_status.changed() => {
+                        if changed.is_err() {
+                            return;
+                        }
+                        let snapshot = notification_status.borrow_and_update().clone();
+                        if this
+                            .update(cx, |page, cx| {
+                                page.notification_inbox = snapshot;
+                                if let Some(event) =
+                                    page.audit_lifecycle
+                                        .notification(page.notification_inbox.phase())
+                                {
+                                    page.enqueue_audit(event);
                                 }
                                 cx.notify();
                             })
@@ -299,6 +493,11 @@ impl ControlCenterPage {
                         if this
                             .update(cx, |page, cx| {
                                 page.devices.update_permissions(&snapshot);
+                                if let Some(event) =
+                                    page.audit_lifecycle.permission(snapshot.policy_revision())
+                                {
+                                    page.enqueue_audit(event);
+                                }
                                 cx.notify();
                             })
                             .is_err()
@@ -320,7 +519,9 @@ impl ControlCenterPage {
                                 let Ok(result) = result else {
                                     return;
                                 };
-                                let _ = controller.complete_clipboard_read(request_id, result).await;
+                                let _ = controller
+                                    .complete_clipboard_read(request_id, result)
+                                    .await;
                             }
                             ClipboardRequest::Write { request_id, text } => {
                                 if this
@@ -331,7 +532,9 @@ impl ControlCenterPage {
                                 {
                                     return;
                                 }
-                                let _ = controller.complete_clipboard_write(request_id, Ok(())).await;
+                                let _ = controller
+                                    .complete_clipboard_write(request_id, Ok(()))
+                                    .await;
                             }
                         }
                     }
@@ -377,7 +580,149 @@ impl ControlCenterPage {
         .detach();
     }
 
+    #[cfg(target_os = "linux")]
+    fn revoke_owner_device(&mut self, device_id: DeviceId, cx: &mut Context<Self>) {
+        if self.revocation_busy {
+            return;
+        }
+        if self.pending_revocation != Some(device_id) {
+            self.pending_revocation = Some(device_id);
+            self.notice = Some("Press Confirm revoke to permanently deny this device.".to_owned());
+            cx.notify();
+            return;
+        }
+
+        self.pending_revocation = None;
+        self.revocation_busy = true;
+        self.notice = Some("Signing and saving terminal revocation…".to_owned());
+        let existing = self.product_presence.as_ref().map(Arc::clone);
+        cx.notify();
+
+        cx.spawn(async move |this, cx| {
+            let result = revoke_product_peer(device_id).await;
+            let invalidation_error = if result.is_ok() {
+                if let Some(controller) = existing {
+                    controller
+                        .invalidate_for_revocation()
+                        .await
+                        .err()
+                        .map(|error| error.to_string())
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            let _ = this.update(cx, |page, cx| {
+                if result.is_ok() {
+                    page.enqueue_audit(AuditIntent::new(
+                        AuditAction::PeerRevoked,
+                        AuditOutcome::Succeeded,
+                        0,
+                    ));
+                }
+                page.revocation_busy = false;
+                match result {
+                    Ok(identity) => {
+                        page.owner.set_product_identity(
+                            identity.owner_id().to_owned(),
+                            identity.local_device_id().to_owned(),
+                            identity.trusted_peer_ids().to_vec(),
+                            identity.trusted_peer_device_ids().to_vec(),
+                            identity.revoked_peer_ids().to_vec(),
+                        );
+                        page.product_presence = None;
+                        page.clipboard.set_available(false);
+                        page.file_transfer.set_available(false);
+                        if invalidation_error.is_none() {
+                            page.start_product_presence(cx);
+                            page.notice = Some("Device trust revoked and saved.".to_owned());
+                        } else {
+                            page.notice = Some(
+                                "Revocation saved; stop Cross-Lab and restart to finish session teardown."
+                                    .to_owned(),
+                            );
+                        }
+                    }
+                    Err(error) => page.notice = Some(error.to_string()),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    #[cfg(target_os = "linux")]
+    fn clear_owner_audit(&mut self, cx: &mut Context<Self>) {
+        if !self.audit_clear_pending {
+            self.audit_clear_pending = true;
+            self.owner.set_audit_notice(
+                "Confirm again to clear local history. Revoked trust remains protected.",
+            );
+            cx.notify();
+            return;
+        }
+        self.audit_clear_pending = false;
+        if self.audit_tx.try_send(AuditCommand::Clear).is_err() {
+            self.owner
+                .set_audit_notice("Audit clear could not be queued; please retry");
+        } else {
+            self.owner.set_audit_notice("Clearing protected history…");
+        }
+        cx.notify();
+    }
+
+    #[cfg(target_os = "linux")]
+    fn export_owner_audit(&mut self, cx: &mut Context<Self>) {
+        let (reply, result) = tokio::sync::oneshot::channel();
+        if self.audit_tx.try_send(AuditCommand::Export(reply)).is_err() {
+            self.owner
+                .set_audit_notice("Audit export could not be queued; please retry");
+            cx.notify();
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            let result = result.await;
+            let _ = this.update(cx, |page, cx| {
+                match result {
+                    Ok(Ok(csv)) => {
+                        cx.write_to_clipboard(ClipboardItem::new_string(csv));
+                        page.owner.set_audit_notice(
+                            "Redacted CSV copied to clipboard; paste to save it.",
+                        );
+                    }
+                    _ => page
+                        .owner
+                        .set_audit_notice("Protected audit history cannot be exported"),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    #[cfg(target_os = "linux")]
+    fn request_notification_subscription(&mut self, cx: &mut Context<Self>) {
+        self.notice = Some(match self.product_presence.as_ref() {
+            Some(controller) => match controller.request_notifications() {
+                Ok(()) => {
+                    "Subscription requested; waiting for Android's policy response.".to_owned()
+                }
+                Err(error) => error.to_string(),
+            },
+            None => "Connect a trusted Android device first.".to_owned(),
+        });
+        cx.notify();
+    }
+
     fn set_section(&mut self, section: Section, cx: &mut Context<Self>) {
+        if self.section != section {
+            #[cfg(target_os = "linux")]
+            {
+                self.pending_revocation = None;
+                self.audit_clear_pending = false;
+            }
+        }
         self.section = section;
         self.notice = None;
         cx.notify();
@@ -390,8 +735,19 @@ impl ControlCenterPage {
 
         if let Some(mut invitation) = self.pairing_invitation.take()
             && !invitation.status().terminal()
+            && invitation.cancel().is_ok()
         {
-            let _ = invitation.cancel();
+            #[cfg(target_os = "linux")]
+            self.enqueue_audit(AuditIntent::new(
+                AuditAction::PairingCancelled,
+                AuditOutcome::Cancelled,
+                0,
+            ));
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let event = self.audit_lifecycle.pairing_started();
+            self.enqueue_audit(event);
         }
         self.pairing_generation = self.pairing_generation.wrapping_add(1);
         let generation = self.pairing_generation;
@@ -409,6 +765,12 @@ impl ControlCenterPage {
                         }
                         page.pairing_busy = false;
                         page.pairing_invitation = None;
+                        #[cfg(target_os = "linux")]
+                        page.enqueue_audit(AuditIntent::new(
+                            AuditAction::PairingFailed,
+                            AuditOutcome::Failed,
+                            0,
+                        ));
                         page.notice = Some(error.to_string());
                         cx.notify();
                     });
@@ -426,6 +788,9 @@ impl ControlCenterPage {
                     page.owner.set_product_identity(
                         invitation.owner_id().to_owned(),
                         invitation.local_device_id().to_owned(),
+                        invitation.trusted_peer_ids().to_vec(),
+                        invitation.trusted_peer_device_ids().to_vec(),
+                        invitation.revoked_peer_ids().to_vec(),
                     );
                     page.pairing_invitation = Some(invitation);
                     page.notice = None;
@@ -438,10 +803,28 @@ impl ControlCenterPage {
 
             while status.changed().await.is_ok() {
                 let stage = *status.borrow_and_update();
+                let latest_identity = if stage == DesktopPairingStage::Paired {
+                    load_existing_product_identity().await.ok().flatten()
+                } else {
+                    None
+                };
                 if this
                     .update(cx, |page, cx| {
                         if page.pairing_generation != generation {
                             return;
+                        }
+                        #[cfg(target_os = "linux")]
+                        for event in page.audit_lifecycle.pairing(stage).into_iter().flatten() {
+                            page.enqueue_audit(event);
+                        }
+                        if let Some(identity) = latest_identity {
+                            page.owner.set_product_identity(
+                                identity.owner_id().to_owned(),
+                                identity.local_device_id().to_owned(),
+                                identity.trusted_peer_ids().to_vec(),
+                                identity.trusted_peer_device_ids().to_vec(),
+                                identity.revoked_peer_ids().to_vec(),
+                            );
                         }
                         page.notice = match stage {
                             DesktopPairingStage::Paired => {
@@ -608,6 +991,7 @@ impl ControlCenterPage {
                 incoming.offer().display_name().to_owned(),
                 incoming.offer().file_size(),
             );
+            self.record_transfer_audit(false);
         }
     }
 
@@ -665,12 +1049,14 @@ impl ControlCenterPage {
             .unwrap_or("Selected file")
             .to_owned();
         self.file_transfer.begin_send(display_name);
+        self.record_transfer_audit(true);
 
         match controller.start_file_transfer_send(path) {
             Ok(handle) => self.track_file_transfer_send(handle, cx),
             Err(error) => {
                 self.file_transfer
                     .send_failed(0, 0, FileTransferFailure::Failed);
+                self.record_transfer_audit(true);
                 self.notice = Some(error.to_string());
                 cx.notify();
             }
@@ -692,12 +1078,14 @@ impl ControlCenterPage {
             .unwrap_or("Selected file")
             .to_owned();
         self.file_transfer.begin_send(display_name);
+        self.record_transfer_audit(true);
 
         match controller.retry_file_transfer_send(token) {
             Ok(handle) => self.track_file_transfer_send(handle, cx),
             Err(error) => {
                 self.file_transfer
                     .send_failed(0, 0, FileTransferFailure::Failed);
+                self.record_transfer_audit(true);
                 self.notice = Some(error.to_string());
                 cx.notify();
             }
@@ -812,6 +1200,7 @@ impl ControlCenterPage {
                     Err(DesktopPresenceError::FileTransferCancelled) => {
                         page.file_transfer
                             .receive_cancelled(0, page.file_transfer.receive().total_bytes());
+                        page.record_transfer_audit(false);
                         page.notice = None;
                     }
                     Err(error @ DesktopPresenceError::FileTransferConnection) => {
@@ -820,6 +1209,7 @@ impl ControlCenterPage {
                             page.file_transfer.receive().total_bytes(),
                             FileTransferFailure::Connection,
                         );
+                        page.record_transfer_audit(false);
                         page.notice = Some(error.to_string());
                     }
                     Err(error) => {
@@ -829,6 +1219,7 @@ impl ControlCenterPage {
                             page.file_transfer.receive().total_bytes(),
                             FileTransferFailure::Storage,
                         );
+                        page.record_transfer_audit(false);
                         page.notice = Some(error.to_string());
                     }
                 }
@@ -863,6 +1254,7 @@ impl ControlCenterPage {
         let total_bytes = incoming.offer().file_size();
         self.pending_file_transfers.pop_front();
         self.file_transfer.receive_cancelled(0, total_bytes);
+        self.record_transfer_audit(false);
         self.notice = None;
         self.surface_next_file_transfer();
         cx.notify();
@@ -967,6 +1359,7 @@ impl ControlCenterPage {
                 self.notice = None;
             }
         }
+        self.record_transfer_audit(true);
     }
 
     #[cfg(target_os = "linux")]
@@ -1058,6 +1451,7 @@ impl ControlCenterPage {
                 self.surface_next_file_transfer();
             }
         }
+        self.record_transfer_audit(false);
     }
 
     #[cfg(feature = "development-provisioning")]
@@ -1493,6 +1887,109 @@ impl Render for ControlCenterPage {
             .as_ref()
             .map(|invitation| pairing_invitation_panel(invitation, cx));
 
+        #[cfg(target_os = "linux")]
+        let owner_controls = {
+            let mut controls = div().flex().flex_col().gap(px(appearance.spacing.md));
+            let peers: Vec<_> = self
+                .owner
+                .trusted_peer_device_ids()
+                .iter()
+                .copied()
+                .zip(self.owner.trusted_peer_ids().iter().cloned())
+                .take(24)
+                .collect();
+            for (index, (device_id, preview)) in peers.into_iter().enumerate() {
+                let confirming = self.pending_revocation == Some(device_id);
+                controls = controls.child(
+                    Button::new(format!("owner-revoke-{index}"))
+                        .accessibility_label(if confirming {
+                            "Confirm permanent device revocation"
+                        } else {
+                            "Revoke trusted device"
+                        })
+                        .disabled(self.revocation_busy)
+                        .on_click(cx.listener(move |page, _, _, cx| {
+                            page.revoke_owner_device(device_id, cx);
+                        }))
+                        .h(px(appearance.metrics.control_height_default))
+                        .px(px(appearance.spacing.lg))
+                        .border_1()
+                        .border_color(theme.border)
+                        .bg(theme.secondary)
+                        .text_color(theme.secondary_foreground)
+                        .focus_visible(|style| style.border_color(theme.ring))
+                        .child(if confirming {
+                            format!("Confirm revoke {preview}")
+                        } else {
+                            format!("Revoke {preview}")
+                        }),
+                );
+            }
+            if self.pending_revocation.is_some() {
+                controls = controls.child(
+                    Button::new("owner-cancel-revoke")
+                        .on_click(cx.listener(|page, _, _, cx| {
+                            page.pending_revocation = None;
+                            page.notice = None;
+                            cx.notify();
+                        }))
+                        .child("Cancel revocation"),
+                );
+            }
+            controls = controls
+                .child(
+                    Button::new("owner-notifications-subscribe")
+                        .accessibility_label("Request Android notification mirroring")
+                        .disabled(matches!(
+                            self.notification_inbox.phase(),
+                            NotificationInboxStatus::Active
+                                | NotificationInboxStatus::AwaitingApproval
+                        ))
+                        .on_click(cx.listener(|page, _, _, cx| {
+                            page.request_notification_subscription(cx);
+                        }))
+                        .child("Request Android notifications"),
+                )
+                .child(
+                    Button::new("owner-audit-export")
+                        .accessibility_label("Copy redacted audit history CSV")
+                        .on_click(cx.listener(|page, _, _, cx| {
+                            page.export_owner_audit(cx);
+                        }))
+                        .child("Copy redacted history CSV"),
+                )
+                .child(
+                    Button::new("owner-audit-clear")
+                        .accessibility_label(if self.audit_clear_pending {
+                            "Confirm permanent audit history deletion"
+                        } else {
+                            "Clear private audit history"
+                        })
+                        .on_click(cx.listener(|page, _, _, cx| {
+                            page.clear_owner_audit(cx);
+                        }))
+                        .child(if self.audit_clear_pending {
+                            "Confirm clear history"
+                        } else {
+                            "Clear audit history"
+                        }),
+                );
+            if self.audit_clear_pending {
+                controls = controls.child(
+                    Button::new("owner-audit-cancel")
+                        .on_click(cx.listener(|page, _, _, cx| {
+                            page.audit_clear_pending = false;
+                            page.owner.set_audit_notice("History deletion cancelled");
+                            cx.notify();
+                        }))
+                        .child("Cancel clear"),
+                );
+            }
+            Some(controls)
+        };
+        #[cfg(not(target_os = "linux"))]
+        let owner_controls = None;
+
         let content = match self.section {
             Section::Devices => devices_content(
                 &self.devices,
@@ -1503,7 +2000,13 @@ impl Render for ControlCenterPage {
                 self.notice.as_deref(),
                 cx,
             ),
-            Section::Owner => owner_content(&self.owner, cx),
+            Section::Owner => owner_content(
+                &self.owner,
+                owner_controls,
+                self.notice.as_deref(),
+                &self.notification_inbox,
+                cx,
+            ),
         };
 
         control_center_layout(navigation, content, cx)
@@ -1532,4 +2035,21 @@ fn map_receive_failure(failure: LinuxFileTransferReceiveFailure) -> FileTransfer
         LinuxFileTransferReceiveFailure::Integrity => FileTransferFailure::Integrity,
         LinuxFileTransferReceiveFailure::Storage => FileTransferFailure::Storage,
     }
+}
+
+#[cfg(target_os = "linux")]
+fn audit_history_rows(history: &AuditHistory) -> Vec<String> {
+    history
+        .entries()
+        .iter()
+        .map(|event| {
+            format!(
+                "{} · {} · {} · revision {}",
+                event.occurred_hour(),
+                event.action().label(),
+                event.outcome().label(),
+                event.revision()
+            )
+        })
+        .collect()
 }

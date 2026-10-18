@@ -115,6 +115,8 @@ class PairingJoinerController(
                                 "The inviting device could not be resolved."
                             PairingDiscoveryFailure.PROFILE_MISMATCH ->
                                 "The discovered service does not match the Cross-Lab pairing profile."
+                            PairingDiscoveryFailure.NO_IPV4_ROUTE ->
+                                "No IPv4 pairing address was resolved. Check that both devices share a reachable LAN."
                             PairingDiscoveryFailure.TIMEOUT ->
                                 "The inviting device was not found before the discovery timeout."
                         },

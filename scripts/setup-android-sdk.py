@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import platform
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -21,9 +22,9 @@ import zipfile
 TOOLS_VERSION = "15859902"
 PACKAGES = (
     "platform-tools",
-    "platforms;android-37",
-    "build-tools;36.0.0",
-    "ndk;28.2.13676358",
+    "platforms/android-37.0",
+    "build-tools/36.0.0",
+    "ndk/28.2.13676358",
 )
 DOWNLOADS = {
     ("Linux", "x86_64"): (
@@ -110,9 +111,18 @@ def download_tools(root: Path) -> Path:
     return root / "cmdline-tools" / "latest" / "bin" / "sdkmanager"
 
 
-def sdkmanager(root: Path) -> Path:
-    executable = root / "cmdline-tools" / "latest" / "bin" / "sdkmanager"
-    return executable if executable.is_file() else download_tools(root)
+def sdk_tools(root: Path) -> tuple[Path, Path]:
+    bin_dir = root / "cmdline-tools" / "latest" / "bin"
+    manager = bin_dir / "sdkmanager"
+    android = bin_dir / "android"
+    if not manager.is_file() or not android.is_file():
+        download_tools(root)
+
+    for name in ("sdkmanager", "android", "avdmanager"):
+        executable = bin_dir / name
+        if executable.is_file():
+            executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+    return manager, android
 
 
 def run(command: list[str]) -> None:
@@ -128,13 +138,13 @@ def main() -> None:
 
     root = Path(sys.argv[1]).expanduser()
     root.mkdir(parents=True, exist_ok=True)
-    manager = sdkmanager(root)
+    manager, android = sdk_tools(root)
 
     print("crosslab: Android SDK licenses may require confirmation")
     run([str(manager), f"--sdk_root={root}", "--licenses"])
 
     print("crosslab: installing pinned Android SDK packages")
-    run([str(manager), f"--sdk_root={root}", *PACKAGES])
+    run([str(android), "--no-metrics", f"--sdk={root}", "sdk", "install", *PACKAGES])
     print("crosslab: Android SDK setup complete")
 
 
