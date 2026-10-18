@@ -8,7 +8,10 @@ class NotificationDisplayBoundsTest {
     @Test
     fun stripsControlsAndBoundsUtf8WithoutSplittingCharacters() {
         assertEquals("ab", boundedDisplay("a\u0000b", 3))
-        assertEquals("c", boundedDisplay("\ud83d\udd12c", 4))
+        assertEquals("🔒", boundedDisplay("\ud83d\udd12c", 4))
+        assertEquals("🔒c", boundedDisplay("\ud83d\udd12c", 5))
+        assertEquals("", boundedDisplay("\ud83d\udd12c", 3))
+        assertEquals("ac", boundedDisplay("a\uD800c\uDC00", 2))
         assertEquals("é", boundedDisplay("éa", 2))
         assertEquals("", boundedDisplay("é", 1))
         assertNull(boundedDisplay(null, 96))

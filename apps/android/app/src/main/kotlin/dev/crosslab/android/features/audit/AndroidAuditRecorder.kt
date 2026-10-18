@@ -87,7 +87,7 @@ class AndroidAuditRecorder(
             }
         } catch (_: RejectedExecutionException) {
             publish(AuditRecordingStatus(null, dropped.incrementAndGet(), true))
-            callback(Result.failure(IllegalStateException("audit writer queue full")))
+            runCatching { callback(Result.failure(IllegalStateException("audit writer queue full"))) }
         }
     }
 

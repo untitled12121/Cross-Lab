@@ -86,11 +86,19 @@ internal fun boundedDisplay(input: CharSequence?, maxBytes: Int): String? {
     if (input == null) return null
     val output = StringBuilder()
     var byteCount = 0
-    for (char in input) {
-        if (char.isISOControl() || char.isSurrogate()) continue
-        val size = char.toString().toByteArray(Charsets.UTF_8).size
+    var index = 0
+    while (index < input.length) {
+        val codePoint = Character.codePointAt(input, index)
+        index += Character.charCount(codePoint)
+        if (codePoint in 0xD800..0xDFFF || Character.isISOControl(codePoint)) continue
+        val size = when {
+            codePoint < 0x80 -> 1
+            codePoint < 0x800 -> 2
+            codePoint < 0x10000 -> 3
+            else -> 4
+        }
         if (byteCount + size > maxBytes) break
-        output.append(char)
+        output.appendCodePoint(codePoint)
         byteCount += size
     }
     return output.toString()
