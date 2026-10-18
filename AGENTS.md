@@ -26,7 +26,7 @@ CI duration (e.g., 30 minutes) is an estimate, not a timer. Do not idle needless
 
 ## Current priorities
 
-Phase 2 Linux + Android MVP is active. Fix real-product pairing and hardware blockers; complete notifications, privacy-safe audit/history, owner-facing production revocation/removal, integration, permission/transfer correctness and native UX. Broader visual polish follows functional reliability but must be completed before Phase 2 release criteria are claimed. Check `docs/development/ROADMAP.md`, `CURRENT.md`, and the latest approved ADRs for actual state. No Phase 3 until Phase 2 is complete.
+Phase 2 Linux + Android MVP is active. PR #79 integrated normal product pairing fixes, notifications, privacy-safe audit/history, signed owner-facing revocation, permission/transfer correctness and native UX foundations into `main`; do not treat software integration as hardware certification. Prioritize remaining real-product pairing/reconnect evidence, lifecycle robustness, UX/accessibility/resources, and fixes supported by physical observations before a Phase 2 release claim. Check `docs/development/ROADMAP.md`, `CURRENT.md`, and the latest approved ADRs for actual state. No Phase 3 until Phase 2 is complete.
 
 ## New-chat resume
 

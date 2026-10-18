@@ -42,9 +42,9 @@ Target:
 - revocation/device removal;
 - polished native Linux GPUI and Android Compose UX.
 
-Implemented in software and host CI: discovery/trusted pairing, authenticated presence/reconnect, explicit device policies, clipboard read/write, and resumable single-file transfer (Linux GPUI + Android Compose). The owner still needs real Linux↔Android hardware evidence.
+**Software integration merged:** PR [#79](https://github.com/untitled12121/Cross-Lab/pull/79) brought pairing/SDK fixes, authenticated presence/reconnect, per-device policy, clipboard, resumable single-file transfer, Android-to-Linux notifications with OS/owner/peer gates, protected redacted owner audit/history, and signed durable device revocation to `main`. Master Architecture rev2.11 and accepted ADR-0021/22/23 govern these features. Reviewed source `8fd25ef7` passed formatting, Rust dependency audit/check/desktop builds/Clippy/workspace tests, Android tests/builds and Fuzz Smoke; see [CURRENT.md](CURRENT.md) for exact CI run status.
 
-**Not completed Phase 2 product capabilities:** notifications and owner-facing audit/history. Signed, durable owner-device revocation is under implementation and not yet software/hardware verified; owner device removal and revocation device evidence remain pending. Simulated/core/session revocation tests do not establish the complete platform product flow. These remain explicitly outstanding; do not report the full Phase 2 MVP or Cross-Lab 0.1 as finished just because the current pairing/clipboard/file-transfer slice passes CI.
+**Not completed:** real Linux↔Android hardware acceptance, trust/reconnect and authorization observations, notification OS opt-out, integrity/resume tests, protected audit recovery, irreversible revocation evidence, and final native UX/accessibility/resource checks. Software CI cannot substitute for these results. The Phase 2 MVP and Cross-Lab 0.1 are **not released or certified**; owner hardware and outstanding corrections remain required.
 
 Cross-Lab 0.1 succeeds when two real Linux/Android devices can perform the required MVP operations without mandatory cloud infrastructure.
 

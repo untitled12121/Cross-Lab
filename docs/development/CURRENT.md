@@ -14,7 +14,17 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 **Exact resume action:** Inspect `main`, active PR #79, CI result, and actual code; fix any CI failures in a consolidated batch; once available have the owner retest normal desktop-generated QR and Android pairing, then proceed with the remaining Phase 2 implementation in cohesive batches. Keep `CURRENT.md` updated at verified milestones.
 
-## Current Phase
+## Active checkpoint — 2026-10-19 (Phase 2 software integration merged)
+
+- **Branch and baseline:** `main`; PR [#79](https://github.com/untitled12121/Cross-Lab/pull/79) merged as `b6458c5611e9bb661f6c7216d1e824199db4425f`. The reviewed feature source head is `8fd25ef7fdb1d20fa363abb0434bc7e7011c7947`. This history section captures the pre-documentation source baseline; later documentation-only commits do not change the source revision.
+- **Governing design:** Master Architecture rev2.11, accepted ADR-0021 (permission-gated Android-to-Linux notifications), ADR-0022 (durable signed revocation/tombstones), and ADR-0023 (private owner audit/history); no Phase 3 decision or privilege expansion.
+- **Integrated software:** normal Linux/Android QR pairing and SDK bootstrap fixes, authenticated presence, device policies, clipboard, resumable file transfer, notification subscription and privacy controls, protected owner-visible redacted audit/history, and owner-confirmed durable terminal revocation. Follow-up hardening fixes notification timeout ordering, direct transfer failure audit, Unicode notification text, common system/call/service notification exclusion, and rejected audit queue callbacks.
+- **Security maintenance:** pinned `rustls` upgraded from 0.23.45 to 0.23.46 with crates.io checksum after the October 2026 RustSec advisories. No exceptions were added to dependency security audit.
+- **Verification:** exact-source [Fuzz Smoke 39164553027](https://github.com/untitled12121/Cross-Lab/actions/runs/39164553027) succeeded. In exact-source [CI 39164553054](https://github.com/untitled12121/Cross-Lab/actions/runs/39164553054), formatting, dependency audit, Rust check, UniFFI generation, both Linux desktop builds, Clippy, workspace tests, Android unit tests, and normal/development Android assemblies succeeded. The Rust job's post-cache cleanup had **not yet reported its final conclusion** when this checkpoint was written. Do not mistake successful steps for a final completed run.
+- **Release gate remains open:** physical Linux + arm64 Android QR/LAN pairing and authenticated reconnect, permission default-deny, clipboard, file transfer/resume, notification consent/redaction/opt-out, protected audit recovery, accessibility/resources, and terminal signed revocation **last with disposable identity** have no owner-device evidence. CI does not certify these behaviors. Do not call Phase 2 / Cross-Lab 0.1 complete or start Phase 3.
+- **Next exact task:** check CI 39164553054 final conclusion and any main integration CI without repeatedly rerunning jobs; then continue targeted Phase 2 native UX and lifecycle reliability work, and record actual owner-device observations in [Phase 2 acceptance](../research/Phase2-product-acceptance.md) before release. Preserve separate identities and least-privilege boundaries.
+
+## Historical Phase Handoff (before PR #79 merge)
 
 **M10 Linux + Android implementation is complete in code; physical Linux/Android camera/LAN evidence remains pending. Phase 2 Linux + Android MVP is the active implementation phase. Phase 3 adaptive networking remains explicitly out of scope until Phase 2 is complete.**
 

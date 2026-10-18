@@ -6,7 +6,7 @@ This is an evidence worksheet, **not a certification**. All scenarios are pendin
 
 ## Prepare
 
-On the Linux host, use the exact reviewed Phase 2 feature branch, record its short commit hash, and follow [the build guide](../development/BUILD.md). From the repository root:
+On the Linux host, use reviewed `main` at or after the PR #79 software merge (`b6458c5`), record the actual short commit hash, and follow [the build guide](../development/BUILD.md). From the repository root:
 
 ```bash
 git status --short
@@ -65,4 +65,4 @@ For detailed file-transfer edge cases, use [the transfer evidence matrix](Phase2
 
 Never attach raw QR code/text, private keys, credentials, device IDs or serials, IP/MAC/SSID, real file names/paths/contents, clipboard contents, notification title/body/app label, database/keyring payloads or unredacted logs. Use screenshots with identifiers concealed, observed status labels, coarse OS/API details and checksums of **disposable random fixture data**. If blocked, record a harmless state/error label and what action preceded it. Do not overwrite production identity/keyring data to simulate corruption.
 
-The Phase 2 gate can be closed only when the owner has supplied physical evidence, software CI passes at the **actual reviewed commit**, and remaining failures are resolved. Leave PR #79 unmerged until then.
+The Phase 2 **release** gate can be closed only when the owner has supplied physical evidence, software CI passes at the reviewed source, and remaining failures are resolved. PR #79 was merged as a software integration checkpoint under the owner's requested batch-first workflow; merging does **not** assert successful real-device acceptance or readiness to release Cross-Lab 0.1.
