@@ -130,9 +130,7 @@ private class DiscoverySession(
     }
 
     override fun onServiceLost(serviceInfo: NsdServiceInfo) {
-        if (serviceInfo.serviceName == expectedInstance) {
-            resolving.set(false)
-        }
+        // An in-flight resolution stays owned by this session until it finishes.
     }
 
     override fun onStartDiscoveryFailed(
@@ -167,7 +165,6 @@ private class DiscoverySession(
                         serviceInfo: NsdServiceInfo,
                         errorCode: Int,
                     ) {
-                        resolving.set(false)
                         if (!finished.get()) {
                             fail(PairingDiscoveryFailure.RESOLVE_FAILED)
                         }

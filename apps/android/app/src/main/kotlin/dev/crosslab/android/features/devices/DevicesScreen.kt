@@ -122,6 +122,7 @@ fun DevicesScreen(
                         ControlButton(
                             theme = theme,
                             label = "Reconnect",
+                            enabled = runtime.networkAvailable,
                             onClick = onReconnect,
                         )
                     } else if (presence != PresenceDisplay.UNAVAILABLE || device != null) {
@@ -136,6 +137,17 @@ fun DevicesScreen(
         }
 
         Spacer(Modifier.height(theme.spacing.xl.toFloat().dp))
+
+        if (!runtime.networkAvailable) {
+            BasicText(
+                text = "Network unavailable. Cross-Lab will resume local discovery when connectivity returns.",
+                style =
+                    theme.typography.scales.body
+                        .toTextStyle()
+                        .copy(color = colors.mutedForeground.toComposeColor()),
+            )
+            Spacer(Modifier.height(theme.spacing.md.toFloat().dp))
+        }
 
         if (scanning) {
             PairingScannerPanel(

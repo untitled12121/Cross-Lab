@@ -88,6 +88,7 @@ class RuntimeController(
         update {
             if (it.lifecycle != RuntimeLifecycle.STOPPED) return@update null
             port.start()
+            if (!it.networkAvailable) port.networkLost()
             it.copy(
                 lifecycle = RuntimeLifecycle.RUNNING,
                 snapshot = port.snapshot(),
@@ -108,22 +109,26 @@ class RuntimeController(
 
     fun onNetworkLost() {
         update {
-            if (it.lifecycle != RuntimeLifecycle.RUNNING) return@update null
-            port.networkLost()
+            if (it.lifecycle == RuntimeLifecycle.SHUTDOWN || !it.networkAvailable) {
+                return@update null
+            }
+            if (it.lifecycle == RuntimeLifecycle.RUNNING) port.networkLost()
             it.copy(
                 networkAvailable = false,
-                snapshot = port.snapshot(),
+                snapshot = if (it.lifecycle == RuntimeLifecycle.RUNNING) port.snapshot() else it.snapshot,
             )
         }
     }
 
     fun onNetworkAvailable() {
         update {
-            if (it.lifecycle != RuntimeLifecycle.RUNNING) return@update null
-            port.networkAvailable()
+            if (it.lifecycle == RuntimeLifecycle.SHUTDOWN || it.networkAvailable) {
+                return@update null
+            }
+            if (it.lifecycle == RuntimeLifecycle.RUNNING) port.networkAvailable()
             it.copy(
                 networkAvailable = true,
-                snapshot = port.snapshot(),
+                snapshot = if (it.lifecycle == RuntimeLifecycle.RUNNING) port.snapshot() else it.snapshot,
             )
         }
     }
@@ -182,7 +187,10 @@ class RuntimeController(
             if (it.lifecycle == RuntimeLifecycle.SHUTDOWN) return@update null
             port.stop()
             if (it.lifecycle == RuntimeLifecycle.RUNNING) {
-                succeeded = runCatching { port.start() }.isSuccess
+                succeeded = runCatching {
+                    port.start()
+                    if (!it.networkAvailable) port.networkLost()
+                }.isSuccess
             }
             if (!succeeded) {
                 runCatching { port.stop() }

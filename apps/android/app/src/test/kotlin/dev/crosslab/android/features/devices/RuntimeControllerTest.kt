@@ -35,6 +35,51 @@ class RuntimeControllerTest {
 
         assertEquals(1, port.networkLost)
         assertEquals(1, port.networkAvailable)
+        assertEquals(false, controller.state().networkAvailable)
+    }
+
+    @Test
+    fun networkChangesWhileStoppedAreReappliedBeforeSessionsResume() {
+        val port = FakeRuntimePort()
+        val controller = RuntimeController(port)
+
+        controller.onNetworkLost()
+        assertEquals(false, controller.state().networkAvailable)
+        assertEquals(0, port.networkLost)
+
+        controller.onForeground()
+        assertEquals(1, port.starts)
+        assertEquals(1, port.networkLost)
+        assertEquals(false, controller.state().networkAvailable)
+
+        controller.reloadTrust()
+        assertEquals(2, port.starts)
+        assertEquals(2, port.networkLost)
+
+        controller.onNetworkAvailable()
+        assertEquals(true, controller.state().networkAvailable)
+        assertEquals(1, port.networkAvailable)
+    }
+
+    @Test
+    fun repeatedNetworkCallbacksDoNotRestartDiscovery() {
+        val port = FakeRuntimePort()
+        val controller = RuntimeController(port)
+
+        controller.onForeground()
+        controller.onNetworkAvailable()
+        controller.onNetworkLost()
+        controller.onNetworkLost()
+        controller.onNetworkAvailable()
+        controller.onNetworkAvailable()
+
+        assertEquals(1, port.networkLost)
+        assertEquals(1, port.networkAvailable)
+        assertEquals(true, controller.state().networkAvailable)
+
+        controller.shutdown()
+        controller.onNetworkLost()
+        assertEquals(1, port.networkLost)
         assertEquals(true, controller.state().networkAvailable)
     }
 
