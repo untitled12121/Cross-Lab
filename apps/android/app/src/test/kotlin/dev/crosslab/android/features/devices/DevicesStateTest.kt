@@ -1,10 +1,39 @@
 package dev.crosslab.android.features.devices
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DevicesStateTest {
+    @Test
+    fun reconnectControlIsOfferedForFailureOrPauseButNeverForRevokedPeer() {
+        assertTrue(DevicesState(null, PresenceDisplay.FAILED).offersReconnect())
+        assertTrue(DevicesState(null, PresenceDisplay.PAUSED).offersReconnect())
+        assertTrue(DevicesState(null, PresenceDisplay.UNAVAILABLE).offersReconnect())
+        assertFalse(DevicesState(null, PresenceDisplay.ONLINE).offersReconnect())
+
+        val known = DevicesState.from(
+            RuntimeSnapshot.disconnected().copy(
+                presence = RuntimePresence.FAILED,
+                peerDeviceId = "trusted-peer",
+                trust = RuntimeTrust.TRUSTED,
+            ),
+        )
+        assertTrue(known.offersReconnect())
+        assertFalse(known.copy(presence = PresenceDisplay.ONLINE).offersReconnect())
+
+        val revoked = DevicesState.from(
+            RuntimeSnapshot.disconnected().copy(
+                presence = RuntimePresence.FAILED,
+                peerDeviceId = "revoked-peer",
+                trust = RuntimeTrust.REVOKED,
+            ),
+        )
+        assertFalse(revoked.offersReconnect())
+    }
+
     @Test
     fun disconnectedSnapshotDoesNotInventADevice() {
         val state = DevicesState.from(RuntimeSnapshot.disconnected())

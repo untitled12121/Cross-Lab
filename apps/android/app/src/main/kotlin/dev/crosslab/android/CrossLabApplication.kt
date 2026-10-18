@@ -182,6 +182,7 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
     }
 
     override fun onStop(owner: LifecycleOwner) {
+        if (pairingController.state().active) pairingController.cancel()
         runtimeController.onBackground()
     }
 

@@ -114,11 +114,7 @@ fun DevicesScreen(
                     runtime.peerControlAvailable &&
                         runtime.lifecycle == RuntimeLifecycle.RUNNING
                 ) {
-                    if (presence == PresenceDisplay.PAUSED ||
-                        (presence == PresenceDisplay.UNAVAILABLE &&
-                            device == null &&
-                            runtime.networkAvailable)
-                    ) {
+                    if (devices.offersReconnect()) {
                         ControlButton(
                             theme = theme,
                             label = "Reconnect",

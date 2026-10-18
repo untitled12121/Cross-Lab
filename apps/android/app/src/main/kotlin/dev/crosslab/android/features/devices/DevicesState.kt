@@ -77,6 +77,14 @@ data class DevicesState(
     val current: DevicePresentation?,
     val presence: PresenceDisplay,
 ) {
+    fun offersReconnect(): Boolean =
+        current?.trust != TrustDisplay.REVOKED &&
+            when (presence) {
+                PresenceDisplay.PAUSED, PresenceDisplay.FAILED -> true
+                PresenceDisplay.UNAVAILABLE -> current == null
+                else -> false
+            }
+
     companion object {
         fun from(snapshot: RuntimeSnapshot): DevicesState {
             val presence =
