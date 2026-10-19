@@ -21,6 +21,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import dev.crosslab.android.components.ui.ControlButton
 import dev.crosslab.android.components.ui.StatusBadge
@@ -64,6 +68,7 @@ fun DevicesScreen(
     val colors = theme.colors
     val device = devices.current
     val presence = devices.presence
+    val recovery = RuntimeRecoveryPresentation.from(runtime, devices)
     var scanning by remember { mutableStateOf(false) }
 
     Column(
@@ -106,52 +111,25 @@ fun DevicesScreen(
                             else -> "Add Device"
                         },
                     active = scanning || pairing.active,
-                    enabled = !pairing.active,
+                    enabled =
+                        !pairing.active && runtime.networkAvailable &&
+                            runtime.lifecycle != RuntimeLifecycle.SHUTDOWN,
                     onClick = { scanning = !scanning },
-                )
-
-                if (runtime.peerControlAvailable && runtime.lifecycle == RuntimeLifecycle.STOPPED) {
-                    ControlButton(
-                        theme = theme,
-                        label = "Retry runtime",
-                        onClick = onReconnect,
-                    )
-                } else if (
-                    runtime.peerControlAvailable &&
-                        runtime.lifecycle == RuntimeLifecycle.RUNNING
-                ) {
-                    if (devices.offersReconnect()) {
-                        ControlButton(
-                            theme = theme,
-                            label = "Reconnect",
-                            enabled = runtime.networkAvailable,
-                            onClick = onReconnect,
-                        )
-                    } else if (presence != PresenceDisplay.UNAVAILABLE || device != null) {
-                        ControlButton(
-                            theme = theme,
-                            label = "Disconnect",
-                            onClick = onDisconnect,
-                        )
-                    }
                 }
             }
         }
 
         Spacer(Modifier.height(theme.spacing.xl.toFloat().dp))
 
-        if (!runtime.networkAvailable) {
-            BasicText(
-                text = "Network unavailable. Cross-Lab will resume local discovery when connectivity returns.",
-                style =
-                    theme.typography.scales.body
-                        .toTextStyle()
-                        .copy(color = colors.mutedForeground.toComposeColor()),
-            )
-            Spacer(Modifier.height(theme.spacing.md.toFloat().dp))
-        }
+        RuntimeRecoveryPanel(
+            theme = theme,
+            recovery = recovery,
+            onReconnect = onReconnect,
+            onDisconnect = onDisconnect,
+        )
+        Spacer(Modifier.height(theme.spacing.lg.toFloat().dp))
 
-        if (scanning) {
+        if (scanning && runtime.lifecycle != RuntimeLifecycle.SHUTDOWN && runtime.networkAvailable) {
             PairingScannerPanel(
                 theme = theme,
                 onScanned = { bootstrap ->
@@ -196,6 +174,57 @@ fun DevicesScreen(
         if (devices.savedPeers.isNotEmpty()) {
             Spacer(Modifier.height(theme.spacing.xl.toFloat().dp))
             SavedTrustedDevicesPanel(theme, devices.savedPeers, devices.additionalSavedPeers)
+        }
+    }
+}
+
+@Composable
+private fun RuntimeRecoveryPanel(
+    theme: ThemeDocument,
+    recovery: RuntimeRecoveryPresentation,
+    onReconnect: () -> Unit,
+    onDisconnect: () -> Unit,
+) {
+    val colors = theme.colors
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .border(
+                    BorderStroke(
+                        theme.metrics.borderWidth.toFloat().dp,
+                        colors.border.toComposeColor(),
+                    ),
+                    RectangleShape,
+                )
+                .semantics(mergeDescendants = true) {
+                    liveRegion = LiveRegionMode.Polite
+                    stateDescription = recovery.label
+                }
+                .padding(theme.spacing.lg.toFloat().dp),
+    ) {
+        DeviceBadge(theme, recovery.label, recovery.tone)
+        Spacer(Modifier.height(theme.spacing.sm.toFloat().dp))
+        BasicText(
+            text = recovery.detail,
+            style = theme.typography.scales.body
+                .toTextStyle()
+                .copy(color = colors.mutedForeground.toComposeColor()),
+        )
+        if (recovery.action != RuntimeRecoveryAction.NONE) {
+            Spacer(Modifier.height(theme.spacing.md.toFloat().dp))
+            ControlButton(
+                theme = theme,
+                label = recovery.action.label,
+                enabled = recovery.actionEnabled,
+                onClick = {
+                    when (recovery.action) {
+                        RuntimeRecoveryAction.RETRY, RuntimeRecoveryAction.RECONNECT -> onReconnect()
+                        RuntimeRecoveryAction.DISCONNECT -> onDisconnect()
+                        RuntimeRecoveryAction.NONE -> Unit
+                    }
+                },
+            )
         }
     }
 }
