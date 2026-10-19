@@ -35,6 +35,10 @@ pub enum PresenceDisplay {
 }
 
 impl PresenceDisplay {
+    pub const fn offers_reconnect(self) -> bool {
+        matches!(self, Self::Unavailable | Self::Paused | Self::Failed)
+    }
+
     pub const fn label(self) -> &'static str {
         match self {
             Self::Unavailable => "Unavailable",

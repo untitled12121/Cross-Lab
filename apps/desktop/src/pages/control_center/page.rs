@@ -29,8 +29,7 @@ use crate::{
         appearance::{active_theme, font_weight},
         clipboard::{ClipboardAction, ClipboardFeatureState, ClipboardResult},
         devices::{
-            ConnectivityDisplay, DesktopRuntimeController, DevicesFeatureState, PresenceDisplay,
-            SessionDisplay,
+            ConnectivityDisplay, DesktopRuntimeController, DevicesFeatureState, SessionDisplay,
         },
         file_transfer::{FileTransferFailure, FileTransferFeatureState, FileTransferStage},
         owner::{OwnerFeatureState, OWNER_PEER_OPERATIONS},
@@ -337,6 +336,8 @@ impl ControlCenterPage {
         }
 
         self.presence_starting = true;
+        self.notice = None;
+        cx.notify();
         cx.spawn(async move |this, cx| {
             let result = DesktopProductPresenceController::start().await;
             let controller = match result {
@@ -1659,16 +1660,16 @@ impl Render for ControlCenterPage {
 
         #[cfg(target_os = "linux")]
         if self.product_presence.is_some() {
-            let paused = self.devices.presence() == PresenceDisplay::Paused;
+            let reconnect = self.devices.presence().offers_reconnect();
             actions = actions.child(
                 Button::new("presence-control")
-                    .accessibility_label(if paused {
+                    .accessibility_label(if reconnect {
                         "Reconnect trusted devices"
                     } else {
                         "Pause automatic trusted-device connection"
                     })
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        if paused {
+                        if reconnect {
                             this.reconnect_peer(cx);
                         } else {
                             this.disconnect_peer(cx);
@@ -1681,7 +1682,30 @@ impl Render for ControlCenterPage {
                     .bg(theme.secondary)
                     .text_color(theme.secondary_foreground)
                     .focus_visible(|style| style.border_color(theme.ring))
-                    .child(if paused { "Reconnect" } else { "Disconnect" }),
+                    .child(if reconnect { "Reconnect" } else { "Disconnect" }),
+            );
+        }
+
+        #[cfg(target_os = "linux")]
+        if self.product_presence.is_none()
+            && !self.presence_starting
+            && !self.runtime.uses_development_provisioning()
+            && !self.owner.trusted_peer_device_ids().is_empty()
+        {
+            actions = actions.child(
+                Button::new("retry-presence-start")
+                    .accessibility_label("Retry local trusted-device connection")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.start_product_presence(cx);
+                    }))
+                    .h(px(appearance.metrics.control_height_default))
+                    .px(px(appearance.spacing.lg))
+                    .border_1()
+                    .border_color(theme.border)
+                    .bg(theme.secondary)
+                    .text_color(theme.secondary_foreground)
+                    .focus_visible(|style| style.border_color(theme.ring))
+                    .child("Retry connection"),
             );
         }
 
