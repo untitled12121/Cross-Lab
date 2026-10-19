@@ -542,14 +542,18 @@ class ProductPresencePort(
 
     private fun stopAgentLocked() {
         generation += 1
-        cancelDiscoveryRetryLocked()
-        discoveryHandle?.close()
+        runCatching { cancelDiscoveryRetryLocked() }
+        val oldDiscovery = discoveryHandle
         discoveryHandle = null
         discoveryInfo = null
         val active = agent
         agent = null
+
+        // Invalidate native authority before closing independent platform resources.
+        // A failed discovery or transfer cleanup must not skip agent shutdown.
+        runCatching { oldDiscovery?.close() }
         if (active != null) {
-            fileTransfer?.detach(active)
+            runCatching { fileTransfer?.detach(active) }
             runCatching { active.shutdown() }
         }
     }
