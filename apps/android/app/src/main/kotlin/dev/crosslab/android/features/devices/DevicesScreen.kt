@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,6 +71,11 @@ fun DevicesScreen(
     val presence = devices.presence
     val recovery = RuntimeRecoveryPresentation.from(runtime, devices)
     var scanning by remember { mutableStateOf(false) }
+    LaunchedEffect(runtime.networkAvailable, runtime.lifecycle) {
+        if (!runtime.networkAvailable || runtime.lifecycle != RuntimeLifecycle.RUNNING) {
+            scanning = false
+        }
+    }
 
     Column(
         modifier =
@@ -113,9 +119,9 @@ fun DevicesScreen(
                     active = scanning || pairing.active,
                     enabled =
                         !pairing.active && runtime.networkAvailable &&
-                            runtime.lifecycle != RuntimeLifecycle.SHUTDOWN,
+                            runtime.lifecycle == RuntimeLifecycle.RUNNING,
                     onClick = { scanning = !scanning },
-                }
+                )
             }
         }
 
@@ -129,7 +135,7 @@ fun DevicesScreen(
         )
         Spacer(Modifier.height(theme.spacing.lg.toFloat().dp))
 
-        if (scanning && runtime.lifecycle != RuntimeLifecycle.SHUTDOWN && runtime.networkAvailable) {
+        if (scanning && runtime.lifecycle == RuntimeLifecycle.RUNNING && runtime.networkAvailable) {
             PairingScannerPanel(
                 theme = theme,
                 onScanned = { bootstrap ->
@@ -197,7 +203,7 @@ private fun RuntimeRecoveryPanel(
                     ),
                     RectangleShape,
                 )
-                .semantics(mergeDescendants = true) {
+                .semantics {
                     liveRegion = LiveRegionMode.Polite
                     stateDescription = recovery.label
                 }
