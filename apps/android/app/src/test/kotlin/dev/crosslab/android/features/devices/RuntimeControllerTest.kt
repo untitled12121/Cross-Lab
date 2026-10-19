@@ -114,6 +114,26 @@ class RuntimeControllerTest {
     }
 
     @Test
+    fun stoppedRuntimeIgnoresLateAuthenticatedSnapshotCallbacks() {
+        val port = FakeRuntimePort()
+        val controller = RuntimeController(port)
+        controller.onForeground()
+        controller.onBackground()
+        port.emit(RuntimeSnapshot.disconnected().copy(
+            presence = RuntimePresence.ONLINE,
+            peerDeviceId = "stale-peer",
+            trust = RuntimeTrust.TRUSTED,
+            connectivity = RuntimeConnectivity.CONNECTED,
+            session = RuntimeSession.ACTIVE,
+            security = RuntimeSecurity.AUTHENTICATED,
+            capabilityIds = listOf("files.transfer"),
+        ))
+        assertEquals(RuntimeLifecycle.STOPPED, controller.state().lifecycle)
+        assertEquals(RuntimeSnapshot.disconnected(), controller.state().snapshot)
+        assertNull(controller.sessionBinding("files.transfer"))
+    }
+
+    @Test
     fun networkCommandsOnlyReachARunningRuntime() {
         val port = FakeRuntimePort()
         val controller = RuntimeController(port)
@@ -195,6 +215,7 @@ class RuntimeControllerTest {
                 capabilityCount = 2,
             )
 
+        controller.onForeground()
         port.emit(connected)
 
         assertEquals(connected, controller.state().snapshot)

@@ -74,7 +74,7 @@ class RuntimeController(
     private val portSubscription =
         port.observeSnapshots { snapshot ->
             update {
-                if (it.lifecycle == RuntimeLifecycle.SHUTDOWN) return@update null
+                if (it.lifecycle != RuntimeLifecycle.RUNNING) return@update null
                 it.copy(snapshot = snapshot)
             }
         }
@@ -126,6 +126,9 @@ class RuntimeController(
                     snapshot = RuntimeSnapshot.disconnected(),
                 )
             }
+        }
+        if (current.lifecycle == RuntimeLifecycle.SHUTDOWN) {
+            portSubscription.close()
         }
     }
 
@@ -299,7 +302,10 @@ class RuntimeController(
         networkAvailable: Boolean = state.networkAvailable,
     ): RuntimeControllerState {
         val stopped = runCatching { port.stop() }.isSuccess
-        if (!stopped) runCatching { port.shutdown() }
+        if (!stopped) {
+            runCatching { port.shutdown() }
+            portSubscription.close()
+        }
         return state.copy(
             lifecycle = if (stopped) RuntimeLifecycle.STOPPED else RuntimeLifecycle.SHUTDOWN,
             networkAvailable = networkAvailable,
