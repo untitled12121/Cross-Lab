@@ -40,7 +40,7 @@ class AndroidFileTransferSourceReaderTest {
                 }
             }
         val reader = AndroidFileTransferSourceReader(provider, 3)
-        assertArrayEquals(byteArrayOf(1, 2, 3), reader.readChunk())
+        assertArrayEquals(byteArrayOf(1, 2, 3), checkNotNull(reader.readChunk()))
         assertNull(reader.readChunk())
         reader.close()
     }

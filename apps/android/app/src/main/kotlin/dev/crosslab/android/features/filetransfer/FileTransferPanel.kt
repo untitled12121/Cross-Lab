@@ -195,7 +195,38 @@ fun FileTransferPanel(
                 style = theme.typography.scales.caption.toTextStyle()
                     .copy(color = colors.mutedForeground.toComposeColor()),
             )
+            failureRecoveryHint(state)?.let { hint ->
+                Spacer(Modifier.height(theme.spacing.xs.toFloat().dp))
+                BasicText(
+                    text = hint,
+                    style = theme.typography.scales.caption.toTextStyle()
+                        .copy(color = colors.mutedForeground.toComposeColor()),
+                )
+            }
         }
+    }
+}
+
+internal fun failureRecoveryHint(state: FileTransferState): String? {
+    if (state.stage != FileTransferStage.FAILED) return null
+    return when (state.failure) {
+        FileTransferFailure.NOT_CONNECTED ->
+            "Reconnect the device, then retry or ask the sender to resume."
+        FileTransferFailure.STORAGE ->
+            "Check free space and document permissions before retrying this file."
+        FileTransferFailure.INTEGRITY ->
+            "Received bytes failed verification. Request a fresh, verified transfer."
+        FileTransferFailure.SOURCE_CHANGED ->
+            "Select the original source file again before retrying."
+        FileTransferFailure.DENIED ->
+            "The receiving device must explicitly allow this transfer."
+        FileTransferFailure.RESOURCE_LIMIT ->
+            "Finish or cancel another transfer before trying again."
+        FileTransferFailure.NOT_NEGOTIATED, FileTransferFailure.UNAVAILABLE ->
+            "Check the peer's file-transfer capability and connection state."
+        FileTransferFailure.NETWORK ->
+            "Check the local connection, then retry with a new authenticated session."
+        null -> null
     }
 }
 
