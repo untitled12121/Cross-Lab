@@ -296,6 +296,44 @@ class RuntimeControllerTest {
     }
 
     @Test
+    fun failedForegroundStartLeavesRuntimeStoppedAndRetryCanRecover() {
+        val port = FakeRuntimePort()
+        val controller = RuntimeController(port)
+        port.failNextStart = true
+
+        controller.onForeground()
+
+        assertEquals(RuntimeLifecycle.STOPPED, controller.state().lifecycle)
+        assertEquals(RuntimeSnapshot.disconnected(), controller.state().snapshot)
+        assertEquals(1, port.starts)
+        assertEquals(1, port.stops)
+
+        controller.reconnectPeer()
+
+        assertEquals(RuntimeLifecycle.RUNNING, controller.state().lifecycle)
+        assertEquals(2, port.starts)
+        assertEquals(0, port.reconnects)
+    }
+
+    @Test
+    fun retryAfterFailedOfflineStartPreservesNetworkState() {
+        val port = FakeRuntimePort()
+        val controller = RuntimeController(port)
+        controller.onNetworkLost()
+        port.failNextStart = true
+
+        controller.onForeground()
+        assertEquals(RuntimeLifecycle.STOPPED, controller.state().lifecycle)
+        assertEquals(false, controller.state().networkAvailable)
+
+        controller.reconnectPeer()
+
+        assertEquals(RuntimeLifecycle.RUNNING, controller.state().lifecycle)
+        assertEquals(false, controller.state().networkAvailable)
+        assertEquals(1, port.networkLost)
+    }
+
+    @Test
     fun shutdownStopsOnceAndPreventsRestart() {
         val port = FakeRuntimePort()
         val controller = RuntimeController(port)

@@ -87,12 +87,7 @@ class RuntimeController(
     fun onForeground() {
         update {
             if (it.lifecycle != RuntimeLifecycle.STOPPED) return@update null
-            port.start()
-            if (!it.networkAvailable) port.networkLost()
-            it.copy(
-                lifecycle = RuntimeLifecycle.RUNNING,
-                snapshot = port.snapshot(),
-            )
+            startPort(it)
         }
     }
 
@@ -143,9 +138,14 @@ class RuntimeController(
 
     fun reconnectPeer() {
         update {
-            if (it.lifecycle != RuntimeLifecycle.RUNNING) return@update null
-            port.reconnectPeer()
-            it.copy(snapshot = port.snapshot())
+            when (it.lifecycle) {
+                RuntimeLifecycle.STOPPED -> startPort(it)
+                RuntimeLifecycle.RUNNING -> {
+                    port.reconnectPeer()
+                    it.copy(snapshot = port.snapshot())
+                }
+                RuntimeLifecycle.SHUTDOWN -> null
+            }
         }
     }
 
@@ -234,6 +234,19 @@ class RuntimeController(
             portSubscription.close()
             port.shutdown()
         }
+    }
+
+    private fun startPort(state: RuntimeControllerState): RuntimeControllerState {
+        val started =
+            runCatching {
+                port.start()
+                if (!state.networkAvailable) port.networkLost()
+            }.isSuccess
+        if (!started) runCatching { port.stop() }
+        return state.copy(
+            lifecycle = if (started) RuntimeLifecycle.RUNNING else RuntimeLifecycle.STOPPED,
+            snapshot = if (started) port.snapshot() else RuntimeSnapshot.disconnected(),
+        )
     }
 
     private fun update(transform: (RuntimeControllerState) -> RuntimeControllerState?) {
