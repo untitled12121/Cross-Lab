@@ -8,6 +8,51 @@ import org.junit.Test
 
 class DevicesStateTest {
     @Test
+    fun savedTrustedInventoryDoesNotInventActivePresence() {
+        val trusted = "a".repeat(64)
+        val state = DevicesState.from(
+            RuntimeSnapshot.disconnected().copy(presence = RuntimePresence.DISCOVERING),
+            listOf(trusted),
+        )
+
+        assertNull(state.current)
+        assertEquals("a".repeat(16), state.savedPeers.single().shortId)
+        assertFalse(state.savedPeers.single().inAuthenticatedSession)
+    }
+
+    @Test
+    fun savedPeerRequiresExactAuthenticatedFullDeviceId() {
+        val activeId = "a".repeat(63) + "1"
+        val similarId = "a".repeat(63) + "2"
+        val active = RuntimeSnapshot.disconnected().copy(
+            peerDeviceId = activeId,
+            trust = RuntimeTrust.TRUSTED,
+            session = RuntimeSession.ACTIVE,
+            connectivity = RuntimeConnectivity.CONNECTED,
+            security = RuntimeSecurity.AUTHENTICATED,
+        )
+        val state = DevicesState.from(active, listOf(similarId, activeId))
+        assertFalse(state.savedPeers[0].inAuthenticatedSession)
+        assertTrue(state.savedPeers[1].inAuthenticatedSession)
+
+        val offline = DevicesState.from(
+            active.copy(connectivity = RuntimeConnectivity.DISCONNECTED),
+            listOf(activeId),
+        )
+        assertFalse(offline.savedPeers.single().inAuthenticatedSession)
+    }
+
+    @Test
+    fun savedInventoryIsDeduplicatedAndBounded() {
+        val ids = (0..25).map { it.toString().padStart(64, '0') }
+        val state = DevicesState.from(RuntimeSnapshot.disconnected(), ids + ids.first())
+
+        assertEquals(24, state.savedPeers.size)
+        assertEquals(2, state.additionalSavedPeers)
+        assertEquals(ids.first().take(16), state.savedPeers.first().shortId)
+    }
+
+    @Test
     fun reconnectControlIsOfferedForFailureOrPauseButNeverForRevokedPeer() {
         assertTrue(DevicesState(null, PresenceDisplay.FAILED).offersReconnect())
         assertTrue(DevicesState(null, PresenceDisplay.PAUSED).offersReconnect())

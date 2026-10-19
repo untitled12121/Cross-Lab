@@ -186,6 +186,58 @@ fun DevicesScreen(
                 onFetchClipboard = onFetchClipboard,
             )
         }
+
+        if (devices.savedPeers.isNotEmpty()) {
+            Spacer(Modifier.height(theme.spacing.xl.toFloat().dp))
+            SavedTrustedDevicesPanel(theme, devices.savedPeers, devices.additionalSavedPeers)
+        }
+    }
+}
+
+@Composable
+private fun SavedTrustedDevicesPanel(
+    theme: ThemeDocument,
+    peers: List<SavedTrustedPeer>,
+    additionalCount: Int,
+) {
+    val colors = theme.colors
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .border(
+                    BorderStroke(theme.metrics.borderWidth.toFloat().dp, colors.border.toComposeColor()),
+                    RectangleShape,
+                )
+                .padding(theme.spacing.lg.toFloat().dp),
+    ) {
+        BasicText(
+            text = "Saved trusted devices",
+            style = theme.typography.scales.label.toTextStyle()
+                .copy(color = colors.foreground.toComposeColor()),
+        )
+        Spacer(Modifier.height(theme.spacing.xs.toFloat().dp))
+        BasicText(
+            text = "Durable trust is not online presence. Only a freshly authenticated session is active.",
+            style = theme.typography.scales.caption.toTextStyle()
+                .copy(color = colors.mutedForeground.toComposeColor()),
+        )
+        Spacer(Modifier.height(theme.spacing.md.toFloat().dp))
+        peers.forEachIndexed { index, peer ->
+            DetailRow(
+                theme = theme,
+                label = "Device ${index + 1} · ${peer.shortId}",
+                value = if (peer.inAuthenticatedSession) "Session active" else "Not in session",
+            )
+        }
+        if (additionalCount > 0) {
+            Spacer(Modifier.height(theme.spacing.sm.toFloat().dp))
+            BasicText(
+                text = "$additionalCount more saved devices not shown.",
+                style = theme.typography.scales.caption.toTextStyle()
+                    .copy(color = colors.mutedForeground.toComposeColor()),
+            )
+        }
     }
 }
 
