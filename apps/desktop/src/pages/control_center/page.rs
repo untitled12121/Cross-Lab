@@ -12,6 +12,8 @@ use crosslab_policy::{CapabilityId, OperationName, RuleEffect};
 #[cfg(target_os = "linux")]
 use crosslab_protocol::TransferId;
 
+#[cfg(target_os = "linux")]
+use crate::features::devices::PresenceControlAction;
 #[cfg(feature = "development-provisioning")]
 use crate::features::devices::TrustDisplay;
 #[cfg(target_os = "linux")]
@@ -1761,30 +1763,33 @@ impl Render for ControlCenterPage {
 
         #[cfg(target_os = "linux")]
         if self.product_presence.is_some() {
-            let reconnect = self.devices.presence().offers_reconnect();
-            actions = actions.child(
-                Button::new("presence-control")
-                    .accessibility_label(if reconnect {
-                        "Reconnect trusted devices"
-                    } else {
-                        "Pause automatic trusted-device connection"
-                    })
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        if reconnect {
-                            this.reconnect_peer(cx);
+            let action = self.devices.presence_control_action();
+            let reconnect = action == PresenceControlAction::Reconnect;
+            if action != PresenceControlAction::Unavailable {
+                actions = actions.child(
+                    Button::new("presence-control")
+                        .accessibility_label(if reconnect {
+                            "Reconnect trusted devices"
                         } else {
-                            this.disconnect_peer(cx);
-                        }
-                    }))
-                    .h(px(appearance.metrics.control_height_default))
-                    .px(px(appearance.spacing.lg))
-                    .border_1()
-                    .border_color(theme.border)
-                    .bg(theme.secondary)
-                    .text_color(theme.secondary_foreground)
-                    .focus_visible(|style| style.border_color(theme.ring))
-                    .child(if reconnect { "Reconnect" } else { "Disconnect" }),
-            );
+                            "Pause automatic trusted-device connection"
+                        })
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            if reconnect {
+                                this.reconnect_peer(cx);
+                            } else {
+                                this.disconnect_peer(cx);
+                            }
+                        }))
+                        .h(px(appearance.metrics.control_height_default))
+                        .px(px(appearance.spacing.lg))
+                        .border_1()
+                        .border_color(theme.border)
+                        .bg(theme.secondary)
+                        .text_color(theme.secondary_foreground)
+                        .focus_visible(|style| style.border_color(theme.ring))
+                        .child(if reconnect { "Reconnect" } else { "Disconnect" }),
+                );
+            }
         }
 
         #[cfg(target_os = "linux")]
