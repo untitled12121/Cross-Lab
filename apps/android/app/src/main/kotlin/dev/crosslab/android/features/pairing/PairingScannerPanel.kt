@@ -145,6 +145,7 @@ private fun PairingCameraPreview(
         }
 
     DisposableEffect(lifecycleOwner, previewView) {
+        val scanGate = PairingScanGate()
         val cameraExecutor =
             Executors.newSingleThreadExecutor { task ->
                 Thread(task, "crosslab-pairing-camera").apply {
@@ -159,42 +160,49 @@ private fun PairingCameraPreview(
             )
         val providerFuture = ProcessCameraProvider.getInstance(context)
         val analyzer =
-            PairingQrAnalyzer(scanner) { bootstrap ->
+            PairingQrAnalyzer(scanner, scanGate) { bootstrap ->
                 previewView.post {
-                    currentOnScanned(bootstrap)
+                    if (scanGate.isOpen()) currentOnScanned(bootstrap)
                 }
             }
         val mainExecutor = java.util.concurrent.Executor { task -> previewView.post(task) }
 
         providerFuture.addListener(
             {
-                runCatching {
-                    val provider = providerFuture.get()
-                    val preview =
-                        Preview.Builder()
-                            .build()
-                            .also { it.surfaceProvider = previewView.surfaceProvider }
-                    val analysis =
-                        ImageAnalysis.Builder()
-                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                            .build()
-                            .also { it.setAnalyzer(cameraExecutor, analyzer) }
+                if (scanGate.isOpen()) {
+                    runCatching {
+                        val provider = providerFuture.get()
+                        if (scanGate.isOpen()) {
+                            val preview =
+                                Preview.Builder()
+                                    .build()
+                                    .also { it.surfaceProvider = previewView.surfaceProvider }
+                            val analysis =
+                                ImageAnalysis.Builder()
+                                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                    .build()
+                                    .also { it.setAnalyzer(cameraExecutor, analyzer) }
 
-                    provider.unbindAll()
-                    provider.bindToLifecycle(
-                        lifecycleOwner,
-                        CameraSelector.DEFAULT_BACK_CAMERA,
-                        preview,
-                        analysis,
-                    )
-                }.onFailure {
-                    cameraError = "Camera is unavailable for pairing."
+                            provider.unbindAll()
+                            provider.bindToLifecycle(
+                                lifecycleOwner,
+                                CameraSelector.DEFAULT_BACK_CAMERA,
+                                preview,
+                                analysis,
+                            )
+                        }
+                    }.onFailure {
+                        if (scanGate.isOpen()) {
+                            cameraError = "Camera is unavailable for pairing."
+                        }
+                    }
                 }
             },
             mainExecutor,
         )
 
         onDispose {
+            scanGate.close()
             runCatching {
                 if (providerFuture.isDone) {
                     providerFuture.get().unbindAll()
@@ -232,16 +240,32 @@ private fun PairingCameraPreview(
     }
 }
 
+/** Reject scanner callbacks after dismissal and accept only one valid invitation. */
+internal class PairingScanGate {
+    private val active = AtomicBoolean(true)
+    private val accepted = AtomicBoolean(false)
+
+    fun isOpen(): Boolean = active.get()
+
+    fun canAnalyze(): Boolean = isOpen() && !accepted.get()
+
+    fun tryAccept(): Boolean = canAnalyze() && accepted.compareAndSet(false, true)
+
+    fun close() {
+        active.set(false)
+    }
+}
+
 private class PairingQrAnalyzer(
     private val scanner: BarcodeScanner,
+    private val scanGate: PairingScanGate,
     private val onScanned: (MobilePairingBootstrap) -> Unit,
 ) : ImageAnalysis.Analyzer {
     private val processing = AtomicBoolean(false)
-    private val accepted = AtomicBoolean(false)
 
     @androidx.annotation.OptIn(ExperimentalGetImage::class)
     override fun analyze(imageProxy: ImageProxy) {
-        if (accepted.get() || !processing.compareAndSet(false, true)) {
+        if (!scanGate.canAnalyze() || !processing.compareAndSet(false, true)) {
             imageProxy.close()
             return
         }
@@ -254,31 +278,39 @@ private class PairingQrAnalyzer(
         }
 
         val input =
-            InputImage.fromMediaImage(
-                image,
-                imageProxy.imageInfo.rotationDegrees,
-            )
-
-        scanner.process(input)
-            .addOnSuccessListener { barcodes ->
-                if (accepted.get()) return@addOnSuccessListener
-
-                for (barcode in barcodes) {
-                    val rawValue = barcode.rawValue ?: continue
-                    val bootstrap =
-                        runCatching { scanPairingBootstrap(rawValue) }
-                            .getOrNull()
-                            ?: continue
-
-                    if (accepted.compareAndSet(false, true)) {
-                        onScanned(bootstrap)
-                    }
-                    break
-                }
-            }
-            .addOnCompleteListener {
+            try {
+                InputImage.fromMediaImage(image, imageProxy.imageInfo.rotationDegrees)
+            } catch (_: Exception) {
                 processing.set(false)
                 imageProxy.close()
+                return
             }
+
+        try {
+            scanner.process(input)
+                .addOnSuccessListener { barcodes ->
+                    if (!scanGate.canAnalyze()) return@addOnSuccessListener
+
+                    for (barcode in barcodes) {
+                        val rawValue = barcode.rawValue ?: continue
+                        val bootstrap =
+                            runCatching { scanPairingBootstrap(rawValue) }
+                                .getOrNull()
+                                ?: continue
+
+                        if (scanGate.tryAccept()) {
+                            onScanned(bootstrap)
+                        }
+                        break
+                    }
+                }
+                .addOnCompleteListener {
+                    processing.set(false)
+                    imageProxy.close()
+                }
+        } catch (_: Exception) {
+            processing.set(false)
+            imageProxy.close()
+        }
     }
 }

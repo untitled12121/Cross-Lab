@@ -14,6 +14,13 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 **Exact resume action:** Inspect `main`, active PR #79, CI result, and actual code; fix any CI failures in a consolidated batch; once available have the owner retest normal desktop-generated QR and Android pairing, then proceed with the remaining Phase 2 implementation in cohesive batches. Keep `CURRENT.md` updated at verified milestones.
 
+## Active checkpoint — 2026-10-19 (Android scanner teardown and accessible controls)
+
+- **Baseline:** merged PR #80 (merge `050a3093e101cd7bd75c44a9f3f2119bc223fe8c`), which passed exact-head [CI 39167515856](https://github.com/untitled12121/Cross-Lab/actions/runs/39167515856) across formatting, Rust and Android. The current feature branch is `fix/phase2-android-scanner-accessibility`; inspect its actual head and CI before merging.
+- **Implementation:** pairing QR scanner now guards deferred CameraX provider binding and post-scan delivery against composition disposal. A single-use scan gate rejects late and duplicate callbacks without retaining QR data. Native `ControlButton` declares an accessibility button role and a minimum 48dp touch target. Android Owner notification copy no longer incorrectly states delivery is not implemented.
+- **Verification:** new pure Kotlin scan-gate tests cover single acceptance, post-disposal rejection and suppressed late delivery. Source is staged in Git; **this feature branch's exact-head CI has not yet reported a result**. No device/camera hardware measurements are implied.
+- **Next exact task:** inspect feature-head Android unit/build and full CI, fix confirmed issues together, then merge if green. Continue remaining Phase 2 accessibility/reliability fixes and obtain real Linux/Android hardware acceptance before claiming Cross-Lab 0.1 release. No Phase 3 work.
+
 ## Active checkpoint — 2026-10-19 (Android connectivity and pairing lifecycle hardening)
 
 - **Feature branch:** `fix/phase2-android-network-lifecycle` from `main` source/docs checkpoint `493b28bb2d91e9c8332140cb2fda712432d8438e`. Initial implementation commit `44c4efce8e9044a3fb14b69d03b96d171bb3e2f5`; a follow-up grouped source commit completes lifecycle cancellation and failed-discovery recovery controls. Check GitHub for the final branch head and exact CI.

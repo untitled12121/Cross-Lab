@@ -12,6 +12,7 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import dev.crosslab.android.features.appearance.ThemeDocument
 import dev.crosslab.android.features.appearance.toComposeColor
@@ -46,13 +47,15 @@ fun ControlButton(
     Box(
         modifier =
             modifier
-                .defaultMinSize(minHeight = theme.metrics.controlHeightDefault.toFloat().dp)
+                .defaultMinSize(
+                    minHeight = maxOf(theme.metrics.controlHeightDefault.toFloat(), 48f).dp,
+                )
                 .background(background, RectangleShape)
                 .border(
                     BorderStroke(theme.metrics.borderWidth.toFloat().dp, colors.border.toComposeColor()),
                     RectangleShape,
                 )
-                .clickable(enabled = enabled, onClick = onClick)
+                .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
                 .padding(horizontal = theme.spacing.lg.toFloat().dp),
         contentAlignment = Alignment.Center,
     ) {

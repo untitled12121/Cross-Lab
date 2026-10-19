@@ -296,7 +296,7 @@ fun OwnerScreen(
             )
             BasicText(
                 text = "Cross-device delivery requires an authenticated, approved " +
-                    "per-device subscription and is not active yet.",
+                    "per-device subscription while Android is foregrounded.",
                 style = theme.typography.scales.caption.toTextStyle()
                     .copy(color = colors.mutedForeground.toComposeColor()),
             )
