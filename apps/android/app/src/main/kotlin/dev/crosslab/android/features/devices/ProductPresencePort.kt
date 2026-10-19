@@ -74,7 +74,7 @@ class ProductPresencePort(
             val active = agent ?: return@synchronized false
             val allowed = notificationConsent.current(foreground = true).locallyAvailable()
             if (!allowed) {
-                runCatching { active.disableNotifications() }
+                disableNotificationsLocked()
                 return@synchronized false
             }
             current.canMirrorNotifications() &&
@@ -97,7 +97,7 @@ class ProductPresencePort(
                 if (!consent.locallyAvailable() || !current.canMirrorNotifications() ||
                     !runCatching { active.notificationSubscribed() }.getOrDefault(false)
                 ) {
-                    runCatching { active.disableNotifications() }
+                    disableNotificationsLocked()
                     return@withCurrent false
                 }
                 // Re-evaluate under the same owner-consent lock as the durable opt-out.
@@ -115,7 +115,7 @@ class ProductPresencePort(
                 if (!consent.locallyAvailable() || !current.canMirrorNotifications() ||
                     !runCatching { active.notificationSubscribed() }.getOrDefault(false)
                 ) {
-                    runCatching { active.disableNotifications() }
+                    disableNotificationsLocked()
                     return@withCurrent false
                 }
                 runCatching { active.notificationRemoved(key) }.getOrDefault(false)
@@ -123,8 +123,14 @@ class ProductPresencePort(
         }
 
     override fun disableNotifications() {
-        synchronized(lock) {
-            agent?.let { runCatching { it.disableNotifications() } }
+        synchronized(lock) { disableNotificationsLocked() }
+    }
+
+    private fun disableNotificationsLocked() {
+        agent?.let { runCatching { it.disableNotifications() } }
+        if (subscribed) {
+            subscribed = false
+            subscriptionListeners.forEach { observer -> runCatching { observer(false) } }
         }
     }
 
@@ -748,9 +754,9 @@ class ProductPresencePort(
 
     private fun publishLocked(snapshot: RuntimeSnapshot) {
         val activeSubscription =
-            snapshot.session == RuntimeSession.ACTIVE &&
-                agent?.notificationSubscribed() == true &&
-                notificationConsent.current(foreground = true).locallyAvailable()
+            snapshot.canMirrorNotifications() &&
+                notificationConsent.current(foreground = true).locallyAvailable() &&
+                runCatching { agent?.notificationSubscribed() == true }.getOrDefault(false)
         if (activeSubscription != subscribed) {
             subscribed = activeSubscription
             subscriptionListeners.forEach { it(subscribed) }
