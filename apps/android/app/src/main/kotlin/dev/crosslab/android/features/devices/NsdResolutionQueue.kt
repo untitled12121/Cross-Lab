@@ -38,8 +38,10 @@ internal class NsdResolutionQueue<T>(private val maxCandidates: Int) {
         if (inFlight?.instance == instance) lostInFlight = true
     }
 
-    fun finished(instance: String): NsdResolveCompletion<T> {
-        if (closed || inFlight?.instance != instance) {
+    fun finished(request: NsdResolveRequest<T>): NsdResolveCompletion<T> {
+        // Names can be reused after a lost/reappeared event. Only this exact
+        // request's listener may complete the current in-flight resolution.
+        if (closed || inFlight !== request) {
             return NsdResolveCompletion(false, null)
         }
         val accepted = !lostInFlight

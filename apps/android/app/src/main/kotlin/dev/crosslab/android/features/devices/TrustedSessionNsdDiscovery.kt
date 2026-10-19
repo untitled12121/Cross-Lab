@@ -213,14 +213,15 @@ private class TrustedSessionDiscoverySession(
                         serviceInfo: NsdServiceInfo,
                         errorCode: Int,
                     ) {
-                        finishResolution(request.instance, null)
+                        finishResolution(request, null)
                     }
 
                     override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
                         val host = serviceInfo.host
                         val port = serviceInfo.port
                         val valid =
-                            host != null &&
+                            serviceInfo.serviceName == request.instance &&
+                                host != null &&
                                 port in 1..65535 &&
                                 hasExactTrustedSessionTxtProfile(
                                     attributes = serviceInfo.attributes,
@@ -233,24 +234,27 @@ private class TrustedSessionDiscoverySession(
                             } else {
                                 null
                             }
-                        finishResolution(request.instance, route)
+                        finishResolution(request, route)
                     }
                 },
             )
         } catch (_: RuntimeException) {
-            finishResolution(request.instance, null)
+            finishResolution(request, null)
         }
     }
 
-    private fun finishResolution(instance: String, route: TrustedSessionRoute?) {
+    private fun finishResolution(
+        request: NsdResolveRequest<NsdServiceInfo>,
+        route: TrustedSessionRoute?,
+    ) {
         val (accepted, next) =
             synchronized(candidates) {
-                val result = resolutions.finished(instance)
+                val result = resolutions.finished(request)
                 val accepted =
                     result.accepted && !closed.get() && route != null &&
                         candidates.size < profile.maxCandidates.toInt()
                 if (accepted) {
-                    candidates[instance] = requireNotNull(route)
+                    candidates[request.instance] = requireNotNull(route)
                 }
                 accepted to result.next
             }
