@@ -210,7 +210,10 @@ mod tests {
         assert!(state.audit_unavailable());
         assert!(state.audit_rows().is_empty());
         assert_eq!(state.audit_dropped(), 0);
-        assert_eq!(state.audit_notice(), Some("Protected audit store unavailable"));
+        assert_eq!(
+            state.audit_notice(),
+            Some("Protected audit store unavailable")
+        );
         state.set_audit_rows(vec!["new validated history".to_owned()], 1);
         assert!(!state.audit_unavailable());
         assert_eq!(state.audit_rows(), &["new validated history".to_owned()]);

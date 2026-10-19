@@ -745,7 +745,8 @@ impl ControlCenterPage {
                 .set_audit_notice("Protected history reload could not be queued");
         } else {
             self.audit_reload_pending = true;
-            self.owner.set_audit_notice("Reloading protected audit history…");
+            self.owner
+                .set_audit_notice("Reloading protected audit history…");
         }
         cx.notify();
     }
