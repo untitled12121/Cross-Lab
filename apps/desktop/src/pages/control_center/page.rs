@@ -1007,7 +1007,8 @@ impl ControlCenterPage {
                 Err(error) => error.into(),
             };
             let _ = this.update(cx, |page, cx| {
-                let result = if page.devices.has_authenticated_capability("clipboard.write") {
+                let still_allowed = page.devices.has_authenticated_capability("clipboard.write");
+                let result = if still_allowed {
                     result
                 } else {
                     ClipboardResult::Cancelled
@@ -1087,8 +1088,10 @@ impl ControlCenterPage {
 
     #[cfg(target_os = "linux")]
     fn choose_file_to_send(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.devices.has_authenticated_capability("files.transfer") ||
-            self.file_transfer_send_dialog_open || self.file_transfer.send().active() {
+        if !self.devices.has_authenticated_capability("files.transfer")
+            || self.file_transfer_send_dialog_open
+            || self.file_transfer.send().active()
+        {
             return;
         }
         let Some(controller) = self.product_presence.as_ref().map(Arc::clone) else {
@@ -1135,7 +1138,8 @@ impl ControlCenterPage {
         cx: &mut Context<Self>,
     ) {
         if !self.devices.has_authenticated_capability("files.transfer") {
-            self.file_transfer.send_failed(0, 0, FileTransferFailure::NotConnected);
+            self.file_transfer
+                .send_failed(0, 0, FileTransferFailure::NotConnected);
             cx.notify();
             return;
         }
