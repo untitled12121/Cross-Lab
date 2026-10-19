@@ -34,34 +34,41 @@ internal interface OwnerConsentStorage {
 internal class OwnerConsentSettings(
     private val store: OwnerConsentStorage,
 ) {
-    @Volatile private var unavailable = false
+    @Volatile private var blocked = false
 
     val ownerEnabled: Boolean
-        get() = !unavailable && store.ownerEnabled()
+        get() {
+            if (blocked) return false
+            return runCatching { store.ownerEnabled() }.getOrElse {
+                blocked = true
+                false
+            }
+        }
 
     val contentEnabled: Boolean
-        get() = ownerEnabled && store.contentEnabled()
+        get() {
+            if (!ownerEnabled) return false
+            return runCatching { store.contentEnabled() }.getOrElse {
+                blocked = true
+                false
+            }
+        }
 
     fun setOwnerEnabled(enabled: Boolean): Boolean {
-        // Disable capture before attempting a durable withdrawal.
-        if (!enabled) unavailable = true
+        // Do not expose consent before the owner and content flags are durably committed.
+        blocked = true
         val saved = runCatching { store.commitOwner(enabled) }.getOrDefault(false)
-        unavailable = !saved
+        blocked = !saved
         return saved
     }
 
     fun setContentEnabled(enabled: Boolean): Boolean {
-        val wasAvailable = !unavailable
-        if (!enabled) unavailable = true
-        val saved =
-            runCatching { store.commitContent(enabled && ownerEnabled) }.getOrDefault(false)
-        if (!saved) {
-            unavailable = true
-        } else if (!enabled && wasAvailable) {
-            // A durable content opt-out keeps redacted mirroring available.
-            unavailable = false
-        }
-        // Recovering from a prior storage failure requires fresh owner approval.
+        val consented = enabled && ownerEnabled
+        val wasAvailable = !blocked
+        blocked = true
+        val saved = runCatching { store.commitContent(consented) }.getOrDefault(false)
+        // A failed prior write/read requires explicit owner re-approval to unblock.
+        blocked = !saved || !wasAvailable
         return saved
     }
 }

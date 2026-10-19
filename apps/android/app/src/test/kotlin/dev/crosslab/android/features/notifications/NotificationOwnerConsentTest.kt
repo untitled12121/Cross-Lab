@@ -28,8 +28,13 @@ class NotificationOwnerConsentTest {
         var content = false
         var failNext = false
         var throwNext = false
+        var failRead = false
+        var duringCommit: (() -> Unit)? = null
 
-        override fun ownerEnabled() = owner
+        override fun ownerEnabled(): Boolean {
+            if (failRead) throw IllegalStateException("read unavailable")
+            return owner
+        }
         override fun contentEnabled() = content
 
         override fun commitOwner(enabled: Boolean): Boolean {
@@ -43,6 +48,7 @@ class NotificationOwnerConsentTest {
             }
             owner = enabled
             content = false
+            duringCommit?.invoke()
             return true
         }
 
@@ -56,6 +62,7 @@ class NotificationOwnerConsentTest {
                 return false
             }
             content = enabled
+            duringCommit?.invoke()
             return true
         }
     }
@@ -128,6 +135,38 @@ class NotificationOwnerConsentTest {
         assertTrue(store.content)
 
         assertTrue(consent.setOwnerEnabled(true))
+        assertFalse(consent.contentEnabled)
+    }
+
+    @Test
+    fun consentRemainsBlockedUntilEachEnablingWriteReturnsDurableSuccess() {
+        val store = FakeOwnerConsentStorage()
+        val consent = OwnerConsentSettings(store)
+        var exposedDuringCommit = false
+        store.duringCommit = {
+            exposedDuringCommit = exposedDuringCommit ||
+                consent.ownerEnabled || consent.contentEnabled
+        }
+
+        assertTrue(consent.setOwnerEnabled(true))
+        assertTrue(consent.setContentEnabled(true))
+        assertFalse(exposedDuringCommit)
+        assertTrue(consent.contentEnabled)
+    }
+
+    @Test
+    fun preferenceReadFailureBlocksMirroringUntilFreshOwnerApproval() {
+        val store = FakeOwnerConsentStorage()
+        val consent = OwnerConsentSettings(store)
+        assertTrue(consent.setOwnerEnabled(true))
+        store.failRead = true
+
+        assertFalse(consent.ownerEnabled)
+        store.failRead = false
+        assertFalse(consent.ownerEnabled)
+
+        assertTrue(consent.setOwnerEnabled(true))
+        assertTrue(consent.ownerEnabled)
         assertFalse(consent.contentEnabled)
     }
 
