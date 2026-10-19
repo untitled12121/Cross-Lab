@@ -19,9 +19,9 @@ import dev.crosslab.android.components.ui.StatusTone
 import dev.crosslab.android.features.appearance.ThemeDocument
 import dev.crosslab.android.features.appearance.toComposeColor
 import dev.crosslab.android.features.appearance.toTextStyle
-import dev.crosslab.android.features.devices.ConnectivityDisplay
 import dev.crosslab.android.features.devices.DevicePresentation
-import dev.crosslab.android.features.devices.SessionDisplay
+import dev.crosslab.android.features.devices.PresenceDisplay
+import dev.crosslab.android.features.devices.hasAuthenticatedSession
 
 private const val CAPABILITY = "files.transfer"
 private const val RECEIVE = "receive"
@@ -30,6 +30,7 @@ private const val RECEIVE = "receive"
 fun FileTransferPanel(
     theme: ThemeDocument,
     device: DevicePresentation,
+    presence: PresenceDisplay,
     state: FileTransferState,
     retainAccess: Boolean,
     onToggleRetainAccess: () -> Unit,
@@ -42,9 +43,7 @@ fun FileTransferPanel(
     onRetry: () -> Unit,
 ) {
     val colors = theme.colors
-    val connected =
-        device.connectivity == ConnectivityDisplay.CONNECTED &&
-            device.session == SessionDisplay.ACTIVE
+    val connected = device.hasAuthenticatedSession(presence)
     val negotiated = CAPABILITY in device.capabilityIds
     val pending = state.stage == FileTransferStage.WAITING_DESTINATION &&
         state.direction == FileTransferDirection.RECEIVE
@@ -81,7 +80,7 @@ fun FileTransferPanel(
             BasicText(
                 text = when {
                     !state.available -> "File transfer is unavailable in this runtime."
-                    !connected -> "Connect to an authenticated device to transfer files."
+                    !connected -> "An online trusted and authenticated peer is required to transfer files."
                     else -> "File transfer v2 is not negotiated with this device."
                 },
                 style = theme.typography.scales.caption.toTextStyle()

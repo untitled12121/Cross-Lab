@@ -402,6 +402,7 @@ private fun DevicePanel(
         ClipboardPanel(
             theme = theme,
             device = device,
+            presence = presence,
             state = clipboard,
             onSend = onSendClipboard,
             onFetch = onFetchClipboard,
@@ -409,6 +410,7 @@ private fun DevicePanel(
         FileTransferPanel(
             theme = theme,
             device = device,
+            presence = presence,
             state = fileTransfer,
             retainAccess = retainFileAccess,
             onToggleRetainAccess = onToggleRetainFileAccess,

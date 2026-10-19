@@ -334,8 +334,9 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
                         FileTransferStage.CANCELLED))
                 }
                 val received = receiving
-                if (received != null && received.request.offer.transferId().contentEquals(id)) {
-                    received.receiver.requestCancellation()
+                if (received != null && received.request.offer.transferId().contentEquals(id) &&
+                    received.receiver.requestCancellation()) {
+                    // Verified publication cannot be cancelled after its commit boundary.
                     receiving = null
                     io.execute { received.receiver.cancel() }
                     publishLocked(state(received.request.offer, FileTransferDirection.RECEIVE,
@@ -439,9 +440,8 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
             }
             MobileFileTransferDataKind.CANCELLED -> {
                 synchronized(lock) {
-                    if (receiving !== received) return
+                    if (receiving !== received || !received.receiver.requestCancellation()) return
                     receiving = null
-                    received.receiver.requestCancellation()
                     publishLocked(state(received.request.offer, FileTransferDirection.RECEIVE,
                         FileTransferStage.CANCELLED, received.transferred))
                 }
