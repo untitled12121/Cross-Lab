@@ -1,25 +1,27 @@
 # Current Development State
 
-**Phase:** Phase 2 Linux + Android MVP, active. **No release/physical acceptance claim.** Git source and verified tests remain authoritative.
+**Active phase:** Phase 2 Linux + Android MVP. **Not released.** Git source and verified tests are authoritative.
 
-## Merged software checkpoints
+## Integrated software
 
-- `main` merge `b359b5f15f911879a6f4e1075a82758e38415019` (PR #92): Android notification delivery enforces current owner/content consent at final Rust-agent handoff, negotiated authenticated online trusted session, content redaction and immediate native subscription-state clearing. Final PR #92 head `d9e5bfba` passed Android unit CI and gate `39273346371`.
-- PR #91 merge `5183b6054d53f63afc9bcb18bb5d94e9965f6fd1`: Linux and Android file-transfer integrity recovery, bounded provider read stalls and actionable transfer errors. Final head `f4de37af` passed format, Rust, Android and gate `39271444969`.
-- PR #90 merge `459f4818`: protected Linux/Android audit interrupted-write recovery, run `39242293529` passed Rust, Android, format and gate. Previous #87–89 integrated exact peer permission, notification consent and transfer retained-state durability.
-- Previously integrated Phase 2 foundation includes QR/LAN pairing, trusted sessions, clipboard, resumable single-file transfers, owner-signed revocation, saved inventory and metadata-only audit. Software CI **does not** validate hardware behavior.
+- **Main:** `c739ee6af7013bb5c4394bcda7219da20628b91c` (PR #95). Linux GPUI native clipboard/file controls use online, exact trusted peer, active authenticated session and negotiated capability, with stale-session UI gating. Final head `f2ad12c` passed format, Rust and CI Gate in run `39296128635`.
+- PR #94 merge `09e1d810`: Android authenticated native clipboard/file-transfer operations, revalidation across worker handoffs and cancellation/publication safety; merged head `0c44f64` passed Android and gate in run `39288679882`.
+- PR #93 merge `e79028e8`: protected audit recovery, fail-closed history masking, native retry and cancellation of pending destructive audit actions on Linux/Android; run `39287198643` passed format, Rust, Android and gate.
+- PRs #87–92 integrated QR/LAN/pairing lifecycle, owner capability controls, permission persistence, notification owner/content and final-delivery privacy, Android/Linux file-transfer retention/integrity, bounded document streams and audit storage fault recovery.
+- These are software checks. **Physical Linux + arm64 Android product acceptance is still outstanding.**
 
-## Active milestone: owner audit storage recovery
+## Active milestone: exact-session native handoffs
 
-- **PR:** [#93](https://github.com/untitled12121/Cross-Lab/pull/93); branch `feat/phase2-audit-owner-retry`, originally based on main `5183b605`. Code batch checkpoint `6bcd8b193999d0da35e215fe2a1720e74488947a`; use the active PR head for the exact latest source.
-- **Android:** bounded serialized owner-requested audit reload with narrow persistence seam, failure-injection JVM regression, native retry/error state, stale protected-history masking and export/clear disabling when persistence is unavailable. Clear confirmation cancels when storage access fails.
-- **Linux:** owner-visible protected-audit retry via bounded existing command queue; failed initial/history/record/clear and export reads hide previously shown history and prevent destructive actions; revalidated read restores presentation. Added `OwnerFeatureState` regression for fail-closed masking/recovery.
-- **Verification:** Android-only commit `822438df` passed Android and CI Gate in run `39273530188`, **before** Linux and subsequent audit UX changes. The complete Rust + Android batch has NOT yet passed exact-source CI or hardware acceptance. No protocol, trust, privileged-service or approved architecture change.
+- **Branch:** `feat/phase2-linux-exact-session-handoffs`, based on the verified PR #95 source `f2ad12c`. Implementation code commit `eca51ebc396894a54de68d82d0fe930058499af1`; this document follows that commit and the PR head is authoritative after pushing.
+- Linux native devices feature retains an opaque `(DeviceId, SessionId)` binding only for live session handoffs. Custom debug rendering redacts session identity. Reconnect, peer handover, loss of authenticated capability or offline presence make old bindings unusable.
+- Outgoing clipboard results, fetched text and error state, file-picker selections, and inbound peer clipboard OS access revalidate authority before changing local clipboard or executing protected native actions. Existing shared Rust authorization remains the final enforcement boundary.
+- Focused Rust regression demonstrates stale-session/peer rejection, capability gating and zero raw session IDs in debug state.
+- **Verification:** this new batch has **not yet passed exact-head Rust CI** or physical testing. No wire/protocol, identity, privilege or accepted architecture change.
 
-## Exact next work
+## Next task
 
-1. Push the consolidated audit owner-recovery head to PR #93, execute the affected Rust formatting/check/tests and Android unit checks once, correct confirmed failures as a batch, then merge when passing.
-2. Continue remaining Phase 2 platform UX, transfer/publication fault recovery and audit/notification lifecycle reliability, focusing on code rather than recurring CI.
-3. **Physical release gate remains open:** normal Linux + arm64 Android QR/LAN pairing, trusted restart/reconnect, per-peer default deny and owner Allow/Deny, clipboard, file resume/cancel/checksum, notification OS withdrawal/redaction, protected audit storage faults, owner-signed terminal revocation **last** using disposable identities. Record only redacted results, exact versions and real pass/fail evidence.
+1. Push the complete exact-session native handoff batch and run one applicable Rust formatting/check/Clippy/desktop test checkpoint; correct confirmed failures together and merge once verified.
+2. Continue Phase 2 Linux/Android recovery, native status/accessibility polish and owner control fault handling without redundant CI cycles.
+3. **Release gate:** normal Linux + arm64 Android QR/LAN pairing, restart/reconnect and default deny, both clipboard directions, file resume/cancel/checksum, notification OS withdrawal/content redaction, audit storage corruption/recovery, and owner-signed terminal revocation last on disposable identities. Record redacted test evidence and exact versions. No 0.1 release claim until genuine hardware acceptance.
 
-See [AGENTS.md](../../AGENTS.md), [WORKFLOW.md](WORKFLOW.md), [CI.md](CI.md), and [Phase 2 completion gates](../plans/phase-2/MVP-completion-gates.md). Phase 3 remains deferred.
+Follow [AGENTS.md](../../AGENTS.md), [WORKFLOW.md](WORKFLOW.md), [CI.md](CI.md) and [Phase 2 gates](../plans/phase-2/MVP-completion-gates.md). Phase 3 remains deferred.
