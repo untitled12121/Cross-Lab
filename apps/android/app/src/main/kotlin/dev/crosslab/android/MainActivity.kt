@@ -53,7 +53,7 @@ class MainActivity : ComponentActivity() {
     private val peerPermissionNotice = mutableStateOf<String?>(null)
     private val peerPermissionBusy = mutableStateOf(false)
     private val identityWorker = Executors.newSingleThreadExecutor()
-    private val uiObservationGate = UiCallbackGate { callback -> runOnUiThread(callback) }
+    private val uiObservationGate = UiCallbackGate { callback -> runOnUiThread { callback() } }
     private var runtimeSubscription: AutoCloseable? = null
     private var auditSubscription: AutoCloseable? = null
     private var clipboardSubscription: AutoCloseable? = null
