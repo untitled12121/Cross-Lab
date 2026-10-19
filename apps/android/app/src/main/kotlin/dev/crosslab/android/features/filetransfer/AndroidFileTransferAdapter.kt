@@ -26,7 +26,7 @@ class AndroidFileTransferAdapter(
             .resolve("crosslab/file-transfer")
             .apply { mkdirs() }
     private val stateFile = AtomicFile(root.resolve("state-v1.bin"))
-    private val state =
+    private var state =
         MobileFileTransferState(
             encoded =
                 if (stateFile.baseFile.isFile) {
@@ -134,14 +134,15 @@ class AndroidFileTransferAdapter(
                     persistUriPermission(resolvedUri, read = false, write = true)
                 }
                 durableOffset = 0uL
-                state.upsertPartial(
-                    sourceDeviceIdBytes = sourceDeviceId,
-                    offer = offer,
-                    durableOffset = durableOffset,
-                    locator = resolvedUri.toString().toByteArray(Charsets.UTF_8),
-                    updatedAtUnixSecs = unixNow(),
-                )
-                commitState()
+                updateState { staged ->
+                    staged.upsertPartial(
+                        sourceDeviceIdBytes = sourceDeviceId,
+                        offer = offer,
+                        durableOffset = durableOffset,
+                        locator = resolvedUri.toString().toByteArray(Charsets.UTF_8),
+                        updatedAtUnixSecs = unixNow(),
+                    )
+                }
             }
 
             MobileFileTransferRecoveryKind.PARTIAL -> {
@@ -185,14 +186,15 @@ class AndroidFileTransferAdapter(
         destinationUri: Uri,
         durableOffset: Long,
     ) {
-        state.upsertPartial(
-            sourceDeviceIdBytes = sourceDeviceId,
-            offer = offer,
-            durableOffset = durableOffset.toULong(),
-            locator = destinationUri.toString().toByteArray(Charsets.UTF_8),
-            updatedAtUnixSecs = unixNow(),
-        )
-        commitState()
+        updateState { staged ->
+            staged.upsertPartial(
+                sourceDeviceIdBytes = sourceDeviceId,
+                offer = offer,
+                durableOffset = durableOffset.toULong(),
+                locator = destinationUri.toString().toByteArray(Charsets.UTF_8),
+                updatedAtUnixSecs = unixNow(),
+            )
+        }
     }
 
     @Synchronized
@@ -200,18 +202,18 @@ class AndroidFileTransferAdapter(
         sourceDeviceId: ByteArray,
         offer: MobileFileTransferOffer,
     ) {
-        state.markCompleted(
-            sourceDeviceIdBytes = sourceDeviceId,
-            offer = offer,
-            updatedAtUnixSecs = unixNow(),
-        )
-        commitState()
+        updateState { staged ->
+            staged.markCompleted(
+                sourceDeviceIdBytes = sourceDeviceId,
+                offer = offer,
+                updatedAtUnixSecs = unixNow(),
+            )
+        }
     }
 
     @Synchronized
     internal fun invalidate(offer: MobileFileTransferOffer) {
-        state.remove(offer.transferId())
-        commitState()
+        updateState { staged -> staged.remove(offer.transferId()) }
     }
 
     internal fun publish(
@@ -235,13 +237,17 @@ class AndroidFileTransferAdapter(
         }
     }
 
+    @Synchronized
     private fun cleanupExpired() {
         val expired =
-            state.cleanupExpired(
-                nowUnixSecs = unixNow(),
-                partialMaxAgeSecs = PARTIAL_RETENTION_SECS.toULong(),
-                completionMaxAgeSecs = COMPLETION_RETENTION_SECS.toULong(),
-            )
+            updateState { staged ->
+                staged.cleanupExpired(
+                    nowUnixSecs = unixNow(),
+                    partialMaxAgeSecs = PARTIAL_RETENTION_SECS.toULong(),
+                    completionMaxAgeSecs = COMPLETION_RETENTION_SECS.toULong(),
+                )
+            }
+        // Only delete partial files after retention changes were durably recorded.
         expired.forEach { entry ->
             runCatching { partialFile(entry.transferId).delete() }
         }
@@ -255,8 +261,6 @@ class AndroidFileTransferAdapter(
                     file.lastModified() < orphanCutoff
             }
             ?.forEach { file -> runCatching { file.delete() } }
-
-        commitState()
     }
 
     private fun recoverPartial(
@@ -310,10 +314,22 @@ class AndroidFileTransferAdapter(
     private fun partialFile(transferId: ByteArray): File =
         root.resolve("partial-" + transferId.toHex() + ".bin")
 
-    private fun commitState() {
+    private fun <R> updateState(edit: (MobileFileTransferState) -> R): R {
+        val (next, result) =
+            persistThenApply(
+                current = state,
+                snapshot = { MobileFileTransferState(encoded = it.encode()) },
+                edit = edit,
+                persist = { commitState(it.encode()) },
+            )
+        state = next
+        return result
+    }
+
+    private fun commitState(bytes: ByteArray) {
         val output = stateFile.startWrite()
         try {
-            output.write(state.encode())
+            output.write(bytes)
             output.fd.sync()
             stateFile.finishWrite(output)
         } catch (error: Throwable) {

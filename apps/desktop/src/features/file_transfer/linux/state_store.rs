@@ -72,19 +72,24 @@ impl LinuxFileTransferStateStore {
             .cloned()
             .collect::<Vec<_>>();
 
+        let mut expired_partial_paths = Vec::new();
         for entry in &expired {
             if let FileTransferRetainedState::Partial(partial) = entry {
                 let locator = LinuxFileTransferLocator::decode(
                     partial.locator(),
                     partial.identity().transfer_id(),
                 )?;
-                remove_expired_partial(locator.partial_path())?;
+                expired_partial_paths.push(locator.partial_path().to_path_buf());
             }
             snapshot.remove(entry.identity().transfer_id());
         }
 
         if !expired.is_empty() {
+            // Retention metadata must be durable before deleting resumable data.
             self.commit(&snapshot)?;
+            for path in expired_partial_paths {
+                remove_expired_partial(&path)?;
+            }
         }
         Ok(expired.len())
     }
@@ -265,6 +270,45 @@ mod tests {
         assert!(!partial_locator.partial_path().exists());
         assert!(store.load().unwrap().is_empty());
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn failed_retention_commit_preserves_resumable_partial() {
+        let root = test_root("failed-cleanup");
+        fs::create_dir_all(&root).unwrap();
+        let store = LinuxFileTransferStateStore::for_test(root.join("state-v1.bin"));
+        let transfer_id = TransferId::from_bytes([0x55; 32]);
+        let locator =
+            LinuxFileTransferLocator::for_destination(root.join("resume.bin"), transfer_id)
+                .unwrap();
+        fs::write(locator.partial_path(), b"retained").unwrap();
+        let partial = FileTransferPartialState::new(
+            FileTransferIdentity::new(
+                DeviceId::from_bytes([0x56; 32]),
+                test_offer(transfer_id, "resume.bin", b"retained"),
+            ),
+            0,
+            locator.encode().unwrap(),
+            10,
+        )
+        .unwrap();
+        let original =
+            FileTransferStateSnapshot::new(vec![FileTransferRetainedState::Partial(partial)])
+                .unwrap();
+        store.commit(&original).unwrap();
+
+        let blocked_temp = store.path.with_extension("bin.new");
+        fs::create_dir(&blocked_temp).unwrap();
+        let now = 10 + PARTIAL_RETENTION_SECS + 1;
+        assert!(store.cleanup_expired(now).is_err());
+        assert!(locator.partial_path().exists());
+        assert_eq!(store.load().unwrap(), original);
+
+        fs::remove_dir(blocked_temp).unwrap();
+        assert_eq!(store.cleanup_expired(now).unwrap(), 1);
+        assert!(!locator.partial_path().exists());
+        assert!(store.load().unwrap().is_empty());
         let _ = fs::remove_dir_all(root);
     }
 
