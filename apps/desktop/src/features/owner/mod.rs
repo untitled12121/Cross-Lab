@@ -1,5 +1,12 @@
 use core::fmt::Write as _;
 
+pub const OWNER_PEER_OPERATIONS: [(&str, &str, &str); 4] = [
+    ("Read this device clipboard", "clipboard.read", "get"),
+    ("Write this device clipboard", "clipboard.write", "set"),
+    ("Receive files from this device", "files.transfer", "receive"),
+    ("Request notification mirror", "notifications.read", "subscribe"),
+];
+
 use crosslab_identity::{DeviceId, OwnerId};
 use crosslab_runtime::RuntimeStatus;
 
@@ -175,6 +182,17 @@ mod tests {
         state.note_audit_queue_drop();
         state.clear();
         assert_eq!(state.audit_queue_dropped(), 1);
+    }
+
+    #[test]
+    fn owner_permission_keys_are_unique_and_valid() {
+        use crosslab_policy::{CapabilityId, OperationName};
+        let mut seen = std::collections::HashSet::new();
+        for (_, capability, operation) in OWNER_PEER_OPERATIONS {
+            assert!(CapabilityId::parse(capability).is_ok());
+            assert!(OperationName::parse(operation).is_ok());
+            assert!(seen.insert((capability, operation)));
+        }
     }
 
     #[test]

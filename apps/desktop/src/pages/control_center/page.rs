@@ -8,6 +8,8 @@ use crosslab_core::{AuditAction, AuditHistory, AuditOutcome};
 #[cfg(target_os = "linux")]
 use crosslab_identity::DeviceId;
 #[cfg(target_os = "linux")]
+use crosslab_policy::{CapabilityId, OperationName, RuleEffect};
+#[cfg(target_os = "linux")]
 use crosslab_protocol::TransferId;
 
 #[cfg(feature = "development-provisioning")]
@@ -31,7 +33,7 @@ use crate::{
             SessionDisplay,
         },
         file_transfer::{FileTransferFailure, FileTransferFeatureState, FileTransferStage},
-        owner::OwnerFeatureState,
+        owner::{OwnerFeatureState, OWNER_PEER_OPERATIONS},
         pairing::{
             DesktopPairingInvitation, DesktopPairingStage, load_existing_product_identity,
             revoke_product_peer,
@@ -105,6 +107,8 @@ pub struct ControlCenterPage {
     pending_revocation: Option<DeviceId>,
     #[cfg(target_os = "linux")]
     revocation_busy: bool,
+    #[cfg(target_os = "linux")]
+    peer_permission_busy: bool,
     #[cfg(target_os = "linux")]
     audit_clear_pending: bool,
     notice: Option<String>,
@@ -286,6 +290,8 @@ impl ControlCenterPage {
             pending_revocation: None,
             #[cfg(target_os = "linux")]
             revocation_busy: false,
+            #[cfg(target_os = "linux")]
+            peer_permission_busy: false,
             #[cfg(target_os = "linux")]
             audit_clear_pending: false,
             notice: None,
@@ -646,6 +652,63 @@ impl ControlCenterPage {
                     }
                     Err(error) => page.notice = Some(error.to_string()),
                 }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    #[cfg(target_os = "linux")]
+    fn set_owner_peer_permission(
+        &mut self,
+        expected_peer: DeviceId,
+        capability: &'static str,
+        operation: &'static str,
+        effect: RuleEffect,
+        cx: &mut Context<Self>,
+    ) {
+        if self.peer_permission_busy {
+            return;
+        }
+        let Some(device) = self.devices.current() else {
+            return;
+        };
+        if device.peer_device_id() != Some(expected_peer)
+            || device.trust() != crate::features::devices::TrustDisplay::Trusted
+            || device.connectivity() != ConnectivityDisplay::Connected
+            || device.session() != SessionDisplay::Active
+            || device.security() != crate::features::devices::SecurityDisplay::Authenticated
+            || !device.capability_ids().iter().any(|id| id == capability)
+        {
+            return;
+        }
+        let Some(controller) = self.product_presence.as_ref().map(Arc::clone) else {
+            self.notice = Some("A trusted product session is required.".to_owned());
+            cx.notify();
+            return;
+        };
+        let (Ok(capability), Ok(operation)) =
+            (CapabilityId::parse(capability), OperationName::parse(operation))
+        else {
+            self.notice = Some("Unsupported permission operation.".to_owned());
+            cx.notify();
+            return;
+        };
+        self.peer_permission_busy = true;
+        self.notice = Some("Saving protected owner policy…".to_owned());
+        cx.notify();
+
+        cx.spawn(async move |this, cx| {
+            let result = controller
+                .set_permission_for_peer(expected_peer, capability, operation, effect)
+                .await;
+            let _ = this.update(cx, |page, cx| {
+                page.peer_permission_busy = false;
+                page.notice = Some(match result {
+                    Ok(true) => "Peer permission committed to protected storage.".to_owned(),
+                    Ok(false) => "Peer permission is already set.".to_owned(),
+                    Err(error) => error.to_string(),
+                });
                 cx.notify();
             });
         })
@@ -1924,6 +1987,81 @@ impl Render for ControlCenterPage {
                             format!("Revoke {preview}")
                         }),
                 );
+            }
+            if let Some(device) = self.devices.current().filter(|device| {
+                device.trust() == crate::features::devices::TrustDisplay::Trusted
+                    && device.connectivity() == ConnectivityDisplay::Connected
+                    && device.session() == SessionDisplay::Active
+                    && device.security()
+                        == crate::features::devices::SecurityDisplay::Authenticated
+            }) && let Some(peer) = device.peer_device_id() {
+                controls = controls.child(
+                    div().child(format!(
+                        "Device permissions · protected revision {}",
+                        self.devices.policy_revision()
+                    )),
+                );
+                let rules = self.devices.current_permissions();
+                for (index, &(title, capability, operation)) in
+                    OWNER_PEER_OPERATIONS.iter().enumerate()
+                {
+                    if !device.capability_ids().iter().any(|id| id == capability) {
+                        continue;
+                    }
+                    let effect = rules.iter().find(|rule| {
+                        rule.capability_id() == capability && rule.operation() == operation
+                    }).map(|rule| rule.effect());
+                    let status = effect.map_or("Default deny", |effect| effect.label());
+                    let actions = div()
+                        .flex()
+                        .gap(px(appearance.spacing.sm))
+                        .child(
+                            Button::new(format!("owner-permission-allow-{index}"))
+                                .accessibility_label(format!("Allow {title} for this trusted peer"))
+                                .disabled(
+                                    self.peer_permission_busy
+                                        || effect == Some(crate::features::devices::PermissionDisplay::Allow),
+                                )
+                                .on_click(cx.listener(move |page, _, _, cx| {
+                                    page.set_owner_peer_permission(
+                                        peer, capability, operation, RuleEffect::Allow, cx,
+                                    );
+                                }))
+                                .h(px(appearance.metrics.control_height_default))
+                                .px(px(appearance.spacing.lg))
+                                .border_1()
+                                .border_color(theme.border)
+                                .focus_visible(|style| style.border_color(theme.ring))
+                                .child("Allow"),
+                        )
+                        .child(
+                            Button::new(format!("owner-permission-deny-{index}"))
+                                .accessibility_label(format!("Deny {title} for this trusted peer"))
+                                .disabled(
+                                    self.peer_permission_busy
+                                        || effect == Some(crate::features::devices::PermissionDisplay::Deny),
+                                )
+                                .on_click(cx.listener(move |page, _, _, cx| {
+                                    page.set_owner_peer_permission(
+                                        peer, capability, operation, RuleEffect::Deny, cx,
+                                    );
+                                }))
+                                .h(px(appearance.metrics.control_height_default))
+                                .px(px(appearance.spacing.lg))
+                                .border_1()
+                                .border_color(theme.border)
+                                .focus_visible(|style| style.border_color(theme.ring))
+                                .child("Deny"),
+                        );
+                    controls = controls.child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(appearance.spacing.xs))
+                            .child(format!("{title} · {status}"))
+                            .child(actions),
+                    );
+                }
             }
             if self.pending_revocation.is_some() {
                 controls = controls.child(
