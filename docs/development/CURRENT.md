@@ -1,26 +1,28 @@
 # Current Development State
 
-**Phase:** Phase 2 Linux + Android MVP, not released. Git source and tests are authoritative; real-device release acceptance is outstanding.
+**Phase 2 Linux + Android MVP is active, not released.** Git source and tests are authoritative. The owner is carrying out physical Linux + arm64 Android acceptance separately; **no real-device acceptance has been reported**.
 
-## Integrated software
+## Integrated software checkpoint
 
-- **`main` merge `a8eed54a9e746855eb1219eb35dcf020d9d1f0c7` (PR #98):** Android foreground/background, network transitions, reconnect, trust reload and shutdown now recover from native faults by clearing authenticated status, isolating teardown errors, and rejecting late callbacks. Android and CI Gate passed for source `cb1181f0` in GitHub Actions run `39301328776`.
-- PR #97 merge `2948be3c`: Android exact peer/session clipboard and file-picker handoffs; Android and gate passed run `39299050701`.
-- PR #96 merge `87a6eaea`: Linux native exact-session callbacks and OS clipboard/file selection guards; Rust and gate passed run `39298337209`.
-- PRs #87–95 integrated Linux/Android capability permission gates, QR/LAN pairing and discovery, notifications with owner/OS consent, durable trust/policy, file resume/integrity/retention and protected owner audit recovery. These are software checkpoints, **not physical-device acceptance**.
+- **`main` merge `33f33610b37d33d8f4888e30b6faff8f5bb7c8fe` (PR #99):** Android observer failures no longer interrupt runtime, pairing, clipboard, transfer or native presence publication. Owner permission/snapshot faults fail closed; permission errors do not falsely report success; native session ticket errors deny admission. Exact merged PR source `c2c4cbdd` passed Android and CI Gate in run `39315312331`. PR #99 has been merged.
+- **PR #100 merge `59e2b37b803c2f4d522f691d4b5f88e0d8108b06`:** Android notification listener callbacks and application teardown now isolate OS/native faults; capture and content consent are checked before payload inspection, and redaction remains enforced. Android and CI Gate passed run `39314114314`; merge push run `39315150856` also passed.
+- PR #98 merge `a8eed54a`: Android foreground/background, network loss/recovery, reconnect, trust reload and native teardown fault recovery. Android and gate passed run `39301328776`.
+- PR #97 merge `2948be3c`: Android exact peer/session clipboard and file picker handoffs, Android and gate passed `39299050701`.
+- PR #96 merge `87a6eaea`: Linux GPUI exact-session callback and OS clipboard/file picker guards, Rust and gate passed `39298337209`.
+- PRs #87–95 supplied authenticated product pairing and LAN discovery, native capability permissions, owner/OS notification consent, durable trust/revocation/policy, resumable transfers and protected metadata-only audit. Software checkpoints do not satisfy physical release acceptance.
 
-## Active milestone — Android observer and owner-control failure isolation
+## Active milestone — Android native status, recovery UX and accessibility
 
-- **Branch:** `feat/phase2-android-observer-fault-isolation` based on merged PR #98. Consolidated implementation source checkpoint: `4887b59f40f5a619122455e85f88681d41dfbc25` (this document follows that code commit; use the PR head after pushing).
-- **Observer isolation:** Android runtime, clipboard, transfer, pairing, native presence and file transfer publication use bounded, independent listener delivery. A broken UI subscriber cannot interrupt other observers or a security-relevant state transition. Pairing cancellation continues even when closing discovery fails.
-- **Owner-control recovery:** thrown native policy writes, peer-targeted permission changes and policy snapshot reads fail closed, discard apparent authenticated authority, and return failure to presentation. Failed teardown makes admission terminal. Session-binding provider faults return no native ticket.
-- **Publication safety:** native presence commits session/security snapshot before notifying platform/UI observers; local notification-consent errors deny delivery, and a failed transfer-session adapter is detached rather than retaining stale authority.
-- **Tests:** JVM regressions cover observer failure across feature controllers; additional fake-port cases cover policy/snapshot failures, terminal failed stop and session-ticket errors. **This batch has not yet passed exact-head CI or physical-device tests.** No new protocol, owner-trust rule, identity format, privilege boundary or ADR is introduced.
+- **Branch:** `feat/phase2-android-device-recovery-ux`, based on the merged PR #99. Implementation tree before this handoff: `d953de59a7dd6ce58f083c51c1e1ea85d9c36695` (the document update changes the PR head; use the live Git ref for exact SHA).
+- **State model:** `RuntimeRecoveryPresentation` distinguishes authenticated sessions, unverified/forged online presence, trust or session revocation, failed discovery, stopped native runtime, terminal fail-closed shutdown, LAN loss, and genuine authentication-in-progress. Only exact trusted, connected, active authenticated session snapshots offer Disconnect. Revoked peers and terminal shutdown never offer reconnect.
+- **Android controls:** Devices screen gives concrete recovery instructions and bounded Retry/Reconnect/Disconnect affordances; Add Device is enabled only when native runtime is running and LAN is available. Scanner state clears when background or network/lifecycle disables pairing. Header and device panel share a single status classification.
+- **Accessibility:** live polite status announcements, explicit accessible status descriptions, independent recovery-action control semantics and existing minimum 48dp touch target on ControlButton.
+- **Tests:** seven pure JVM state regression cases for authenticated proof, revocation, retry, network loss, reconnect classes, terminal shutdown and missing peer-control adapter. **Exact-head Android CI and real-device testing are pending.** No wire/identity/trust/privileged contract changed.
 
-## Exact next work
+## Next implementation actions
 
-1. Run one Android JVM/compile checkpoint for the consolidated branch, inspect the CI Gate, fix confirmed failures together, and merge after verification.
-2. Continue Phase 2 Linux/Android product reliability, native status/accessibility, explicit permission and recovery UX, and practical notification, transfer and audit lifecycle resilience in coherent vertical slices.
-3. **Release gate:** collect redacted real Linux + arm64 Android evidence for production QR/LAN pairing, restart/reconnect, default-deny, clipboard both ways, resumable file transfer and checksum/cancel/storage faults, notification OS consent withdrawal/content redaction, protected audit recovery, and owner-signed terminal revocation **last** on disposable identities. No 0.1 release until actual physical acceptance.
+1. Review the Android compile/JVM results and CI Gate for the new recovery UX branch; fix confirmed failures together and merge only when verified.
+2. Continue approved Phase 2 Linux/Android reliability and usability, especially native permission/error presentation, file transfer/notification/audit lifecycle recovery and accessible keyboard navigation. Keep batches coherent and source/tests authoritative.
+3. **Owner physical release gate remains open:** real Linux + arm64 Android normal builds, QR/LAN pairing/replay rejection and reconnect, exact peer default-deny controls, clipboard both directions, file resume/cancel/checksum/storage failure, OS notification consent and redaction, protected audit recovery, then owner-signed terminal peer revocation **last** on disposable identities. Save only redacted outcomes and exact tested commit/build. Never mark Phase 2 or Cross-Lab 0.1 complete from CI alone.
 
-See [AGENTS.md](../../AGENTS.md), [WORKFLOW.md](WORKFLOW.md), [CI.md](CI.md), and [Phase 2 completion gates](../plans/phase-2/MVP-completion-gates.md). Phase 3 remains deferred.
+See [AGENTS.md](../../AGENTS.md), [WORKFLOW.md](WORKFLOW.md), [CI.md](CI.md), [Phase 2 gates](../plans/phase-2/MVP-completion-gates.md), and accepted ADRs. Phase 3 remains deferred.
