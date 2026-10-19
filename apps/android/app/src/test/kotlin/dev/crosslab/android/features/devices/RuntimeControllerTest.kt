@@ -167,6 +167,7 @@ class RuntimeControllerTest {
                 trust = RuntimeTrust.TRUSTED,
                 connectivity = RuntimeConnectivity.CONNECTED,
                 security = RuntimeSecurity.AUTHENTICATED,
+                capabilityIds = listOf("notifications.read"),
             )
         val second = first.copy(peerDeviceId = "different-trusted-id")
         port.emit(first)
@@ -211,6 +212,16 @@ class RuntimeControllerTest {
             ),
         )
         port.emit(second.copy(security = RuntimeSecurity.TEST_ONLY))
+        assertEquals(
+            false,
+            controller.setPermissionForPeer(
+                "different-trusted-id",
+                "notifications.read",
+                "subscribe",
+                RuntimePermissionEffect.ALLOW,
+            ),
+        )
+        port.emit(second.copy(capabilityIds = emptyList()))
         assertEquals(
             false,
             controller.setPermissionForPeer(

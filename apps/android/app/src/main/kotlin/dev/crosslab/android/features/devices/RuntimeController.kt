@@ -176,6 +176,7 @@ class RuntimeController(
                 it.snapshot.trust != RuntimeTrust.TRUSTED ||
                 it.snapshot.connectivity != RuntimeConnectivity.CONNECTED ||
                 it.snapshot.security != RuntimeSecurity.AUTHENTICATED ||
+                capabilityId !in it.snapshot.capabilityIds ||
                 it.snapshot.peerDeviceId != peerDeviceId
             ) return@update null
             changed = port.setPermissionForPeer(peerDeviceId, capabilityId, operation, effect)

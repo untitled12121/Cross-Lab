@@ -310,7 +310,8 @@ class ProductPresencePort(
                 current.session != RuntimeSession.ACTIVE ||
                 current.trust != RuntimeTrust.TRUSTED ||
                 current.connectivity != RuntimeConnectivity.CONNECTED ||
-                current.security != RuntimeSecurity.AUTHENTICATED
+                current.security != RuntimeSecurity.AUTHENTICATED ||
+                capabilityId !in current.capabilityIds
             ) {
                 return@synchronized false
             }

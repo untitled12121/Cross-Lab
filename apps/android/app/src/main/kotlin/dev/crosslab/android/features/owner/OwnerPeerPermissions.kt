@@ -55,10 +55,10 @@ internal data class OwnerPeerPermissionState(
 
 private val SUPPORTED_PEER_OPERATIONS =
     listOf(
-        OwnerPeerOperation("Read this device clipboard", "clipboard.read", "get", null),
-        OwnerPeerOperation("Write this device clipboard", "clipboard.write", "set", null),
-        OwnerPeerOperation("Receive files from this device", "files.transfer", "receive", null),
-        OwnerPeerOperation("Request notification mirror", "notifications.read", "subscribe", null),
+        OwnerPeerOperation("Peer reads this device clipboard", "clipboard.read", "get", null),
+        OwnerPeerOperation("Peer writes this device clipboard", "clipboard.write", "set", null),
+        OwnerPeerOperation("Peer requests file reception", "files.transfer", "receive", null),
+        OwnerPeerOperation("Peer requests mirrored notifications", "notifications.read", "subscribe", null),
     )
 
 internal fun OwnerPeerOperation.policyLabel(): String =

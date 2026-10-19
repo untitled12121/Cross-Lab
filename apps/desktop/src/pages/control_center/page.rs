@@ -10,8 +10,6 @@ use crosslab_identity::DeviceId;
 #[cfg(target_os = "linux")]
 use crosslab_policy::{CapabilityId, OperationName, RuleEffect};
 #[cfg(target_os = "linux")]
-use crate::features::owner::OWNER_PEER_OPERATIONS;
-#[cfg(target_os = "linux")]
 use crosslab_protocol::TransferId;
 
 #[cfg(feature = "development-provisioning")]
@@ -25,6 +23,7 @@ use crate::features::{
         LinuxFileTransferSendFailure, LinuxFileTransferSendHandle, LinuxFileTransferSendStatus,
         LinuxFileTransferSendToken, LinuxIncomingFileTransfer,
     },
+    owner::OWNER_PEER_OPERATIONS,
 };
 use crate::{
     features::{
@@ -690,9 +689,10 @@ impl ControlCenterPage {
             cx.notify();
             return;
         };
-        let (Ok(capability), Ok(operation)) =
-            (CapabilityId::parse(capability), OperationName::parse(operation))
-        else {
+        let (Ok(capability), Ok(operation)) = (
+            CapabilityId::parse(capability),
+            OperationName::parse(operation),
+        ) else {
             self.notice = Some("Unsupported permission operation.".to_owned());
             cx.notify();
             return;
@@ -2018,15 +2018,13 @@ impl Render for ControlCenterPage {
                 device.trust() == crate::features::devices::TrustDisplay::Trusted
                     && device.connectivity() == ConnectivityDisplay::Connected
                     && device.session() == SessionDisplay::Active
-                    && device.security()
-                        == crate::features::devices::SecurityDisplay::Authenticated
-            }) && let Some(peer) = device.peer_device_id() {
-                controls = controls.child(
-                    div().child(format!(
-                        "Device permissions · protected revision {}",
-                        self.devices.policy_revision()
-                    )),
-                );
+                    && device.security() == crate::features::devices::SecurityDisplay::Authenticated
+            }) && let Some(peer) = device.peer_device_id()
+            {
+                controls = controls.child(div().child(format!(
+                    "Device permissions · protected revision {}",
+                    self.devices.policy_revision()
+                )));
                 let rules = self.devices.current_permissions();
                 for (index, &(title, capability, operation)) in
                     OWNER_PEER_OPERATIONS.iter().enumerate()
@@ -2034,9 +2032,12 @@ impl Render for ControlCenterPage {
                     if !device.capability_ids().iter().any(|id| id == capability) {
                         continue;
                     }
-                    let effect = rules.iter().find(|rule| {
-                        rule.capability_id() == capability && rule.operation() == operation
-                    }).map(|rule| rule.effect());
+                    let effect = rules
+                        .iter()
+                        .find(|rule| {
+                            rule.capability_id() == capability && rule.operation() == operation
+                        })
+                        .map(|rule| rule.effect());
                     let status = effect.map_or("Default deny", |effect| effect.label());
                     let actions = div()
                         .flex()
@@ -2046,11 +2047,18 @@ impl Render for ControlCenterPage {
                                 .accessibility_label(format!("Allow {title} for this trusted peer"))
                                 .disabled(
                                     self.peer_permission_busy
-                                        || effect == Some(crate::features::devices::PermissionDisplay::Allow),
+                                        || effect
+                                            == Some(
+                                                crate::features::devices::PermissionDisplay::Allow,
+                                            ),
                                 )
                                 .on_click(cx.listener(move |page, _, _, cx| {
                                     page.set_owner_peer_permission(
-                                        peer, capability, operation, RuleEffect::Allow, cx,
+                                        peer,
+                                        capability,
+                                        operation,
+                                        RuleEffect::Allow,
+                                        cx,
                                     );
                                 }))
                                 .h(px(appearance.metrics.control_height_default))
@@ -2065,11 +2073,18 @@ impl Render for ControlCenterPage {
                                 .accessibility_label(format!("Deny {title} for this trusted peer"))
                                 .disabled(
                                     self.peer_permission_busy
-                                        || effect == Some(crate::features::devices::PermissionDisplay::Deny),
+                                        || effect
+                                            == Some(
+                                                crate::features::devices::PermissionDisplay::Deny,
+                                            ),
                                 )
                                 .on_click(cx.listener(move |page, _, _, cx| {
                                     page.set_owner_peer_permission(
-                                        peer, capability, operation, RuleEffect::Deny, cx,
+                                        peer,
+                                        capability,
+                                        operation,
+                                        RuleEffect::Deny,
+                                        cx,
                                     );
                                 }))
                                 .h(px(appearance.metrics.control_height_default))

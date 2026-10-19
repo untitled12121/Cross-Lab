@@ -3,8 +3,16 @@ use core::fmt::Write as _;
 pub const OWNER_PEER_OPERATIONS: [(&str, &str, &str); 4] = [
     ("Read this device clipboard", "clipboard.read", "get"),
     ("Write this device clipboard", "clipboard.write", "set"),
-    ("Receive files from this device", "files.transfer", "receive"),
-    ("Request notification mirror", "notifications.read", "subscribe"),
+    (
+        "Peer requests file reception",
+        "files.transfer",
+        "receive",
+    ),
+    (
+        "Peer requests mirrored notifications",
+        "notifications.read",
+        "subscribe",
+    ),
 ];
 
 use crosslab_identity::{DeviceId, OwnerId};
