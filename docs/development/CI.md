@@ -11,7 +11,7 @@ Cross-Lab uses [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) for 
 - **Fuzz target-only changes:** existing path-scoped `Fuzz Smoke` workflow, not the full Rust/Android matrix.
 - **Unknown or unreadable Git changes:** run everything (fail safely rather than silently skipping required validation).
 
-The small `Determine checks` job validates the pure [scope classifier](../../.github/scripts/ci_scope.py), compares the actual Git event boundary and selects jobs. Unrelated jobs are marked skipped. A single `CI Gate` result fails if any **selected** check fails/cancels; intentionally skipped checks do not fail the gate.
+The small `Determine checks` job validates the pure [scope classifier](../../.github/scripts/ci_scope.py), compares the actual Git event boundary (PR merge-base diff or consecutive push commits) and selects jobs. Unrelated jobs are marked skipped. A single `CI Gate` result fails if any **selected** check fails/cancels; intentionally skipped checks do not fail the gate.
 
 For an open PR containing code, GitHub computes the **whole PR diff** against its base. A later documentation-only commit on that code PR may retrigger its existing code checks. This deliberately prevents treating previously unverified code as tested. Create separate documentation-only PRs when truly independent.
 

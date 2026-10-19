@@ -74,13 +74,13 @@ def manual_checks(scope: str) -> Checks:
     }[scope]
 
 
-def changed_files(base: str, head: str) -> list[str]:
+def changed_files(base: str, head: str, pull_request: bool = False) -> list[str]:
     sha = re.compile(r"[0-9a-f]{40}\Z")
     if not sha.fullmatch(base) or not sha.fullmatch(head) or base == "0" * 40:
         raise ValueError("missing or invalid Git change boundary")
-    result = subprocess.check_output(
-        ["git", "diff", "--name-only", "-z", base, head]
-    )
+    # PRs compare against their merge base; pushes compare successive commits.
+    boundary = f"{base}...{head}" if pull_request else f"{base}..{head}"
+    result = subprocess.check_output(["git", "diff", "--name-only", "-z", boundary])
     return [os.fsdecode(path) for path in result.split(b"\0") if path]
 
 
@@ -97,7 +97,9 @@ def main() -> None:
         checks = manual_checks(args.profile)
     else:
         try:
-            checks = choose_checks(changed_files(args.base, args.head))
+            checks = choose_checks(
+                changed_files(args.base, args.head, args.event == "pull_request")
+            )
         except (ValueError, OSError, subprocess.CalledProcessError) as error:
             print(f"Cannot safely classify diff ({error}); running all checks.")
             checks = FULL

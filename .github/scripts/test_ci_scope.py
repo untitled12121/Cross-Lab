@@ -54,6 +54,13 @@ class ScopeTests(unittest.TestCase):
         paths = changed_files("a" * 40, "b" * 40)
         self.assertEqual(paths, ["crates/identity/src/removed.rs"])
         self.assertFalse(any(arg.startswith("--diff-filter") for arg in git_diff.call_args.args[0]))
+        self.assertEqual(git_diff.call_args.args[0][-1], "a" * 40 + ".." + "b" * 40)
+
+    @patch("ci_scope.subprocess.check_output", return_value=b"apps/android/Main.kt\0")
+    def test_pr_diff_uses_merge_base_to_avoid_unrelated_main_changes(self, git_diff):
+        paths = changed_files("a" * 40, "b" * 40, pull_request=True)
+        self.assertEqual(paths, ["apps/android/Main.kt"])
+        self.assertEqual(git_diff.call_args.args[0][-1], "a" * 40 + "..." + "b" * 40)
 
     def test_manual_profiles_and_outputs(self):
         self.assertEqual(manual_checks("rust"), Checks(True, True, False, True, True))
