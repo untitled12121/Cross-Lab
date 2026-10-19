@@ -1,30 +1,28 @@
 # Current Development State
 
-**Phase 2 Linux + Android MVP active; Cross-Lab 0.1 not released.** Git implementation and tests are authoritative. The owner will separately perform normal Linux and arm64 Android physical acceptance; no device evidence has yet been supplied.
+**Phase 2 Linux + Android MVP remains active, not released.** Git code/tests are authoritative. The owner is handling normal real-device Linux + arm64 Android acceptance independently and will provide results; no physical acceptance evidence has been received.
 
-## Integrated software checkpoints
+## Integrated software
 
-- **`main` merge `eb6932c72f59800e1ba04133c2ea2f11eb67992e` (PR #101):** Android verified-session status, native recovery UX and accessible action descriptions. Seven JVM regression tests, Android and CI Gate success in run `39316816232`.
-- PR #99 merge `33f33610`: Android observer fault isolation and fail-closed native owner permission controls; Android and gate success run `39315312331`.
-- PR #100 merge `59e2b37b`: OS notification callbacks, owner/OS consent, content redaction and lifecycle failure recovery; Android and gate success run `39314114314`.
-- PR #98 merge `a8eed54a`: Android network/foreground/reconnect/teardown fault recovery; Android and gate success run `39301328776`.
-- PR #97 merge `2948be3c`: Android exact-session clipboard and file picker actions, Android and gate success run `39299050701`.
-- PR #96 merge `87a6eaea`: Linux GPUI exact-session native clipboard and file picker guards, Rust and gate success run `39298337209`.
-- Prior Phase 2 milestones (#87–95): product QR/LAN pairing and trust, native owner permissions, notifications, resumable single-file transfer, protected audit, signed terminal revocation. CI alone does not validate real hardware.
+- **`main` merge `47efe5dbdb8fbb0c2867879db9c943734ed6b43c` (PR #102):** Linux GPUI shows verified live sessions distinctly from untrusted Online/discovery, paused/failed and terminal revoked peers; action labels and reconnect control no longer equate cached trust with session authority. Exact PR head `4b8affa7` passed Source format, Rust and CI Gate in run `39318461588`.
+- PR #101 merge `eb6932c7`: Android actionable recovery status, authenticated-session controls, terminal revocation/shutdown handling and polite accessibility updates; Android/CI Gate passed run `39316816232`.
+- PR #99 merge `33f33610`: Android observer failure isolation, owner policy mutation/snapshot fail-closed recovery and native session admission; Android/CI Gate passed run `39315312331`.
+- PR #100 merge `59e2b37b`: Android OS listener capture gating, notification text redaction and lifecycle recovery; Android/CI Gate passed run `39314114314`.
+- PR #98 merge `a8eed54a`: native Android network, foreground/background/reconnect and teardown failures; Android/CI Gate passed run `39301328776`.
+- PRs #97 and #96: exact-session platform clipboard/file selection on Android and Linux; Android/Rust gate results passed runs `39299050701` and `39298337209`.
+- Prior Phase 2 work #87–95 includes trust and QR/LAN pairing, precise capability permissions, resumable file transfer, metadata-only protected audit, notification v3.0, and durable signed owner revocation. All software checkpoints remain independent of physical acceptance.
 
-## Active milestone — Linux GPUI verified-session and safe recovery UX
+## Active milestone — Android Activity UI observer lifetime isolation
 
-- **Branch:** `feat/phase2-linux-verified-session-status-ux`. Source checkpoint before this handoff: `3edc11e08baf60612be5b4dce4ad589851dd3abd`; use live PR head after this integrated commit.
-- **Verified presentation:** Desktop `VerifiedSessionDisplay` distinguishes authenticated live peer authority from discovered or merely Online advertised state, terminal revocation, reconnecting, paused, failed and absent peers. Badges never label unverified presence as authenticated, and capability-less offline messaging avoids implying a live session.
-- **Actions:** `PresenceControlAction` keeps Disconnect for an authenticated session, Reconnect for recoverable paused/failed/unverified states, and hides reconnect for revoked peers. The native session/capability boundary is unchanged.
-- **Focused Rust tests:** false Online presence and incomplete authentication, owner-revoked trust and terminal controls, native recovery labels and actions.
-- **Verification:** Initial source `3edc11e0` failed Source format only (Rust job was skipped). Applied the exact rustfmt changes in this batch and reconciled with PR #101's merged main. **Exact-head format, Rust and CI Gate pending**; physical verification remains separate.
-- No changes to approved identity, crypto, wire, trust, or privileged-service architecture.
+- **Branch:** `feat/phase2-android-activity-observer-lifetime`. Source checkpoint before this handoff `a69eb81bde6bb0361d1626119b3d91d0f711bda2` (use active PR head for exact tree after this merge/docs commit).
+- **Callback lifetime:** `UiCallbackGate` checks Activity ownership both before scheduling observer-driven UI work and after it reaches the UI thread, so a late audit/runtime/clipboard/file/pairing callback cannot mutate the disposed Activity.
+- **Teardown:** `closeObservers` closes all observer handles even when an individual close throws, drops references, clears the pending file-picker session ticket, and permits the Activity worker to shut down. Observers are page-local, the native agent keeps independent policy/authorization authority, and no user secrets or session identifiers are exposed.
+- **Tests:** six pure Kotlin JVM cases for late callbacks, correct ordering, broken observer delivery, rejected dispatcher, independent close and idempotent gate. **Exact-head Android CI and real-device verification pending**. No approved ADR, wire, trust or privilege contract changed.
 
-## Next actions
+## Exact next work
 
-1. Verify exact-head source format, Rust and CI Gate; fix any confirmed failures as one batch and merge on green.
-2. Continue Phase 2 native status, keyboard/accessibility and operational error recovery, including permission, transfer, notification and protected audit lifecycle.
-3. **Owner's manual release gate remains open:** normal real-device Linux/arm64 Android QR/LAN pairing, fresh trust on restart, replay denial, peer default-deny and clipboard both directions, transfer resume/cancel/checksum/storage failure, OS notification permission withdrawal/redaction, protected audit faults, and signed terminal revocation **last** with disposable identities. Record redacted outcomes and exact tested commit/OS. Do not mark Phase 2 or 0.1 released without evidence.
+1. Run Android compile and JVM regressions for the Activity observer-lifetime batch, inspect CI Gate and fix actual failures, then merge verified code.
+2. Continue remaining Phase 2 Linux/Android reliability and owner-facing recovery/accessibility, especially transfer storage/cancel and protected audit/notification OS lifecycle behavior.
+3. **Owner physical release gate (open):** normal Linux + arm64 Android QR/LAN pairing and signed trust persistence, expired/replayed QR rejection, restart/reconnect and peer default deny, clipboard both ways, transfer resume/cancel/checksum/storage loss, notification OS withdrawal/redaction, audit protected faults, and owner signed terminal revocation **last** on disposable identities. Record only redacted outcomes and exact tested commit/OS build. No Phase 2 completion or Cross-Lab 0.1 release until accepted on real devices.
 
-See [AGENTS.md](../../AGENTS.md), [WORKFLOW.md](WORKFLOW.md), [CI.md](CI.md), accepted ADRs, and [Phase 2 completion gates](../plans/phase-2/MVP-completion-gates.md). Phase 3 is deferred.
+See [AGENTS.md](../../AGENTS.md), [WORKFLOW.md](WORKFLOW.md), [CI.md](CI.md), approved ADRs and [Phase 2 gates](../plans/phase-2/MVP-completion-gates.md). Phase 3 deferred.
