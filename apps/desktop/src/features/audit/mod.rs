@@ -379,7 +379,8 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let root = env::temp_dir().join(format!("crosslab-audit-temp-{}-{unique}", std::process::id()));
+        let label = format!("crosslab-audit-temp-{}-{unique}", std::process::id());
+        let root = env::temp_dir().join(label);
         fs::create_dir_all(&root).unwrap();
         let store = LinuxAuditStore {
             path: root.join("history-v1.bin"),
@@ -404,8 +405,8 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let root =
-            env::temp_dir().join(format!("crosslab-audit-blocked-{}-{unique}", std::process::id()));
+        let label = format!("crosslab-audit-blocked-{}-{unique}", std::process::id());
+        let root = env::temp_dir().join(label);
         fs::create_dir_all(&root).unwrap();
         let store = LinuxAuditStore {
             path: root.join("history-v1.bin"),
