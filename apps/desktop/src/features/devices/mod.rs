@@ -190,6 +190,66 @@ impl PermissionPresentation {
     }
 }
 
+/// Presentation must not equate a published service with an authenticated peer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VerifiedSessionDisplay {
+    Authenticated,
+    Unverified,
+    Revoked,
+    Unavailable,
+    Discovering,
+    Connecting,
+    Reconnecting,
+    Paused,
+    Failed,
+}
+
+impl VerifiedSessionDisplay {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Authenticated => "Authenticated",
+            Self::Unverified => "Not verified",
+            Self::Revoked => "Revoked",
+            Self::Unavailable => "Unavailable",
+            Self::Discovering => "Discovering",
+            Self::Connecting => "Authenticating",
+            Self::Reconnecting => "Reconnecting",
+            Self::Paused => "Paused",
+            Self::Failed => "Discovery failed",
+        }
+    }
+
+    pub const fn detail(self) -> &'static str {
+        match self {
+            Self::Authenticated => "Verified live session with an owner-approved peer.",
+            Self::Unverified => {
+                "Peer presence is not a verified session. All peer actions require fresh authentication."
+            }
+            Self::Revoked => "Owner-revoked trust cannot be restored by reconnecting.",
+            Self::Unavailable => {
+                "No active authenticated peer session. Pair a device or begin LAN discovery."
+            }
+            Self::Discovering => {
+                "Looking for trusted devices on this LAN. Discovery does not authenticate a peer."
+            }
+            Self::Connecting => "Checking owner trust and a fresh authenticated session.",
+            Self::Reconnecting => {
+                "The previous session ended. Waiting for a new authenticated session."
+            }
+            Self::Paused => "Automatic connection is paused. Reconnect to resume.",
+            Self::Failed => "LAN discovery failed. Reconnect after checking local connectivity.",
+        }
+    }
+}
+
+/// UI command only; the privileged runtime rechecks authorization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PresenceControlAction {
+    Reconnect,
+    Disconnect,
+    Unavailable,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DevicePresentation {
     owner_id: Option<String>,
@@ -425,6 +485,40 @@ impl DevicesFeatureState {
                 },
             })
             .collect()
+    }
+
+    /// A presence advertisement alone never earns an authenticated label.
+    pub fn verified_session_display(&self) -> VerifiedSessionDisplay {
+        if self.current.as_ref().is_some_and(|device| {
+            device.trust() == TrustDisplay::Revoked || device.session() == SessionDisplay::Revoked
+        }) {
+            return VerifiedSessionDisplay::Revoked;
+        }
+        match self.presence {
+            PresenceDisplay::Online if self.has_authenticated_session() => {
+                VerifiedSessionDisplay::Authenticated
+            }
+            PresenceDisplay::Online => VerifiedSessionDisplay::Unverified,
+            PresenceDisplay::Unavailable => VerifiedSessionDisplay::Unavailable,
+            PresenceDisplay::Discovering => VerifiedSessionDisplay::Discovering,
+            PresenceDisplay::Connecting => VerifiedSessionDisplay::Connecting,
+            PresenceDisplay::Reconnecting => VerifiedSessionDisplay::Reconnecting,
+            PresenceDisplay::Paused => VerifiedSessionDisplay::Paused,
+            PresenceDisplay::Failed => VerifiedSessionDisplay::Failed,
+        }
+    }
+
+    pub fn presence_control_action(&self) -> PresenceControlAction {
+        if self.verified_session_display() == VerifiedSessionDisplay::Revoked {
+            return PresenceControlAction::Unavailable;
+        }
+        if self.has_authenticated_session() {
+            return PresenceControlAction::Disconnect;
+        }
+        if self.presence.offers_reconnect() || self.presence == PresenceDisplay::Online {
+            return PresenceControlAction::Reconnect;
+        }
+        PresenceControlAction::Disconnect
     }
 
     /// Native actions must never promote cached trust into live session authority.

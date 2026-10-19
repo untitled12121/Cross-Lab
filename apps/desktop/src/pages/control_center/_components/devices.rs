@@ -4,7 +4,7 @@ use crate::{
         appearance::{active_theme, font_weight},
         devices::{
             ConnectivityDisplay, DevicePresentation, DevicesFeatureState, PermissionPresentation,
-            PresenceDisplay, SavedTrustedPeerPresentation, TrustDisplay,
+            SavedTrustedPeerPresentation, TrustDisplay, VerifiedSessionDisplay,
         },
     },
 };
@@ -92,7 +92,7 @@ pub(crate) fn devices_content(
 
     content = content.child(match state.current() {
         Some(device) => device_panel(device, state, clipboard, file_transfer, cx),
-        None => empty_state(state.presence(), cx),
+        None => empty_state(state.verified_session_display(), cx),
     });
 
     if !saved_peers.is_empty() {
@@ -157,7 +157,7 @@ fn saved_trusted_devices_panel(
     panel
 }
 
-fn empty_state(presence: PresenceDisplay, cx: &App) -> Div {
+fn empty_state(presence: VerifiedSessionDisplay, cx: &App) -> Div {
     let theme = cx.theme();
     let appearance = active_theme(cx);
 
@@ -175,24 +175,12 @@ fn empty_state(presence: PresenceDisplay, cx: &App) -> Div {
                 .flex()
                 .items_center()
                 .gap(px(appearance.spacing.md))
-                .child(status_badge(
-                            presence.label(),
-                            presence_tone(presence),
-                            cx,
-                        ))
+                .child(status_badge(presence.label(), verified_tone(presence), cx))
                 .child(
                     div()
                         .text_size(px(appearance.typography.scales.body.size))
                         .text_color(theme.muted_foreground)
-                        .child(match presence {
-                            PresenceDisplay::Discovering => "Looking for trusted devices on this LAN",
-                            PresenceDisplay::Connecting => "Authenticating a discovered trusted device",
-                            PresenceDisplay::Reconnecting => "The trusted session is reconnecting",
-                            PresenceDisplay::Paused => "Automatic trusted-device connection is paused",
-                            PresenceDisplay::Failed => "Local trusted-device discovery is unavailable",
-                            PresenceDisplay::Online => "Authenticated device is online",
-                            PresenceDisplay::Unavailable => "No active authenticated device session",
-                        }),
+                        .child(presence.detail()),
                 ),
         )
         .child(
@@ -200,7 +188,7 @@ fn empty_state(presence: PresenceDisplay, cx: &App) -> Div {
                 .text_size(px(appearance.typography.scales.caption.size))
                 .text_color(theme.muted_foreground)
                 .child(
-                    "Cross-Lab has no mandatory cloud account. Start an authenticated local                      device session to manage the peer here.",
+                    "Cross-Lab has no mandatory cloud account. Start a verified local session to manage a peer here.",
                 ),
         )
 }
@@ -213,7 +201,7 @@ fn device_panel(
     cx: &App,
 ) -> Div {
     let theme = cx.theme();
-    let presence = state.presence();
+    let presence = state.verified_session_display();
     let appearance = active_theme(cx);
     let trust_tone = match device.trust() {
         TrustDisplay::Trusted => StatusTone::Accent,
@@ -256,7 +244,11 @@ fn device_panel(
                             div()
                                 .text_size(px(appearance.typography.scales.caption.size))
                                 .text_color(theme.muted_foreground)
-                                .child("Authenticated Cross-Lab peer"),
+                                .child(if state.has_authenticated_session() {
+                                    "Authenticated Cross-Lab peer"
+                                } else {
+                                    "Peer presence does not grant session authority"
+                                }),
                         ),
                 )
                 .child(
@@ -264,7 +256,7 @@ fn device_panel(
                         .flex()
                         .items_center()
                         .gap(px(appearance.spacing.sm))
-                        .child(status_badge(presence.label(), presence_tone(presence), cx))
+                        .child(status_badge(presence.label(), verified_tone(presence), cx))
                         .child(status_badge(
                             device.connectivity().label(),
                             connectivity_tone,
@@ -314,6 +306,7 @@ fn device_panel(
             device,
             &state.current_permissions(),
             state.policy_revision(),
+            state.has_authenticated_session(),
             cx,
         ));
 
@@ -331,6 +324,7 @@ fn permission_panel(
     device: &DevicePresentation,
     permissions: &[PermissionPresentation],
     policy_revision: u64,
+    authenticated: bool,
     cx: &App,
 ) -> Div {
     let theme = cx.theme();
@@ -362,7 +356,11 @@ fn permission_panel(
             div()
                 .text_size(px(appearance.typography.scales.body.size))
                 .text_color(theme.muted_foreground)
-                .child("No negotiated capabilities in this authenticated session."),
+                .child(if authenticated {
+                    "No capabilities negotiated in this authenticated session."
+                } else {
+                    "No authenticated session. Peer capabilities are unavailable."
+                }),
         );
     } else {
         for capability_id in device.capability_ids() {
@@ -388,15 +386,17 @@ fn permission_panel(
     )
 }
 
-fn presence_tone(presence: PresenceDisplay) -> StatusTone {
+fn verified_tone(presence: VerifiedSessionDisplay) -> StatusTone {
     match presence {
-        PresenceDisplay::Online => StatusTone::Accent,
-        PresenceDisplay::Failed => StatusTone::Critical,
-        PresenceDisplay::Unavailable
-        | PresenceDisplay::Discovering
-        | PresenceDisplay::Connecting
-        | PresenceDisplay::Reconnecting
-        | PresenceDisplay::Paused => StatusTone::Neutral,
+        VerifiedSessionDisplay::Authenticated => StatusTone::Accent,
+        VerifiedSessionDisplay::Failed
+        | VerifiedSessionDisplay::Unverified
+        | VerifiedSessionDisplay::Revoked => StatusTone::Critical,
+        VerifiedSessionDisplay::Unavailable
+        | VerifiedSessionDisplay::Discovering
+        | VerifiedSessionDisplay::Connecting
+        | VerifiedSessionDisplay::Reconnecting
+        | VerifiedSessionDisplay::Paused => StatusTone::Neutral,
     }
 }
 
