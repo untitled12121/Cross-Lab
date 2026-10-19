@@ -1,23 +1,24 @@
 # Current Development State
 
-**Phase:** Phase 2 Linux + Android MVP (active; not released). Git code and test results are authoritative; see [the milestone gates](../plans/phase-2/MVP-completion-gates.md) for outstanding acceptance.
+**Active phase:** Phase 2 Linux + Android MVP. **Not released.** Git code and tests are implementation truth; see the [Phase 2 gates](../plans/phase-2/MVP-completion-gates.md).
 
-## Implementation baseline
+## Integrated baseline
 
-- Integrated `main` at `cfd024270e7e998f9426c08a586260d3830a3f9c` includes PR #79 Phase 2 core/notifications/audit/revocation, PR #80-81 Android connectivity/scanner stability, PR #82-83 durable trusted-device inventory on both platforms, and PR #86 change-aware CI with manual verification scopes.
-- **Active feature milestone:** [PR #87](https://github.com/untitled12121/Cross-Lab/pull/87), branch `feat/phase2-owner-permissions-recovery`, from `cfd0242`. Android exact peer capability controls, protected policy commits and tightened runtime guards; Linux serialized persist-before-apply policy edits and GPUI owner controls; Android DNS-SD stale-callback handling and Linux startup/reconnect recovery integrated from previous #84/#85 code.
-- **Verification:** previous PR #87 source `a80b01e` and `4df287d5` failed Rust formatting; exact rustfmt diffs were corrected in source. One Android test job was still in progress at this checkpoint. Combined final head still needs exact-source format/Rust/Android verification and physical-device acceptance.
+- **`main` software milestone:** `be8afff2ff1452eff3a4a4a102aef5db4e86de59` (PR #87 merge). Unified Linux and Android owner-facing exact peer capability controls; protected per-device policy persistence; Android serialized DNS-SD resolution, callback identity and session startup retry; Linux GPUI discovery and initial-start recovery.
+- **Exact-head CI:** PR #87 head `a0b2fd0d2e72a9a6a05abf71434022a1b43235da` passed format, Rust and Android plus the CI Gate in run `39238620079`. Earlier recovery PRs #84/#85 closed as superseded by that integrated source.
+- Earlier PRs #79–83 integrated pairing/transport/capabilities, notifications, bounded audit, signed terminal revocation, Android QR/LAN recovery and saved trusted-device inventory. PR #86 introduced change-aware/manual CI.
+- These are **software verifications**, not a claim of normal-product physical Linux–arm64 Android acceptance.
 
-## Verification and blockers
+## Active next vertical slice
 
-- PR #86 full CI succeeded. Previous original heads for PR #84 and #85 passed CI but have merge conflicts with updated `main`; their product-code changes are being reconciled into the current batch rather than adding separate micro-PRs.
-- Owner policy edits must require a fresh authenticated, connected, trusted exact peer and negotiated capability. Android and Linux use existing durable policy stores; no new privileged service, trust schema, capability wire protocol, or permission authority is introduced.
-- **Release block:** no recorded successful post-fix physical Linux + arm64 Android QR/LAN pairing, reconnection, clipboard/transfer, notifications, audit fault recovery or terminal revocation acceptance evidence. CI cannot replace that evidence. Permanent signed revocation is tested last using disposable identities.
+- **Branch:** `feat/phase2-notification-consent-durability`, based on `be8afff`. Implementation code head prior to this handoff document is `44646cc42e7817c5569f8175d959ce3ab10abec1`; use the PR head for the exact current source.
+- **Work completed in source:** atomic confirmed Android owner/content preference commits; owner disable and reapproval reset content sharing atomically; synchronized consent reads/writes and blocked capture until commit success; in-process fail-closed consent on storage read/write failures; native error notice; focused JVM tests for opt-out, reapproval, storage errors and commit races.
+- **Verification:** new branch has **not yet passed Android unit CI** or physical notification mirroring tests at this source checkpoint. This does not add a wire protocol, identity store, trust mechanism, privileged service, or approved architecture change. A failed durability operation may require owner reapproval; no cross-restart guarantee under underlying storage failure is claimed.
 
-## Exact next work
+## Release blockers and exact next task
 
-1. Push the consolidated Phase 2 owner-permissions/recovery branch. Run **one** applicable integration verification checkpoint on its final head (format, Rust, Android, focused trust/policy regressions); correct confirmed failures together.
-2. Merge the coherent batch when required checks are green, close earlier redundant recovery PRs only after source equivalence/integration is verified, and update this handoff with final branch/commit/CI status.
-3. Continue Phase 2 permission/transfer/notification UX and error recovery, then use real owner hardware for release evidence. Defer Phase 3 until Phase 2 gate completion.
+1. Finish one consolidated Android check on the notification-consent branch; correct confirmed failures together and merge after required checks.
+2. Continue Phase 2 practical file-transfer publication/recovery reliability, OS permission/lifecycle UX, audit failure recovery and cross-device integrity/regression polish. Prioritize code before repeated CI runs.
+3. **Physical release gate:** normal Linux + arm64 Android QR/LAN pairing and reconnect, fresh trust, permission default-deny/revision, clipboard, file transfer/resume/cancel/integrity, notification OS withdrawal/redaction, audit corruption/write failure, and signed terminal revocation on disposable credentials (revocation last). No recorded successful post-fix physical acceptance. Record only redacted results and exact versions.
 
-Use [AGENTS.md](../../AGENTS.md), [WORKFLOW.md](WORKFLOW.md), [CI.md](CI.md) for completion-first development. Uploaded references remain available; none should be removed merely because its feature is scheduled later.
+Follow [AGENTS.md](../../AGENTS.md), [WORKFLOW.md](WORKFLOW.md), [CI.md](CI.md). Keep uploaded reference archives unless a completed feature no longer needs them. Phase 3 remains deferred.

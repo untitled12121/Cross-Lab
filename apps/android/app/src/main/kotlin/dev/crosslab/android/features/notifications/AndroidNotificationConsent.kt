@@ -20,29 +20,94 @@ data class NotificationOwnerConsent(
         locallyAvailable() && contentEnabled
 }
 
+/**
+ * Local owner consent is independent of OS permission, authenticated sessions and peer policy.
+ * Failure to persist an edit blocks mirroring in this process until explicit owner re-approval.
+ */
+internal interface OwnerConsentStorage {
+    fun ownerEnabled(): Boolean
+    fun contentEnabled(): Boolean
+    fun commitOwner(enabled: Boolean): Boolean
+    fun commitContent(enabled: Boolean): Boolean
+}
+
+internal class OwnerConsentSettings(
+    private val store: OwnerConsentStorage,
+) {
+    private val lock = Any()
+    private var blocked = false
+
+    val ownerEnabled: Boolean
+        get() =
+            synchronized(lock) {
+                if (blocked) return@synchronized false
+                runCatching { store.ownerEnabled() }.getOrElse {
+                    blocked = true
+                    false
+                }
+            }
+
+    val contentEnabled: Boolean
+        get() =
+            synchronized(lock) {
+                if (!ownerEnabled) return@synchronized false
+                runCatching { store.contentEnabled() }.getOrElse {
+                    blocked = true
+                    false
+                }
+            }
+
+    fun setOwnerEnabled(enabled: Boolean): Boolean =
+        synchronized(lock) {
+            // Do not expose consent before both flags are durably committed.
+            blocked = true
+            val saved = runCatching { store.commitOwner(enabled) }.getOrDefault(false)
+            blocked = !saved
+            saved
+        }
+
+    fun setContentEnabled(enabled: Boolean): Boolean =
+        synchronized(lock) {
+            val consented = enabled && ownerEnabled
+            val wasAvailable = !blocked
+            blocked = true
+            val saved = runCatching { store.commitContent(consented) }.getOrDefault(false)
+            // A failed prior read/write requires fresh owner approval to unblock.
+            blocked = !saved || !wasAvailable
+            saved
+        }
+}
+
 class AndroidNotificationConsent(context: Context) {
     private val application = context.applicationContext
     private val preferences =
         application.getSharedPreferences("crosslab.notifications.owner-v1", Context.MODE_PRIVATE)
+    private val settings =
+        OwnerConsentSettings(
+            object : OwnerConsentStorage {
+                override fun ownerEnabled() = preferences.getBoolean("owner-enabled", false)
+                override fun contentEnabled() = preferences.getBoolean("content-enabled", false)
+
+                override fun commitOwner(enabled: Boolean): Boolean =
+                    preferences.edit()
+                        .putBoolean("owner-enabled", enabled)
+                        .putBoolean("content-enabled", false)
+                        .commit()
+
+                override fun commitContent(enabled: Boolean): Boolean =
+                    preferences.edit().putBoolean("content-enabled", enabled).commit()
+            },
+        )
 
     val ownerEnabled: Boolean
-        get() = preferences.getBoolean("owner-enabled", false)
+        get() = settings.ownerEnabled
 
     val contentEnabled: Boolean
-        get() = preferences.getBoolean("content-enabled", false) && ownerEnabled
+        get() = settings.contentEnabled
 
-    fun setOwnerEnabled(enabled: Boolean) {
-        preferences.edit()
-            .putBoolean("owner-enabled", enabled)
-            .apply()
-        if (!enabled) setContentEnabled(false)
-    }
+    fun setOwnerEnabled(enabled: Boolean): Boolean = settings.setOwnerEnabled(enabled)
 
-    fun setContentEnabled(enabled: Boolean) {
-        preferences.edit()
-            .putBoolean("content-enabled", enabled && ownerEnabled)
-            .apply()
-    }
+    fun setContentEnabled(enabled: Boolean): Boolean = settings.setContentEnabled(enabled)
 
     fun current(foreground: Boolean): NotificationOwnerConsent =
         NotificationOwnerConsent(
@@ -58,10 +123,12 @@ class AndroidNotificationConsent(context: Context) {
             ComponentName(application, CrossLabNotificationListener::class.java)
         // Exact ComponentName comparison avoids substring matches with other packages.
         val enabled =
-            Settings.Secure.getString(
-                application.contentResolver,
-                "enabled_notification_listeners",
-            ).orEmpty()
+            runCatching {
+                Settings.Secure.getString(
+                    application.contentResolver,
+                    "enabled_notification_listeners",
+                )
+            }.getOrNull().orEmpty()
         return enabled
             .split(':')
             .mapNotNull(ComponentName::unflattenFromString)
