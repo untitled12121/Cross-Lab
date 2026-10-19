@@ -8,6 +8,42 @@ import org.junit.Test
 
 class DevicesStateTest {
     @Test
+    fun nativeCapabilityActionsRequireVerifiedOnlineAuthenticatedSession() {
+        val active = RuntimeSnapshot.disconnected().copy(
+            presence = RuntimePresence.ONLINE,
+            peerDeviceId = "trusted-device-id",
+            trust = RuntimeTrust.TRUSTED,
+            connectivity = RuntimeConnectivity.CONNECTED,
+            session = RuntimeSession.ACTIVE,
+            security = RuntimeSecurity.AUTHENTICATED,
+            capabilityIds = listOf("files.transfer", "clipboard.read"),
+        )
+        assertTrue(active.hasAuthenticatedCapability("files.transfer"))
+        assertFalse(active.hasAuthenticatedCapability("clipboard.write"))
+
+        val visible = checkNotNull(DevicesState.from(active).current)
+        assertTrue(visible.hasAuthenticatedCapability("files.transfer", PresenceDisplay.ONLINE))
+        assertTrue(visible.hasAuthenticatedCapability("clipboard.read", PresenceDisplay.ONLINE))
+        assertFalse(visible.hasAuthenticatedCapability("clipboard.write", PresenceDisplay.ONLINE))
+        assertFalse(visible.hasAuthenticatedCapability("files.transfer", PresenceDisplay.RECONNECTING))
+        assertFalse(visible.copy(trust = TrustDisplay.REVOKED)
+            .hasAuthenticatedCapability("files.transfer", PresenceDisplay.ONLINE))
+        assertFalse(visible.copy(security = SecurityDisplay.TEST_ONLY)
+            .hasAuthenticatedCapability("files.transfer", PresenceDisplay.ONLINE))
+        assertFalse(visible.copy(session = SessionDisplay.CLOSED)
+            .hasAuthenticatedCapability("files.transfer", PresenceDisplay.ONLINE))
+
+        assertFalse(active.copy(presence = RuntimePresence.RECONNECTING)
+            .hasAuthenticatedCapability("files.transfer"))
+        assertFalse(active.copy(trust = RuntimeTrust.REVOKED)
+            .hasAuthenticatedCapability("files.transfer"))
+        assertFalse(active.copy(security = RuntimeSecurity.TEST_ONLY)
+            .hasAuthenticatedCapability("files.transfer"))
+        assertFalse(active.copy(connectivity = RuntimeConnectivity.DISCONNECTED)
+            .hasAuthenticatedCapability("files.transfer"))
+    }
+
+    @Test
     fun savedTrustedInventoryDoesNotInventActivePresence() {
         val trusted = "a".repeat(64)
         val state = DevicesState.from(

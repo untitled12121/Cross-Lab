@@ -764,8 +764,7 @@ class ProductPresencePort(
         agent?.let { active ->
             fileTransfer?.sessionConnected(
                 active,
-                snapshot.session == RuntimeSession.ACTIVE &&
-                    snapshot.capabilityIds.contains("files.transfer"),
+                snapshot.hasAuthenticatedCapability("files.transfer"),
             )
         }
         current = snapshot

@@ -21,9 +21,9 @@ import dev.crosslab.android.components.ui.StatusTone
 import dev.crosslab.android.features.appearance.ThemeDocument
 import dev.crosslab.android.features.appearance.toComposeColor
 import dev.crosslab.android.features.appearance.toTextStyle
-import dev.crosslab.android.features.devices.ConnectivityDisplay
 import dev.crosslab.android.features.devices.DevicePresentation
-import dev.crosslab.android.features.devices.SessionDisplay
+import dev.crosslab.android.features.devices.PresenceDisplay
+import dev.crosslab.android.features.devices.hasAuthenticatedCapability
 
 private const val CLIPBOARD_READ = "clipboard.read"
 private const val CLIPBOARD_WRITE = "clipboard.write"
@@ -34,6 +34,7 @@ private const val OP_SET = "set"
 fun ClipboardPanel(
     theme: ThemeDocument,
     device: DevicePresentation,
+    presence: PresenceDisplay,
     state: ClipboardState,
     onSend: () -> Unit,
     onFetch: () -> Unit,
@@ -41,10 +42,7 @@ fun ClipboardPanel(
     val colors = theme.colors
     val sendNegotiated = CLIPBOARD_WRITE in device.capabilityIds
     val fetchNegotiated = CLIPBOARD_READ in device.capabilityIds
-    val sessionReady =
-        device.connectivity == ConnectivityDisplay.CONNECTED &&
-            device.session == SessionDisplay.ACTIVE
-    val actionsEnabled = state.available && sessionReady && !state.busy
+    val actionsEnabled = state.available && !state.busy
 
     Column(
         modifier =
@@ -100,7 +98,8 @@ fun ClipboardPanel(
                     } else {
                         "Send clipboard"
                     },
-                enabled = actionsEnabled && sendNegotiated,
+                enabled = actionsEnabled &&
+                    device.hasAuthenticatedCapability(CLIPBOARD_WRITE, presence),
                 active = state.busy && state.action == ClipboardAction.SEND,
                 onClick = onSend,
             )
@@ -112,7 +111,8 @@ fun ClipboardPanel(
                     } else {
                         "Fetch clipboard"
                     },
-                enabled = actionsEnabled && fetchNegotiated,
+                enabled = actionsEnabled &&
+                    device.hasAuthenticatedCapability(CLIPBOARD_READ, presence),
                 active = state.busy && state.action == ClipboardAction.FETCH,
                 onClick = onFetch,
             )
@@ -141,6 +141,15 @@ fun ClipboardPanel(
                     theme.typography.scales.caption
                         .toTextStyle()
                         .copy(color = colors.mutedForeground.toComposeColor()),
+            )
+        } else if (!device.hasAuthenticatedCapability(CLIPBOARD_READ, presence) &&
+                   !device.hasAuthenticatedCapability(CLIPBOARD_WRITE, presence) &&
+                   sendNegotiated && fetchNegotiated) {
+            Spacer(Modifier.height(theme.spacing.md.toFloat().dp))
+            BasicText(
+                text = "Reconnect an authenticated, trusted device to use the clipboard.",
+                style = theme.typography.scales.caption.toTextStyle()
+                    .copy(color = colors.mutedForeground.toComposeColor()),
             )
         } else if (!sendNegotiated || !fetchNegotiated) {
             Spacer(Modifier.height(theme.spacing.md.toFloat().dp))
