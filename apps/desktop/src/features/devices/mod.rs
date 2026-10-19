@@ -3,7 +3,7 @@ use core::fmt::Write as _;
 use crosslab_agent::{PermissionSnapshot, PresencePhase, PresenceSnapshot};
 use crosslab_core::{SessionState, TransportSecurityClass};
 use crosslab_identity::{DeviceId, OwnerId};
-use crosslab_policy::{NetworkClass, RuleEffect, TrustState};
+use crosslab_policy::{NetworkClass, RuleEffect, SessionId, TrustState};
 use crosslab_protocol::ProtocolVersion;
 use crosslab_runtime::{ConnectivityState, RuntimeStatus};
 
@@ -342,11 +342,25 @@ impl SavedTrustedPeerPresentation {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct AuthenticatedSessionBinding {
+    peer: DeviceId,
+    session: SessionId,
+}
+
+// Session identifiers must not appear in diagnostics or UI state logs.
+impl core::fmt::Debug for AuthenticatedSessionBinding {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("AuthenticatedSessionBinding([redacted])")
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DevicesFeatureState {
     current: Option<DevicePresentation>,
     presence: PresenceDisplay,
     permissions: PermissionSnapshot,
+    session_binding: Option<AuthenticatedSessionBinding>,
 }
 
 impl DevicesFeatureState {
@@ -355,6 +369,7 @@ impl DevicesFeatureState {
             current: None,
             presence: PresenceDisplay::Unavailable,
             permissions: PermissionSnapshot::default(),
+            session_binding: None,
         }
     }
 
@@ -363,17 +378,20 @@ impl DevicesFeatureState {
             current: Some(DevicePresentation::from_runtime(status)),
             presence: PresenceDisplay::Online,
             permissions: PermissionSnapshot::default(),
+            session_binding: session_binding(status),
         }
     }
 
     pub fn update_runtime(&mut self, status: &RuntimeStatus) {
         self.current = Some(DevicePresentation::from_runtime(status));
         self.presence = PresenceDisplay::Online;
+        self.session_binding = session_binding(status);
     }
 
     pub fn update_presence(&mut self, snapshot: &PresenceSnapshot) {
         self.presence = snapshot.phase().into();
         self.current = snapshot.runtime().map(DevicePresentation::from_runtime);
+        self.session_binding = snapshot.runtime().and_then(session_binding);
     }
 
     pub fn update_permissions(&mut self, snapshot: &PermissionSnapshot) {
@@ -429,6 +447,29 @@ impl DevicesFeatureState {
                 .is_some_and(|device| device.capability_ids().iter().any(|id| id == capability))
     }
 
+    pub fn current_session_binding(
+        &self,
+        capability: &str,
+    ) -> Option<AuthenticatedSessionBinding> {
+        if !self.has_authenticated_capability(capability) {
+            return None;
+        }
+        self.session_binding.filter(|binding| {
+            self.current
+                .as_ref()
+                .and_then(DevicePresentation::peer_device_id)
+                == Some(binding.peer)
+        })
+    }
+
+    pub fn matches_session_binding(
+        &self,
+        expected: AuthenticatedSessionBinding,
+        capability: &str,
+    ) -> bool {
+        self.current_session_binding(capability) == Some(expected)
+    }
+
     pub fn saved_trusted_peers(
         &self,
         durable_trusted_ids: &[DeviceId],
@@ -455,6 +496,7 @@ impl DevicesFeatureState {
         self.current = None;
         self.presence = PresenceDisplay::Unavailable;
         self.permissions = PermissionSnapshot::default();
+        self.session_binding = None;
     }
 
     pub const fn current(&self) -> Option<&DevicePresentation> {
@@ -464,6 +506,13 @@ impl DevicesFeatureState {
     pub const fn presence(&self) -> PresenceDisplay {
         self.presence
     }
+}
+
+fn session_binding(status: &RuntimeStatus) -> Option<AuthenticatedSessionBinding> {
+    Some(AuthenticatedSessionBinding {
+        peer: status.peer_device_id()?,
+        session: status.session_id()?,
+    })
 }
 
 #[derive(Debug, Clone, Copy)]
