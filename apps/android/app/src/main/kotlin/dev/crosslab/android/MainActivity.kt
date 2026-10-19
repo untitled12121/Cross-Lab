@@ -30,7 +30,7 @@ import dev.crosslab.android.features.devices.RuntimeLifecycle
 import dev.crosslab.android.features.devices.RuntimePermissionEffect
 import dev.crosslab.android.features.pairing.PairingJoinerStage
 import dev.crosslab.android.features.pairing.PairingJoinerState
-import java.util.concurrent.Executors
+import dev.crosslab.android.features.owner.OwnerWorkQueue
 
 class MainActivity : ComponentActivity() {
     private val runtimeState = mutableStateOf(RuntimeControllerState.initial())
@@ -52,7 +52,7 @@ class MainActivity : ComponentActivity() {
     private val notificationNotice = mutableStateOf<String?>(null)
     private val peerPermissionNotice = mutableStateOf<String?>(null)
     private val peerPermissionBusy = mutableStateOf(false)
-    private val identityWorker = Executors.newSingleThreadExecutor()
+    private val identityWorker = OwnerWorkQueue()
     private val uiObservationGate = UiCallbackGate { callback -> runOnUiThread { callback() } }
     private var runtimeSubscription: AutoCloseable? = null
     private var auditSubscription: AutoCloseable? = null
@@ -154,21 +154,20 @@ class MainActivity : ComponentActivity() {
                 ) { uri ->
                     if (uri != null) {
                         app.auditRecorder.export { csv ->
-                            identityWorker.execute {
+                            if (!identityWorker.submit {
                                 val result = csv.mapCatching { text ->
                                     val bytes = text.toByteArray(Charsets.UTF_8)
                                     contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
                                         ?: error("export output unavailable")
                                 }
-                                if (!isDestroyed) runOnUiThread {
-                                    if (!isDestroyed) {
-                                        auditNotice.value =
-                                            if (result.isSuccess) {
-                                                "Redacted history exported."
-                                            } else {
-                                                "Could not export history."
-                                            }
-                                    }
+                                uiObservationGate.dispatch {
+                                    auditNotice.value =
+                                        if (result.isSuccess) "Redacted history exported."
+                                        else "Could not export history."
+                                }
+                            }) {
+                                uiObservationGate.dispatch {
+                                    auditNotice.value = "Owner operations are busy. Retry audit export."
                                 }
                             }
                         }
@@ -276,7 +275,7 @@ class MainActivity : ComponentActivity() {
                     if (!peerPermissionBusy.value) {
                         peerPermissionBusy.value = true
                         peerPermissionNotice.value = null
-                        identityWorker.execute {
+                        if (!identityWorker.submit {
                             val permitted = runCatching {
                                 app.runtimeController.setPermissionForPeer(
                                     expectedPeer,
@@ -298,17 +297,18 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
                             }
-                            if (!isDestroyed) runOnUiThread {
-                                if (!isDestroyed) {
-                                    peerPermissionBusy.value = false
-                                    peerPermissionNotice.value =
-                                        if (permitted.getOrDefault(false)) {
-                                            "Device policy saved; new operations use the updated rule."
-                                        } else {
-                                            "Policy was not changed. Verify the current trusted session."
-                                        }
-                                }
+                            uiObservationGate.dispatch {
+                                peerPermissionBusy.value = false
+                                peerPermissionNotice.value =
+                                    if (permitted.getOrDefault(false)) {
+                                        "Device policy saved; new operations use the updated rule."
+                                    } else {
+                                        "Policy was not changed. Verify the current trusted session."
+                                    }
                             }
+                        }) {
+                            peerPermissionBusy.value = false
+                            peerPermissionNotice.value = "Owner operations are busy. Retry permission change."
                         }
                     }
                 },
@@ -320,7 +320,7 @@ class MainActivity : ComponentActivity() {
                         trustedPeerGeneration.intValue,
                     )
                     if (id != null) {
-                        identityWorker.execute {
+                        if (!identityWorker.submit {
                             val result = runCatching {
                                 app.identityRepository.revokePeer(id)
                                 // Tear down the prior session before best-effort history I/O.
@@ -345,16 +345,16 @@ class MainActivity : ComponentActivity() {
                             val identity = runCatching {
                                 app.identityRepository.load()
                             }.getOrNull()
-                            if (!isDestroyed) runOnUiThread {
-                                if (!isDestroyed) {
-                                    updateTrustedPeerState(identity)
-                                    revocationNotice.value =
-                                        result.fold(
-                                            onSuccess = { "Trust revoked and saved." },
-                                            onFailure = { "Revocation could not complete. Check device status and secure storage." },
-                                        )
-                                }
+                            uiObservationGate.dispatch {
+                                updateTrustedPeerState(identity)
+                                revocationNotice.value =
+                                    result.fold(
+                                        onSuccess = { "Trust revoked and saved." },
+                                        onFailure = { "Revocation could not complete. Check device status and secure storage." },
+                                    )
                             }
+                        }) {
+                            revocationNotice.value = "Owner operations are busy. Retry revocation."
                         }
                     }
                 },
@@ -381,12 +381,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun refreshTrustedPeers(app: CrossLabApplication) {
-        identityWorker.execute {
+        if (!identityWorker.submit {
             val identity = runCatching { app.identityRepository.load() }.getOrNull()
-            if (!isDestroyed) {
-                runOnUiThread {
-                    if (!isDestroyed) updateTrustedPeerState(identity)
-                }
+            uiObservationGate.dispatch { updateTrustedPeerState(identity) }
+        }) {
+            uiObservationGate.dispatch {
+                revocationNotice.value = "Owner operations are busy. Retry device inventory refresh."
             }
         }
     }
@@ -418,7 +418,7 @@ class MainActivity : ComponentActivity() {
         fileTransferSubscription = null
         pairingSubscription = null
         pendingFileSourceSession = null
-        identityWorker.shutdown()
+        identityWorker.close()
         super.onDestroy()
     }
 }
