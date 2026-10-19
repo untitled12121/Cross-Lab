@@ -139,6 +139,24 @@ class RuntimeControllerTest {
         )
         controller.onForeground()
         assertEquals(
+            false,
+            controller.setPermission(
+                "clipboard.read",
+                "get",
+                RuntimePermissionEffect.ALLOW,
+            ),
+        )
+        port.emit(
+            RuntimeSnapshot.disconnected().copy(
+                peerDeviceId = "trusted-peer",
+                trust = RuntimeTrust.TRUSTED,
+                connectivity = RuntimeConnectivity.CONNECTED,
+                session = RuntimeSession.ACTIVE,
+                security = RuntimeSecurity.AUTHENTICATED,
+                capabilityIds = listOf("clipboard.read"),
+            ),
+        )
+        assertEquals(
             true,
             controller.setPermission(
                 "clipboard.read",

@@ -156,7 +156,15 @@ class RuntimeController(
     ): Boolean {
         var changed = false
         update {
-            if (it.lifecycle != RuntimeLifecycle.RUNNING) return@update null
+            val snapshot = it.snapshot
+            if (it.lifecycle != RuntimeLifecycle.RUNNING ||
+                snapshot.peerDeviceId == null ||
+                snapshot.session != RuntimeSession.ACTIVE ||
+                snapshot.trust != RuntimeTrust.TRUSTED ||
+                snapshot.connectivity != RuntimeConnectivity.CONNECTED ||
+                snapshot.security != RuntimeSecurity.AUTHENTICATED ||
+                capabilityId !in snapshot.capabilityIds
+            ) return@update null
             changed = port.setPermission(capabilityId, operation, effect)
             it.copy(snapshot = port.snapshot())
         }

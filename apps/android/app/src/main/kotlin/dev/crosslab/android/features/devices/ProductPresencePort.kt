@@ -326,6 +326,12 @@ class ProductPresencePort(
         synchronized(lock) {
             val active = agent ?: return@synchronized false
             val peerDeviceId = current.peerDeviceId ?: return@synchronized false
+            if (current.session != RuntimeSession.ACTIVE ||
+                current.trust != RuntimeTrust.TRUSTED ||
+                current.connectivity != RuntimeConnectivity.CONNECTED ||
+                current.security != RuntimeSecurity.AUTHENTICATED ||
+                capabilityId !in current.capabilityIds
+            ) return@synchronized false
             val permissions = active.permissionSnapshot()
             val stored =
                 try {
