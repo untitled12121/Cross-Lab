@@ -73,9 +73,16 @@ data class DevicePresentation(
     val permissionRules: List<PermissionPresentation>,
 )
 
+data class SavedTrustedPeer(
+    val shortId: String,
+    val inAuthenticatedSession: Boolean,
+)
+
 data class DevicesState(
     val current: DevicePresentation?,
     val presence: PresenceDisplay,
+    val savedPeers: List<SavedTrustedPeer> = emptyList(),
+    val additionalSavedPeers: Int = 0,
 ) {
     fun offersReconnect(): Boolean =
         current?.trust != TrustDisplay.REVOKED &&
@@ -86,7 +93,26 @@ data class DevicesState(
             }
 
     companion object {
-        fun from(snapshot: RuntimeSnapshot): DevicesState {
+        fun from(
+            snapshot: RuntimeSnapshot,
+            trustedPeerIds: List<String> = emptyList(),
+        ): DevicesState {
+            val uniquePeers = trustedPeerIds.distinct()
+            val activePeerId =
+                snapshot.peerDeviceId.takeIf {
+                    snapshot.trust == RuntimeTrust.TRUSTED &&
+                        snapshot.session == RuntimeSession.ACTIVE &&
+                        snapshot.connectivity == RuntimeConnectivity.CONNECTED &&
+                        snapshot.security == RuntimeSecurity.AUTHENTICATED
+                }
+            val savedPeers =
+                uniquePeers.take(24).map { id ->
+                    SavedTrustedPeer(
+                        shortId = id.take(16),
+                        inAuthenticatedSession = id == activePeerId,
+                    )
+                }
+            val additionalSavedPeers = (uniquePeers.size - savedPeers.size).coerceAtLeast(0)
             val presence =
                 when (snapshot.presence) {
                     RuntimePresence.UNAVAILABLE -> PresenceDisplay.UNAVAILABLE
@@ -99,7 +125,12 @@ data class DevicesState(
                 }
             val peerId =
                 snapshot.peerDeviceId
-                    ?: return DevicesState(current = null, presence = presence)
+                    ?: return DevicesState(
+                        current = null,
+                        presence = presence,
+                        savedPeers = savedPeers,
+                        additionalSavedPeers = additionalSavedPeers,
+                    )
             return DevicesState(
                 current = DevicePresentation(
                     ownerId = snapshot.ownerId?.take(16),
@@ -161,6 +192,8 @@ data class DevicesState(
                             },
                 ),
                 presence = presence,
+                savedPeers = savedPeers,
+                additionalSavedPeers = additionalSavedPeers,
             )
         }
     }

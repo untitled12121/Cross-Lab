@@ -172,7 +172,7 @@ fun ControlCenterScreen(
             ControlCenterSection.DEVICES ->
                 DevicesScreen(
                     theme = theme,
-                    devices = DevicesState.from(runtime.snapshot),
+                    devices = DevicesState.from(runtime.snapshot, trustedPeerIds),
                     runtime = runtime,
                     clipboard = clipboard,
                     fileTransfer = fileTransfer,
