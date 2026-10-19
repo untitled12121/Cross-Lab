@@ -54,6 +54,15 @@ internal data class RuntimeRecoveryPresentation(
                     tone = StatusTone.NEUTRAL,
                 )
             }
+            if (snapshot.trust == RuntimeTrust.REVOKED ||
+                snapshot.session == RuntimeSession.REVOKED
+            ) {
+                return RuntimeRecoveryPresentation(
+                    label = "Peer revoked",
+                    detail = "This peer's trust was revoked. Reconnecting cannot restore it; pair a different owner-approved device.",
+                    tone = StatusTone.CRITICAL,
+                )
+            }
             val authenticated =
                 snapshot.presence == RuntimePresence.ONLINE &&
                     snapshot.peerDeviceId != null &&

@@ -43,10 +43,26 @@ class RuntimeRecoveryPresentationTest {
         )
         variants.forEach { invalid ->
             val result = presentation(runtime(snapshot = invalid))
-            assertEquals("Session not verified", result.label)
+            assertEquals(
+                if (invalid.trust == RuntimeTrust.REVOKED) "Peer revoked"
+                else "Session not verified",
+                result.label,
+            )
             assertEquals(StatusTone.CRITICAL, result.tone)
-            assertEquals(RuntimeRecoveryAction.RECONNECT, result.action)
+            assertEquals(
+                if (invalid.trust == RuntimeTrust.REVOKED) RuntimeRecoveryAction.NONE
+                else RuntimeRecoveryAction.RECONNECT,
+                result.action,
+            )
         }
+    }
+
+    @Test
+    fun aRevokedRuntimeSessionCannotOfferReconnectFromAStaleOnlinePresence() {
+        val state = presentation(runtime(snapshot = active().copy(session = RuntimeSession.REVOKED)))
+        assertEquals("Peer revoked", state.label)
+        assertEquals(RuntimeRecoveryAction.NONE, state.action)
+        assertFalse(state.actionEnabled)
     }
 
     @Test
