@@ -30,7 +30,8 @@ use crate::{
         appearance::{active_theme, font_weight},
         clipboard::{ClipboardAction, ClipboardFeatureState, ClipboardResult},
         devices::{
-            ConnectivityDisplay, DesktopRuntimeController, DevicesFeatureState, SessionDisplay,
+            ConnectivityDisplay, DesktopRuntimeController, DevicesFeatureState, PresenceDisplay,
+            SessionDisplay,
         },
         file_transfer::{FileTransferFailure, FileTransferFeatureState, FileTransferStage},
         owner::OwnerFeatureState,
@@ -675,7 +676,8 @@ impl ControlCenterPage {
         let Some(device) = self.devices.current() else {
             return;
         };
-        if device.peer_device_id() != Some(expected_peer)
+        if self.devices.presence() != PresenceDisplay::Online
+            || device.peer_device_id() != Some(expected_peer)
             || device.trust() != crate::features::devices::TrustDisplay::Trusted
             || device.connectivity() != ConnectivityDisplay::Connected
             || device.session() != SessionDisplay::Active
@@ -2015,7 +2017,8 @@ impl Render for ControlCenterPage {
                 );
             }
             if let Some(device) = self.devices.current().filter(|device| {
-                device.trust() == crate::features::devices::TrustDisplay::Trusted
+                self.devices.presence() == PresenceDisplay::Online
+                    && device.trust() == crate::features::devices::TrustDisplay::Trusted
                     && device.connectivity() == ConnectivityDisplay::Connected
                     && device.session() == SessionDisplay::Active
                     && device.security() == crate::features::devices::SecurityDisplay::Authenticated

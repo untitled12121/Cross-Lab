@@ -12,7 +12,7 @@ use std::{
 use crosslab_agent::{
     ClipboardAvailability, ClipboardOperationError, ClipboardPlatformError, ClipboardRequest,
     FileTransferAvailability, FileTransferOperationError, NotificationInboxSnapshot,
-    NotificationRole, PermissionSnapshot, PresenceAgentError, PresenceSnapshot,
+    NotificationRole, PermissionSnapshot, PresenceAgentError, PresencePhase, PresenceSnapshot,
     TrustedPresenceAgent, TrustedSessionRoute as AgentTrustedSessionRoute,
 };
 use crosslab_core::{SessionState, TransportSecurityClass};
@@ -360,7 +360,8 @@ impl DesktopProductPresenceController {
     }
 
     fn peer_permission_editable(&self, peer: DeviceId, capability: &CapabilityId) -> bool {
-        self.status.borrow().runtime().is_some_and(|runtime| {
+        let snapshot = self.status.borrow();
+        snapshot.phase() == PresencePhase::Online && snapshot.runtime().is_some_and(|runtime| {
             runtime.peer_device_id() == Some(peer)
                 && runtime.session_id().is_some()
                 && runtime.session_state() == SessionState::Active

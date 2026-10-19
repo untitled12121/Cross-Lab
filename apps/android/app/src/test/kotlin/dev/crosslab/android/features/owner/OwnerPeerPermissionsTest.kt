@@ -73,6 +73,7 @@ class OwnerPeerPermissionsTest {
         val unsafe =
             listOf(
                 state.copy(lifecycle = RuntimeLifecycle.STOPPED),
+                state.copy(networkAvailable = false),
                 state.copy(snapshot = state.snapshot.copy(session = RuntimeSession.CLOSED)),
                 state.copy(snapshot = state.snapshot.copy(trust = RuntimeTrust.REVOKED)),
                 state.copy(snapshot = state.snapshot.copy(connectivity = RuntimeConnectivity.DISCONNECTED)),

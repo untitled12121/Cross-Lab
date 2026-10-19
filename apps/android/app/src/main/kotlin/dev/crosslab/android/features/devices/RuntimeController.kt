@@ -158,6 +158,7 @@ class RuntimeController(
         update {
             val snapshot = it.snapshot
             if (it.lifecycle != RuntimeLifecycle.RUNNING ||
+                !it.networkAvailable ||
                 snapshot.peerDeviceId == null ||
                 snapshot.session != RuntimeSession.ACTIVE ||
                 snapshot.trust != RuntimeTrust.TRUSTED ||
@@ -180,6 +181,7 @@ class RuntimeController(
         var changed = false
         update {
             if (it.lifecycle != RuntimeLifecycle.RUNNING ||
+                !it.networkAvailable ||
                 it.snapshot.session != RuntimeSession.ACTIVE ||
                 it.snapshot.trust != RuntimeTrust.TRUSTED ||
                 it.snapshot.connectivity != RuntimeConnectivity.CONNECTED ||

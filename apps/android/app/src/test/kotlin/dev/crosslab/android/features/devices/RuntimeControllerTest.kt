@@ -249,6 +249,17 @@ class RuntimeControllerTest {
                 RuntimePermissionEffect.ALLOW,
             ),
         )
+        controller.onNetworkLost()
+        port.emit(second)
+        assertEquals(
+            false,
+            controller.setPermissionForPeer(
+                "different-trusted-id",
+                "notifications.read",
+                "subscribe",
+                RuntimePermissionEffect.ALLOW,
+            ),
+        )
         assertEquals(1, port.peerPermissionEdits)
         controller.onBackground()
         assertEquals(

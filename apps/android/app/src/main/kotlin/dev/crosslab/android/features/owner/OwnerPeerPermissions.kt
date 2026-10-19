@@ -25,6 +25,7 @@ internal data class OwnerPeerPermissionState(
             val snapshot = runtime.snapshot
             val peer = snapshot.peerDeviceId?.takeIf { it.isNotBlank() }
             if (runtime.lifecycle != RuntimeLifecycle.RUNNING ||
+                !runtime.networkAvailable ||
                 peer == null ||
                 snapshot.trust != RuntimeTrust.TRUSTED ||
                 snapshot.session != RuntimeSession.ACTIVE ||
