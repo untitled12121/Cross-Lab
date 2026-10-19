@@ -447,10 +447,7 @@ impl DevicesFeatureState {
                 .is_some_and(|device| device.capability_ids().iter().any(|id| id == capability))
     }
 
-    pub fn current_session_binding(
-        &self,
-        capability: &str,
-    ) -> Option<AuthenticatedSessionBinding> {
+    pub fn current_session_binding(&self, capability: &str) -> Option<AuthenticatedSessionBinding> {
         if !self.has_authenticated_capability(capability) {
             return None;
         }

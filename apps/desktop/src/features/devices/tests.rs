@@ -158,8 +158,8 @@ fn native_capability_actions_require_current_authenticated_session() {
 
 #[test]
 fn old_session_results_are_rejected_after_reconnect_or_peer_change() {
-    use crosslab_policy::SessionId;
     use super::AuthenticatedSessionBinding;
+    use crosslab_policy::SessionId;
 
     let old = DeviceId::from_bytes([0x44; 32]);
     let newer = DeviceId::from_bytes([0x45; 32]);
