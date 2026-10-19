@@ -26,7 +26,9 @@ internal fun authenticatedSessionBinding(
         snapshot.session != RuntimeSession.ACTIVE ||
         snapshot.security != RuntimeSecurity.AUTHENTICATED
     ) return null
-    if (sessionId?.length != 64 || !sessionId.all { it in '0'..'9' || it in 'a'..'f' }) {
+    if (sessionId == null || sessionId.length != 64 ||
+        !sessionId.all { it in '0'..'9' || it in 'a'..'f' }
+    ) {
         return null
     }
     return NativeSessionBinding(peer, sessionId)
