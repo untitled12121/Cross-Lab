@@ -306,7 +306,12 @@ class ProductPresencePort(
         effect: RuntimePermissionEffect,
     ): Boolean =
         synchronized(lock) {
-            if (current.peerDeviceId != peerDeviceId || current.session != RuntimeSession.ACTIVE) {
+            if (current.peerDeviceId != peerDeviceId ||
+                current.session != RuntimeSession.ACTIVE ||
+                current.trust != RuntimeTrust.TRUSTED ||
+                current.connectivity != RuntimeConnectivity.CONNECTED ||
+                current.security != RuntimeSecurity.AUTHENTICATED
+            ) {
                 return@synchronized false
             }
             setPermission(capabilityId, operation, effect)

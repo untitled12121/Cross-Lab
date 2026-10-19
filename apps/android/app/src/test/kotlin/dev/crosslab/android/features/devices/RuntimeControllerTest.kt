@@ -165,6 +165,8 @@ class RuntimeControllerTest {
                 peerDeviceId = "first-trusted-id",
                 session = RuntimeSession.ACTIVE,
                 trust = RuntimeTrust.TRUSTED,
+                connectivity = RuntimeConnectivity.CONNECTED,
+                security = RuntimeSecurity.AUTHENTICATED,
             )
         val second = first.copy(peerDeviceId = "different-trusted-id")
         port.emit(first)
@@ -192,6 +194,27 @@ class RuntimeControllerTest {
             false,
             controller.setPermissionForPeer(
                 "first-trusted-id",
+                "notifications.read",
+                "subscribe",
+                RuntimePermissionEffect.ALLOW,
+            ),
+        )
+        assertEquals(1, port.peerPermissionEdits)
+        port.emit(second.copy(trust = RuntimeTrust.REVOKED))
+        assertEquals(
+            false,
+            controller.setPermissionForPeer(
+                "different-trusted-id",
+                "notifications.read",
+                "subscribe",
+                RuntimePermissionEffect.ALLOW,
+            ),
+        )
+        port.emit(second.copy(security = RuntimeSecurity.TEST_ONLY))
+        assertEquals(
+            false,
+            controller.setPermissionForPeer(
+                "different-trusted-id",
                 "notifications.read",
                 "subscribe",
                 RuntimePermissionEffect.ALLOW,

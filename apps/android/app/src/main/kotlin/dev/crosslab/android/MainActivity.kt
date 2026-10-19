@@ -46,6 +46,8 @@ class MainActivity : ComponentActivity() {
     private val notificationConsent =
         mutableStateOf(NotificationOwnerConsent(false, false, false, false, false))
     private val notificationNotice = mutableStateOf<String?>(null)
+    private val peerPermissionNotice = mutableStateOf<String?>(null)
+    private val peerPermissionBusy = mutableStateOf(false)
     private val identityWorker = Executors.newSingleThreadExecutor()
     private var runtimeSubscription: AutoCloseable? = null
     private var auditSubscription: AutoCloseable? = null
@@ -232,39 +234,45 @@ class MainActivity : ComponentActivity() {
                     startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                 },
                 notificationNotice = notificationNotice.value,
-                onSetNotificationPeerPermission = { expectedPeer, allow ->
-                    identityWorker.execute {
-                        val permitted = runCatching {
-                            app.runtimeController.setPermissionForPeer(
-                                expectedPeer,
-                                "notifications.read",
-                                "subscribe",
-                                if (allow) RuntimePermissionEffect.ALLOW
-                                else RuntimePermissionEffect.DENY,
-                            )
-                        }
-                        if (permitted.getOrDefault(false)) {
-                            val revision = runCatching {
-                                app.policyStore.load()?.anchorRevision()
-                            }.getOrNull()
-                            if (revision != null) {
-                                app.auditRecorder.permissionCommitted(revision)
-                            } else {
-                                app.auditRecorder.record(
-                                    MobileAuditAction.PERMISSION_CHANGED,
-                                    MobileAuditOutcome.SUCCEEDED,
+                peerPermissionNotice = peerPermissionNotice.value,
+                peerPermissionBusy = peerPermissionBusy.value,
+                onSetPeerPermission = { expectedPeer, capabilityId, operation, effect ->
+                    if (!peerPermissionBusy.value) {
+                        peerPermissionBusy.value = true
+                        peerPermissionNotice.value = null
+                        identityWorker.execute {
+                            val permitted = runCatching {
+                                app.runtimeController.setPermissionForPeer(
+                                    expectedPeer,
+                                    capabilityId,
+                                    operation,
+                                    effect,
                                 )
                             }
-                        }
-                        if (!isDestroyed) runOnUiThread {
-                            if (!isDestroyed) {
-                                notificationNotice.value =
-                                    if (permitted.getOrDefault(false)) {
-                                        "Peer permission saved. A fresh subscription is required."
-                                    } else {
-                                        "Peer permission could not be changed."
-                                    }
-                             }
+                            if (permitted.getOrDefault(false)) {
+                                val revision = runCatching {
+                                    app.policyStore.load()?.anchorRevision()
+                                }.getOrNull()
+                                if (revision != null) {
+                                    app.auditRecorder.permissionCommitted(revision)
+                                } else {
+                                    app.auditRecorder.record(
+                                        MobileAuditAction.PERMISSION_CHANGED,
+                                        MobileAuditOutcome.SUCCEEDED,
+                                    )
+                                }
+                            }
+                            if (!isDestroyed) runOnUiThread {
+                                if (!isDestroyed) {
+                                    peerPermissionBusy.value = false
+                                    peerPermissionNotice.value =
+                                        if (permitted.getOrDefault(false)) {
+                                            "Device policy saved; new operations use the updated rule."
+                                        } else {
+                                            "Policy was not changed. Verify the current trusted session."
+                                        }
+                                }
+                            }
                         }
                     }
                 },

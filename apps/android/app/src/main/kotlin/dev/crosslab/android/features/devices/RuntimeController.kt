@@ -173,6 +173,9 @@ class RuntimeController(
         update {
             if (it.lifecycle != RuntimeLifecycle.RUNNING ||
                 it.snapshot.session != RuntimeSession.ACTIVE ||
+                it.snapshot.trust != RuntimeTrust.TRUSTED ||
+                it.snapshot.connectivity != RuntimeConnectivity.CONNECTED ||
+                it.snapshot.security != RuntimeSecurity.AUTHENTICATED ||
                 it.snapshot.peerDeviceId != peerDeviceId
             ) return@update null
             changed = port.setPermissionForPeer(peerDeviceId, capabilityId, operation, effect)
