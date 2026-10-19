@@ -2,13 +2,19 @@
 
 This file is the durable resume guide for active Cross-Lab development. Git/code/tests are factual state; this file records the intended handoff.
 
-## Active checkpoint — 2026-10-19 (Phase 2 Android trusted-session discovery lifecycle)
+## Active checkpoint — 2026-10-19 (Android trusted-session DNS-SD hardening)
 
-- **Feature branch:** `fix/phase2-android-trusted-nsd-lifecycle` from merged Android inventory `1bff7cbade903375a46794a08b563ad79760d24e`. Three focused commits form one unpushed implementation batch: a bounded sequential DNS-SD resolver, platform lifecycle integration, and this handoff.
-- **Completed code:** trusted-session NSD resolutions are serialized and bounded, duplicate service sightings are ignored, service disappearance invalidates in-flight/queued results, and callbacks after shutdown cannot publish stale candidates. Registration/discovery callbacks arriving after teardown explicitly stop their platform operations. The existing profile and Rust trust/session authentication remain authoritative.
-- **Focused regression coverage:** pure Kotlin tests cover serialization, candidate-capacity limit, lost/reappearing services, cancelled queued routes and closed sessions. This is **software implementation only**, not physical LAN evidence.
-- **Verification:** no branch CI has been run at the time of this source checkpoint; run one exact-head Android/Rust CI pass after this coherent batch, correct any failures together, then merge if green.
-- **Next task:** review the resulting CI and reconcile with the parallel Linux inventory PR #83; continue Phase 2 pairing/reconnect usability and owner-hardware acceptance before a Cross-Lab 0.1 release. Do not begin Phase 3.
+- **Feature branch:** `fix/phase2-android-trusted-nsd-lifecycle`, consolidated with merged Linux trusted inventory baseline `7097d5653f0feeeac2fe57d12fd0a91c5b686105`. Exact final head must be taken from GitHub; initial source was `a6d7ce6456f63374b3d101e993ac4d0b719cf156`.
+- **Completed implementation:** serial, bounded Android `NsdManager.resolveService` requests, stale result rejection after service loss/reappearance and close, and late discovery/registration cleanup. Null-safe multicast-lock teardown is handled behind the existing platform boundary. DNS-SD remains non-authoritative routing data; session authentication and existing trust/policy remain mandatory.
+- **Verification status:** initial exact-head Source format and Rust CI **passed**, Android compilation found a nullable multicast-lock receiver error, addressed in this revision. **Final merged-head CI has not yet completed.** Pure Kotlin queue regressions cover bounded serialization, duplicate/lost work, stale results and shutdown; no physical LAN acceptance is claimed.
+- **Next:** review one consolidated CI on this exact head, fix confirmed failures together, merge when green. Continue Android/Linux native product reliability and collect real QR/LAN/device observations only at the Phase 2 release gate.
+
+## Active checkpoint — 2026-10-19 (Phase 2 inventory parity and larger batch workflow)
+
+- **Integration:** Android saved trusted-device inventory merged in [PR #82](https://github.com/untitled12121/Cross-Lab/pull/82) as `1bff7cb`; its exact source [CI 39214044879](https://github.com/untitled12121/Cross-Lab/actions/runs/39214044879) passed formatting, Rust and Android.
+- **Linux follow-up:** [PR #83](https://github.com/untitled12121/Cross-Lab/pull/83) now adds the saved trusted-device panel to GPUI without treating LAN sightings as identity; its UI panel composition was refactored into typed `DevicesContentSlots` after the initial Clippy 9-argument warning. The final CI result for this reconciled head is **pending**. The previous head passed Android and formatting but failed Clippy; do not mark it green.
+- **Development strategy:** implement substantial cohesive Phase 2 batches before consolidated verification, avoid CI polling and one-push-per-small-change, preserve focused security tests, commit/push durable milestones, and keep normal commit messages. No CI suppressions or premature release claims.
+- **Next engineering slice:** finish Linux inventory integration and address the Phase 2 normal QR/LAN routing and recovery paths in a separate larger coding batch. Owner real-device evidence remains required before a Phase 2 / Cross-Lab 0.1 release; no Phase 3.
 
 ## Historical agent workflow and first owner handoff (2026-10-02)
 

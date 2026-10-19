@@ -4,7 +4,7 @@ use crate::{
         appearance::{active_theme, font_weight},
         devices::{
             ConnectivityDisplay, DevicePresentation, DevicesFeatureState, PermissionPresentation,
-            PresenceDisplay, TrustDisplay,
+            PresenceDisplay, SavedTrustedPeerPresentation, TrustDisplay,
         },
     },
 };
@@ -12,15 +12,28 @@ use gpui_kit::{
     App, Div, ParentElement as _, Styled as _, component::theme::ActiveTheme as _, div, px,
 };
 
+pub(crate) struct DevicesContentSlots<'a> {
+    pub actions: Option<Div>,
+    pub pairing: Option<Div>,
+    pub clipboard: Option<Div>,
+    pub file_transfer: Option<Div>,
+    pub notice: Option<&'a str>,
+}
+
 pub(crate) fn devices_content(
     state: &DevicesFeatureState,
-    actions: Option<Div>,
-    pairing: Option<Div>,
-    clipboard: Option<Div>,
-    file_transfer: Option<Div>,
-    notice: Option<&str>,
+    saved_peers: &[SavedTrustedPeerPresentation],
+    additional_saved_peers: usize,
+    slots: DevicesContentSlots<'_>,
     cx: &App,
 ) -> Div {
+    let DevicesContentSlots {
+        actions,
+        pairing,
+        clipboard,
+        file_transfer,
+        notice,
+    } = slots;
     let theme = cx.theme();
     let appearance = active_theme(cx);
 
@@ -77,10 +90,71 @@ pub(crate) fn devices_content(
         content = content.child(pairing);
     }
 
-    content.child(match state.current() {
+    content = content.child(match state.current() {
         Some(device) => device_panel(device, state, clipboard, file_transfer, cx),
         None => empty_state(state.presence(), cx),
-    })
+    });
+
+    if !saved_peers.is_empty() {
+        content = content.child(saved_trusted_devices_panel(
+            saved_peers,
+            additional_saved_peers,
+            cx,
+        ));
+    }
+    content
+}
+
+fn saved_trusted_devices_panel(
+    peers: &[SavedTrustedPeerPresentation],
+    additional_count: usize,
+    cx: &App,
+) -> Div {
+    let theme = cx.theme();
+    let appearance = active_theme(cx);
+    let mut panel = div()
+        .flex()
+        .flex_col()
+        .border_1()
+        .border_color(theme.border)
+        .bg(theme.popover)
+        .p(px(appearance.spacing.lg))
+        .gap(px(appearance.spacing.md))
+        .child(
+            div()
+                .text_size(px(appearance.typography.scales.label.size))
+                .font_weight(font_weight(appearance.typography.scales.label.weight))
+                .child("Saved trusted devices"),
+        )
+        .child(
+            div()
+                .text_size(px(appearance.typography.scales.caption.size))
+                .text_color(theme.muted_foreground)
+                .child("Stored trust does not imply online presence; only a fresh authenticated session is active."),
+        );
+
+    for (index, peer) in peers.iter().enumerate() {
+        panel = panel.child(detail_row(
+            &format!("Device {} · {}", index + 1, peer.short_id()),
+            if peer.in_authenticated_session() {
+                "Session active"
+            } else {
+                "Not in session"
+            },
+            cx,
+        ));
+    }
+
+    if additional_count > 0 {
+        panel = panel.child(
+            div()
+                .text_size(px(appearance.typography.scales.caption.size))
+                .text_color(theme.muted_foreground)
+                .child(format!("{additional_count} more saved devices not shown")),
+        );
+    }
+
+    panel
 }
 
 fn empty_state(presence: PresenceDisplay, cx: &App) -> Div {

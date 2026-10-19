@@ -13,7 +13,7 @@ Applies to every coding, review, and planning session in this repository. Read t
 
 ## Efficient batch-first implementation (owner approved 2026-10-02)
 
-**Default to completed, coherent feature batches over one-push-per-tiny-change.** For substantial work, prioritize roughly **60 minutes of active coding and review** per batch where practical; this is a guideline, never a deadline to cut security corners or claim completion.
+**Default to completed, coherent feature batches over one-push-per-tiny-change.** For substantial work, prioritize longer, meaningful coding blocks (up to **90–100 minutes when the session permits**) before consolidated verification; this is a guideline, never a deadline to cut security corners or claim completion.
 
 1. **Start/resume once:** Inspect branch, status, recent commits, Master Architecture, `docs/development/CURRENT.md`, active plans/ADRs, and relevant source/reference repositories. Decide the smallest coherent end-to-end batch.
 2. **Code and review first:** Implement related Rust core, platform adapter, UI integration, failure handling and meaningful tests together. Inspect issues as you go. Run lightweight targeted checks where useful. Test sensitive trust/privilege/protocol invariants at the point of change; never defer necessary security checks blindly.

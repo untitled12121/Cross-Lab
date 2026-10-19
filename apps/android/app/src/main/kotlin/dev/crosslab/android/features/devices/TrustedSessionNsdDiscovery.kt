@@ -292,8 +292,8 @@ private class TrustedSessionDiscoverySession(
             resolutions.close()
             candidates.clear()
         }
-        if (multicastLock?.isHeld == true) {
-            runCatching { multicastLock.release() }
+        multicastLock?.let { lock ->
+            if (lock.isHeld) runCatching { lock.release() }
         }
     }
 }
