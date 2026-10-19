@@ -2,7 +2,7 @@
 
 This file is the durable resume guide for active Cross-Lab development. Git/code/tests are factual state; this file records the intended handoff.
 
-## Active agent workflow and owner handoff (2026-10-02)
+## Historical agent workflow and first owner handoff (2026-10-02)
 
 **Read the root [AGENTS.md](../../AGENTS.md) at the start of every coding session.** The requested development mode is **batch-first**: spend roughly an hour of active effort on an integrated, reviewable feature set when the work warrants it. Make small local recovery commits, but do not push/retrigger broad CI for every tiny change. Use focused checks for sensitive boundaries while coding; after the batch run format/lint/build/tests as relevant, then make one consolidated push, examine CI once complete, and consolidate fixes. Preserve a Git checkpoint when context may be lost. Docs-only changes may use `[skip ci]` where CI has no useful work.
 
@@ -13,6 +13,15 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 **Full Phase 2 target:** Finish reliable Linux↔Android discovery/pairing, authenticated presence/reconnect, per-device policy, clipboard, resumable file transfer, notifications, owner-visible privacy-safe audit/history, production device revocation/removal, and evidence on actual devices. The broad UI redesign can follow functional fixes, but Phase 2 release UX must be usable and accurate. Notifications need an approved compatibility/security ADR; Android→Linux v1 was suggested, **not approved**. Existing architecture requires explicit approval for material wire/trust/storage changes. Keep Phase 3 out of scope. Do not mark Phase 2 complete without CI plus owner-hardware evidence. Darkmatter/System-dark remains palette-blocked.
 
 **Exact resume action:** Inspect `main`, active PR #79, CI result, and actual code; fix any CI failures in a consolidated batch; once available have the owner retest normal desktop-generated QR and Android pairing, then proceed with the remaining Phase 2 implementation in cohesive batches. Keep `CURRENT.md` updated at verified milestones.
+
+## Active checkpoint — 2026-10-19 (Android connectivity and pairing lifecycle hardening)
+
+- **Feature branch:** `fix/phase2-android-network-lifecycle` from `main` source/docs checkpoint `493b28bb2d91e9c8332140cb2fda712432d8438e`. Initial implementation commit `44c4efce8e9044a3fb14b69d03b96d171bb3e2f5`; a follow-up grouped source commit completes lifecycle cancellation and failed-discovery recovery controls. Check GitHub for the final branch head and exact CI.
+- **Implemented:** Android runtime now records network transitions even when backgrounded, applies the last known loss to a new/reloaded product runtime, ignores duplicate network callbacks, and preserves shutdown boundaries. Android now tracks Wi-Fi/Ethernet LAN transports without requiring the default/Internet-capable network and retains availability while any matching network remains. Devices and control-center UI show offline network state and disable manual Reconnect while Android reports no LAN transport; failed/paused discovery offers recovery instead of a misleading Disconnect action. Terminally revoked peers never receive an apparent reconnect grant.
+- **Pairing discovery:** retain one in-flight Android DNS-SD resolution until it finishes; losing an advertisement must not release that single-resolution latch and permit overlapping resolver calls. The application also cancels active joiner pairing when leaving the foreground, so discovery and provisional sessions are not left running after the UI is backgrounded. No pairing wire/trust/profile change.
+- **Regression coverage:** existing RuntimeController tests adjusted for background transition retention; additional cases cover offline foreground start, offline trust reload, duplicate callback suppression, and callbacks after shutdown. Pure Kotlin tests cover LAN route overlap/handover and Reconnect presentation for failed/paused vs. online/revoked states. Source diff reviewed; **final branch CI/Android tests not yet run** at this checkpoint. No physical Linux+arm64 Android observations have been collected.
+- **Previous integration:** post-merge `main` [CI 39165478596](https://github.com/untitled12121/Cross-Lab/actions/runs/39165478596) completed successfully across Source format, Rust, and Android, following PR #79. That result does **not** cover this new change.
+- **Next task:** inspect exact branch CI/Fuzz and correct confirmed failures as a batch. If green, merge this Android reliability slice; next prioritize further native UX/accessibility and targeted product recovery. Before Phase 2 release collect actual hardware evidence in [Phase 2 acceptance](../research/Phase2-product-acceptance.md), with irreversible revocation last and disposable credentials only. Phase 3 remains out of scope.
 
 ## Active checkpoint — 2026-10-19 (Phase 2 software integration merged)
 

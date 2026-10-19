@@ -6,7 +6,6 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
-import android.os.Build
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
@@ -30,6 +29,7 @@ import dev.crosslab.android.features.pairing.PairingJoinerController
 import dev.crosslab.android.features.permissions.AndroidPolicyStore
 import dev.crosslab.android.features.notifications.NotificationPublisher
 import dev.crosslab.android.features.notifications.AndroidNotificationConsent
+import dev.crosslab.android.features.networking.LanNetworkTracker
 
 class CrossLabApplication : Application(), DefaultLifecycleObserver {
     lateinit var runtimeController: RuntimeController
@@ -90,15 +90,21 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
     }
 
     private lateinit var connectivityManager: ConnectivityManager
+    private val networkLock = Any()
+    private val lanNetworks = LanNetworkTracker<Network>()
 
     private val networkCallback =
         object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                runtimeController.onNetworkAvailable()
+                synchronized(networkLock) {
+                    if (lanNetworks.appeared(network)) runtimeController.onNetworkAvailable()
+                }
             }
 
             override fun onLost(network: Network) {
-                runtimeController.onNetworkLost()
+                synchronized(networkLock) {
+                    if (lanNetworks.disappeared(network)) runtimeController.onNetworkLost()
+                }
             }
         }
 
@@ -152,18 +158,18 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
         productPresence?.let { presence ->
             auditObservations += presence.observeSubscription(auditRecorder::subscription)
         }
+        // Discovery is LAN-only; no Internet/default-network requirement.
+        runtimeController.onNetworkLost()
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
 
         connectivityManager = getSystemService(ConnectivityManager::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            connectivityManager.registerDefaultNetworkCallback(networkCallback)
-        } else {
-            val request =
-                NetworkRequest.Builder()
-                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                    .build()
-            connectivityManager.registerNetworkCallback(request, networkCallback)
-        }
+        val request =
+            NetworkRequest.Builder()
+                .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                .addTransportType(NetworkCapabilities.TRANSPORT_ETHERNET)
+                .build()
+        connectivityManager.registerNetworkCallback(request, networkCallback)
     }
 
     private fun developmentProvisioningPath(): String? {
@@ -182,6 +188,7 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
     }
 
     override fun onStop(owner: LifecycleOwner) {
+        if (pairingController.state().active) pairingController.cancel()
         runtimeController.onBackground()
     }
 

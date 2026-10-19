@@ -120,12 +120,15 @@ fun ControlCenterScreen(
             StatusBadge(
                 label =
                     when (runtime.lifecycle) {
-                        RuntimeLifecycle.RUNNING -> "Runtime active"
+                        RuntimeLifecycle.RUNNING ->
+                            if (runtime.networkAvailable) "Runtime active" else "Network unavailable"
                         RuntimeLifecycle.STOPPED -> "Runtime stopped"
                         RuntimeLifecycle.SHUTDOWN -> "Runtime shutdown"
                     },
                 tone =
-                    if (runtime.lifecycle == RuntimeLifecycle.RUNNING) {
+                    if (runtime.lifecycle == RuntimeLifecycle.RUNNING &&
+                        runtime.networkAvailable
+                    ) {
                         StatusTone.ACCENT
                     } else {
                         StatusTone.NEUTRAL
