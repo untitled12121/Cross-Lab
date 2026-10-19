@@ -194,14 +194,26 @@ impl LinuxAuditStore {
     fn write_bundle(&self, bundle: &AuditBundle) -> Result<(), LinuxAuditError> {
         let parent = self.path.parent().ok_or(LinuxAuditError::Path)?;
         let temporary = self.path.with_extension("bin.new");
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode_private()
-            .open(&temporary)?;
-        file.write_all(&bundle.encode())?;
-        file.sync_all()?;
-        drop(file);
+        // A crash may leave a stale temp file; the caller holds the audit lock.
+        match fs::remove_file(&temporary) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+
+        let write_result = (|| -> Result<(), std::io::Error> {
+            let mut file = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode_private()
+                .open(&temporary)?;
+            file.write_all(&bundle.encode())?;
+            file.sync_all()
+        })();
+        if let Err(error) = write_result {
+            let _ = fs::remove_file(&temporary);
+            return Err(error.into());
+        }
         fs::rename(&temporary, &self.path)?;
         private_file(&self.path)?;
         File::open(parent)?.sync_all()?;
@@ -359,6 +371,61 @@ mod tests {
         assert!(!format!("{error:?}").contains("PRIVATE_AUDIT_PAYLOAD"));
         assert!(std::error::Error::source(&error).is_some());
         assert!(std::mem::size_of::<LinuxAuditError>() <= 64);
+    }
+
+    #[test]
+    fn stale_temporary_write_is_replaced_under_the_owner_lock() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = env::temp_dir().join(format!(
+            "crosslab-audit-temp-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let store = LinuxAuditStore {
+            path: root.join("history-v1.bin"),
+        };
+        let temporary = store.path.with_extension("bin.new");
+        fs::write(&temporary, b"abandoned write").unwrap();
+
+        let bundle = AuditBundle {
+            envelope: vec![1, 2, 3],
+            anchor: vec![4, 5],
+        };
+        store.write_bundle(&bundle).unwrap();
+        assert!(!temporary.exists());
+        assert_eq!(fs::read(&store.path).unwrap(), bundle.encode());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn invalid_temporary_write_path_does_not_replace_existing_history() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = env::temp_dir().join(format!(
+            "crosslab-audit-blocked-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let store = LinuxAuditStore {
+            path: root.join("history-v1.bin"),
+        };
+        fs::write(&store.path, b"preserved audit bundle").unwrap();
+        fs::create_dir(store.path.with_extension("bin.new")).unwrap();
+
+        let bundle = AuditBundle {
+            envelope: vec![7],
+            anchor: vec![9],
+        };
+        assert!(store.write_bundle(&bundle).is_err());
+        assert_eq!(fs::read(&store.path).unwrap(), b"preserved audit bundle");
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
