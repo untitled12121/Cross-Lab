@@ -240,11 +240,12 @@ class ProductPresencePort(
     override fun sendClipboard(onComplete: (ClipboardResult) -> Unit): Boolean {
         val (active, token) =
             synchronized(lock) {
+                if (!current.hasAuthenticatedCapability("clipboard.write")) return false
                 agent?.let { it to generation }
             } ?: return false
 
         handler.post {
-            if (!isCurrentAgent(active, token)) {
+            if (!isCurrentClipboardAgent(active, token, "clipboard.write")) {
                 onComplete(ClipboardResult.CANCELLED)
                 return@post
             }
@@ -253,14 +254,17 @@ class ProductPresencePort(
                 is LocalClipboardRead.Text ->
                     clipboardWorkers.execute {
                         val result =
-                            runCatching { active.sendClipboardText(local.value) }
-                                .getOrNull()
+                            if (isCurrentClipboardAgent(active, token, "clipboard.write")) {
+                                runCatching { active.sendClipboardText(local.value) }.getOrNull()
+                            } else {
+                                null
+                            }
                         val outcome =
                             result?.outcome()?.toClipboardResult()
                                 ?: ClipboardResult.FAILED
                         handler.post {
                             onComplete(
-                                if (isCurrentAgent(active, token)) {
+                                if (isCurrentClipboardAgent(active, token, "clipboard.write")) {
                                     outcome
                                 } else {
                                     ClipboardResult.CANCELLED
@@ -279,20 +283,24 @@ class ProductPresencePort(
     override fun fetchClipboard(onComplete: (ClipboardResult) -> Unit): Boolean {
         val (active, token) =
             synchronized(lock) {
+                if (!current.hasAuthenticatedCapability("clipboard.read")) return false
                 agent?.let { it to generation }
             } ?: return false
 
         clipboardWorkers.execute {
             val result =
-                runCatching { active.fetchClipboardText() }
-                    .getOrNull()
+                if (isCurrentClipboardAgent(active, token, "clipboard.read")) {
+                    runCatching { active.fetchClipboardText() }.getOrNull()
+                } else {
+                    null
+                }
             val outcome =
                 result?.outcome()?.toClipboardResult()
                     ?: ClipboardResult.FAILED
             if (outcome != ClipboardResult.SUCCESS) {
                 handler.post {
                     onComplete(
-                        if (isCurrentAgent(active, token)) {
+                        if (isCurrentClipboardAgent(active, token, "clipboard.read")) {
                             outcome
                         } else {
                             ClipboardResult.CANCELLED
@@ -306,7 +314,7 @@ class ProductPresencePort(
                 runCatching { operation.takeText() }.getOrNull()
             }
             handler.post {
-                if (!isCurrentAgent(active, token)) {
+                if (!isCurrentClipboardAgent(active, token, "clipboard.read")) {
                     onComplete(ClipboardResult.CANCELLED)
                     return@post
                 }
@@ -660,13 +668,40 @@ class ProductPresencePort(
         if (!isCurrentAgent(active, token)) return
 
         val requestId = request.requestId()
-        when (request.kind()) {
+        val kind = request.kind()
+        val capability =
+            when (kind) {
+                MobileClipboardRequestKind.READ -> "clipboard.read"
+                MobileClipboardRequestKind.WRITE -> "clipboard.write"
+            }
+        if (!isCurrentClipboardAgent(active, token, capability)) {
+            clipboardWorkers.execute {
+                runCatching {
+                    when (kind) {
+                        MobileClipboardRequestKind.READ ->
+                            active.failClipboardRead(requestId, MobileClipboardPlatformFailure.UNAVAILABLE)
+                        MobileClipboardRequestKind.WRITE ->
+                            active.failClipboardWrite(requestId, MobileClipboardPlatformFailure.UNAVAILABLE)
+                    }
+                }
+            }
+            return
+        }
+
+        when (kind) {
             MobileClipboardRequestKind.READ -> {
                 when (val local = clipboard.readText()) {
                     is LocalClipboardRead.Text ->
                         clipboardWorkers.execute {
                             runCatching {
-                                active.completeClipboardRead(requestId, local.value)
+                                if (isCurrentClipboardAgent(active, token, "clipboard.read")) {
+                                    active.completeClipboardRead(requestId, local.value)
+                                } else {
+                                    active.failClipboardRead(
+                                        requestId,
+                                        MobileClipboardPlatformFailure.UNAVAILABLE,
+                                    )
+                                }
                             }
                         }
 
@@ -705,7 +740,12 @@ class ProductPresencePort(
                     }
                     return
                 }
-                val write = clipboard.writeRemoteText(text)
+                val write =
+                    if (isCurrentClipboardAgent(active, token, "clipboard.write")) {
+                        clipboard.writeRemoteText(text)
+                    } else {
+                        LocalClipboardWrite.FAILED
+                    }
                 clipboardWorkers.execute {
                     when (write) {
                         LocalClipboardWrite.SUCCESS ->
@@ -730,6 +770,16 @@ class ProductPresencePort(
     ): Boolean =
         synchronized(lock) {
             !closed.get() && generation == token && agent === active
+        }
+
+    private fun isCurrentClipboardAgent(
+        active: MobileTrustedPresenceAgent,
+        token: Long,
+        capability: String,
+    ): Boolean =
+        synchronized(lock) {
+            !closed.get() && generation == token && agent === active &&
+                current.hasAuthenticatedCapability(capability)
         }
 
     private fun publishAgentSnapshotLocked() {
@@ -764,8 +814,7 @@ class ProductPresencePort(
         agent?.let { active ->
             fileTransfer?.sessionConnected(
                 active,
-                snapshot.session == RuntimeSession.ACTIVE &&
-                    snapshot.capabilityIds.contains("files.transfer"),
+                snapshot.hasAuthenticatedCapability("files.transfer"),
             )
         }
         current = snapshot
