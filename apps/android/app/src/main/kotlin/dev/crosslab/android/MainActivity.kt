@@ -24,6 +24,8 @@ import dev.crosslab.android.features.devices.NativeSessionBinding
 import dev.crosslab.android.features.filetransfer.FileTransferState
 import dev.crosslab.android.features.identity.revocationTarget
 import dev.crosslab.android.features.notifications.NotificationOwnerConsent
+import dev.crosslab.android.features.observers.UiCallbackGate
+import dev.crosslab.android.features.observers.closeObservers
 import dev.crosslab.android.features.devices.RuntimeLifecycle
 import dev.crosslab.android.features.devices.RuntimePermissionEffect
 import dev.crosslab.android.features.pairing.PairingJoinerStage
@@ -51,6 +53,7 @@ class MainActivity : ComponentActivity() {
     private val peerPermissionNotice = mutableStateOf<String?>(null)
     private val peerPermissionBusy = mutableStateOf(false)
     private val identityWorker = Executors.newSingleThreadExecutor()
+    private val uiObservationGate = UiCallbackGate { callback -> runOnUiThread(callback) }
     private var runtimeSubscription: AutoCloseable? = null
     private var auditSubscription: AutoCloseable? = null
     private var clipboardSubscription: AutoCloseable? = null
@@ -64,47 +67,47 @@ class MainActivity : ComponentActivity() {
         val app = application as CrossLabApplication
         refreshTrustedPeers(app)
         auditSubscription = app.auditRecorder.observe { status ->
-            if (!isDestroyed) runOnUiThread {
-                if (!isDestroyed) {
-                    auditUnavailable.value = status.unavailable
-                    if (status.unavailable) {
-                        auditRows.value = emptyList()
-                        auditDropped.value = 0L
-                    } else {
-                        status.history?.let { updateAudit(it) }
-                    }
-                    auditNotice.value =
-                        when {
-                            status.unavailable -> "Audit write unavailable; recent events may be missing."
-                            status.droppedEvents > 0 ->
-                                "${status.droppedEvents} recent audit events were dropped."
-                            else -> auditNotice.value
-                        }
+            uiObservationGate.dispatch {
+                auditUnavailable.value = status.unavailable
+                if (status.unavailable) {
+                    auditRows.value = emptyList()
+                    auditDropped.value = 0L
+                } else {
+                    status.history?.let { updateAudit(it) }
                 }
+                auditNotice.value =
+                    when {
+                        status.unavailable -> "Audit write unavailable; recent events may be missing."
+                        status.droppedEvents > 0 ->
+                            "${status.droppedEvents} recent audit events were dropped."
+                        else -> auditNotice.value
+                    }
             }
         }
         refreshNotificationConsent(app)
         runtimeState.value = app.runtimeController.state()
         runtimeSubscription =
             app.runtimeController.observe { state ->
-                runOnUiThread { runtimeState.value = state }
+                uiObservationGate.dispatch { runtimeState.value = state }
             }
         clipboardState.value = app.clipboardController.state()
         clipboardSubscription =
             app.clipboardController.observe { state ->
-                runOnUiThread { clipboardState.value = state }
+                uiObservationGate.dispatch { clipboardState.value = state }
             }
         fileTransferState.value = app.fileTransferController.state()
         fileTransferSubscription =
             app.fileTransferController.observe { state ->
-                runOnUiThread { fileTransferState.value = state }
+                uiObservationGate.dispatch { fileTransferState.value = state }
             }
         pairingState.value = app.pairingController.state()
         pairingSubscription =
             app.pairingController.observe { state ->
-                runOnUiThread { pairingState.value = state }
-                if (state.stage == PairingJoinerStage.PAIRED) {
-                    refreshTrustedPeers(app)
+                uiObservationGate.dispatch {
+                    pairingState.value = state
+                    if (state.stage == PairingJoinerStage.PAIRED) {
+                        refreshTrustedPeers(app)
+                    }
                 }
             }
 
@@ -398,16 +401,23 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        auditSubscription?.close()
+        // Block callbacks before tearing down subscriptions; one broken close cannot leak others.
+        uiObservationGate.close()
+        closeObservers(
+            listOf(
+                auditSubscription,
+                runtimeSubscription,
+                clipboardSubscription,
+                fileTransferSubscription,
+                pairingSubscription,
+            ),
+        )
         auditSubscription = null
-        runtimeSubscription?.close()
         runtimeSubscription = null
-        clipboardSubscription?.close()
         clipboardSubscription = null
-        fileTransferSubscription?.close()
         fileTransferSubscription = null
-        pairingSubscription?.close()
         pairingSubscription = null
+        pendingFileSourceSession = null
         identityWorker.shutdown()
         super.onDestroy()
     }
