@@ -6,7 +6,8 @@ use crosslab_runtime::ConnectivityState;
 
 use super::{
     ConnectivityDisplay, DevicePresentation, DevicesFeatureState, NetworkDisplay, PresenceDisplay,
-    SecurityDisplay, SessionDisplay, StatusFields, TrustDisplay,
+    PresenceControlAction, SecurityDisplay, SessionDisplay, StatusFields, TrustDisplay,
+    VerifiedSessionDisplay,
 };
 
 #[test]
@@ -234,4 +235,81 @@ fn reconnect_action_is_offered_after_pause_and_failure() {
     ] {
         assert!(!state.offers_reconnect());
     }
+}
+
+#[test]
+fn published_online_presence_is_not_an_authenticated_ui_status() {
+    let mut state = DevicesFeatureState::empty();
+    state.presence = PresenceDisplay::Online;
+    assert_eq!(state.verified_session_display(), VerifiedSessionDisplay::Unverified);
+    assert_eq!(state.presence_control_action(), PresenceControlAction::Reconnect);
+    assert!(!state.has_authenticated_session());
+
+    let peer = DeviceId::from_bytes([0x43; 32]);
+    state.current = Some(DevicePresentation::from_fields(StatusFields {
+        owner_id: None,
+        local_device_id: None,
+        peer_device_id: Some(peer),
+        trust_state: TrustState::Trusted,
+        connectivity: ConnectivityState::Connected,
+        session_state: SessionState::Authenticating,
+        protocol_version: None,
+        network_class: NetworkClass::Local,
+        security_class: TransportSecurityClass::AuthenticatedConfidentialChannel,
+        metered: None,
+        capability_count: 0,
+    }));
+    assert_eq!(state.verified_session_display(), VerifiedSessionDisplay::Unverified);
+    assert_eq!(state.presence_control_action(), PresenceControlAction::Reconnect);
+
+    state.current.as_mut().unwrap().session = SessionDisplay::Active;
+    assert_eq!(state.verified_session_display(), VerifiedSessionDisplay::Authenticated);
+    assert_eq!(state.presence_control_action(), PresenceControlAction::Disconnect);
+}
+
+#[test]
+fn revoked_peer_never_offers_reconnect_or_authenticated_label() {
+    let mut state = DevicesFeatureState::empty();
+    state.current = Some(DevicePresentation::from_fields(StatusFields {
+        owner_id: None,
+        local_device_id: None,
+        peer_device_id: Some(DeviceId::from_bytes([0x44; 32])),
+        trust_state: TrustState::Revoked,
+        connectivity: ConnectivityState::Disconnected,
+        session_state: SessionState::Revoked,
+        protocol_version: None,
+        network_class: NetworkClass::Local,
+        security_class: TransportSecurityClass::AuthenticatedConfidentialChannel,
+        metered: None,
+        capability_count: 0,
+    }));
+    for phase in [
+        PresenceDisplay::Online,
+        PresenceDisplay::Failed,
+        PresenceDisplay::Paused,
+    ] {
+        state.presence = phase;
+        assert_eq!(state.verified_session_display(), VerifiedSessionDisplay::Revoked);
+        assert_eq!(state.presence_control_action(), PresenceControlAction::Unavailable);
+    }
+}
+
+#[test]
+fn native_phase_has_a_specific_recovery_message() {
+    let mut state = DevicesFeatureState::empty();
+    for (presence, expected) in [
+        (PresenceDisplay::Unavailable, VerifiedSessionDisplay::Unavailable),
+        (PresenceDisplay::Discovering, VerifiedSessionDisplay::Discovering),
+        (PresenceDisplay::Connecting, VerifiedSessionDisplay::Connecting),
+        (PresenceDisplay::Reconnecting, VerifiedSessionDisplay::Reconnecting),
+        (PresenceDisplay::Paused, VerifiedSessionDisplay::Paused),
+        (PresenceDisplay::Failed, VerifiedSessionDisplay::Failed),
+    ] {
+        state.presence = presence;
+        let shown = state.verified_session_display();
+        assert_eq!(shown, expected);
+        assert!(!shown.label().is_empty());
+        assert!(!shown.detail().is_empty());
+    }
+    assert_eq!(state.presence_control_action(), PresenceControlAction::Reconnect);
 }

@@ -31,7 +31,7 @@ use crate::{
         clipboard::{ClipboardAction, ClipboardFeatureState, ClipboardResult},
         devices::{
             ConnectivityDisplay, DesktopRuntimeController, DevicesFeatureState, PresenceDisplay,
-            SessionDisplay,
+            PresenceControlAction, SessionDisplay,
         },
         file_transfer::{FileTransferFailure, FileTransferFeatureState, FileTransferStage},
         owner::OwnerFeatureState,
@@ -1761,8 +1761,10 @@ impl Render for ControlCenterPage {
 
         #[cfg(target_os = "linux")]
         if self.product_presence.is_some() {
-            let reconnect = self.devices.presence().offers_reconnect();
-            actions = actions.child(
+            let action = self.devices.presence_control_action();
+            let reconnect = action == PresenceControlAction::Reconnect;
+            if action != PresenceControlAction::Unavailable {
+                actions = actions.child(
                 Button::new("presence-control")
                     .accessibility_label(if reconnect {
                         "Reconnect trusted devices"
@@ -1784,7 +1786,8 @@ impl Render for ControlCenterPage {
                     .text_color(theme.secondary_foreground)
                     .focus_visible(|style| style.border_color(theme.ring))
                     .child(if reconnect { "Reconnect" } else { "Disconnect" }),
-            );
+                );
+            }
         }
 
         #[cfg(target_os = "linux")]
