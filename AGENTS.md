@@ -25,7 +25,7 @@ These rules apply to development in this repository. Git source and tests determ
 5. **Push and integrate coherently:** local commits can preserve progress; prefer one consolidated push/PR per substantial milestone. Don't repeatedly poll CI or rerun it for tiny edits. While checks run, continue independent safe development where possible. Merge only after required verification and resolve confirmed failures together.
 6. **Preserve continuity:** if interruption/context loss approaches, push a clearly marked durable checkpoint even if unfinished. Update `CURRENT.md` for material handoffs with the exact branch/commit, implemented work, outstanding issues, tests actually run and the precise next task. Do not use Git stash or chat history as the only copy.
 
-Use normal descriptive commit messages; do not add `[skip ci]` merely to bypass verification.
+Use normal descriptive commit messages; do not add `[skip ci]` merely to bypass verification. [Change-aware CI](docs/development/CI.md) runs affected platform checks automatically; use the manual `full` scope for integration/release gates and targeted security checks for sensitive changes.
 
 ## Release integrity
 
