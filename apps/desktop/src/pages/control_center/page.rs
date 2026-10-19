@@ -535,7 +535,10 @@ impl ControlCenterPage {
                         };
                         match request {
                             ClipboardRequest::Read { request_id } => {
-                                let result = this.update(cx, |_, cx| {
+                                let result = this.update(cx, |page, cx| {
+                                    if !page.devices.has_authenticated_capability("clipboard.read") {
+                                        return Err(ClipboardPlatformError::Unavailable);
+                                    }
                                     cx.read_from_clipboard()
                                         .and_then(|item| item.text())
                                         .ok_or(ClipboardPlatformError::Unavailable)
@@ -548,16 +551,18 @@ impl ControlCenterPage {
                                     .await;
                             }
                             ClipboardRequest::Write { request_id, text } => {
-                                if this
-                                    .update(cx, move |_, cx| {
-                                        cx.write_to_clipboard(ClipboardItem::new_string(text));
-                                    })
-                                    .is_err()
-                                {
+                                let result = this.update(cx, move |page, cx| {
+                                    if !page.devices.has_authenticated_capability("clipboard.write") {
+                                        return Err(ClipboardPlatformError::Unavailable);
+                                    }
+                                    cx.write_to_clipboard(ClipboardItem::new_string(text));
+                                    Ok(())
+                                });
+                                let Ok(result) = result else {
                                     return;
-                                }
+                                };
                                 let _ = controller
-                                    .complete_clipboard_write(request_id, Ok(()))
+                                    .complete_clipboard_write(request_id, result)
                                     .await;
                             }
                         }
