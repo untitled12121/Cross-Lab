@@ -2,6 +2,13 @@
 
 This file is the durable resume guide for active Cross-Lab development. Git/code/tests are factual state; this file records the intended handoff.
 
+## Active checkpoint — 2026-10-19 (Phase 2 inventory parity and larger batch workflow)
+
+- **Integration:** Android saved trusted-device inventory merged in [PR #82](https://github.com/untitled12121/Cross-Lab/pull/82) as `1bff7cb`; its exact source [CI 39214044879](https://github.com/untitled12121/Cross-Lab/actions/runs/39214044879) passed formatting, Rust and Android.
+- **Linux follow-up:** [PR #83](https://github.com/untitled12121/Cross-Lab/pull/83) now adds the saved trusted-device panel to GPUI without treating LAN sightings as identity; its UI panel composition was refactored into typed `DevicesContentSlots` after the initial Clippy 9-argument warning. The final CI result for this reconciled head is **pending**. The previous head passed Android and formatting but failed Clippy; do not mark it green.
+- **Development strategy:** implement substantial cohesive Phase 2 batches before consolidated verification, avoid CI polling and one-push-per-small-change, preserve focused security tests, commit/push durable milestones, and keep normal commit messages. No CI suppressions or premature release claims.
+- **Next engineering slice:** finish Linux inventory integration and address the Phase 2 normal QR/LAN routing and recovery paths in a separate larger coding batch. Owner real-device evidence remains required before a Phase 2 / Cross-Lab 0.1 release; no Phase 3.
+
 ## Historical agent workflow and first owner handoff (2026-10-02)
 
 **Read the root [AGENTS.md](../../AGENTS.md) at the start of every coding session.** The requested development mode is **batch-first**: spend roughly an hour of active effort on an integrated, reviewable feature set when the work warrants it. Make small local recovery commits, but do not push/retrigger broad CI for every tiny change. Use focused checks for sensitive boundaries while coding; after the batch run format/lint/build/tests as relevant, then make one consolidated push, examine CI once complete, and consolidate fixes. Preserve a Git checkpoint when context may be lost. Docs-only changes may use `[skip ci]` where CI has no useful work.

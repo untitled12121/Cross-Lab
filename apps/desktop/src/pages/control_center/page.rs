@@ -39,8 +39,8 @@ use crate::{
     },
     pages::control_center::{
         _components::{
-            clipboard_panel, devices_content, file_transfer_panel, owner_content,
-            pairing_invitation_panel,
+            DevicesContentSlots, clipboard_panel, devices_content, file_transfer_panel,
+            owner_content, pairing_invitation_panel,
         },
         layout::control_center_layout,
     },
@@ -1990,14 +1990,27 @@ impl Render for ControlCenterPage {
         #[cfg(not(target_os = "linux"))]
         let owner_controls = None;
 
+        let saved_peers = self
+            .devices
+            .saved_trusted_peers(self.owner.trusted_peer_device_ids());
+        let additional_saved_peers = self
+            .owner
+            .trusted_peer_device_ids()
+            .len()
+            .saturating_sub(saved_peers.len());
+
         let content = match self.section {
             Section::Devices => devices_content(
                 &self.devices,
-                Some(actions),
-                pairing_panel,
-                clipboard_controls,
-                file_transfer_controls,
-                self.notice.as_deref(),
+                &saved_peers,
+                additional_saved_peers,
+                DevicesContentSlots {
+                    actions: Some(actions),
+                    pairing: pairing_panel,
+                    clipboard: clipboard_controls,
+                    file_transfer: file_transfer_controls,
+                    notice: self.notice.as_deref(),
+                },
                 cx,
             ),
             Section::Owner => owner_content(

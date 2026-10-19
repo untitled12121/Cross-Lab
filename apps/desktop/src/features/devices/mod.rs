@@ -322,6 +322,22 @@ impl DevicePresentation {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SavedTrustedPeerPresentation {
+    short_id: String,
+    in_authenticated_session: bool,
+}
+
+impl SavedTrustedPeerPresentation {
+    pub fn short_id(&self) -> &str {
+        &self.short_id
+    }
+
+    pub const fn in_authenticated_session(&self) -> bool {
+        self.in_authenticated_session
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DevicesFeatureState {
     current: Option<DevicePresentation>,
@@ -385,6 +401,31 @@ impl DevicesFeatureState {
                     RuleEffect::Deny => PermissionDisplay::Deny,
                     RuleEffect::Ask => PermissionDisplay::Ask,
                 },
+            })
+            .collect()
+    }
+
+    pub fn saved_trusted_peers(
+        &self,
+        durable_trusted_ids: &[DeviceId],
+    ) -> Vec<SavedTrustedPeerPresentation> {
+        let authenticated_peer = self
+            .current
+            .as_ref()
+            .filter(|peer| {
+                peer.trust() == TrustDisplay::Trusted
+                    && peer.connectivity() == ConnectivityDisplay::Connected
+                    && peer.session() == SessionDisplay::Active
+                    && peer.security() == SecurityDisplay::Authenticated
+            })
+            .and_then(DevicePresentation::peer_device_id);
+
+        durable_trusted_ids
+            .iter()
+            .take(24)
+            .map(|id| SavedTrustedPeerPresentation {
+                short_id: short_device_id(*id),
+                in_authenticated_session: authenticated_peer == Some(*id),
             })
             .collect()
     }
