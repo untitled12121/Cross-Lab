@@ -19,10 +19,6 @@ import uniffi.crosslab_mobile_ffi.auditHistoryExport
 import uniffi.crosslab_mobile_ffi.auditHistoryLoad
 import uniffi.crosslab_mobile_ffi.auditHistoryRecord
 
-/**
- * Separate owner-only audit state; no private payload, file path or peer ID is persisted.
- * Android Keystore anchors each version to reject old copies after commit.
- */
 /** Narrow owner-only audit persistence boundary; implementations must fail closed. */
 interface OwnerAuditStore {
     fun read(): MobileAuditHistory
@@ -38,6 +34,10 @@ interface OwnerAuditStore {
     fun export(): String
 }
 
+/**
+ * Separate metadata-only audit state, anchored to Android Keystore revisions.
+ * Owner keys, file paths, device IDs and sensitive payloads are never stored in history.
+ */
 class AndroidAuditStore(context: Context) : OwnerAuditStore {
     private val stateFile =
         AtomicFile(

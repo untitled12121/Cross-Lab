@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,6 +59,9 @@ fun OwnerScreen(
     val snapshot = runtime.snapshot
     var pendingRevoke by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var confirmClearAudit by remember { mutableStateOf(false) }
+    LaunchedEffect(auditUnavailable) {
+        if (auditUnavailable) confirmClearAudit = false
+    }
 
     Column(
         modifier =

@@ -136,9 +136,11 @@ impl ControlCenterPage {
                         Ok(history) => page
                             .owner
                             .set_audit_rows(audit_history_rows(&history), history.dropped_count()),
-                        Err(_) => page
-                            .owner
-                            .set_audit_unavailable("Protected audit history unavailable"),
+                        Err(_) => {
+                            page.audit_clear_pending = false;
+                            page.owner
+                                .set_audit_unavailable("Protected audit history unavailable");
+                        }
                     }
                     cx.notify();
                 })
@@ -190,9 +192,12 @@ impl ControlCenterPage {
                                 audit_history_rows(&history),
                                 history.dropped_count(),
                             ),
-                            Err(_) => page.owner.set_audit_unavailable(
-                                "Protected audit storage unavailable; history hidden",
-                            ),
+                            Err(_) => {
+                                page.audit_clear_pending = false;
+                                page.owner.set_audit_unavailable(
+                                    "Protected audit storage unavailable; history hidden",
+                                );
+                            }
                         }
                         cx.notify();
                     })
@@ -790,9 +795,12 @@ impl ControlCenterPage {
                             "Redacted CSV copied to clipboard; paste to save it.",
                         );
                     }
-                    _ => page
-                        .owner
-                        .set_audit_notice("Protected audit history cannot be exported"),
+                    _ => {
+                        page.audit_clear_pending = false;
+                        page.owner.set_audit_unavailable(
+                            "Protected audit history cannot be exported; history hidden",
+                        );
+                    }
                 }
                 cx.notify();
             });
