@@ -127,3 +127,20 @@ fn saved_trusted_device_presentation_is_bounded() {
     let saved = DevicesFeatureState::empty().saved_trusted_peers(&ids);
     assert_eq!(saved.len(), 24);
 }
+
+#[test]
+fn reconnect_action_is_available_after_pause_and_discovery_failure() {
+    use super::PresenceDisplay;
+
+    assert!(PresenceDisplay::Paused.offers_reconnect());
+    assert!(PresenceDisplay::Failed.offers_reconnect());
+    assert!(PresenceDisplay::Unavailable.offers_reconnect());
+    for presence in [
+        PresenceDisplay::Online,
+        PresenceDisplay::Discovering,
+        PresenceDisplay::Connecting,
+        PresenceDisplay::Reconnecting,
+    ] {
+        assert!(!presence.offers_reconnect());
+    }
+}

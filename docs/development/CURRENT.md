@@ -2,6 +2,13 @@
 
 This file is the durable resume guide for active Cross-Lab development. Git/code/tests are factual state; this file records the intended handoff.
 
+## Active checkpoint — 2026-10-19 (Linux trusted-session startup and discovery recovery)
+
+- **Branch:** `fix/phase2-linux-session-recovery-controls`, from the merged Linux inventory baseline `7097d5653f0feeeac2fe57d12fd0a91c5b686105`. Product Linux control-center actions now offer Reconnect after a paused/failed/unavailable runtime, not an inappropriate Disconnect. When the normal product presence controller fails to start and there are already trusted peers, the UI offers an explicit Retry connection action without requiring a process restart.
+- **Boundary:** both recovery actions delegate to the existing `DesktopProductPresenceController`; GPUI cannot access identity keys, privilege, policy or transport authority. No wire/security/schema changes.
+- **Coverage:** Rust presentation-state regression for exact reconnect states; existing controller behavior remains authoritative. Branch CI not yet run at this source checkpoint. Physical Linux ↔ Android acceptance still pending.
+- **Next task:** perform consolidated CI once the batch is pushed; correct confirmed failures, integrate when green, then address remaining pairing/reconnect UX and device evidence before a Phase 2 release.
+
 ## Active checkpoint — 2026-10-19 (Phase 2 inventory parity and larger batch workflow)
 
 - **Integration:** Android saved trusted-device inventory merged in [PR #82](https://github.com/untitled12121/Cross-Lab/pull/82) as `1bff7cb`; its exact source [CI 39214044879](https://github.com/untitled12121/Cross-Lab/actions/runs/39214044879) passed formatting, Rust and Android.
