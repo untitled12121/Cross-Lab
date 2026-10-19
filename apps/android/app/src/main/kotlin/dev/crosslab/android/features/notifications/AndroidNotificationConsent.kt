@@ -20,29 +20,76 @@ data class NotificationOwnerConsent(
         locallyAvailable() && contentEnabled
 }
 
+/**
+ * Local owner consent is independent of OS permission, authenticated sessions and peer policy.
+ * Failure to persist an edit blocks mirroring in this process until explicit owner re-approval.
+ */
+internal interface OwnerConsentStorage {
+    fun ownerEnabled(): Boolean
+    fun contentEnabled(): Boolean
+    fun commitOwner(enabled: Boolean): Boolean
+    fun commitContent(enabled: Boolean): Boolean
+}
+
+internal class OwnerConsentSettings(
+    private val store: OwnerConsentStorage,
+) {
+    @Volatile private var unavailable = false
+
+    val ownerEnabled: Boolean
+        get() = !unavailable && store.ownerEnabled()
+
+    val contentEnabled: Boolean
+        get() = ownerEnabled && store.contentEnabled()
+
+    fun setOwnerEnabled(enabled: Boolean): Boolean {
+        // Disable capture before attempting a durable withdrawal.
+        if (!enabled) unavailable = true
+        val saved = runCatching { store.commitOwner(enabled) }.getOrDefault(false)
+        unavailable = !saved
+        return saved
+    }
+
+    fun setContentEnabled(enabled: Boolean): Boolean {
+        if (!enabled) unavailable = true
+        val saved =
+            runCatching { store.commitContent(enabled && ownerEnabled) }.getOrDefault(false)
+        if (!saved) unavailable = true
+        // Recovering from a prior storage failure requires a fresh owner-level approval.
+        return saved
+    }
+}
+
 class AndroidNotificationConsent(context: Context) {
     private val application = context.applicationContext
     private val preferences =
         application.getSharedPreferences("crosslab.notifications.owner-v1", Context.MODE_PRIVATE)
+    private val settings =
+        OwnerConsentSettings(
+            object : OwnerConsentStorage {
+                override fun ownerEnabled() = preferences.getBoolean("owner-enabled", false)
+                override fun contentEnabled() = preferences.getBoolean("content-enabled", false)
+
+                override fun commitOwner(enabled: Boolean): Boolean =
+                    preferences.edit()
+                        .putBoolean("owner-enabled", enabled)
+                        .putBoolean("content-enabled", false)
+                        .commit()
+
+                override fun commitContent(enabled: Boolean): Boolean =
+                    preferences.edit().putBoolean("content-enabled", enabled).commit()
+            },
+        )
 
     val ownerEnabled: Boolean
-        get() = preferences.getBoolean("owner-enabled", false)
+        get() = settings.ownerEnabled
 
     val contentEnabled: Boolean
-        get() = preferences.getBoolean("content-enabled", false) && ownerEnabled
+        get() = settings.contentEnabled
 
-    fun setOwnerEnabled(enabled: Boolean) {
-        preferences.edit()
-            .putBoolean("owner-enabled", enabled)
-            .apply()
-        if (!enabled) setContentEnabled(false)
-    }
+    fun setOwnerEnabled(enabled: Boolean): Boolean = settings.setOwnerEnabled(enabled)
 
-    fun setContentEnabled(enabled: Boolean) {
-        preferences.edit()
-            .putBoolean("content-enabled", enabled && ownerEnabled)
-            .apply()
-    }
+    fun setContentEnabled(enabled: Boolean): Boolean = settings.setContentEnabled(enabled)
 
     fun current(foreground: Boolean): NotificationOwnerConsent =
         NotificationOwnerConsent(
@@ -58,10 +105,12 @@ class AndroidNotificationConsent(context: Context) {
             ComponentName(application, CrossLabNotificationListener::class.java)
         // Exact ComponentName comparison avoids substring matches with other packages.
         val enabled =
-            Settings.Secure.getString(
-                application.contentResolver,
-                "enabled_notification_listeners",
-            ).orEmpty()
+            runCatching {
+                Settings.Secure.getString(
+                    application.contentResolver,
+                    "enabled_notification_listeners",
+                )
+            }.getOrNull().orEmpty()
         return enabled
             .split(':')
             .mapNotNull(ComponentName::unflattenFromString)

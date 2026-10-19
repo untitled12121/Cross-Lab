@@ -217,17 +217,19 @@ class MainActivity : ComponentActivity() {
                 onExportAudit = { exportAudit.launch("crosslab-audit.csv") },
                 notificationConsent = notificationConsent.value,
                 onToggleNotificationOwner = {
-                    app.notificationConsent.setOwnerEnabled(
-                        !app.notificationConsent.ownerEnabled,
-                    )
+                    val saved =
+                        app.notificationConsent.setOwnerEnabled(!app.notificationConsent.ownerEnabled)
                     app.notificationPermissionChanged()
+                    notificationNotice.value =
+                        if (saved) null else "Owner consent could not be saved; mirroring is disabled."
                     refreshNotificationConsent(app)
                 },
                 onToggleNotificationContent = {
-                    app.notificationConsent.setContentEnabled(
-                        !app.notificationConsent.contentEnabled,
-                    )
+                    val saved =
+                        app.notificationConsent.setContentEnabled(!app.notificationConsent.contentEnabled)
                     app.notificationPermissionChanged()
+                    notificationNotice.value =
+                        if (saved) null else "Content consent could not be saved; mirroring is disabled."
                     refreshNotificationConsent(app)
                 },
                 onOpenNotificationAccess = {
