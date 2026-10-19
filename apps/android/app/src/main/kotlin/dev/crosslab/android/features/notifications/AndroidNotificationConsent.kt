@@ -51,11 +51,17 @@ internal class OwnerConsentSettings(
     }
 
     fun setContentEnabled(enabled: Boolean): Boolean {
+        val wasAvailable = !unavailable
         if (!enabled) unavailable = true
         val saved =
             runCatching { store.commitContent(enabled && ownerEnabled) }.getOrDefault(false)
-        if (!saved) unavailable = true
-        // Recovering from a prior storage failure requires a fresh owner-level approval.
+        if (!saved) {
+            unavailable = true
+        } else if (!enabled && wasAvailable) {
+            // A durable content opt-out keeps redacted mirroring available.
+            unavailable = false
+        }
+        // Recovering from a prior storage failure requires fresh owner approval.
         return saved
     }
 }

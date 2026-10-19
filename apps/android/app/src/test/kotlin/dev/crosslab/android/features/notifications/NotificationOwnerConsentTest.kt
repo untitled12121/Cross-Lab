@@ -84,6 +84,19 @@ class NotificationOwnerConsentTest {
     }
 
     @Test
+    fun disablingContentPreservesRedactedMirroringAfterDurableCommit() {
+        val store = FakeOwnerConsentStorage()
+        val consent = OwnerConsentSettings(store)
+        assertTrue(consent.setOwnerEnabled(true))
+        assertTrue(consent.setContentEnabled(true))
+
+        assertTrue(consent.setContentEnabled(false))
+        assertTrue(consent.ownerEnabled)
+        assertFalse(consent.contentEnabled)
+        assertFalse(store.content)
+    }
+
+    @Test
     fun failedOwnerConsentWithdrawalImmediatelyBlocksContentEvenIfStorageStaysEnabled() {
         val store = FakeOwnerConsentStorage()
         val consent = OwnerConsentSettings(store)
