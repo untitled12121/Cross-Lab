@@ -77,7 +77,8 @@ class ProductPresencePort(
                 disableNotificationsLocked()
                 return@synchronized false
             }
-            current.canMirrorNotifications() &&
+            currentSessionBinding != null &&
+                current.canMirrorNotifications() &&
                 runCatching { active.notificationSubscribed() }.getOrDefault(false)
         }
 
@@ -94,7 +95,8 @@ class ProductPresencePort(
         synchronized(lock) {
             val active = agent ?: return@synchronized false
             notificationConsent.withCurrent(foreground = true) { consent ->
-                if (!consent.locallyAvailable() || !current.canMirrorNotifications() ||
+                if (!consent.locallyAvailable() || currentSessionBinding == null ||
+                    !current.canMirrorNotifications() ||
                     !runCatching { active.notificationSubscribed() }.getOrDefault(false)
                 ) {
                     disableNotificationsLocked()
@@ -112,7 +114,8 @@ class ProductPresencePort(
         synchronized(lock) {
             val active = agent ?: return@synchronized false
             notificationConsent.withCurrent(foreground = true) { consent ->
-                if (!consent.locallyAvailable() || !current.canMirrorNotifications() ||
+                if (!consent.locallyAvailable() || currentSessionBinding == null ||
+                    !current.canMirrorNotifications() ||
                     !runCatching { active.notificationSubscribed() }.getOrDefault(false)
                 ) {
                     disableNotificationsLocked()
@@ -657,9 +660,12 @@ class ProductPresencePort(
                     return
                 } ?: continue
 
-            if (!isCurrentAgent(active, token)) return
+            val expected = synchronized(lock) {
+                if (!isCurrentAgent(active, token)) return
+                currentSessionBinding
+            }
             handler.post {
-                handleClipboardRequest(active, token, request)
+                handleClipboardRequest(active, token, expected, request)
             }
         }
     }
@@ -667,6 +673,7 @@ class ProductPresencePort(
     private fun handleClipboardRequest(
         active: MobileTrustedPresenceAgent,
         token: Long,
+        expected: NativeSessionBinding?,
         request: MobileClipboardRequest,
     ) {
         if (!isCurrentAgent(active, token)) return
@@ -678,7 +685,7 @@ class ProductPresencePort(
                 MobileClipboardRequestKind.READ -> "clipboard.read"
                 MobileClipboardRequestKind.WRITE -> "clipboard.write"
             }
-        if (!isCurrentClipboardAgent(active, token, capability)) {
+        if (expected == null || !isCurrentClipboardAgent(active, token, capability, expected)) {
             clipboardWorkers.execute {
                 runCatching {
                     when (kind) {
@@ -698,7 +705,7 @@ class ProductPresencePort(
                     is LocalClipboardRead.Text ->
                         clipboardWorkers.execute {
                             runCatching {
-                                if (isCurrentClipboardAgent(active, token, "clipboard.read")) {
+                                if (isCurrentClipboardAgent(active, token, "clipboard.read", expected)) {
                                     active.completeClipboardRead(requestId, local.value)
                                 } else {
                                     active.failClipboardRead(
@@ -745,7 +752,7 @@ class ProductPresencePort(
                     return
                 }
                 val write =
-                    if (isCurrentClipboardAgent(active, token, "clipboard.write")) {
+                    if (isCurrentClipboardAgent(active, token, "clipboard.write", expected)) {
                         clipboard.writeRemoteText(text)
                     } else {
                         LocalClipboardWrite.FAILED
