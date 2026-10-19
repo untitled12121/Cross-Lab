@@ -4,7 +4,7 @@ package dev.crosslab.android.features.devices
  * Runtime-only peer/session token. Keep the raw authenticated session identifier
  * out of Compose state, app diagnostics and stable storage.
  */
-internal class NativeSessionBinding(
+class NativeSessionBinding internal constructor(
     private val peer: String,
     private val session: String,
 ) {

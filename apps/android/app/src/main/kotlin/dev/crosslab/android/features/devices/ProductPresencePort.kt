@@ -43,6 +43,12 @@ class ProductPresencePort(
 ) : RuntimePort, ClipboardPort, FileTransferPort, NotificationPublisher {
     override val peerControlAvailable: Boolean = true
     override val clipboardAvailable: Boolean = true
+
+    override fun sessionBinding(capabilityId: String): NativeSessionBinding? =
+        synchronized(lock) {
+            if (!current.hasAuthenticatedCapability(capabilityId)) null
+            else currentSessionBinding
+        }
     private val fileTransfer = runCatching { AndroidFileTransferService(context) }.getOrNull()
     override val fileTransferAvailable: Boolean
         get() = fileTransfer != null

@@ -26,6 +26,9 @@ interface RuntimePort {
         effect: RuntimePermissionEffect,
     ): Boolean = false
 
+    /** An opaque handoff token for owner dialogs; never expose raw session IDs. */
+    fun sessionBinding(capabilityId: String): NativeSessionBinding? = null
+
     fun snapshot(): RuntimeSnapshot = RuntimeSnapshot.disconnected()
 
     fun observeSnapshots(listener: (RuntimeSnapshot) -> Unit): AutoCloseable {
@@ -77,6 +80,14 @@ class RuntimeController(
         }
 
     fun state(): RuntimeControllerState = current
+
+    fun sessionBinding(capabilityId: String): NativeSessionBinding? =
+        synchronized(lock) {
+            val state = current
+            if (state.lifecycle != RuntimeLifecycle.RUNNING || !state.networkAvailable ||
+                !state.snapshot.hasAuthenticatedCapability(capabilityId)
+            ) null else port.sessionBinding(capabilityId)
+        }
 
     fun observe(listener: (RuntimeControllerState) -> Unit): AutoCloseable {
         listeners += listener
