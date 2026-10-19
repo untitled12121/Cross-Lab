@@ -19,7 +19,7 @@ data class NotificationOwnerConsent(
     fun permitsContent(): Boolean =
         locallyAvailable() && contentEnabled
 
-    fun outgoingText(title: String?, preview: String?, protected: Boolean): NotificationText =
+    internal fun outgoingText(title: String?, preview: String?, protected: Boolean): NotificationText =
         if (protected || !permitsContent()) NotificationText(null, null)
         else NotificationText(title, preview)
 }
