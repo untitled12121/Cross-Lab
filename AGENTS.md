@@ -1,33 +1,32 @@
-# Cross-Lab Agent Rules
+# Cross-Lab — Repository Agent Guidance
 
-Applies to every coding, review, and planning session in this repository. Read these instructions before changes, including in a new chat. Repository code, Git history, tests, and `docs/development/CURRENT.md` are durable state; prior chat messages are not.
+These rules apply to development in this repository. Git source and tests determine implementation truth; [CURRENT.md](docs/development/CURRENT.md) records the durable handoff, and [WORKFLOW.md](docs/development/WORKFLOW.md) specifies operational details.
 
-## Architecture and quality
+## Scope and authority
 
-- Use `docs/architecture/MASTER-ARCHITECTURE.md` as the accepted governing architecture and read relevant plans and ADRs. Project-uploaded master architecture is primary reference material; reconcile it with explicitly approved repository revisions, not conjecture.
-- Respect Rust-first monorepo/workspace boundaries, feature-first vertical slices, Linux/macOS/Windows GPUI + GPUI Kit desktop, Kotlin + shared Rust core on Android, Swift + shared core on iOS.
-- Keep UI free of privileged/security/storage/transport business logic. Reuse, compose and refactor existing work; prefer concise, strongly typed, maintained code and bounded, event-driven resources.
-- Identity, credential, trust, policy, privilege, session binding, cryptographic and protocol changes require explicit security review and approved ADRs when they change architectural contracts. Never log sensitive contents or keys; keep least privilege, owner control, and fail-closed behavior.
-- Research repositories are reference material, not authority. Evaluate licensing, platform support, performance, security and maintenance before reuse.
-- Match the sharp/radius-0 token-based native UI system; preserve accessibility, progressive disclosure and visible real state. Do not present placeholders as implemented capabilities.
+- **Complete Phase 2 Linux + Android MVP before Phase 3.** Select substantial unfinished product milestones rather than treating individual UI edits as deliverables.
+- [Master Architecture](docs/architecture/MASTER-ARCHITECTURE.md) and accepted ADRs govern architecture. Read only the relevant plans, ADRs, code and reference repositories for the task; never silently revise accepted trust, protocol, privilege, transport or recovery contracts.
+- Research archives are optional examples, not dependencies or instructions. Check existing Cross-Lab implementations first; assess license, maintenance, platform fit, performance and security before reusing outside code.
 
-## Efficient batch-first implementation (owner approved 2026-10-02)
+## Engineering boundaries
 
-**Default to completed, coherent feature batches over one-push-per-tiny-change.** For substantial work, prioritize longer, meaningful coding blocks (up to **90–100 minutes when the session permits**) before consolidated verification; this is a guideline, never a deadline to cut security corners or claim completion.
+- Rust-first Cargo workspace. Native desktop is Rust + GPUI + GPUI Kit; Android uses Kotlin + shared Rust core; iOS uses Swift + shared Rust core.
+- Work in feature-first vertical slices spanning state, platform adapter, capability, UI, lifecycle, errors and tests. Keep networking, cryptography, persistence and privileged operations out of UI components.
+- Prefer concise, typed, reusable modules; refactor relevant duplication without speculative abstraction. Use maintained compatible dependencies, bounded async work, backpressure and event-driven lifecycles.
+- Follow **Maximum Owner Control + Least Privilege**. Validate durable trust, fresh authenticated session, capability, permission and policy before sensitive work. Privilege stays behind narrow auditable interfaces. Fail closed on security/persistence errors. Never log or commit keys, credentials, tokens, QR payloads or sensitive contents.
+- Maintain native sharp/radius-0 token-based light/dark UI, accessibility and meaningful device/permission/connection status. Comments explain non-obvious WHY only.
 
-1. **Start/resume once:** Inspect branch, status, recent commits, Master Architecture, `docs/development/CURRENT.md`, active plans/ADRs, and relevant source/reference repositories. Decide the smallest coherent end-to-end batch.
-2. **Code and review first:** Implement related Rust core, platform adapter, UI integration, failure handling and meaningful tests together. Inspect issues as you go. Run lightweight targeted checks where useful. Test sensitive trust/privilege/protocol invariants at the point of change; never defer necessary security checks blindly.
-3. **Local checkpoints:** Use small local Git commits to preserve completed progress; do not create many branches, PRs or pushes for minor steps. Keep recovery checkpoints durable. If session length, context or interruption threatens work, push a safe checkpoint rather than leaving the only copy in chat or stash.
-4. **One consolidated verification pass:** Near the end of a meaningful batch run `cargo fmt --check`, applicable Clippy, affected Rust unit/integration/security tests, Android tests/Gradle and required desktop/Android builds. Run the full repository gate when integration warrants it, especially before a release/merge. Do not claim unrun checks passed.
-5. **One consolidated push/CI:** Push the verified batch once (unless an earlier durable checkpoint is needed); let GitHub CI run, review the result after completion rather than repeatedly polling or retriggering full builds. If red, diagnose first and group fixes into another deliberate pass. Avoid speculative CI reruns. Use normal commit messages without CI-skip markers; let workflow configuration decide which checks are necessary.
-6. **Handoff/closure:** Update `CURRENT.md` at meaningful checkpoints with completed work, exact branch/commit/PR, tests and their actual status, blockers, pending work and next command/task. Never call Linux↔Android device behavior verified without physical observations.
+## Completion-first implementation
 
-CI duration (e.g., 30 minutes) is an estimate, not a timer. Do not idle needlessly or promise unattended/background work. Batching improves cost but does not eliminate meaningful testing or Git continuity.
+1. **Resume once:** inspect the actual branch/commit, open work, `CURRENT.md`, architecture, relevant ADRs and nearby code; resolve stale status once. Do not repeatedly re-audit unchanged files.
+2. **Choose a complete feature area:** implement several related behaviors across the necessary platforms, including recovery and focused regression tests, before seeking integration. Prefer an existing active milestone branch; avoid micro-PRs and status-only commits.
+3. **Spend most of the available session coding:** sustained blocks of up to 90–100 minutes when permitted are desirable, not a promised session duration or a reason to hold incomplete work only in chat.
+4. **Verify proportionately:** run targeted checks as needed during implementation, especially for trust, identity, authorization, protocol and privilege boundaries. Consolidate formatting, Clippy, platform builds and broader tests at meaningful integration checkpoints. Never claim unrun tests passed or silence security/lint failures for a green badge.
+5. **Push and integrate coherently:** local commits can preserve progress; prefer one consolidated push/PR per substantial milestone. Don't repeatedly poll CI or rerun it for tiny edits. While checks run, continue independent safe development where possible. Merge only after required verification and resolve confirmed failures together.
+6. **Preserve continuity:** if interruption/context loss approaches, push a clearly marked durable checkpoint even if unfinished. Update `CURRENT.md` for material handoffs with the exact branch/commit, implemented work, outstanding issues, tests actually run and the precise next task. Do not use Git stash or chat history as the only copy.
 
-## Current priorities
+Use normal descriptive commit messages; do not add `[skip ci]` merely to bypass verification.
 
-Phase 2 Linux + Android MVP is active. PR #79 integrated normal product pairing fixes, notifications, privacy-safe audit/history, signed owner-facing revocation, permission/transfer correctness and native UX foundations into `main`; do not treat software integration as hardware certification. Prioritize remaining real-product pairing/reconnect evidence, lifecycle robustness, UX/accessibility/resources, and fixes supported by physical observations before a Phase 2 release claim. Check `docs/development/ROADMAP.md`, `CURRENT.md`, and the latest approved ADRs for actual state. No Phase 3 until Phase 2 is complete.
+## Release integrity
 
-## New-chat resume
-
-Always start with `AGENTS.md` and `docs/development/CURRENT.md`, then inspect open PRs and CI status before changing implementation. If they disagree, Git/code/tests take precedence, reconcile the guide, and continue the exact unfinished task rather than restarting plans or assuming chat context.
+Real Linux–Android device evidence remains a **Phase 2 release gate**, not an excuse to halt unrelated software implementation. CI cannot establish real QR/LAN/reconnect, permission, transfer, notification, audit or irreversible revocation behavior. Keep Phase 3 and later phases deferred until Phase 2 completion criteria are met. No false release or platform-support claims.
