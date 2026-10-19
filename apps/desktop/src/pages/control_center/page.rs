@@ -27,8 +27,7 @@ use crate::{
         appearance::{active_theme, font_weight},
         clipboard::{ClipboardAction, ClipboardFeatureState, ClipboardResult},
         devices::{
-            ConnectivityDisplay, DesktopRuntimeController, DevicesFeatureState,
-            SessionDisplay,
+            ConnectivityDisplay, DesktopRuntimeController, DevicesFeatureState, SessionDisplay,
         },
         file_transfer::{FileTransferFailure, FileTransferFeatureState, FileTransferStage},
         owner::OwnerFeatureState,
