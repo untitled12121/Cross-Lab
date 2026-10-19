@@ -91,15 +91,34 @@ class ProductPresencePort(
         protected: Boolean,
     ): Boolean =
         synchronized(lock) {
-            if (!canCapture()) return@synchronized false
-            runCatching { agent?.notificationPosted(key, appLabel, title, preview, protected) == true }
-                .getOrDefault(false)
+            val active = agent ?: return@synchronized false
+            notificationConsent.withCurrent(foreground = true) { consent ->
+                if (!consent.locallyAvailable() || current.session != RuntimeSession.ACTIVE ||
+                    !runCatching { active.notificationSubscribed() }.getOrDefault(false)
+                ) {
+                    runCatching { active.disableNotifications() }
+                    return@withCurrent false
+                }
+                // Re-evaluate under the same owner-consent lock as the durable opt-out.
+                val text = consent.outgoingText(title, preview, protected)
+                runCatching {
+                    active.notificationPosted(key, appLabel, text.title, text.preview, protected)
+                }.getOrDefault(false)
+            }
         }
 
     override fun removed(key: String): Boolean =
         synchronized(lock) {
-            if (!canCapture()) return@synchronized false
-            runCatching { agent?.notificationRemoved(key) == true }.getOrDefault(false)
+            val active = agent ?: return@synchronized false
+            notificationConsent.withCurrent(foreground = true) { consent ->
+                if (!consent.locallyAvailable() || current.session != RuntimeSession.ACTIVE ||
+                    !runCatching { active.notificationSubscribed() }.getOrDefault(false)
+                ) {
+                    runCatching { active.disableNotifications() }
+                    return@withCurrent false
+                }
+                runCatching { active.notificationRemoved(key) }.getOrDefault(false)
+            }
         }
 
     override fun disableNotifications() {

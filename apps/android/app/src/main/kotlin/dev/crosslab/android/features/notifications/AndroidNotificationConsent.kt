@@ -18,7 +18,13 @@ data class NotificationOwnerConsent(
 
     fun permitsContent(): Boolean =
         locallyAvailable() && contentEnabled
+
+    fun outgoingText(title: String?, preview: String?, protected: Boolean): NotificationText =
+        if (protected || !permitsContent()) NotificationText(null, null)
+        else NotificationText(title, preview)
 }
+
+internal data class NotificationText(val title: String?, val preview: String?)
 
 /**
  * Local owner consent is independent of OS permission, authenticated sessions and peer policy.
@@ -56,6 +62,13 @@ internal class OwnerConsentSettings(
                     false
                 }
             }
+
+    fun <T> withConsent(block: (ownerEnabled: Boolean, contentEnabled: Boolean) -> T): T =
+        synchronized(lock) {
+            // Keep the consent lock until the outbound agent call completes.
+            val owner = ownerEnabled
+            block(owner, owner && contentEnabled)
+        }
 
     fun setOwnerEnabled(enabled: Boolean): Boolean =
         synchronized(lock) {
@@ -110,13 +123,23 @@ class AndroidNotificationConsent(context: Context) {
     fun setContentEnabled(enabled: Boolean): Boolean = settings.setContentEnabled(enabled)
 
     fun current(foreground: Boolean): NotificationOwnerConsent =
-        NotificationOwnerConsent(
-            osAccess = osAccessGranted(),
-            listenerConnected = listenerConnected.get(),
-            ownerEnabled = ownerEnabled,
-            contentEnabled = contentEnabled,
-            foreground = foreground,
-        )
+        withCurrent(foreground) { it }
+
+    fun <T> withCurrent(
+        foreground: Boolean,
+        block: (NotificationOwnerConsent) -> T,
+    ): T =
+        settings.withConsent { owner, content ->
+            block(
+                NotificationOwnerConsent(
+                    osAccess = osAccessGranted(),
+                    listenerConnected = listenerConnected.get(),
+                    ownerEnabled = owner,
+                    contentEnabled = content,
+                    foreground = foreground,
+                ),
+            )
+        }
 
     private fun osAccessGranted(): Boolean {
         val component =
