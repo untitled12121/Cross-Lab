@@ -2,9 +2,45 @@ package dev.crosslab.android.features.devices
 
 import java.util.concurrent.CopyOnWriteArraySet
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RuntimeControllerTest {
+    @Test
+    fun filePickerTicketRequiresLiveAuthenticatedNegotiatedSession() {
+        val port = FakeRuntimePort()
+        val controller = RuntimeController(port)
+        val token = NativeSessionBinding("trusted-peer", "ab".repeat(32))
+        port.binding = token
+        val online = RuntimeSnapshot.disconnected().copy(
+            presence = RuntimePresence.ONLINE,
+            peerDeviceId = "trusted-peer",
+            trust = RuntimeTrust.TRUSTED,
+            connectivity = RuntimeConnectivity.CONNECTED,
+            session = RuntimeSession.ACTIVE,
+            security = RuntimeSecurity.AUTHENTICATED,
+            capabilityIds = listOf("files.transfer"),
+        )
+
+        port.emit(online)
+        assertNull(controller.sessionBinding("files.transfer"))
+        controller.onForeground()
+        assertTrue(token.matches(controller.sessionBinding("files.transfer")))
+        assertNull(controller.sessionBinding("clipboard.read"))
+
+        controller.onNetworkLost()
+        assertNull(controller.sessionBinding("files.transfer"))
+        controller.onNetworkAvailable()
+        port.emit(online.copy(presence = RuntimePresence.RECONNECTING))
+        assertNull(controller.sessionBinding("files.transfer"))
+        port.emit(online.copy(trust = RuntimeTrust.REVOKED))
+        assertNull(controller.sessionBinding("files.transfer"))
+        port.emit(online)
+        controller.shutdown()
+        assertNull(controller.sessionBinding("files.transfer"))
+    }
+
     @Test
     fun foregroundAndBackgroundAreIdempotent() {
         val port = FakeRuntimePort()
@@ -358,6 +394,7 @@ class RuntimeControllerTest {
         var reconnects = 0
         var permissionEdits = 0
         var peerPermissionEdits = 0
+        var binding: NativeSessionBinding? = null
         private var current = RuntimeSnapshot.disconnected()
         private val snapshotListeners = CopyOnWriteArraySet<(RuntimeSnapshot) -> Unit>()
 
@@ -410,6 +447,8 @@ class RuntimeControllerTest {
             peerPermissionEdits += 1
             return true
         }
+
+        override fun sessionBinding(capabilityId: String): NativeSessionBinding? = binding
 
         override fun snapshot(): RuntimeSnapshot = current
 

@@ -43,6 +43,12 @@ class ProductPresencePort(
 ) : RuntimePort, ClipboardPort, FileTransferPort, NotificationPublisher {
     override val peerControlAvailable: Boolean = true
     override val clipboardAvailable: Boolean = true
+
+    override fun sessionBinding(capabilityId: String): NativeSessionBinding? =
+        synchronized(lock) {
+            if (!current.hasAuthenticatedCapability(capabilityId)) null
+            else currentSessionBinding
+        }
     private val fileTransfer = runCatching { AndroidFileTransferService(context) }.getOrNull()
     override val fileTransferAvailable: Boolean
         get() = fileTransfer != null
@@ -77,7 +83,8 @@ class ProductPresencePort(
                 disableNotificationsLocked()
                 return@synchronized false
             }
-            current.canMirrorNotifications() &&
+            currentSessionBinding != null &&
+                current.canMirrorNotifications() &&
                 runCatching { active.notificationSubscribed() }.getOrDefault(false)
         }
 
@@ -94,7 +101,8 @@ class ProductPresencePort(
         synchronized(lock) {
             val active = agent ?: return@synchronized false
             notificationConsent.withCurrent(foreground = true) { consent ->
-                if (!consent.locallyAvailable() || !current.canMirrorNotifications() ||
+                if (!consent.locallyAvailable() || currentSessionBinding == null ||
+                    !current.canMirrorNotifications() ||
                     !runCatching { active.notificationSubscribed() }.getOrDefault(false)
                 ) {
                     disableNotificationsLocked()
@@ -112,7 +120,8 @@ class ProductPresencePort(
         synchronized(lock) {
             val active = agent ?: return@synchronized false
             notificationConsent.withCurrent(foreground = true) { consent ->
-                if (!consent.locallyAvailable() || !current.canMirrorNotifications() ||
+                if (!consent.locallyAvailable() || currentSessionBinding == null ||
+                    !current.canMirrorNotifications() ||
                     !runCatching { active.notificationSubscribed() }.getOrDefault(false)
                 ) {
                     disableNotificationsLocked()
@@ -171,6 +180,7 @@ class ProductPresencePort(
     private var discoveryHandle: AutoCloseable? = null
     private var discoveryRetry: Runnable? = null
     private var generation: Long = 0
+    private var currentSessionBinding: NativeSessionBinding? = null
 
     override fun start() {
         synchronized(lock) {
@@ -238,14 +248,15 @@ class ProductPresencePort(
     }
 
     override fun sendClipboard(onComplete: (ClipboardResult) -> Unit): Boolean {
-        val (active, token) =
+        val (active, token, binding) =
             synchronized(lock) {
                 if (!current.hasAuthenticatedCapability("clipboard.write")) return false
-                agent?.let { it to generation }
+                val session = currentSessionBinding ?: return false
+                agent?.let { Triple(it, generation, session) }
             } ?: return false
 
         handler.post {
-            if (!isCurrentClipboardAgent(active, token, "clipboard.write")) {
+            if (!isCurrentClipboardAgent(active, token, "clipboard.write", binding)) {
                 onComplete(ClipboardResult.CANCELLED)
                 return@post
             }
@@ -254,7 +265,7 @@ class ProductPresencePort(
                 is LocalClipboardRead.Text ->
                     clipboardWorkers.execute {
                         val result =
-                            if (isCurrentClipboardAgent(active, token, "clipboard.write")) {
+                            if (isCurrentClipboardAgent(active, token, "clipboard.write", binding)) {
                                 runCatching { active.sendClipboardText(local.value) }.getOrNull()
                             } else {
                                 null
@@ -264,7 +275,7 @@ class ProductPresencePort(
                                 ?: ClipboardResult.FAILED
                         handler.post {
                             onComplete(
-                                if (isCurrentClipboardAgent(active, token, "clipboard.write")) {
+                                if (isCurrentClipboardAgent(active, token, "clipboard.write", binding)) {
                                     outcome
                                 } else {
                                     ClipboardResult.CANCELLED
@@ -281,15 +292,16 @@ class ProductPresencePort(
     }
 
     override fun fetchClipboard(onComplete: (ClipboardResult) -> Unit): Boolean {
-        val (active, token) =
+        val (active, token, binding) =
             synchronized(lock) {
                 if (!current.hasAuthenticatedCapability("clipboard.read")) return false
-                agent?.let { it to generation }
+                val session = currentSessionBinding ?: return false
+                agent?.let { Triple(it, generation, session) }
             } ?: return false
 
         clipboardWorkers.execute {
             val result =
-                if (isCurrentClipboardAgent(active, token, "clipboard.read")) {
+                if (isCurrentClipboardAgent(active, token, "clipboard.read", binding)) {
                     runCatching { active.fetchClipboardText() }.getOrNull()
                 } else {
                     null
@@ -300,7 +312,7 @@ class ProductPresencePort(
             if (outcome != ClipboardResult.SUCCESS) {
                 handler.post {
                     onComplete(
-                        if (isCurrentClipboardAgent(active, token, "clipboard.read")) {
+                        if (isCurrentClipboardAgent(active, token, "clipboard.read", binding)) {
                             outcome
                         } else {
                             ClipboardResult.CANCELLED
@@ -314,7 +326,7 @@ class ProductPresencePort(
                 runCatching { operation.takeText() }.getOrNull()
             }
             handler.post {
-                if (!isCurrentClipboardAgent(active, token, "clipboard.read")) {
+                if (!isCurrentClipboardAgent(active, token, "clipboard.read", binding)) {
                     onComplete(ClipboardResult.CANCELLED)
                     return@post
                 }
@@ -519,10 +531,10 @@ class ProductPresencePort(
         fileTransfer?.attach(active)
         discoveryInfo = info
         ensureDiscoveryLocked(active)
+        val initial = active.snapshot()
         publishLocked(
-            active.snapshot().toRuntimeSnapshot(
-                permissions = active.permissionSnapshot(),
-            ),
+            initial.toRuntimeSnapshot(permissions = active.permissionSnapshot()),
+            initial.runtime?.sessionId,
         )
         events.execute { eventLoop(active, token) }
         clipboardEvents.execute { clipboardEventLoop(active, token) }
@@ -636,6 +648,7 @@ class ProductPresencePort(
                     event.toRuntimeSnapshot(
                         permissions = runCatching { active.permissionSnapshot() }.getOrNull(),
                     ),
+                    event.runtime?.sessionId,
                 )
             }
         }
@@ -653,9 +666,12 @@ class ProductPresencePort(
                     return
                 } ?: continue
 
-            if (!isCurrentAgent(active, token)) return
+            val expected = synchronized(lock) {
+                if (!isCurrentAgent(active, token)) return
+                currentSessionBinding
+            }
             handler.post {
-                handleClipboardRequest(active, token, request)
+                handleClipboardRequest(active, token, expected, request)
             }
         }
     }
@@ -663,6 +679,7 @@ class ProductPresencePort(
     private fun handleClipboardRequest(
         active: MobileTrustedPresenceAgent,
         token: Long,
+        expected: NativeSessionBinding?,
         request: MobileClipboardRequest,
     ) {
         if (!isCurrentAgent(active, token)) return
@@ -674,7 +691,7 @@ class ProductPresencePort(
                 MobileClipboardRequestKind.READ -> "clipboard.read"
                 MobileClipboardRequestKind.WRITE -> "clipboard.write"
             }
-        if (!isCurrentClipboardAgent(active, token, capability)) {
+        if (expected == null || !isCurrentClipboardAgent(active, token, capability, expected)) {
             clipboardWorkers.execute {
                 runCatching {
                     when (kind) {
@@ -694,7 +711,7 @@ class ProductPresencePort(
                     is LocalClipboardRead.Text ->
                         clipboardWorkers.execute {
                             runCatching {
-                                if (isCurrentClipboardAgent(active, token, "clipboard.read")) {
+                                if (isCurrentClipboardAgent(active, token, "clipboard.read", expected)) {
                                     active.completeClipboardRead(requestId, local.value)
                                 } else {
                                     active.failClipboardRead(
@@ -741,7 +758,7 @@ class ProductPresencePort(
                     return
                 }
                 val write =
-                    if (isCurrentClipboardAgent(active, token, "clipboard.write")) {
+                    if (isCurrentClipboardAgent(active, token, "clipboard.write", expected)) {
                         clipboard.writeRemoteText(text)
                     } else {
                         LocalClipboardWrite.FAILED
@@ -776,10 +793,13 @@ class ProductPresencePort(
         active: MobileTrustedPresenceAgent,
         token: Long,
         capability: String,
+        expected: NativeSessionBinding? = null,
     ): Boolean =
         synchronized(lock) {
             !closed.get() && generation == token && agent === active &&
-                current.hasAuthenticatedCapability(capability)
+                current.hasAuthenticatedCapability(capability) &&
+                currentSessionBinding != null &&
+                (expected == null || expected.matches(currentSessionBinding))
         }
 
     private fun publishAgentSnapshotLocked() {
@@ -787,7 +807,7 @@ class ProductPresencePort(
         runCatching {
             active.snapshot() to active.permissionSnapshot()
         }.onSuccess { (snapshot, permissions) ->
-            publishLocked(snapshot.toRuntimeSnapshot(permissions))
+            publishLocked(snapshot.toRuntimeSnapshot(permissions), snapshot.runtime?.sessionId)
         }
     }
 
@@ -802,9 +822,11 @@ class ProductPresencePort(
         publishAgentSnapshotLocked()
     }
 
-    private fun publishLocked(snapshot: RuntimeSnapshot) {
+    private fun publishLocked(snapshot: RuntimeSnapshot, sessionId: String? = null) {
+        currentSessionBinding = authenticatedSessionBinding(snapshot, sessionId)
         val activeSubscription =
-            snapshot.canMirrorNotifications() &&
+            currentSessionBinding != null &&
+                snapshot.canMirrorNotifications() &&
                 notificationConsent.current(foreground = true).locallyAvailable() &&
                 runCatching { agent?.notificationSubscribed() == true }.getOrDefault(false)
         if (activeSubscription != subscribed) {
@@ -814,7 +836,8 @@ class ProductPresencePort(
         agent?.let { active ->
             fileTransfer?.sessionConnected(
                 active,
-                snapshot.hasAuthenticatedCapability("files.transfer"),
+                currentSessionBinding != null &&
+                    snapshot.hasAuthenticatedCapability("files.transfer"),
             )
         }
         current = snapshot

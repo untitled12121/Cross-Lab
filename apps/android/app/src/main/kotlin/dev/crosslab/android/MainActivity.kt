@@ -20,8 +20,7 @@ import dev.crosslab.android.features.appearance.ThemeParser
 import dev.crosslab.android.features.appearance.ThemeResolver
 import dev.crosslab.android.features.controlcenter.ControlCenterScreen
 import dev.crosslab.android.features.devices.RuntimeControllerState
-import dev.crosslab.android.features.devices.hasAuthenticatedCapability
-import dev.crosslab.android.features.devices.RuntimeSession
+import dev.crosslab.android.features.devices.NativeSessionBinding
 import dev.crosslab.android.features.filetransfer.FileTransferState
 import dev.crosslab.android.features.identity.revocationTarget
 import dev.crosslab.android.features.notifications.NotificationOwnerConsent
@@ -57,6 +56,7 @@ class MainActivity : ComponentActivity() {
     private var clipboardSubscription: AutoCloseable? = null
     private var fileTransferSubscription: AutoCloseable? = null
     private var pairingSubscription: AutoCloseable? = null
+    private var pendingFileSourceSession: NativeSessionBinding? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -117,14 +117,12 @@ class MainActivity : ComponentActivity() {
             var retainFileAccess by remember { mutableStateOf(false) }
             var pendingReceiveRequest by remember { mutableStateOf<String?>(null) }
             var reauthorizeRequest by remember { mutableStateOf<String?>(null) }
-            var selectedPeer by remember { mutableStateOf<String?>(null) }
             val chooseSource =
                 rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-                    val originalPeer = selectedPeer
-                    selectedPeer = null
-                    if (uri != null && originalPeer != null &&
-                        runtimeState.value.snapshot.peerDeviceId == originalPeer &&
-                        runtimeState.value.snapshot.hasAuthenticatedCapability("files.transfer")
+                    val expected = pendingFileSourceSession
+                    pendingFileSourceSession = null
+                    if (uri != null &&
+                        expected?.matches(app.runtimeController.sessionBinding("files.transfer")) == true
                     ) {
                         app.fileTransferController.send(uri, retainFileAccess)
                     }
@@ -181,9 +179,9 @@ class MainActivity : ComponentActivity() {
                 retainFileAccess = retainFileAccess,
                 onToggleRetainFileAccess = { retainFileAccess = !retainFileAccess },
                 onSendFile = {
-                    val snapshot = runtimeState.value.snapshot
-                    if (snapshot.hasAuthenticatedCapability("files.transfer")) {
-                        selectedPeer = snapshot.peerDeviceId
+                    val binding = app.runtimeController.sessionBinding("files.transfer")
+                    if (binding != null) {
+                        pendingFileSourceSession = binding
                         chooseSource.launch(arrayOf("*/*"))
                     }
                 },

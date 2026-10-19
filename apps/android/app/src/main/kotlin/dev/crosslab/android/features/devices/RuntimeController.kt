@@ -26,6 +26,9 @@ interface RuntimePort {
         effect: RuntimePermissionEffect,
     ): Boolean = false
 
+    /** An opaque handoff token for owner dialogs; never expose raw session IDs. */
+    fun sessionBinding(capabilityId: String): NativeSessionBinding? = null
+
     fun snapshot(): RuntimeSnapshot = RuntimeSnapshot.disconnected()
 
     fun observeSnapshots(listener: (RuntimeSnapshot) -> Unit): AutoCloseable {
@@ -77,6 +80,22 @@ class RuntimeController(
         }
 
     fun state(): RuntimeControllerState = current
+
+    fun sessionBinding(capabilityId: String): NativeSessionBinding? {
+        // The port may publish controller callbacks while holding its own lock.
+        // Never hold the controller lock when requesting a port session ticket.
+        val before = current
+        if (before.lifecycle != RuntimeLifecycle.RUNNING || !before.networkAvailable ||
+            !before.snapshot.hasAuthenticatedCapability(capabilityId)
+        ) return null
+        val binding = port.sessionBinding(capabilityId) ?: return null
+        val after = current
+        if (after.lifecycle != RuntimeLifecycle.RUNNING || !after.networkAvailable ||
+            !after.snapshot.hasAuthenticatedCapability(capabilityId) ||
+            after.snapshot.peerDeviceId != before.snapshot.peerDeviceId
+        ) return null
+        return binding
+    }
 
     fun observe(listener: (RuntimeControllerState) -> Unit): AutoCloseable {
         listeners += listener
