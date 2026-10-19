@@ -1102,6 +1102,14 @@ impl ControlCenterPage {
                 Err(error) => {
                     let result = ClipboardResult::from(error);
                     let _ = this.update(cx, |page, cx| {
+                        let result = if page
+                            .devices
+                            .matches_session_binding(session, "clipboard.read")
+                        {
+                            result
+                        } else {
+                            ClipboardResult::Cancelled
+                        };
                         page.clipboard.finish(ClipboardAction::Fetch, result);
                         cx.notify();
                     });
