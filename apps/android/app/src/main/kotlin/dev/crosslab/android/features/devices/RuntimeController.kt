@@ -90,7 +90,7 @@ class RuntimeController(
         if (before.lifecycle != RuntimeLifecycle.RUNNING || !before.networkAvailable ||
             !before.snapshot.hasAuthenticatedCapability(capabilityId)
         ) return null
-        val binding = port.sessionBinding(capabilityId) ?: return null
+        val binding = runCatching { port.sessionBinding(capabilityId) }.getOrNull() ?: return null
         val after = current
         if (after.lifecycle != RuntimeLifecycle.RUNNING || !after.networkAvailable ||
             !after.snapshot.hasAuthenticatedCapability(capabilityId) ||
@@ -220,8 +220,18 @@ class RuntimeController(
                 snapshot.security != RuntimeSecurity.AUTHENTICATED ||
                 capabilityId !in snapshot.capabilityIds
             ) return@update null
-            changed = port.setPermission(capabilityId, operation, effect)
-            it.copy(snapshot = port.snapshot())
+            runCatching {
+                port.setPermission(capabilityId, operation, effect) to port.snapshot()
+            }.fold(
+                onSuccess = { (applied, updated) ->
+                    changed = applied
+                    it.copy(snapshot = updated)
+                },
+                onFailure = {
+                    changed = false
+                    failClosed(it)
+                },
+            )
         }
         return changed
     }
@@ -243,8 +253,18 @@ class RuntimeController(
                 capabilityId !in it.snapshot.capabilityIds ||
                 it.snapshot.peerDeviceId != peerDeviceId
             ) return@update null
-            changed = port.setPermissionForPeer(peerDeviceId, capabilityId, operation, effect)
-            it.copy(snapshot = port.snapshot())
+            runCatching {
+                port.setPermissionForPeer(peerDeviceId, capabilityId, operation, effect) to port.snapshot()
+            }.fold(
+                onSuccess = { (applied, updated) ->
+                    changed = applied
+                    it.copy(snapshot = updated)
+                },
+                onFailure = {
+                    changed = false
+                    failClosed(it)
+                },
+            )
         }
         return changed
     }

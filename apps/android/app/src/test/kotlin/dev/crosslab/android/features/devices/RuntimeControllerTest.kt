@@ -307,6 +307,91 @@ class RuntimeControllerTest {
     }
 
     @Test
+    fun permissionStoreFaultDeniesChangeAndClearsAuthenticatedAuthority() {
+        val port = FakeRuntimePort()
+        val controller = RuntimeController(port)
+        controller.onForeground()
+        port.emit(authenticatedPeer("clipboard.read"))
+        port.failNextPermission = true
+
+        assertEquals(
+            false,
+            controller.setPermission("clipboard.read", "get", RuntimePermissionEffect.ALLOW),
+        )
+        assertEquals(RuntimeLifecycle.STOPPED, controller.state().lifecycle)
+        assertEquals(RuntimePresence.FAILED, controller.state().snapshot.presence)
+        assertNull(controller.state().snapshot.peerDeviceId)
+        assertEquals(1, port.stops)
+        assertNull(controller.sessionBinding("clipboard.read"))
+    }
+
+    @Test
+    fun permissionSnapshotFaultCannotReportSuccessfulOwnerChange() {
+        val port = FakeRuntimePort()
+        val controller = RuntimeController(port)
+        controller.onForeground()
+        port.emit(authenticatedPeer("clipboard.read"))
+        port.failNextSnapshot = true
+
+        assertEquals(
+            false,
+            controller.setPermission("clipboard.read", "get", RuntimePermissionEffect.DENY),
+        )
+        assertEquals(1, port.permissionEdits)
+        assertEquals(RuntimeLifecycle.STOPPED, controller.state().lifecycle)
+        assertEquals(RuntimePresence.FAILED, controller.state().snapshot.presence)
+    }
+
+    @Test
+    fun peerPermissionFailureWithFailedStopTerminatesRuntimeAdmission() {
+        val port = FakeRuntimePort()
+        val controller = RuntimeController(port)
+        controller.onForeground()
+        port.emit(authenticatedPeer("notifications.read"))
+        port.failNextPeerPermission = true
+        port.failNextStop = true
+
+        assertEquals(
+            false,
+            controller.setPermissionForPeer(
+                "trusted-peer", "notifications.read", "subscribe", RuntimePermissionEffect.ALLOW,
+            ),
+        )
+        assertEquals(RuntimeLifecycle.SHUTDOWN, controller.state().lifecycle)
+        assertEquals(1, port.shutdowns)
+        assertNull(controller.sessionBinding("notifications.read"))
+        assertEquals(
+            false,
+            controller.setPermissionForPeer(
+                "trusted-peer", "notifications.read", "subscribe", RuntimePermissionEffect.DENY,
+            ),
+        )
+        assertEquals(1, port.peerPermissionEdits)
+    }
+
+    @Test
+    fun sessionBindingProviderFailureDoesNotExposeNativeException() {
+        val port = FakeRuntimePort()
+        val controller = RuntimeController(port)
+        controller.onForeground()
+        port.emit(authenticatedPeer("files.transfer"))
+        port.failNextBinding = true
+
+        assertNull(controller.sessionBinding("files.transfer"))
+        assertEquals(RuntimeLifecycle.RUNNING, controller.state().lifecycle)
+    }
+
+    private fun authenticatedPeer(capabilityId: String): RuntimeSnapshot =
+        RuntimeSnapshot.disconnected().copy(
+            peerDeviceId = "trusted-peer",
+            trust = RuntimeTrust.TRUSTED,
+            connectivity = RuntimeConnectivity.CONNECTED,
+            session = RuntimeSession.ACTIVE,
+            security = RuntimeSecurity.AUTHENTICATED,
+            capabilityIds = listOf(capabilityId),
+        )
+
+    @Test
     fun peerBoundPermissionNeverAppliesAfterSessionSwitch() {
         val port = FakeRuntimePort()
         val controller = RuntimeController(port)
@@ -436,7 +521,8 @@ class RuntimeControllerTest {
         controller.onForeground()
 
         assertEquals(RuntimeLifecycle.STOPPED, controller.state().lifecycle)
-        assertEquals(RuntimeSnapshot.disconnected(), controller.state().snapshot)
+        assertEquals(RuntimePresence.FAILED, controller.state().snapshot.presence)
+        assertNull(controller.state().snapshot.peerDeviceId)
         assertEquals(1, port.starts)
         assertEquals(1, port.stops)
 
@@ -486,6 +572,10 @@ class RuntimeControllerTest {
         var failNextStop = false
         var failNextNetworkLost = false
         var failNextReconnect = false
+        var failNextPermission = false
+        var failNextPeerPermission = false
+        var failNextSnapshot = false
+        var failNextBinding = false
         var stops = 0
         var shutdowns = 0
         var networkLost = 0
@@ -544,6 +634,10 @@ class RuntimeControllerTest {
             effect: RuntimePermissionEffect,
         ): Boolean {
             permissionEdits += 1
+            if (failNextPermission) {
+                failNextPermission = false
+                throw IllegalStateException("simulated durable policy fault")
+            }
             return true
         }
 
@@ -557,16 +651,32 @@ class RuntimeControllerTest {
                 return false
             }
             peerPermissionEdits += 1
+            if (failNextPeerPermission) {
+                failNextPeerPermission = false
+                throw IllegalStateException("simulated peer policy fault")
+            }
             return true
         }
 
-        override fun sessionBinding(capabilityId: String): NativeSessionBinding? = binding
+        override fun sessionBinding(capabilityId: String): NativeSessionBinding? {
+            if (failNextBinding) {
+                failNextBinding = false
+                throw IllegalStateException("simulated session ticket fault")
+            }
+            return binding
+        }
 
         override fun shutdown() {
             shutdowns += 1
         }
 
-        override fun snapshot(): RuntimeSnapshot = current
+        override fun snapshot(): RuntimeSnapshot {
+            if (failNextSnapshot) {
+                failNextSnapshot = false
+                throw IllegalStateException("simulated native snapshot fault")
+            }
+            return current
+        }
 
         override fun observeSnapshots(listener: (RuntimeSnapshot) -> Unit): AutoCloseable {
             snapshotListeners += listener
