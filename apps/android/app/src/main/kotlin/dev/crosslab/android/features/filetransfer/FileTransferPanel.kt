@@ -21,7 +21,7 @@ import dev.crosslab.android.features.appearance.toComposeColor
 import dev.crosslab.android.features.appearance.toTextStyle
 import dev.crosslab.android.features.devices.DevicePresentation
 import dev.crosslab.android.features.devices.PresenceDisplay
-import dev.crosslab.android.features.devices.hasAuthenticatedCapability
+import dev.crosslab.android.features.devices.hasAuthenticatedSession
 
 private const val CAPABILITY = "files.transfer"
 private const val RECEIVE = "receive"
@@ -43,7 +43,7 @@ fun FileTransferPanel(
     onRetry: () -> Unit,
 ) {
     val colors = theme.colors
-    val connected = device.hasAuthenticatedCapability(CAPABILITY, presence)
+    val connected = device.hasAuthenticatedSession(presence)
     val negotiated = CAPABILITY in device.capabilityIds
     val pending = state.stage == FileTransferStage.WAITING_DESTINATION &&
         state.direction == FileTransferDirection.RECEIVE

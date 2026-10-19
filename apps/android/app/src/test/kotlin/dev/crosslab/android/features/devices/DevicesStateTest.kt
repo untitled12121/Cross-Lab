@@ -22,9 +22,11 @@ class DevicesStateTest {
         assertFalse(active.hasAuthenticatedCapability("clipboard.write"))
 
         val visible = checkNotNull(DevicesState.from(active).current)
+        assertTrue(visible.hasAuthenticatedSession(PresenceDisplay.ONLINE))
         assertTrue(visible.hasAuthenticatedCapability("files.transfer", PresenceDisplay.ONLINE))
         assertTrue(visible.hasAuthenticatedCapability("clipboard.read", PresenceDisplay.ONLINE))
         assertFalse(visible.hasAuthenticatedCapability("clipboard.write", PresenceDisplay.ONLINE))
+        assertFalse(visible.hasAuthenticatedSession(PresenceDisplay.RECONNECTING))
         assertFalse(visible.hasAuthenticatedCapability("files.transfer", PresenceDisplay.RECONNECTING))
         assertFalse(visible.copy(trust = TrustDisplay.REVOKED)
             .hasAuthenticatedCapability("files.transfer", PresenceDisplay.ONLINE))

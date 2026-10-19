@@ -11,13 +11,14 @@ internal fun RuntimeSnapshot.hasAuthenticatedCapability(capabilityId: String): B
         capabilityId in capabilityIds
 
 /** Prevent native actions on stale or untrusted device snapshots. */
-internal fun DevicePresentation.hasAuthenticatedCapability(
-    capabilityId: String,
-    presence: PresenceDisplay,
-): Boolean =
+internal fun DevicePresentation.hasAuthenticatedSession(presence: PresenceDisplay): Boolean =
     presence == PresenceDisplay.ONLINE &&
         trust == TrustDisplay.TRUSTED &&
         connectivity == ConnectivityDisplay.CONNECTED &&
         session == SessionDisplay.ACTIVE &&
-        security == SecurityDisplay.AUTHENTICATED &&
-        capabilityId in capabilityIds
+        security == SecurityDisplay.AUTHENTICATED
+
+internal fun DevicePresentation.hasAuthenticatedCapability(
+    capabilityId: String,
+    presence: PresenceDisplay,
+): Boolean = hasAuthenticatedSession(presence) && capabilityId in capabilityIds
