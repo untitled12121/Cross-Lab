@@ -2,16 +2,65 @@ name: CI
 
 on:
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - "**/*.mdx"
   push:
     branches:
       - main
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - "**/*.mdx"
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: "Select a verification scope"
+        type: choice
+        required: true
+        default: full
+        options: [full, rust, android, format, audit]
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  changes:
+    name: Determine checks
+    runs-on: ubuntu-24.04
+    outputs:
+      format: ${{ steps.scope.outputs.format }}
+      rust: ${{ steps.scope.outputs.rust }}
+      android: ${{ steps.scope.outputs.android }}
+      audit: ${{ steps.scope.outputs.audit }}
+      full: ${{ steps.scope.outputs.full }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - name: Verify change classifier
+        run: python3 -m unittest discover -s .github/scripts -p 'test_ci_scope.py'
+      - name: Select jobs
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          PROFILE: ${{ inputs.scope || 'full' }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 .github/scripts/ci_scope.py \
+            --event "$EVENT" --profile "$PROFILE" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --output "$GITHUB_OUTPUT"
+
   format:
     name: Source format
+    needs: changes
+    if: needs.changes.outputs.format == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -20,9 +69,26 @@ jobs:
       - name: Format
         run: cargo fmt --check
 
+  audit:
+    name: Dependency audit
+    needs: changes
+    if: needs.changes.outputs.audit == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@7f4eb899022d8fe70b20c4f3de697aa85c309026 # v2.85.11
+        with:
+          tool: cargo-audit@0.22.2
+          checksum: true
+          fallback: none
+      - name: Audit dependencies
+        run: cargo audit
+
   rust:
     name: Rust
-    needs: format
+    needs: [changes, format]
+    if: needs.changes.outputs.rust == 'true' && needs.format.result == 'success'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -42,10 +108,13 @@ jobs:
       - name: Verify lockfile
         run: cargo metadata --locked --no-deps --format-version 1 > /dev/null
       - name: Verify unified build help
+        if: needs.changes.outputs.full == 'true'
         run: cargo crosslab --help
       - name: Validate Android SDK bootstrap script
+        if: needs.changes.outputs.full == 'true'
         run: python -m py_compile scripts/setup-android-sdk.py
       - name: Validate theme JSON syntax
+        if: needs.changes.outputs.full == 'true'
         run: |
           python - <<'PY'
           import json
@@ -63,14 +132,6 @@ jobs:
                   json.load(source)
               print(f"validated {path}")
           PY
-      - name: Install cargo-audit
-        uses: taiki-e/install-action@7f4eb899022d8fe70b20c4f3de697aa85c309026 # v2.85.11
-        with:
-          tool: cargo-audit@0.22.2
-          checksum: true
-          fallback: none
-      - name: Audit dependencies
-        run: cargo audit
       - name: Check
         run: cargo check --workspace --all-targets --all-features
       - name: Enforce mobile FFI unsafe boundary
@@ -80,21 +141,29 @@ jobs:
             exit 1
           fi
       - name: Generate UniFFI Kotlin bindings
+        if: needs.changes.outputs.full == 'true'
         run: |
           bash scripts/generate-mobile-bindings.sh "$RUNNER_TEMP/crosslab-uniffi-kotlin"
           find "$RUNNER_TEMP/crosslab-uniffi-kotlin" -type f -name '*.kt' -print -quit | grep -q .
       - name: Build Linux desktop
+        if: needs.changes.outputs.full == 'true'
         run: cargo crosslab build desktop
       - name: Build Linux desktop development slice
+        if: needs.changes.outputs.full == 'true'
         run: cargo crosslab build desktop --development
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-      - name: Test
+      - name: Desktop tests (focused)
+        if: needs.changes.outputs.full != 'true'
+        run: cargo test -p crosslab-desktop --all-features
+      - name: Workspace tests (full)
+        if: needs.changes.outputs.full == 'true'
         run: cargo test --workspace --all-features
 
   android:
     name: Android
-    needs: format
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-24.04
     env:
       JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
@@ -138,7 +207,31 @@ jobs:
         working-directory: apps/android
         run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
       - name: Android debug assembly
+        if: needs.changes.outputs.full == 'true'
         run: cargo crosslab build android
       - name: Android development wiring assembly
+        if: needs.changes.outputs.full == 'true'
         run: cargo crosslab build android --development
 
+
+  result:
+    name: CI Gate
+    if: always()
+    needs: [changes, format, audit, rust, android]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require success from selected checks
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          FORMAT: ${{ needs.format.result }}
+          AUDIT: ${{ needs.audit.result }}
+          RUST: ${{ needs.rust.result }}
+          ANDROID: ${{ needs.android.result }}
+        run: |
+          for status in "$CHANGES" "$FORMAT" "$AUDIT" "$RUST" "$ANDROID"; do
+            if [[ "$status" == "failure" || "$status" == "cancelled" ]]; then
+              echo "A selected check did not complete successfully: $status" >&2
+              exit 1
+            fi
+          done
+          echo "Selected checks passed; unrelated jobs were skipped."
