@@ -27,7 +27,7 @@ use crate::{
         appearance::{active_theme, font_weight},
         clipboard::{ClipboardAction, ClipboardFeatureState, ClipboardResult},
         devices::{
-            ConnectivityDisplay, DesktopRuntimeController, DevicesFeatureState, PresenceDisplay,
+            ConnectivityDisplay, DesktopRuntimeController, DevicesFeatureState,
             SessionDisplay,
         },
         file_transfer::{FileTransferFailure, FileTransferFeatureState, FileTransferStage},
@@ -331,6 +331,8 @@ impl ControlCenterPage {
         }
 
         self.presence_starting = true;
+        self.notice = None;
+        cx.notify();
         cx.spawn(async move |this, cx| {
             let result = DesktopProductPresenceController::start().await;
             let controller = match result {
