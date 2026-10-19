@@ -264,13 +264,13 @@ impl LinuxFileTransferReceiver {
     }
 
     fn invalidate_failed_integrity(&mut self) -> Result<(), LinuxFileTransferError> {
-        self.file.set_len(0)?;
-        self.file.sync_all()?;
-
+        // First persist revocation of the failed transfer checkpoint.
         let mut snapshot = self.load_partial_snapshot()?;
         snapshot.remove(self.partial.identity().transfer_id());
         self.store.commit(&snapshot)?;
 
+        self.file.set_len(0)?;
+        self.file.sync_all()?;
         let partial_path = self.locator.partial_path().to_path_buf();
         let parent = partial_path.parent().map(Path::to_path_buf);
         let _ = fs::remove_file(&partial_path);
