@@ -81,13 +81,21 @@ class RuntimeController(
 
     fun state(): RuntimeControllerState = current
 
-    fun sessionBinding(capabilityId: String): NativeSessionBinding? =
-        synchronized(lock) {
-            val state = current
-            if (state.lifecycle != RuntimeLifecycle.RUNNING || !state.networkAvailable ||
-                !state.snapshot.hasAuthenticatedCapability(capabilityId)
-            ) null else port.sessionBinding(capabilityId)
-        }
+    fun sessionBinding(capabilityId: String): NativeSessionBinding? {
+        // The port may publish controller callbacks while holding its own lock.
+        // Never hold the controller lock when requesting a port session ticket.
+        val before = current
+        if (before.lifecycle != RuntimeLifecycle.RUNNING || !before.networkAvailable ||
+            !before.snapshot.hasAuthenticatedCapability(capabilityId)
+        ) return null
+        val binding = port.sessionBinding(capabilityId) ?: return null
+        val after = current
+        if (after.lifecycle != RuntimeLifecycle.RUNNING || !after.networkAvailable ||
+            !after.snapshot.hasAuthenticatedCapability(capabilityId) ||
+            after.snapshot.peerDeviceId != before.snapshot.peerDeviceId
+        ) return null
+        return binding
+    }
 
     fun observe(listener: (RuntimeControllerState) -> Unit): AutoCloseable {
         listeners += listener
