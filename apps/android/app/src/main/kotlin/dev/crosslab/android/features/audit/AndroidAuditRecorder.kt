@@ -21,7 +21,7 @@ data class AuditRecordingStatus(
 
 /** One bounded writer per application, independent of identity, policy and UI threads. */
 class AndroidAuditRecorder(
-    private val store: AndroidAuditStore,
+    private val store: OwnerAuditStore,
 ) : AutoCloseable {
     private val tracker = AuditLifecycleTracker()
     private val dropped = AtomicLong()
@@ -88,6 +88,22 @@ class AndroidAuditRecorder(
         } catch (_: RejectedExecutionException) {
             publish(AuditRecordingStatus(null, dropped.incrementAndGet(), true))
             runCatching { callback(Result.failure(IllegalStateException("audit writer queue full"))) }
+        }
+    }
+
+    /** Owner-initiated recovery read is serialized after pending audit writes. */
+    fun refresh(callback: (Result<MobileAuditHistory>) -> Unit = {}) {
+        try {
+            writer.execute {
+                val result = runCatching { store.read() }
+                publish(AuditRecordingStatus(result.getOrNull(), dropped.get(), result.isFailure))
+                runCatching { callback(result) }
+            }
+        } catch (_: RejectedExecutionException) {
+            publish(AuditRecordingStatus(null, dropped.get(), true))
+            runCatching {
+                callback(Result.failure(IllegalStateException("audit writer queue full")))
+            }
         }
     }
 
