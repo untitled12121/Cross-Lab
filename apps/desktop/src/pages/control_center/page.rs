@@ -1021,7 +1021,7 @@ impl ControlCenterPage {
         if !self.clipboard.begin(ClipboardAction::Send) {
             return;
         }
-        if !self.devices.has_authenticated_capability("clipboard.write") {
+        let Some(session) = self.devices.current_session_binding("clipboard.write") else {
             self.clipboard
                 .finish(ClipboardAction::Send, ClipboardResult::NotConnected);
             cx.notify();
@@ -1047,7 +1047,9 @@ impl ControlCenterPage {
                 Err(error) => error.into(),
             };
             let _ = this.update(cx, |page, cx| {
-                let still_allowed = page.devices.has_authenticated_capability("clipboard.write");
+                let still_allowed = page
+                    .devices
+                    .matches_session_binding(session, "clipboard.write");
                 let result = if still_allowed {
                     result
                 } else {
@@ -1065,7 +1067,7 @@ impl ControlCenterPage {
         if !self.clipboard.begin(ClipboardAction::Fetch) {
             return;
         }
-        if !self.devices.has_authenticated_capability("clipboard.read") {
+        let Some(session) = self.devices.current_session_binding("clipboard.read") else {
             self.clipboard
                 .finish(ClipboardAction::Fetch, ClipboardResult::NotConnected);
             cx.notify();
@@ -1083,7 +1085,10 @@ impl ControlCenterPage {
             async move |this, cx| match controller.fetch_clipboard_text().await {
                 Ok(text) => {
                     let _ = this.update(cx, move |page, cx| {
-                        if page.devices.has_authenticated_capability("clipboard.read") {
+                        if page
+                            .devices
+                            .matches_session_binding(session, "clipboard.read")
+                        {
                             cx.write_to_clipboard(ClipboardItem::new_string(text));
                             page.clipboard
                                 .finish(ClipboardAction::Fetch, ClipboardResult::Success);
@@ -1128,12 +1133,12 @@ impl ControlCenterPage {
 
     #[cfg(target_os = "linux")]
     fn choose_file_to_send(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.devices.has_authenticated_capability("files.transfer")
-            || self.file_transfer_send_dialog_open
-            || self.file_transfer.send().active()
-        {
+        if self.file_transfer_send_dialog_open || self.file_transfer.send().active() {
             return;
         }
+        let Some(session) = self.devices.current_session_binding("files.transfer") else {
+            return;
+        };
         let Some(controller) = self.product_presence.as_ref().map(Arc::clone) else {
             self.file_transfer
                 .send_failed(0, 0, FileTransferFailure::NotConnected);
@@ -1160,7 +1165,7 @@ impl ControlCenterPage {
             view.update_in(window, move |page, _, cx| {
                 page.file_transfer_send_dialog_open = false;
                 if let Some(path) = path {
-                    page.start_file_transfer_send(controller, path, cx);
+                    page.start_file_transfer_send(controller, session, path, cx);
                 } else {
                     cx.notify();
                 }
@@ -1174,10 +1179,14 @@ impl ControlCenterPage {
     fn start_file_transfer_send(
         &mut self,
         controller: Arc<DesktopProductPresenceController>,
+        session: crate::features::devices::AuthenticatedSessionBinding,
         path: PathBuf,
         cx: &mut Context<Self>,
     ) {
-        if !self.devices.has_authenticated_capability("files.transfer") {
+        if !self
+            .devices
+            .matches_session_binding(session, "files.transfer")
+        {
             self.file_transfer
                 .send_failed(0, 0, FileTransferFailure::NotConnected);
             cx.notify();
