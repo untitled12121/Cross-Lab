@@ -519,10 +519,18 @@ mod tests {
             ))
         ));
         assert!(!partial_path.exists());
-        assert!(store.load().unwrap().find(source, &offer).unwrap().is_none());
+        assert!(
+            store
+                .load()
+                .unwrap()
+                .find(source, &offer)
+                .unwrap()
+                .is_none()
+        );
 
         let mut replacement =
-            LinuxFileTransferReceiver::create(store, source, offer, final_path.clone(), 25).unwrap();
+            LinuxFileTransferReceiver::create(store, source, offer, final_path.clone(), 25)
+                .unwrap();
         replacement.write_chunk(b"payload", 26).unwrap();
         replacement.finish(27).unwrap();
         assert_eq!(fs::read(&final_path).unwrap(), b"payload");
