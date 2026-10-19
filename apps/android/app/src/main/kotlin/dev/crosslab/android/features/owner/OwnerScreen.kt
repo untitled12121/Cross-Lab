@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,6 +41,9 @@ fun OwnerScreen(
     auditRows: List<String>,
     auditDropped: Long,
     auditNotice: String?,
+    auditUnavailable: Boolean,
+    auditRetryBusy: Boolean,
+    onRetryAudit: () -> Unit,
     onClearAudit: () -> Unit,
     onExportAudit: () -> Unit,
     notificationConsent: NotificationOwnerConsent,
@@ -55,6 +59,9 @@ fun OwnerScreen(
     val snapshot = runtime.snapshot
     var pendingRevoke by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var confirmClearAudit by remember { mutableStateOf(false) }
+    LaunchedEffect(auditUnavailable) {
+        if (auditUnavailable) confirmClearAudit = false
+    }
 
     Column(
         modifier =
@@ -168,9 +175,19 @@ fun OwnerScreen(
                 InfoRow(theme, "More audit events", "${auditRows.size - 24} not shown")
             }
             auditNotice?.let { InfoRow(theme, "History status", it) }
+            if (auditUnavailable) {
+                InfoRow(theme, "Protected store", "Unavailable — retained history not displayed")
+                ControlButton(
+                    theme = theme,
+                    label = if (auditRetryBusy) "Retrying history…" else "Retry protected history",
+                    enabled = !auditRetryBusy,
+                    onClick = onRetryAudit,
+                )
+            }
             ControlButton(
                 theme = theme,
                 label = "Export redacted history",
+                enabled = !auditUnavailable,
                 onClick = onExportAudit,
             )
             if (confirmClearAudit) {
@@ -183,6 +200,7 @@ fun OwnerScreen(
                     theme = theme,
                     label = "Confirm clear history",
                     destructive = true,
+                    enabled = !auditUnavailable,
                     onClick = {
                         confirmClearAudit = false
                         onClearAudit()
@@ -197,6 +215,7 @@ fun OwnerScreen(
                 ControlButton(
                     theme = theme,
                     label = "Clear audit history",
+                    enabled = !auditUnavailable,
                     onClick = { confirmClearAudit = true },
                 )
             }
