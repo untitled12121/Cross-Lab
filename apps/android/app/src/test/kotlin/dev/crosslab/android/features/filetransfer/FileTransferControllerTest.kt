@@ -6,6 +6,27 @@ import org.junit.Test
 
 class FileTransferControllerTest {
     @Test
+    fun throwingObserverCannotInterruptTransferStateDelivery() {
+        val source = FakePort()
+        val controller = FileTransferController(source)
+        val bad = controller.observe { throw IllegalStateException("stale Compose screen") }
+        val stages = mutableListOf<FileTransferStage>()
+        val good = controller.observe { stages += it.stage }
+
+        source.emit(FileTransferStage.TRANSFERRING)
+        source.emit(FileTransferStage.COMPLETED)
+
+        assertEquals(FileTransferStage.COMPLETED, controller.state().stage)
+        assertEquals(
+            listOf(FileTransferStage.IDLE, FileTransferStage.TRANSFERRING, FileTransferStage.COMPLETED),
+            stages,
+        )
+        bad.close()
+        good.close()
+        controller.shutdown()
+    }
+
+    @Test
     fun controller_observes_state_and_releases_subscription() {
         val source = FakePort()
         val controller = FileTransferController(source)

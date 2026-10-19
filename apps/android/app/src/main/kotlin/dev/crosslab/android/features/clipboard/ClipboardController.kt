@@ -1,5 +1,7 @@
 package dev.crosslab.android.features.clipboard
 
+import dev.crosslab.android.features.observers.notifyObservers
+
 import java.util.concurrent.CopyOnWriteArraySet
 
 enum class ClipboardAction {
@@ -61,7 +63,7 @@ class ClipboardController(
 
     fun observe(listener: (ClipboardState) -> Unit): AutoCloseable {
         listeners += listener
-        listener(current)
+        runCatching { listener(current) }
         return AutoCloseable { listeners -= listener }
     }
 
@@ -117,7 +119,7 @@ class ClipboardController(
                 current = updated
                 updated
             }
-        listeners.forEach { it(next) }
+        notifyObservers(listeners, next)
         return true
     }
 }

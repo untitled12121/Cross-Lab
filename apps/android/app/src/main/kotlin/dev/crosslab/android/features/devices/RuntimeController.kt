@@ -1,5 +1,7 @@
 package dev.crosslab.android.features.devices
 
+import dev.crosslab.android.features.observers.notifyObservers
+
 import java.util.concurrent.CopyOnWriteArraySet
 
 interface RuntimePort {
@@ -74,6 +76,7 @@ class RuntimeController(
     private val portSubscription =
         port.observeSnapshots { snapshot ->
             update {
+            val state = it
                 if (it.lifecycle != RuntimeLifecycle.RUNNING) return@update null
                 it.copy(snapshot = snapshot)
             }
@@ -88,7 +91,7 @@ class RuntimeController(
         if (before.lifecycle != RuntimeLifecycle.RUNNING || !before.networkAvailable ||
             !before.snapshot.hasAuthenticatedCapability(capabilityId)
         ) return null
-        val binding = port.sessionBinding(capabilityId) ?: return null
+        val binding = runCatching { port.sessionBinding(capabilityId) }.getOrNull() ?: return null
         val after = current
         if (after.lifecycle != RuntimeLifecycle.RUNNING || !after.networkAvailable ||
             !after.snapshot.hasAuthenticatedCapability(capabilityId) ||
@@ -99,12 +102,13 @@ class RuntimeController(
 
     fun observe(listener: (RuntimeControllerState) -> Unit): AutoCloseable {
         listeners += listener
-        listener(current)
+        runCatching { listener(current) }
         return AutoCloseable { listeners -= listener }
     }
 
     fun onForeground() {
         update {
+            val state = it
             if (it.lifecycle != RuntimeLifecycle.STOPPED) return@update null
             startPort(it)
         }
@@ -128,7 +132,7 @@ class RuntimeController(
             }
         }
         if (current.lifecycle == RuntimeLifecycle.SHUTDOWN) {
-            portSubscription.close()
+            runCatching { portSubscription.close() }
         }
     }
 
@@ -207,10 +211,10 @@ class RuntimeController(
         effect: RuntimePermissionEffect,
     ): Boolean {
         var changed = false
-        update {
-            val snapshot = it.snapshot
-            if (it.lifecycle != RuntimeLifecycle.RUNNING ||
-                !it.networkAvailable ||
+        update { state ->
+            val snapshot = state.snapshot
+            if (state.lifecycle != RuntimeLifecycle.RUNNING ||
+                !state.networkAvailable ||
                 snapshot.peerDeviceId == null ||
                 snapshot.session != RuntimeSession.ACTIVE ||
                 snapshot.trust != RuntimeTrust.TRUSTED ||
@@ -218,8 +222,18 @@ class RuntimeController(
                 snapshot.security != RuntimeSecurity.AUTHENTICATED ||
                 capabilityId !in snapshot.capabilityIds
             ) return@update null
-            changed = port.setPermission(capabilityId, operation, effect)
-            it.copy(snapshot = port.snapshot())
+            runCatching {
+                port.setPermission(capabilityId, operation, effect) to port.snapshot()
+            }.fold(
+                onSuccess = { (applied, updated) ->
+                    changed = applied
+                    state.copy(snapshot = updated)
+                },
+                onFailure = {
+                    changed = false
+                    failClosed(state)
+                },
+            )
         }
         return changed
     }
@@ -231,18 +245,29 @@ class RuntimeController(
         effect: RuntimePermissionEffect,
     ): Boolean {
         var changed = false
-        update {
-            if (it.lifecycle != RuntimeLifecycle.RUNNING ||
-                !it.networkAvailable ||
-                it.snapshot.session != RuntimeSession.ACTIVE ||
-                it.snapshot.trust != RuntimeTrust.TRUSTED ||
-                it.snapshot.connectivity != RuntimeConnectivity.CONNECTED ||
-                it.snapshot.security != RuntimeSecurity.AUTHENTICATED ||
-                capabilityId !in it.snapshot.capabilityIds ||
-                it.snapshot.peerDeviceId != peerDeviceId
+        update { state ->
+            val snapshot = state.snapshot
+            if (state.lifecycle != RuntimeLifecycle.RUNNING ||
+                !state.networkAvailable ||
+                snapshot.session != RuntimeSession.ACTIVE ||
+                snapshot.trust != RuntimeTrust.TRUSTED ||
+                snapshot.connectivity != RuntimeConnectivity.CONNECTED ||
+                snapshot.security != RuntimeSecurity.AUTHENTICATED ||
+                capabilityId !in snapshot.capabilityIds ||
+                snapshot.peerDeviceId != peerDeviceId
             ) return@update null
-            changed = port.setPermissionForPeer(peerDeviceId, capabilityId, operation, effect)
-            it.copy(snapshot = port.snapshot())
+            runCatching {
+                port.setPermissionForPeer(peerDeviceId, capabilityId, operation, effect) to port.snapshot()
+            }.fold(
+                onSuccess = { (applied, updated) ->
+                    changed = applied
+                    state.copy(snapshot = updated)
+                },
+                onFailure = {
+                    changed = false
+                    failClosed(state)
+                },
+            )
         }
         return changed
     }
@@ -279,7 +304,7 @@ class RuntimeController(
             )
         }
         if (didShutdown) {
-            portSubscription.close()
+            runCatching { portSubscription.close() }
             runCatching { port.shutdown() }
         }
     }
@@ -304,7 +329,7 @@ class RuntimeController(
         val stopped = runCatching { port.stop() }.isSuccess
         if (!stopped) {
             runCatching { port.shutdown() }
-            portSubscription.close()
+            runCatching { portSubscription.close() }
         }
         return state.copy(
             lifecycle = if (stopped) RuntimeLifecycle.STOPPED else RuntimeLifecycle.SHUTDOWN,
@@ -320,6 +345,6 @@ class RuntimeController(
                 current = updated
                 updated
             }
-        listeners.forEach { it(next) }
+        notifyObservers(listeners, next)
     }
 }

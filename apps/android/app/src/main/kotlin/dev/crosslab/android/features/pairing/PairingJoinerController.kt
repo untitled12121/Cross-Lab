@@ -1,5 +1,7 @@
 package dev.crosslab.android.features.pairing
 
+import dev.crosslab.android.features.observers.notifyObservers
+
 import android.content.Context
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.Executors
@@ -64,7 +66,7 @@ class PairingJoinerController(
 
     fun observe(listener: (PairingJoinerState) -> Unit): AutoCloseable {
         listeners += listener
-        listener(current)
+        runCatching { listener(current) }
         return AutoCloseable { listeners -= listener }
     }
 
@@ -221,14 +223,16 @@ class PairingJoinerController(
                     message = "Device paired successfully.",
                 ),
             )
-            onPaired()
+            runCatching { onPaired() }
         }
     }
 
     private fun cancelActive(notify: Boolean) {
         generation.incrementAndGet()
-        discoveryHandle?.close()
+        val oldDiscovery = discoveryHandle
         discoveryHandle = null
+        // A discovery adapter failure must not prevent cancelling verified pairing.
+        runCatching { oldDiscovery?.close() }
 
         val activeSession = session
         session = null
@@ -270,7 +274,7 @@ class PairingJoinerController(
 
     private fun publish(state: PairingJoinerState) {
         current = state
-        listeners.forEach { it(state) }
+        notifyObservers(listeners, state)
     }
 
     override fun close() {

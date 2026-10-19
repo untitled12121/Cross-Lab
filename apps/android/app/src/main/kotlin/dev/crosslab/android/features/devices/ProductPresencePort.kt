@@ -1,5 +1,7 @@
 package dev.crosslab.android.features.devices
 
+import dev.crosslab.android.features.observers.notifyObservers
+
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
@@ -153,7 +155,7 @@ class ProductPresencePort(
 
     override fun observeSubscription(listener: (Boolean) -> Unit): AutoCloseable {
         subscriptionListeners += listener
-        listener(subscribed)
+        runCatching { listener(subscribed) }
         return AutoCloseable { subscriptionListeners -= listener }
     }
     private val events =
@@ -450,7 +452,7 @@ class ProductPresencePort(
 
     override fun observeSnapshots(listener: (RuntimeSnapshot) -> Unit): AutoCloseable {
         listeners += listener
-        listener(current)
+        runCatching { listener(current) }
         return AutoCloseable { listeners -= listener }
     }
 
@@ -827,25 +829,34 @@ class ProductPresencePort(
     }
 
     private fun publishLocked(snapshot: RuntimeSnapshot, sessionId: String? = null) {
-        currentSessionBinding = authenticatedSessionBinding(snapshot, sessionId)
+        val binding = authenticatedSessionBinding(snapshot, sessionId)
         val activeSubscription =
-            currentSessionBinding != null &&
+            binding != null &&
                 snapshot.canMirrorNotifications() &&
-                notificationConsent.current(foreground = true).locallyAvailable() &&
+                runCatching {
+                    notificationConsent.current(foreground = true).locallyAvailable()
+                }.getOrDefault(false) &&
                 runCatching { agent?.notificationSubscribed() == true }.getOrDefault(false)
+
+        // Commit security state before notifying unrelated UI and platform observers.
+        currentSessionBinding = binding
+        current = snapshot
         if (activeSubscription != subscribed) {
             subscribed = activeSubscription
-            subscriptionListeners.forEach { it(subscribed) }
+            notifyObservers(subscriptionListeners, subscribed)
         }
         agent?.let { active ->
-            fileTransfer?.sessionConnected(
-                active,
-                currentSessionBinding != null &&
-                    snapshot.hasAuthenticatedCapability("files.transfer"),
-            )
+            runCatching {
+                fileTransfer?.sessionConnected(
+                    active,
+                    binding != null && snapshot.hasAuthenticatedCapability("files.transfer"),
+                )
+            }.onFailure {
+                // Disconnect a failing adapter instead of retaining its previous session.
+                runCatching { fileTransfer?.detach(active) }
+            }
         }
-        current = snapshot
-        listeners.forEach { it(snapshot) }
+        notifyObservers(listeners, snapshot)
     }
 }
 
