@@ -1,5 +1,7 @@
 package dev.crosslab.android.features.devices
 
+import dev.crosslab.android.features.observers.notifyObservers
+
 import java.util.concurrent.CopyOnWriteArraySet
 
 interface RuntimePort {
@@ -99,7 +101,7 @@ class RuntimeController(
 
     fun observe(listener: (RuntimeControllerState) -> Unit): AutoCloseable {
         listeners += listener
-        listener(current)
+        runCatching { listener(current) }
         return AutoCloseable { listeners -= listener }
     }
 
@@ -320,6 +322,6 @@ class RuntimeController(
                 current = updated
                 updated
             }
-        listeners.forEach { it(next) }
+        notifyObservers(listeners, next)
     }
 }

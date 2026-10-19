@@ -1,5 +1,7 @@
 package dev.crosslab.android.features.devices
 
+import dev.crosslab.android.features.observers.notifyObservers
+
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
@@ -153,7 +155,7 @@ class ProductPresencePort(
 
     override fun observeSubscription(listener: (Boolean) -> Unit): AutoCloseable {
         subscriptionListeners += listener
-        listener(subscribed)
+        runCatching { listener(subscribed) }
         return AutoCloseable { subscriptionListeners -= listener }
     }
     private val events =
@@ -450,7 +452,7 @@ class ProductPresencePort(
 
     override fun observeSnapshots(listener: (RuntimeSnapshot) -> Unit): AutoCloseable {
         listeners += listener
-        listener(current)
+        runCatching { listener(current) }
         return AutoCloseable { listeners -= listener }
     }
 
@@ -835,7 +837,7 @@ class ProductPresencePort(
                 runCatching { agent?.notificationSubscribed() == true }.getOrDefault(false)
         if (activeSubscription != subscribed) {
             subscribed = activeSubscription
-            subscriptionListeners.forEach { it(subscribed) }
+            notifyObservers(subscriptionListeners, subscribed)
         }
         agent?.let { active ->
             fileTransfer?.sessionConnected(
@@ -845,7 +847,7 @@ class ProductPresencePort(
             )
         }
         current = snapshot
-        listeners.forEach { it(snapshot) }
+        notifyObservers(listeners, snapshot)
     }
 }
 

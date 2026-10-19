@@ -1,5 +1,7 @@
 package dev.crosslab.android.features.filetransfer
 
+import dev.crosslab.android.features.observers.notifyObservers
+
 import android.content.Context
 import android.net.Uri
 import java.util.concurrent.CopyOnWriteArraySet
@@ -65,7 +67,7 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
 
     override fun observeFileTransfer(listener: (FileTransferState) -> Unit): AutoCloseable {
         listeners += listener
-        listener(current)
+        runCatching { listener(current) }
         return AutoCloseable { listeners -= listener }
     }
 
@@ -512,7 +514,7 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
 
     private fun publishLocked(state: FileTransferState) {
         current = state
-        listeners.forEach { it(state) }
+        notifyObservers(listeners, state)
     }
 
     private fun state(
