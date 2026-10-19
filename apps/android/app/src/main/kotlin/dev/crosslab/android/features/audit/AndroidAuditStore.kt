@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.AtomicFile
+import java.io.FileNotFoundException
 import java.nio.ByteBuffer
 import java.security.KeyStore
 import java.security.MessageDigest
@@ -68,13 +69,15 @@ class AndroidAuditStore(context: Context) {
 
     private fun readBundle(): AuditBundle? {
         val aliases = aliases()
-        if (!stateFile.baseFile.isFile) {
+        // AtomicFile may have a recoverable backup even when its base file is absent.
+        val bytes = readAtomicAuditBytes(stateFile::readFully)
+        if (bytes == null) {
             if (aliases.isNotEmpty()) {
                 throw AuditStoreUnavailable("committed audit history is missing")
             }
             return null
         }
-        val bundle = AuditBundle.decode(stateFile.readFully())
+        val bundle = AuditBundle.decode(bytes)
         val alias = alias(bundle.revision)
         if (aliases.size != 1 || aliases.single() != alias) {
             throw AuditStoreUnavailable("audit currentness keys are inconsistent")
@@ -113,7 +116,13 @@ class AndroidAuditStore(context: Context) {
         }
         val unsigned = AuditBundle(revision, payload, ByteArray(MAC_BYTES))
         val next = unsigned.copy(mac = sign(key, unsigned.signedBytes()))
-        val output = stateFile.startWrite()
+        val output =
+            try {
+                stateFile.startWrite()
+            } catch (error: Throwable) {
+                runCatching { keyStore.deleteEntry(keyAlias) }
+                throw error
+            }
         try {
             output.write(next.encode())
             output.fd.sync()
@@ -144,6 +153,15 @@ class AndroidAuditStore(context: Context) {
         private const val MAC_BYTES = 32
     }
 }
+
+
+/** Only confirmed absence is first-run; other storage failures remain fatal. */
+internal fun readAtomicAuditBytes(read: () -> ByteArray): ByteArray? =
+    try {
+        read()
+    } catch (_: FileNotFoundException) {
+        null
+    }
 
 class AuditStoreUnavailable(message: String) : IllegalStateException(message)
 

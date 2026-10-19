@@ -1,7 +1,10 @@
 package dev.crosslab.android.features.audit
 
+import java.io.FileNotFoundException
+import java.io.IOException
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
@@ -22,6 +25,28 @@ class AuditBundleTest {
         val tampered = bundle.encode().also { it[0] = 99 }
         assertThrows(AuditStoreUnavailable::class.java) {
             AuditBundle.decode(tampered)
+        }
+    }
+
+    @Test
+    fun atomicBackupReadIsAttemptedWithoutPrecheckingBaseFile() {
+        val bytes = byteArrayOf(3, 4, 5)
+        var readAttempts = 0
+        assertArrayEquals(
+            bytes,
+            readAtomicAuditBytes {
+                readAttempts++
+                bytes
+            },
+        )
+        assertEquals(1, readAttempts)
+    }
+
+    @Test
+    fun missingAuditAndUnavailableStorageAreNotConfused() {
+        assertNull(readAtomicAuditBytes { throw FileNotFoundException("first run") })
+        assertThrows(IOException::class.java) {
+            readAtomicAuditBytes { throw IOException("storage failure") }
         }
     }
 
