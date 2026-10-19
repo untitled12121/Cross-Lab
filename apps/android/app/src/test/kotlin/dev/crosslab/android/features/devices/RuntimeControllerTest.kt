@@ -418,7 +418,8 @@ class RuntimeControllerTest {
         controller.onForeground()
 
         assertEquals(RuntimeLifecycle.STOPPED, controller.state().lifecycle)
-        assertEquals(RuntimeSnapshot.disconnected(), controller.state().snapshot)
+        assertEquals(RuntimePresence.FAILED, controller.state().snapshot.presence)
+        assertNull(controller.state().snapshot.peerDeviceId)
         assertEquals(1, port.starts)
         assertEquals(1, port.stops)
 
