@@ -39,8 +39,8 @@ use crate::{
     },
     pages::control_center::{
         _components::{
-            clipboard_panel, devices_content, file_transfer_panel, owner_content,
-            pairing_invitation_panel,
+            DevicesContentSlots, clipboard_panel, devices_content, file_transfer_panel,
+            owner_content, pairing_invitation_panel,
         },
         layout::control_center_layout,
     },
@@ -2004,11 +2004,13 @@ impl Render for ControlCenterPage {
                 &self.devices,
                 &saved_peers,
                 additional_saved_peers,
-                Some(actions),
-                pairing_panel,
-                clipboard_controls,
-                file_transfer_controls,
-                self.notice.as_deref(),
+                DevicesContentSlots {
+                    actions: Some(actions),
+                    pairing: pairing_panel,
+                    clipboard: clipboard_controls,
+                    file_transfer: file_transfer_controls,
+                    notice: self.notice.as_deref(),
+                },
                 cx,
             ),
             Section::Owner => owner_content(

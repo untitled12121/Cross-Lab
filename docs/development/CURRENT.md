@@ -2,6 +2,13 @@
 
 This file is the durable resume guide for active Cross-Lab development. Git/code/tests are factual state; this file records the intended handoff.
 
+## Active checkpoint — 2026-10-19 (Phase 2 inventory parity and larger batch workflow)
+
+- **Integration:** Android saved trusted-device inventory merged in [PR #82](https://github.com/untitled12121/Cross-Lab/pull/82) as `1bff7cb`; its exact source [CI 39214044879](https://github.com/untitled12121/Cross-Lab/actions/runs/39214044879) passed formatting, Rust and Android.
+- **Linux follow-up:** [PR #83](https://github.com/untitled12121/Cross-Lab/pull/83) now adds the saved trusted-device panel to GPUI without treating LAN sightings as identity; its UI panel composition was refactored into typed `DevicesContentSlots` after the initial Clippy 9-argument warning. The final CI result for this reconciled head is **pending**. The previous head passed Android and formatting but failed Clippy; do not mark it green.
+- **Development strategy:** implement substantial cohesive Phase 2 batches before consolidated verification, avoid CI polling and one-push-per-small-change, preserve focused security tests, commit/push durable milestones, and keep normal commit messages. No CI suppressions or premature release claims.
+- **Next engineering slice:** finish Linux inventory integration and address the Phase 2 normal QR/LAN routing and recovery paths in a separate larger coding batch. Owner real-device evidence remains required before a Phase 2 / Cross-Lab 0.1 release; no Phase 3.
+
 ## Historical agent workflow and first owner handoff (2026-10-02)
 
 **Read the root [AGENTS.md](../../AGENTS.md) at the start of every coding session.** The requested development mode is **batch-first**: spend roughly an hour of active effort on an integrated, reviewable feature set when the work warrants it. Make small local recovery commits, but do not push/retrigger broad CI for every tiny change. Use focused checks for sensitive boundaries while coding; after the batch run format/lint/build/tests as relevant, then make one consolidated push, examine CI once complete, and consolidate fixes. Preserve a Git checkpoint when context may be lost. Docs-only changes may use `[skip ci]` where CI has no useful work.
@@ -13,13 +20,6 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 **Full Phase 2 target:** Finish reliable Linux↔Android discovery/pairing, authenticated presence/reconnect, per-device policy, clipboard, resumable file transfer, notifications, owner-visible privacy-safe audit/history, production device revocation/removal, and evidence on actual devices. The broad UI redesign can follow functional fixes, but Phase 2 release UX must be usable and accurate. Notifications need an approved compatibility/security ADR; Android→Linux v1 was suggested, **not approved**. Existing architecture requires explicit approval for material wire/trust/storage changes. Keep Phase 3 out of scope. Do not mark Phase 2 complete without CI plus owner-hardware evidence. Darkmatter/System-dark remains palette-blocked.
 
 **Exact resume action:** Inspect `main`, active PR #79, CI result, and actual code; fix any CI failures in a consolidated batch; once available have the owner retest normal desktop-generated QR and Android pairing, then proceed with the remaining Phase 2 implementation in cohesive batches. Keep `CURRENT.md` updated at verified milestones.
-
-## Active checkpoint — 2026-10-19 (Linux trusted-device inventory)
-
-- **Branch:** `feat/phase2-linux-saved-trusted-inventory` based on merged scanner/accessibility PR #81 source `bc2cbcea545ac52464bb53671a866d95d79f396c`. Linux GPUI now exposes durable saved trusted peers separately from the active session, reading the existing `OwnerFeatureState` product identity state. The feature view receives only bounded presentation rows, not networking or storage authority.
-- **Security:** saved peers are identified by full `DeviceId` from the durable identity state; an active marker additionally requires trusted, connected, active, authenticated runtime status and exact full-ID match. Display prefixes cannot substitute for identity, and DNS-SD sightings do not grant online status. No new wire/schema changes or discovery activity.
-- **Tests:** added Rust projection regressions for offline saved trust, same-prefix different full ID, closed session, and 24-row display limit. Final feature-head Rust/GPUI CI remains pending; physical Linux/Android evidence remains uncollected.
-- **Next:** review exact-head CI, reconcile other Phase 2 changes in `main`, merge if green, then continue device/hardware acceptance and UX cleanup. Do not claim Cross-Lab 0.1 ready or begin Phase 3.
 
 ## Active checkpoint — 2026-10-19 (Android scanner teardown and accessible controls)
 
@@ -350,3 +350,11 @@ Following successful CI on PR #79 (`36986048412`), the owner requested a larger 
 - A narrow follow-on security review found a session notification subscribe approval **deadline-ordering race**: `NotificationInbox::complete` accepted the correct request/session even if the callback was scheduled at/after the ten-second deadline but before the timeout branch executed. Staged fix checks `tokio::time::Instant::now() < deadline` on every response before accepting, leaves expired pending state for the timer to cancel, and adds deterministic exact-boundary/early response tests. No v3 wire/protocol change or permission grant.
 - Owner audit classifiers could also omit a first-operation direct terminal failure/deny from `Idle`. The narrow fix records that outcome once even without a preceding progress state, and Android distinguishes consecutive send/receive directions. Metadata and redaction remain unchanged, with regression tests.
 - **New follow-on source is unverified** until its exact-head CI succeeds. Physical Linux+Android acceptance [worksheet](../research/Phase2-product-acceptance.md) remains entirely **pending**: real normal QR, reciprocal trust/reconnect, permission gates, clipboard/file transfer, notification opt-out and private redaction, protected audit read/export/clear/recovery, and permanent signed revocation **last with disposable identity**. PR #79 must stay unmerged to main until that real-device evidence is collected and all failures are resolved; do not start Phase 3.
+
+## 2026-10-19 — Saved trusted-device inventory (feature branch)
+
+- **Branch:** `feat/phase2-android-saved-trusted-inventory`, based on the verified PR #80 merge `050a3093e101cd7bd75c44a9f3f2119bc223fe8c`. This slice is independent of PR #81 scanner/accessibility and must be reconciled with `main` before merging.
+- **Implemented:** Android Devices displays the bounded, durable trusted-peer inventory read through the existing native product identity repository. The UI explicitly distinguishes saved trust from authenticated online presence; only full exact device ID equality plus trusted, connected, active, authenticated session states produce an active label. DNS-SD sightings never supply identity.
+- **Regression tests:** offline inventory visibility, lookalike peer-ID non-equivalence, disconnected-session behavior, bounded/deduplicated display. No new on-disk trust format, protocol, network discovery or privilege grant.
+- **Verification:** feature branch source committed; exact-head CI/Android builds still pending at checkpoint. Hardware acceptance remains uncollected.
+- **Next:** review exact-head CI, resolve confirmed failures, merge after green; then address remaining Phase 2 native UX and real Linux/Android validation before release. Phase 3 remains deferred.

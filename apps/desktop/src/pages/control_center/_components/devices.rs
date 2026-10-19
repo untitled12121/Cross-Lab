@@ -12,17 +12,28 @@ use gpui_kit::{
     App, Div, ParentElement as _, Styled as _, component::theme::ActiveTheme as _, div, px,
 };
 
+pub(crate) struct DevicesContentSlots<'a> {
+    pub actions: Option<Div>,
+    pub pairing: Option<Div>,
+    pub clipboard: Option<Div>,
+    pub file_transfer: Option<Div>,
+    pub notice: Option<&'a str>,
+}
+
 pub(crate) fn devices_content(
     state: &DevicesFeatureState,
     saved_peers: &[SavedTrustedPeerPresentation],
     additional_saved_peers: usize,
-    actions: Option<Div>,
-    pairing: Option<Div>,
-    clipboard: Option<Div>,
-    file_transfer: Option<Div>,
-    notice: Option<&str>,
+    slots: DevicesContentSlots<'_>,
     cx: &App,
 ) -> Div {
+    let DevicesContentSlots {
+        actions,
+        pairing,
+        clipboard,
+        file_transfer,
+        notice,
+    } = slots;
     let theme = cx.theme();
     let appearance = active_theme(cx);
 
