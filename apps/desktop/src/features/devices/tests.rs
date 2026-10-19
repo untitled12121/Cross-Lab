@@ -157,6 +157,56 @@ fn native_capability_actions_require_current_authenticated_session() {
 }
 
 #[test]
+fn old_session_results_are_rejected_after_reconnect_or_peer_change() {
+    use super::AuthenticatedSessionBinding;
+    use crosslab_policy::SessionId;
+
+    let old = DeviceId::from_bytes([0x44; 32]);
+    let newer = DeviceId::from_bytes([0x45; 32]);
+    let first = AuthenticatedSessionBinding {
+        peer: old,
+        session: SessionId::from_bytes([0x71; 32]),
+    };
+    let mut device = DevicePresentation::from_fields(StatusFields {
+        owner_id: None,
+        local_device_id: None,
+        peer_device_id: Some(old),
+        trust_state: TrustState::Trusted,
+        connectivity: ConnectivityState::Connected,
+        session_state: SessionState::Active,
+        protocol_version: None,
+        network_class: NetworkClass::Local,
+        security_class: TransportSecurityClass::AuthenticatedConfidentialChannel,
+        metered: None,
+        capability_count: 1,
+    });
+    device.capability_ids.push("clipboard.read".to_owned());
+    let mut state = DevicesFeatureState::empty();
+    state.presence = PresenceDisplay::Online;
+    state.current = Some(device);
+    state.session_binding = Some(first);
+    assert!(state.matches_session_binding(first, "clipboard.read"));
+    assert!(!state.matches_session_binding(first, "files.transfer"));
+    assert!(!format!("{state:?}").contains("71717171"));
+
+    state.session_binding = Some(AuthenticatedSessionBinding {
+        peer: old,
+        session: SessionId::from_bytes([0x72; 32]),
+    });
+    assert!(!state.matches_session_binding(first, "clipboard.read"));
+
+    state.session_binding = Some(first);
+    state.current.as_mut().unwrap().peer_device_id = Some(newer);
+    assert!(!state.matches_session_binding(first, "clipboard.read"));
+
+    state.current.as_mut().unwrap().peer_device_id = Some(old);
+    state.presence = PresenceDisplay::Reconnecting;
+    assert!(!state.matches_session_binding(first, "clipboard.read"));
+    state.clear();
+    assert!(state.current_session_binding("clipboard.read").is_none());
+}
+
+#[test]
 fn saved_trusted_device_presentation_is_bounded() {
     let ids = (0..30)
         .map(|value| {
