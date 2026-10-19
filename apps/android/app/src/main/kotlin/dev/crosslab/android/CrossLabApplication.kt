@@ -77,14 +77,16 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
     fun notificationPublisher(): NotificationPublisher? = notificationPublisher
 
     fun notificationPermissionChanged() {
-        // Immediate capture gate; reload of protected trust/role state is off the UI thread.
-        notificationPublisher?.disableNotifications()
-        consentRestart.execute {
-            if (::runtimeController.isInitialized &&
-                runtimeController.state().lifecycle ==
-                    dev.crosslab.android.features.devices.RuntimeLifecycle.RUNNING
-            ) {
-                runtimeController.reloadTrust()
+        // OS callbacks must still request a trust reload if native subscription teardown fails.
+        runCatching { notificationPublisher?.disableNotifications() }
+        runCatching {
+            consentRestart.execute {
+                if (::runtimeController.isInitialized &&
+                    runtimeController.state().lifecycle ==
+                        dev.crosslab.android.features.devices.RuntimeLifecycle.RUNNING
+                ) {
+                    runCatching { runtimeController.reloadTrust() }
+                }
             }
         }
     }
@@ -188,20 +190,22 @@ class CrossLabApplication : Application(), DefaultLifecycleObserver {
     }
 
     override fun onStop(owner: LifecycleOwner) {
-        if (pairingController.state().active) pairingController.cancel()
+        if (pairingController.state().active) {
+            runCatching { pairingController.cancel() }
+        }
         runtimeController.onBackground()
     }
 
     override fun onTerminate() {
-        connectivityManager.unregisterNetworkCallback(networkCallback)
-        ProcessLifecycleOwner.get().lifecycle.removeObserver(this)
-        auditObservations.forEach(AutoCloseable::close)
+        runCatching { connectivityManager.unregisterNetworkCallback(networkCallback) }
+        runCatching { ProcessLifecycleOwner.get().lifecycle.removeObserver(this) }
+        auditObservations.forEach { runCatching { it.close() } }
         auditObservations.clear()
-        pairingController.close()
-        clipboardController.shutdown()
-        fileTransferController.shutdown()
-        runtimeController.shutdown()
-        auditRecorder.close()
+        runCatching { pairingController.close() }
+        runCatching { clipboardController.shutdown() }
+        runCatching { fileTransferController.shutdown() }
+        runCatching { runtimeController.shutdown() }
+        runCatching { auditRecorder.close() }
         consentRestart.shutdownNow()
         super.onTerminate()
     }
