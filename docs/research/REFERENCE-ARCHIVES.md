@@ -1,40 +1,52 @@
-# Uploaded Reference Archives — Phase 2 Retention Guide
+# Uploaded Reference Archives — Retention Audit
 
-**2026-10-19 · Advisory only.** These 24 ZIP archives were uploaded as Project Sources for research. Git code/tests and approved ADRs govern Cross-Lab; deleting a Project Source does not delete code already in Cross-Lab. This classification is based on archive names, the current roadmap and upstream project descriptions where identifiable—not a byte-by-byte audit of every archived revision. Reinspect license and actual archive version before copying any source.
+**2026-10-19 — Corrected retention policy.** The owner wants to free Project Source slots **only for repositories whose intended Cross-Lab functionality is completed and whose reference code is no longer needed for remaining engineering or acceptance**. A repository being relevant to a later phase is **not** a reason to remove it. Previous advice recommending immediate removal of 17 sources was incorrect and is withdrawn.
 
-## Keep while completing Phase 2 (6)
+## Removal decision
 
-| Project source | Current value |
+**Confirmed safe to remove today: none (0/24 archives).** The current roadmap reports Phase 2 Linux + Android MVP as active, with unresolved hardware acceptance and reliability/UX work. No completed-feature reference has been verified to be entirely unnecessary for outstanding work. A milestone marked “implemented” does not by itself establish that its upstream reference is disposable.
+
+Treat every uploaded archive as retained by default until a feature-specific code/reuse audit shows (1) its intended behavior is complete, (2) relevant tests and required platform acceptance are complete, (3) no ongoing fix or planned future feature still needs the reference, and (4) the upstream identity/license is understood. Verify these facts before suggesting a deletion; do not delete Project Sources automatically.
+
+## Keep — active Phase 2 and reusable foundations (7)
+
+| Archive | Why keep it |
 | --- | --- |
-| `gpui-kit.zip` | Native desktop UI/components and design-system integration |
-| `uniffi-rs.zip` | Shared Rust ↔ Kotlin binding/debugging patterns |
-| `quinn.zip` | QUIC transport, pairing, session and connection recovery troubleshooting |
-| `cosmic-ext-connect-core.zip` | Linux peer integration/lifecycle reference |
-| `kdeconnect-kde.zip` | Linux/Android capability and permission UX behavior reference |
-| `syncthing.zip` | Transfer recovery, safe streaming and integrity patterns |
+| `gpui-kit.zip` | GPUI Kit is part of the active desktop UI architecture and ongoing UX improvements |
+| `uniffi-rs.zip` | Rust ↔ Kotlin bindings are used during Android integration and may be needed for debugging |
+| `quinn.zip` | Quinn transport milestone was implemented, but normal product pairing/reconnection still needs refinement and physical evidence |
+| `cosmic-ext-connect-core.zip` | Reference for Linux device integration, discovery and lifecycle behavior |
+| `kdeconnect-kde.zip` | Reference for cross-device permissions, notifications, clipboard and other Phase 2 capabilities |
+| `syncthing.zip` | Streaming, resumable transfer and integrity/recovery ideas while Phase 2 file transfer is being accepted |
+| `FlyingCarpet.zip` | File-transfer reference: initial implementation exists, but Phase 2 integrity/resume/cancel acceptance remains unfinished |
 
-The last three are optional once their Phase 2 behavior is stable. They are examples, not license-free code libraries.
+Some code in these areas is already integrated. **That does not establish that the references have no remaining value.**
 
-## Good candidates to remove from ChatGPT Project Sources now (17)
+## Keep — features not yet completed or later phases (16)
 
-| Archive(s) | Why not needed as always-loaded Phase 2 references |
+| Archives | Planned or still-evaluable area |
 | --- | --- |
-| `btleplug.zip`, `nusb.zip` | Phase 3 BLE/USB transports |
-| `iroh.zip`, `rust-libp2p.zip` | Deferred remote/P2P transport evaluation (ADR-0009 remains authoritative) |
-| `cpal.zip` | Later realtime audio |
-| `rustdesk.zip`, `scrcpy.zip`, `FreeRDP.zip`, `xcap.zip`, `enigo.zip` | Later screen capture, remote desktop and input control |
-| `automerge.zip` | Later distributed state/synchronization |
-| `tough.zip` | Later secure updater/recovery |
-| `osquery.zip` | Later system inventory/advanced host management |
-| `pcbu-desktop.zip` | Later cross-device authentication/unlock; upstream uses GPL-3.0 |
-| `fungi.zip` | Later device app platform/distributed services |
-| `reconya.zip` | LAN scanning/inventory is not Cross-Lab's approved passive, privacy-preserving Phase 2 DNS-SD model; public upstream is CC BY-NC 4.0 |
-| `FlyingCarpet.zip` | File transfer reference largely superseded by existing Cross-Lab single-file resume/Quinn code; retain Syncthing for targeted recovery reference |
+| `btleplug.zip`, `nusb.zip` | BLE and USB/device transport |
+| `iroh.zip`, `rust-libp2p.zip` | Future P2P, Internet and route evaluation |
+| `cpal.zip` | Realtime audio |
+| `rustdesk.zip`, `scrcpy.zip`, `FreeRDP.zip`, `xcap.zip`, `enigo.zip` | Remote screen, display capture and input control |
+| `automerge.zip` | Distributed state and synchronization |
+| `tough.zip` | Secure updates/recovery |
+| `osquery.zip` | Host inventory/management |
+| `pcbu-desktop.zip` | Cross-device authentication/unlock |
+| `fungi.zip` | Later distributed/device application ideas |
+| `reconya.zip` | Discovery/inventory research; not an approved replacement for the Phase 2 DNS-SD model. Retain pending a deliberate relevance/license decision, not because active scanning is approved |
 
-## Inspect before removal (1)
+Retaining a reference does **not** authorize using its architecture or code. Approved Cross-Lab ADRs, least-privilege privacy boundaries, upstream licenses, maintenance and platform fit still govern reuse.
 
-`another.zip` has no unambiguous project identity from its name. Determine its upstream project and license before deciding; do not assume what code it contains.
+## Keep — unidentified (1)
 
-**Keep permanently:** `CrossLab-Master-Architecture-and-Development-Plan.md` (governing uploaded architecture). Approved repository revisions/ADRs are authoritative for implementation. Archived references can be cloned again on demand when their phase becomes active.
+`another.zip` does not identify its contents by filename. Inspect its archive metadata and license before any removal decision.
 
-**Cleanup responsibility:** Project Source membership is controlled in ChatGPT Project settings, not by Git. This document records recommendations only; it does not remove any Project uploads.
+## Permanent architectural reference (not one of the 24 ZIPs)
+
+Keep `CrossLab-Master-Architecture-and-Development-Plan.md`, with accepted repository revisions and ADRs governing implementation changes.
+
+## When space is needed
+
+First audit which **completed** feature references are genuinely redundant. Only then propose precise deletions, with the relevant completed milestone and evidence that the reference is no longer needed. If no such source is confirmed, leave all Project Sources in place and ask the owner before replacing any. Git documentation cannot remove ChatGPT Project Sources; the owner controls their membership.
