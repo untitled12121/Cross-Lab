@@ -5,8 +5,8 @@ use crosslab_protocol::ProtocolVersion;
 use crosslab_runtime::ConnectivityState;
 
 use super::{
-    ConnectivityDisplay, DevicePresentation, DevicesFeatureState, NetworkDisplay,
-    SecurityDisplay, SessionDisplay, StatusFields, TrustDisplay,
+    ConnectivityDisplay, DevicePresentation, DevicesFeatureState, NetworkDisplay, SecurityDisplay,
+    SessionDisplay, StatusFields, TrustDisplay,
 };
 
 #[test]
