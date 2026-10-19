@@ -1021,6 +1021,12 @@ impl ControlCenterPage {
         if !self.clipboard.begin(ClipboardAction::Send) {
             return;
         }
+        if !self.devices.has_authenticated_capability("clipboard.write") {
+            self.clipboard
+                .finish(ClipboardAction::Send, ClipboardResult::NotConnected);
+            cx.notify();
+            return;
+        }
         let Some(controller) = self.product_presence.as_ref().map(Arc::clone) else {
             self.clipboard
                 .finish(ClipboardAction::Send, ClipboardResult::Unavailable);
@@ -1041,6 +1047,12 @@ impl ControlCenterPage {
                 Err(error) => error.into(),
             };
             let _ = this.update(cx, |page, cx| {
+                let still_allowed = page.devices.has_authenticated_capability("clipboard.write");
+                let result = if still_allowed {
+                    result
+                } else {
+                    ClipboardResult::Cancelled
+                };
                 page.clipboard.finish(ClipboardAction::Send, result);
                 cx.notify();
             });
@@ -1051,6 +1063,12 @@ impl ControlCenterPage {
     #[cfg(target_os = "linux")]
     fn fetch_clipboard(&mut self, cx: &mut Context<Self>) {
         if !self.clipboard.begin(ClipboardAction::Fetch) {
+            return;
+        }
+        if !self.devices.has_authenticated_capability("clipboard.read") {
+            self.clipboard
+                .finish(ClipboardAction::Fetch, ClipboardResult::NotConnected);
+            cx.notify();
             return;
         }
         let Some(controller) = self.product_presence.as_ref().map(Arc::clone) else {
@@ -1065,9 +1083,14 @@ impl ControlCenterPage {
             async move |this, cx| match controller.fetch_clipboard_text().await {
                 Ok(text) => {
                     let _ = this.update(cx, move |page, cx| {
-                        cx.write_to_clipboard(ClipboardItem::new_string(text));
-                        page.clipboard
-                            .finish(ClipboardAction::Fetch, ClipboardResult::Success);
+                        if page.devices.has_authenticated_capability("clipboard.read") {
+                            cx.write_to_clipboard(ClipboardItem::new_string(text));
+                            page.clipboard
+                                .finish(ClipboardAction::Fetch, ClipboardResult::Success);
+                        } else {
+                            page.clipboard
+                                .finish(ClipboardAction::Fetch, ClipboardResult::Cancelled);
+                        }
                         cx.notify();
                     });
                 }
@@ -1105,7 +1128,10 @@ impl ControlCenterPage {
 
     #[cfg(target_os = "linux")]
     fn choose_file_to_send(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.file_transfer_send_dialog_open || self.file_transfer.send().active() {
+        if !self.devices.has_authenticated_capability("files.transfer")
+            || self.file_transfer_send_dialog_open
+            || self.file_transfer.send().active()
+        {
             return;
         }
         let Some(controller) = self.product_presence.as_ref().map(Arc::clone) else {
@@ -1151,6 +1177,12 @@ impl ControlCenterPage {
         path: PathBuf,
         cx: &mut Context<Self>,
     ) {
+        if !self.devices.has_authenticated_capability("files.transfer") {
+            self.file_transfer
+                .send_failed(0, 0, FileTransferFailure::NotConnected);
+            cx.notify();
+            return;
+        }
         let display_name = path
             .file_name()
             .and_then(|name| name.to_str())
@@ -1173,6 +1205,9 @@ impl ControlCenterPage {
 
     #[cfg(target_os = "linux")]
     fn retry_file_transfer_send(&mut self, cx: &mut Context<Self>) {
+        if !self.devices.has_authenticated_capability("files.transfer") {
+            return;
+        }
         let Some(controller) = self.product_presence.as_ref().map(Arc::clone) else {
             return;
         };
@@ -1800,8 +1835,7 @@ impl Render for ControlCenterPage {
                 .capability_ids()
                 .iter()
                 .any(|id| id == "clipboard.read");
-            let session_ready = device.connectivity() == ConnectivityDisplay::Connected
-                && device.session() == SessionDisplay::Active;
+            let session_ready = self.devices.has_authenticated_session();
             let enabled = self.clipboard.available() && session_ready && !self.clipboard.busy();
 
             let actions = div()
@@ -1874,8 +1908,7 @@ impl Render for ControlCenterPage {
                 .capability_ids()
                 .iter()
                 .any(|id| id == "files.transfer");
-            let session_ready = device.connectivity() == ConnectivityDisplay::Connected
-                && device.session() == SessionDisplay::Active;
+            let session_ready = self.devices.has_authenticated_session();
             let send_stage = self.file_transfer.send().stage();
             let send_active = self.file_transfer.send().active();
             let send_cancellable = matches!(
