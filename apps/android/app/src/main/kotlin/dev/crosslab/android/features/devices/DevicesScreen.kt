@@ -110,7 +110,13 @@ fun DevicesScreen(
                     onClick = { scanning = !scanning },
                 )
 
-                if (
+                if (runtime.peerControlAvailable && runtime.lifecycle == RuntimeLifecycle.STOPPED) {
+                    ControlButton(
+                        theme = theme,
+                        label = "Retry runtime",
+                        onClick = onReconnect,
+                    )
+                } else if (
                     runtime.peerControlAvailable &&
                         runtime.lifecycle == RuntimeLifecycle.RUNNING
                 ) {

@@ -139,6 +139,24 @@ class RuntimeControllerTest {
         )
         controller.onForeground()
         assertEquals(
+            false,
+            controller.setPermission(
+                "clipboard.read",
+                "get",
+                RuntimePermissionEffect.ALLOW,
+            ),
+        )
+        port.emit(
+            RuntimeSnapshot.disconnected().copy(
+                peerDeviceId = "trusted-peer",
+                trust = RuntimeTrust.TRUSTED,
+                connectivity = RuntimeConnectivity.CONNECTED,
+                session = RuntimeSession.ACTIVE,
+                security = RuntimeSecurity.AUTHENTICATED,
+                capabilityIds = listOf("clipboard.read"),
+            ),
+        )
+        assertEquals(
             true,
             controller.setPermission(
                 "clipboard.read",
@@ -165,6 +183,9 @@ class RuntimeControllerTest {
                 peerDeviceId = "first-trusted-id",
                 session = RuntimeSession.ACTIVE,
                 trust = RuntimeTrust.TRUSTED,
+                connectivity = RuntimeConnectivity.CONNECTED,
+                security = RuntimeSecurity.AUTHENTICATED,
+                capabilityIds = listOf("notifications.read"),
             )
         val second = first.copy(peerDeviceId = "different-trusted-id")
         port.emit(first)
@@ -192,6 +213,48 @@ class RuntimeControllerTest {
             false,
             controller.setPermissionForPeer(
                 "first-trusted-id",
+                "notifications.read",
+                "subscribe",
+                RuntimePermissionEffect.ALLOW,
+            ),
+        )
+        assertEquals(1, port.peerPermissionEdits)
+        port.emit(second.copy(trust = RuntimeTrust.REVOKED))
+        assertEquals(
+            false,
+            controller.setPermissionForPeer(
+                "different-trusted-id",
+                "notifications.read",
+                "subscribe",
+                RuntimePermissionEffect.ALLOW,
+            ),
+        )
+        port.emit(second.copy(security = RuntimeSecurity.TEST_ONLY))
+        assertEquals(
+            false,
+            controller.setPermissionForPeer(
+                "different-trusted-id",
+                "notifications.read",
+                "subscribe",
+                RuntimePermissionEffect.ALLOW,
+            ),
+        )
+        port.emit(second.copy(capabilityIds = emptyList()))
+        assertEquals(
+            false,
+            controller.setPermissionForPeer(
+                "different-trusted-id",
+                "notifications.read",
+                "subscribe",
+                RuntimePermissionEffect.ALLOW,
+            ),
+        )
+        controller.onNetworkLost()
+        port.emit(second)
+        assertEquals(
+            false,
+            controller.setPermissionForPeer(
+                "different-trusted-id",
                 "notifications.read",
                 "subscribe",
                 RuntimePermissionEffect.ALLOW,
@@ -230,6 +293,44 @@ class RuntimeControllerTest {
         assertEquals(false, controller.reloadTrust())
         assertEquals(RuntimeLifecycle.STOPPED, controller.state().lifecycle)
         assertEquals(2, port.stops)
+    }
+
+    @Test
+    fun failedForegroundStartLeavesRuntimeStoppedAndRetryCanRecover() {
+        val port = FakeRuntimePort()
+        val controller = RuntimeController(port)
+        port.failNextStart = true
+
+        controller.onForeground()
+
+        assertEquals(RuntimeLifecycle.STOPPED, controller.state().lifecycle)
+        assertEquals(RuntimeSnapshot.disconnected(), controller.state().snapshot)
+        assertEquals(1, port.starts)
+        assertEquals(1, port.stops)
+
+        controller.reconnectPeer()
+
+        assertEquals(RuntimeLifecycle.RUNNING, controller.state().lifecycle)
+        assertEquals(2, port.starts)
+        assertEquals(0, port.reconnects)
+    }
+
+    @Test
+    fun retryAfterFailedOfflineStartPreservesNetworkState() {
+        val port = FakeRuntimePort()
+        val controller = RuntimeController(port)
+        controller.onNetworkLost()
+        port.failNextStart = true
+
+        controller.onForeground()
+        assertEquals(RuntimeLifecycle.STOPPED, controller.state().lifecycle)
+        assertEquals(false, controller.state().networkAvailable)
+
+        controller.reconnectPeer()
+
+        assertEquals(RuntimeLifecycle.RUNNING, controller.state().lifecycle)
+        assertEquals(false, controller.state().networkAvailable)
+        assertEquals(1, port.networkLost)
     }
 
     @Test

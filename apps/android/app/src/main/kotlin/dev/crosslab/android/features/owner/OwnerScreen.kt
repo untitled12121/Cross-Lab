@@ -23,8 +23,7 @@ import dev.crosslab.android.features.appearance.ThemeDocument
 import dev.crosslab.android.features.appearance.toComposeColor
 import dev.crosslab.android.features.appearance.toTextStyle
 import dev.crosslab.android.features.devices.RuntimeControllerState
-import dev.crosslab.android.features.devices.RuntimeSession
-import dev.crosslab.android.features.devices.RuntimeTrust
+import dev.crosslab.android.features.devices.RuntimePermissionEffect
  import dev.crosslab.android.features.notifications.NotificationOwnerConsent
 import dev.crosslab.android.components.ui.ControlButton
 
@@ -48,7 +47,9 @@ fun OwnerScreen(
     onToggleNotificationContent: () -> Unit,
     onOpenNotificationAccess: () -> Unit,
     notificationNotice: String?,
-    onSetNotificationPeerPermission: (String, Boolean) -> Unit,
+    peerPermissionNotice: String?,
+    peerPermissionBusy: Boolean,
+    onSetPeerPermission: (String, String, String, RuntimePermissionEffect) -> Unit,
 ) {
     val colors = theme.colors
     val snapshot = runtime.snapshot
@@ -201,50 +202,71 @@ fun OwnerScreen(
             }
         }
 
+        val peerPermissions = OwnerPeerPermissionState.from(runtime)
         Column(
             modifier =
                 Modifier
                     .fillMaxWidth()
                     .padding(top = theme.spacing.xl.toFloat().dp)
                     .border(
-                        BorderStroke(
-                            theme.metrics.borderWidth.toFloat().dp,
-                            colors.border.toComposeColor(),
-                        ),
+                        BorderStroke(theme.metrics.borderWidth.toFloat().dp, colors.border.toComposeColor()),
                         RectangleShape,
                     ),
         ) {
-            val peer = runtime.snapshot.peerDeviceId
-            val active =
-                peer != null &&
-                    runtime.snapshot.session == RuntimeSession.ACTIVE &&
-                    runtime.snapshot.trust == RuntimeTrust.TRUSTED
-            val rule = runtime.snapshot.permissionRules
-                .firstOrNull {
-                    it.sourceDeviceId == peer &&
-                        it.capabilityId == "notifications.read" &&
-                        it.operation == "subscribe"
+            InfoRow(theme, "Device permissions", "Exact peer · default deny")
+            InfoRow(theme, "Policy revision", runtime.snapshot.policyRevision.toString())
+            val peerId = peerPermissions.peerId
+            if (peerId == null) {
+                InfoRow(theme, "Permission editing", "Connect an authenticated trusted device")
+            } else if (peerPermissions.operations.isEmpty()) {
+                InfoRow(theme, "Permission editing", "No supported capabilities negotiated")
+            } else {
+                peerPermissions.operations.forEach { operation ->
+                    InfoRow(theme, operation.title, operation.policyLabel())
+                    ControlButton(
+                        theme = theme,
+                        label = "Allow: ${operation.title}",
+                        enabled = !peerPermissionBusy &&
+                            operation.effect != RuntimePermissionEffect.ALLOW,
+                        onClick = {
+                            onSetPeerPermission(
+                                peerId,
+                                operation.capabilityId,
+                                operation.operation,
+                                RuntimePermissionEffect.ALLOW,
+                            )
+                        },
+                    )
+                    ControlButton(
+                        theme = theme,
+                        label = "Deny: ${operation.title}",
+                        destructive = true,
+                        enabled = !peerPermissionBusy &&
+                            operation.effect != RuntimePermissionEffect.DENY,
+                        onClick = {
+                            onSetPeerPermission(
+                                peerId,
+                                operation.capabilityId,
+                                operation.operation,
+                                RuntimePermissionEffect.DENY,
+                            )
+                        },
+                    )
                 }
-            InfoRow(
-                theme,
-                "Peer notification policy",
-                if (!active) "Connect a trusted peer"
-                else rule?.effect?.name ?: "Default deny",
-            )
-            if (active && peer != null) {
-                ControlButton(
-                    theme = theme,
-                    label = "Allow this peer to request notifications",
-                    onClick = { onSetNotificationPeerPermission(peer, true) },
-                )
-                ControlButton(
-                    theme = theme,
-                    label = "Deny this peer's notification requests",
-                    destructive = true,
-                    onClick = { onSetNotificationPeerPermission(peer, false) },
-                )
             }
-            notificationNotice?.let { InfoRow(theme, "Permission result", it) }
+            peerPermissionNotice?.let { InfoRow(theme, "Policy status", it) }
+        }
+
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = theme.spacing.xl.toFloat().dp)
+                    .border(
+                        BorderStroke(theme.metrics.borderWidth.toFloat().dp, colors.border.toComposeColor()),
+                        RectangleShape,
+                    ),
+        ) {
             InfoRow(
                 theme,
                 "Notification Access",
@@ -265,6 +287,7 @@ fun OwnerScreen(
                 "Mirror availability",
                 if (notificationConsent.locallyAvailable()) "Local gates ready" else "Unavailable",
             )
+            notificationNotice?.let { InfoRow(theme, "Notification status", it) }
             InfoRow(
                 theme,
                 "Notification contents",

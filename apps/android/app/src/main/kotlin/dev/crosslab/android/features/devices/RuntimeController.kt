@@ -87,12 +87,7 @@ class RuntimeController(
     fun onForeground() {
         update {
             if (it.lifecycle != RuntimeLifecycle.STOPPED) return@update null
-            port.start()
-            if (!it.networkAvailable) port.networkLost()
-            it.copy(
-                lifecycle = RuntimeLifecycle.RUNNING,
-                snapshot = port.snapshot(),
-            )
+            startPort(it)
         }
     }
 
@@ -143,9 +138,14 @@ class RuntimeController(
 
     fun reconnectPeer() {
         update {
-            if (it.lifecycle != RuntimeLifecycle.RUNNING) return@update null
-            port.reconnectPeer()
-            it.copy(snapshot = port.snapshot())
+            when (it.lifecycle) {
+                RuntimeLifecycle.STOPPED -> startPort(it)
+                RuntimeLifecycle.RUNNING -> {
+                    port.reconnectPeer()
+                    it.copy(snapshot = port.snapshot())
+                }
+                RuntimeLifecycle.SHUTDOWN -> null
+            }
         }
     }
 
@@ -156,7 +156,16 @@ class RuntimeController(
     ): Boolean {
         var changed = false
         update {
-            if (it.lifecycle != RuntimeLifecycle.RUNNING) return@update null
+            val snapshot = it.snapshot
+            if (it.lifecycle != RuntimeLifecycle.RUNNING ||
+                !it.networkAvailable ||
+                snapshot.peerDeviceId == null ||
+                snapshot.session != RuntimeSession.ACTIVE ||
+                snapshot.trust != RuntimeTrust.TRUSTED ||
+                snapshot.connectivity != RuntimeConnectivity.CONNECTED ||
+                snapshot.security != RuntimeSecurity.AUTHENTICATED ||
+                capabilityId !in snapshot.capabilityIds
+            ) return@update null
             changed = port.setPermission(capabilityId, operation, effect)
             it.copy(snapshot = port.snapshot())
         }
@@ -172,7 +181,12 @@ class RuntimeController(
         var changed = false
         update {
             if (it.lifecycle != RuntimeLifecycle.RUNNING ||
+                !it.networkAvailable ||
                 it.snapshot.session != RuntimeSession.ACTIVE ||
+                it.snapshot.trust != RuntimeTrust.TRUSTED ||
+                it.snapshot.connectivity != RuntimeConnectivity.CONNECTED ||
+                it.snapshot.security != RuntimeSecurity.AUTHENTICATED ||
+                capabilityId !in it.snapshot.capabilityIds ||
                 it.snapshot.peerDeviceId != peerDeviceId
             ) return@update null
             changed = port.setPermissionForPeer(peerDeviceId, capabilityId, operation, effect)
@@ -220,6 +234,19 @@ class RuntimeController(
             portSubscription.close()
             port.shutdown()
         }
+    }
+
+    private fun startPort(state: RuntimeControllerState): RuntimeControllerState {
+        val started =
+            runCatching {
+                port.start()
+                if (!state.networkAvailable) port.networkLost()
+            }.isSuccess
+        if (!started) runCatching { port.stop() }
+        return state.copy(
+            lifecycle = if (started) RuntimeLifecycle.RUNNING else RuntimeLifecycle.STOPPED,
+            snapshot = if (started) port.snapshot() else RuntimeSnapshot.disconnected(),
+        )
     }
 
     private fun update(transform: (RuntimeControllerState) -> RuntimeControllerState?) {

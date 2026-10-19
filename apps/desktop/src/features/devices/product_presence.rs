@@ -12,11 +12,14 @@ use std::{
 use crosslab_agent::{
     ClipboardAvailability, ClipboardOperationError, ClipboardPlatformError, ClipboardRequest,
     FileTransferAvailability, FileTransferOperationError, NotificationInboxSnapshot,
-    NotificationRole, PermissionSnapshot, PresenceAgentError, PresenceSnapshot,
+    NotificationRole, PermissionSnapshot, PresenceAgentError, PresencePhase, PresenceSnapshot,
     TrustedPresenceAgent, TrustedSessionRoute as AgentTrustedSessionRoute,
 };
+use crosslab_core::{SessionState, TransportSecurityClass};
+use crosslab_identity::DeviceId;
 use crosslab_identity_store::{ProductIdentityError, ProductIdentityState};
-use crosslab_policy::{CapabilityId, OperationName, PolicyError, RuleEffect};
+use crosslab_policy::{CapabilityId, OperationName, PolicyError, RuleEffect, TrustState};
+use crosslab_runtime::ConnectivityState;
 use tokio::sync::{mpsc, watch};
 
 use crate::features::{
@@ -47,6 +50,7 @@ pub struct DesktopProductPresenceController {
     file_transfer_offers: Mutex<Option<mpsc::Receiver<LinuxIncomingFileTransfer>>>,
     file_transfer_statuses: Mutex<Option<mpsc::Receiver<LinuxFileTransferReceiveStatus>>>,
     file_transfer_send_active: Arc<AtomicBool>,
+    policy_writer: tokio::sync::Mutex<()>,
 }
 
 impl DesktopProductPresenceController {
@@ -96,6 +100,7 @@ impl DesktopProductPresenceController {
             file_transfer_offers: Mutex::new(Some(file_transfer_offers)),
             file_transfer_statuses: Mutex::new(Some(file_transfer_statuses)),
             file_transfer_send_active: Arc::new(AtomicBool::new(false)),
+            policy_writer: tokio::sync::Mutex::new(()),
         }))
     }
 
@@ -293,18 +298,17 @@ impl DesktopProductPresenceController {
         self.send_control(DiscoveryControl::Resume)
     }
 
-    pub async fn set_permission(
+    pub async fn set_permission_for_peer(
         &self,
+        expected_peer: DeviceId,
         capability_id: CapabilityId,
         operation: OperationName,
         effect: RuleEffect,
     ) -> Result<bool, DesktopPresenceError> {
-        let peer_device_id = self
-            .status
-            .borrow()
-            .runtime()
-            .and_then(|runtime| runtime.peer_device_id())
-            .ok_or(DesktopPresenceError::PeerUnavailable)?;
+        let _writer = self.policy_writer.lock().await;
+        if !self.peer_permission_editable(expected_peer, &capability_id) {
+            return Err(DesktopPresenceError::PeerUnavailable);
+        }
         let store = LinuxPolicyStore::from_environment()?;
         let mut policy = match store.load().await {
             Ok(policy) => policy,
@@ -318,7 +322,10 @@ impl DesktopProductPresenceController {
             let _ = self.agent.fail_closed_policy().await;
             return Err(DesktopPresenceError::PolicyOutOfSync);
         }
-        if !policy.set_rule_effect(peer_device_id, capability_id, operation, effect)? {
+        if !self.peer_permission_editable(expected_peer, &capability_id) {
+            return Err(DesktopPresenceError::PeerUnavailable);
+        }
+        if !policy.set_rule_effect(expected_peer, capability_id, operation, effect)? {
             return Ok(false);
         }
 
@@ -345,8 +352,29 @@ impl DesktopProductPresenceController {
             }
         }
 
-        self.agent.replace_policy_and_wait(policy).await?;
+        if let Err(error) = self.agent.replace_policy_and_wait(policy).await {
+            let _ = self.agent.fail_closed_policy().await;
+            return Err(error.into());
+        }
         Ok(true)
+    }
+
+    fn peer_permission_editable(&self, peer: DeviceId, capability: &CapabilityId) -> bool {
+        let snapshot = self.status.borrow();
+        snapshot.phase() == PresencePhase::Online
+            && snapshot.runtime().is_some_and(|runtime| {
+                runtime.peer_device_id() == Some(peer)
+                    && runtime.session_id().is_some()
+                    && runtime.session_state() == SessionState::Active
+                    && runtime.trust_state() == TrustState::Trusted
+                    && runtime.connectivity() == ConnectivityState::Connected
+                    && runtime.transport().security_class()
+                        == TransportSecurityClass::AuthenticatedConfidentialChannel
+                    && runtime
+                        .negotiated_capability_ids()
+                        .iter()
+                        .any(|id| id == capability)
+            })
     }
 
     fn send_control(&self, control: DiscoveryControl) -> Result<(), DesktopPresenceError> {

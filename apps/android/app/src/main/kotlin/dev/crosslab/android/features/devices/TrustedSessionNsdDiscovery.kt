@@ -88,7 +88,8 @@ private class TrustedSessionDiscoverySession(
 ) : NsdManager.DiscoveryListener, NsdManager.RegistrationListener, AutoCloseable {
     private val closed = AtomicBoolean(false)
     private val candidates = LinkedHashMap<String, TrustedSessionRoute>()
-    private val resolving = LinkedHashSet<String>()
+    private val resolutions =
+        NsdResolutionQueue<NsdServiceInfo>(profile.maxCandidates.toInt())
     private val multicastLock =
         wifiManager?.createMulticastLock("crosslab-session-discovery")?.apply {
             setReferenceCounted(false)
@@ -113,12 +114,15 @@ private class TrustedSessionDiscoverySession(
     }
 
     override fun onServiceRegistered(serviceInfo: NsdServiceInfo) {
-        if (closed.get()) return
+        serviceRegistered = true
+        if (closed.get()) {
+            runCatching { nsdManager.unregisterService(this) }
+            return
+        }
         if (serviceInfo.serviceName != profile.instance) {
             fail(TrustedSessionDiscoveryFailure.ADVERTISEMENT_FAILED)
             return
         }
-        serviceRegistered = true
     }
 
     override fun onRegistrationFailed(
@@ -141,6 +145,9 @@ private class TrustedSessionDiscoverySession(
 
     override fun onDiscoveryStarted(regType: String) {
         discoveryStarted = true
+        if (closed.get()) {
+            runCatching { nsdManager.stopServiceDiscovery(this) }
+        }
     }
 
     override fun onServiceFound(serviceInfo: NsdServiceInfo) {
@@ -152,19 +159,19 @@ private class TrustedSessionDiscoverySession(
             return
         }
 
-        synchronized(candidates) {
-            if (instance in candidates || instance in resolving) return
-            if (candidates.size + resolving.size >= profile.maxCandidates.toInt()) return
-            resolving += instance
-        }
-        resolve(serviceInfo, instance)
+        val request =
+            synchronized(candidates) {
+                if (instance in candidates) return
+                resolutions.discovered(instance, serviceInfo, candidates.size)
+            }
+        request?.let(::resolve)
     }
 
     override fun onServiceLost(serviceInfo: NsdServiceInfo) {
         val instance = serviceInfo.serviceName
         val removed =
             synchronized(candidates) {
-                resolving.remove(instance)
+                resolutions.lost(instance)
                 candidates.remove(instance) != null
             }
         if (removed) {
@@ -196,68 +203,63 @@ private class TrustedSessionDiscoverySession(
     }
 
     @Suppress("DEPRECATION")
-    private fun resolve(
-        serviceInfo: NsdServiceInfo,
-        instance: String,
-    ) {
+    private fun resolve(request: NsdResolveRequest<NsdServiceInfo>) {
+        if (closed.get()) return
         try {
             nsdManager.resolveService(
-                serviceInfo,
+                request.value,
                 object : NsdManager.ResolveListener {
                     override fun onResolveFailed(
                         serviceInfo: NsdServiceInfo,
                         errorCode: Int,
                     ) {
-                        synchronized(candidates) {
-                            resolving.remove(instance)
-                        }
+                        finishResolution(request, null)
                     }
 
                     override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
                         val host = serviceInfo.host
-                        val resolvedPort = serviceInfo.port
+                        val port = serviceInfo.port
                         val valid =
-                            host != null &&
-                                resolvedPort in 1..65535 &&
+                            serviceInfo.serviceName == request.instance &&
+                                host != null &&
+                                port in 1..65535 &&
                                 hasExactTrustedSessionTxtProfile(
                                     attributes = serviceInfo.attributes,
                                     key = profile.txtVersionKey,
                                     version = profile.txtVersion,
                                 )
-                        if (!valid) {
-                            synchronized(candidates) {
-                                resolving.remove(instance)
-                            }
-                            return
-                        }
-
                         val route =
-                            TrustedSessionRoute(
-                                instance = instance,
-                                host = requireNotNull(host),
-                                port = resolvedPort,
-                            )
-                        val accepted =
-                            synchronized(candidates) {
-                                resolving.remove(instance)
-                                if (candidates.size >= profile.maxCandidates.toInt()) {
-                                    false
-                                } else {
-                                    candidates[instance] = route
-                                    true
-                                }
+                            if (valid) {
+                                TrustedSessionRoute(request.instance, requireNotNull(host), port)
+                            } else {
+                                null
                             }
-                        if (accepted && !closed.get()) {
-                            onCandidate(route)
-                        }
+                        finishResolution(request, route)
                     }
                 },
             )
         } catch (_: RuntimeException) {
-            synchronized(candidates) {
-                resolving.remove(instance)
-            }
+            finishResolution(request, null)
         }
+    }
+
+    private fun finishResolution(
+        request: NsdResolveRequest<NsdServiceInfo>,
+        route: TrustedSessionRoute?,
+    ) {
+        val (accepted, next) =
+            synchronized(candidates) {
+                val result = resolutions.finished(request)
+                val accepted =
+                    result.accepted && !closed.get() && route != null &&
+                        candidates.size < profile.maxCandidates.toInt()
+                if (accepted) {
+                    candidates[request.instance] = requireNotNull(route)
+                }
+                accepted to result.next
+            }
+        if (accepted && !closed.get()) onCandidate(requireNotNull(route))
+        next?.let(::resolve)
     }
 
     private fun localServiceInfo(): NsdServiceInfo =
@@ -291,11 +293,11 @@ private class TrustedSessionDiscoverySession(
             runCatching { nsdManager.unregisterService(this) }
         }
         synchronized(candidates) {
-            resolving.clear()
+            resolutions.close()
             candidates.clear()
         }
-        if (multicastLock?.isHeld == true) {
-            multicastLock.release()
+        multicastLock?.let { lock ->
+            if (lock.isHeld) runCatching { lock.release() }
         }
     }
 }

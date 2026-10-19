@@ -31,6 +31,7 @@ import dev.crosslab.android.features.devices.DevicesScreen
 import dev.crosslab.android.features.devices.DevicesState
 import dev.crosslab.android.features.devices.RuntimeControllerState
 import dev.crosslab.android.features.devices.RuntimeLifecycle
+import dev.crosslab.android.features.devices.RuntimePermissionEffect
 import dev.crosslab.android.features.filetransfer.FileTransferState
 import dev.crosslab.android.features.owner.OwnerScreen
 import dev.crosslab.android.features.notifications.NotificationOwnerConsent
@@ -78,7 +79,9 @@ fun ControlCenterScreen(
     onToggleNotificationContent: () -> Unit,
     onOpenNotificationAccess: () -> Unit,
     notificationNotice: String?,
-    onSetNotificationPeerPermission: (String, Boolean) -> Unit,
+    peerPermissionNotice: String?,
+    peerPermissionBusy: Boolean,
+    onSetPeerPermission: (String, String, String, RuntimePermissionEffect) -> Unit,
     onPairingBootstrapScanned: (MobilePairingBootstrap) -> Unit,
     onCancelPairing: () -> Unit,
 ) {
@@ -214,7 +217,9 @@ fun ControlCenterScreen(
                     onToggleNotificationContent = onToggleNotificationContent,
                     onOpenNotificationAccess = onOpenNotificationAccess,
                     notificationNotice = notificationNotice,
-                    onSetNotificationPeerPermission = onSetNotificationPeerPermission,
+                    peerPermissionNotice = peerPermissionNotice,
+                    peerPermissionBusy = peerPermissionBusy,
+                    onSetPeerPermission = onSetPeerPermission,
                 )
         }
     }
