@@ -18,6 +18,7 @@ import dev.crosslab.android.features.identity.AndroidProductIdentityRepository
 import dev.crosslab.android.features.permissions.AndroidPolicyStore
 import dev.crosslab.android.features.notifications.AndroidNotificationConsent
 import dev.crosslab.android.features.notifications.NotificationPublisher
+import dev.crosslab.android.features.notifications.canMirrorNotifications
 import dev.crosslab.android.features.permissions.PolicyStoreUnavailable
 import uniffi.crosslab_mobile_ffi.MobileClipboardOutcome
 import uniffi.crosslab_mobile_ffi.MobileClipboardPlatformFailure
@@ -76,7 +77,7 @@ class ProductPresencePort(
                 runCatching { active.disableNotifications() }
                 return@synchronized false
             }
-            current.session == RuntimeSession.ACTIVE &&
+            current.canMirrorNotifications() &&
                 runCatching { active.notificationSubscribed() }.getOrDefault(false)
         }
 
@@ -93,7 +94,7 @@ class ProductPresencePort(
         synchronized(lock) {
             val active = agent ?: return@synchronized false
             notificationConsent.withCurrent(foreground = true) { consent ->
-                if (!consent.locallyAvailable() || current.session != RuntimeSession.ACTIVE ||
+                if (!consent.locallyAvailable() || !current.canMirrorNotifications() ||
                     !runCatching { active.notificationSubscribed() }.getOrDefault(false)
                 ) {
                     runCatching { active.disableNotifications() }
@@ -111,7 +112,7 @@ class ProductPresencePort(
         synchronized(lock) {
             val active = agent ?: return@synchronized false
             notificationConsent.withCurrent(foreground = true) { consent ->
-                if (!consent.locallyAvailable() || current.session != RuntimeSession.ACTIVE ||
+                if (!consent.locallyAvailable() || !current.canMirrorNotifications() ||
                     !runCatching { active.notificationSubscribed() }.getOrDefault(false)
                 ) {
                     runCatching { active.disableNotifications() }
