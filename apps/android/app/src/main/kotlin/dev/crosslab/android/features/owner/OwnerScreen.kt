@@ -40,6 +40,9 @@ fun OwnerScreen(
     auditRows: List<String>,
     auditDropped: Long,
     auditNotice: String?,
+    auditUnavailable: Boolean,
+    auditRetryBusy: Boolean,
+    onRetryAudit: () -> Unit,
     onClearAudit: () -> Unit,
     onExportAudit: () -> Unit,
     notificationConsent: NotificationOwnerConsent,
@@ -168,9 +171,19 @@ fun OwnerScreen(
                 InfoRow(theme, "More audit events", "${auditRows.size - 24} not shown")
             }
             auditNotice?.let { InfoRow(theme, "History status", it) }
+            if (auditUnavailable) {
+                InfoRow(theme, "Protected store", "Unavailable — retained history not displayed")
+                ControlButton(
+                    theme = theme,
+                    label = if (auditRetryBusy) "Retrying history…" else "Retry protected history",
+                    enabled = !auditRetryBusy,
+                    onClick = onRetryAudit,
+                )
+            }
             ControlButton(
                 theme = theme,
                 label = "Export redacted history",
+                enabled = !auditUnavailable,
                 onClick = onExportAudit,
             )
             if (confirmClearAudit) {

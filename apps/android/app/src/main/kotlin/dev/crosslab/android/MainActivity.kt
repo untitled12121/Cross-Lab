@@ -43,6 +43,8 @@ class MainActivity : ComponentActivity() {
     private val auditRows = mutableStateOf<List<String>>(emptyList())
     private val auditDropped = mutableStateOf(0L)
     private val auditNotice = mutableStateOf<String?>(null)
+    private val auditUnavailable = mutableStateOf(false)
+    private val auditRetryBusy = mutableStateOf(false)
     private val notificationConsent =
         mutableStateOf(NotificationOwnerConsent(false, false, false, false, false))
     private val notificationNotice = mutableStateOf<String?>(null)
@@ -63,7 +65,12 @@ class MainActivity : ComponentActivity() {
         auditSubscription = app.auditRecorder.observe { status ->
             if (!isDestroyed) runOnUiThread {
                 if (!isDestroyed) {
-                    status.history?.let { updateAudit(it) }
+                    auditUnavailable.value = status.unavailable
+                    if (status.unavailable) {
+                        auditRows.value = emptyList()
+                    } else {
+                        status.history?.let { updateAudit(it) }
+                    }
                     auditNotice.value =
                         when {
                             status.unavailable -> "Audit write unavailable; recent events may be missing."
@@ -200,6 +207,27 @@ class MainActivity : ComponentActivity() {
                 auditRows = auditRows.value,
                 auditDropped = auditDropped.value,
                 auditNotice = auditNotice.value,
+                auditUnavailable = auditUnavailable.value,
+                auditRetryBusy = auditRetryBusy.value,
+                onRetryAudit = {
+                    if (!auditRetryBusy.value) {
+                        auditRetryBusy.value = true
+                        app.auditRecorder.refresh { result ->
+                            if (!isDestroyed) runOnUiThread {
+                                if (!isDestroyed) {
+                                    auditRetryBusy.value = false
+                                    auditNotice.value =
+                                        if (result.isSuccess) {
+                                            "Protected audit history reloaded."
+                                        } else {
+                                            "Audit storage remains unavailable; history is hidden."
+                                        }
+                                    result.getOrNull()?.let { updateAudit(it) }
+                                }
+                            }
+                        }
+                    }
+                },
                 onClearAudit = {
                     app.auditRecorder.clear { result ->
                         if (!isDestroyed) runOnUiThread {
