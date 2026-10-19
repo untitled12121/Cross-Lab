@@ -14,6 +14,13 @@ This file is the durable resume guide for active Cross-Lab development. Git/code
 
 **Exact resume action:** Inspect `main`, active PR #79, CI result, and actual code; fix any CI failures in a consolidated batch; once available have the owner retest normal desktop-generated QR and Android pairing, then proceed with the remaining Phase 2 implementation in cohesive batches. Keep `CURRENT.md` updated at verified milestones.
 
+## Active checkpoint — 2026-10-19 (Linux trusted-device inventory)
+
+- **Branch:** `feat/phase2-linux-saved-trusted-inventory` based on merged scanner/accessibility PR #81 source `bc2cbcea545ac52464bb53671a866d95d79f396c`. Linux GPUI now exposes durable saved trusted peers separately from the active session, reading the existing `OwnerFeatureState` product identity state. The feature view receives only bounded presentation rows, not networking or storage authority.
+- **Security:** saved peers are identified by full `DeviceId` from the durable identity state; an active marker additionally requires trusted, connected, active, authenticated runtime status and exact full-ID match. Display prefixes cannot substitute for identity, and DNS-SD sightings do not grant online status. No new wire/schema changes or discovery activity.
+- **Tests:** added Rust projection regressions for offline saved trust, same-prefix different full ID, closed session, and 24-row display limit. Final feature-head Rust/GPUI CI remains pending; physical Linux/Android evidence remains uncollected.
+- **Next:** review exact-head CI, reconcile other Phase 2 changes in `main`, merge if green, then continue device/hardware acceptance and UX cleanup. Do not claim Cross-Lab 0.1 ready or begin Phase 3.
+
 ## Active checkpoint — 2026-10-19 (Android scanner teardown and accessible controls)
 
 - **Baseline:** merged PR #80 (merge `050a3093e101cd7bd75c44a9f3f2119bc223fe8c`), which passed exact-head [CI 39167515856](https://github.com/untitled12121/Cross-Lab/actions/runs/39167515856) across formatting, Rust and Android. The current feature branch is `fix/phase2-android-scanner-accessibility`; inspect its actual head and CI before merging.

@@ -1990,9 +1990,20 @@ impl Render for ControlCenterPage {
         #[cfg(not(target_os = "linux"))]
         let owner_controls = None;
 
+        let saved_peers = self
+            .devices
+            .saved_trusted_peers(self.owner.trusted_peer_device_ids());
+        let additional_saved_peers = self
+            .owner
+            .trusted_peer_device_ids()
+            .len()
+            .saturating_sub(saved_peers.len());
+
         let content = match self.section {
             Section::Devices => devices_content(
                 &self.devices,
+                &saved_peers,
+                additional_saved_peers,
                 Some(actions),
                 pairing_panel,
                 clipboard_controls,

@@ -5,8 +5,8 @@ use crosslab_protocol::ProtocolVersion;
 use crosslab_runtime::ConnectivityState;
 
 use super::{
-    ConnectivityDisplay, DevicePresentation, NetworkDisplay, SecurityDisplay, SessionDisplay,
-    StatusFields, TrustDisplay,
+    ConnectivityDisplay, DevicePresentation, DevicesFeatureState, NetworkDisplay,
+    SecurityDisplay, SessionDisplay, StatusFields, TrustDisplay,
 };
 
 #[test]
@@ -73,4 +73,57 @@ fn maps_fail_closed_runtime_states_without_secret_material() {
             "presentation leaked {forbidden}"
         );
     }
+}
+
+#[test]
+fn saved_trust_never_implies_a_live_session() {
+    let id = DeviceId::from_bytes([0xab; 32]);
+    let saved = DevicesFeatureState::empty().saved_trusted_peers(&[id]);
+
+    assert_eq!(saved.len(), 1);
+    assert_eq!(saved[0].short_id(), "abababababababab");
+    assert!(!saved[0].in_authenticated_session());
+}
+
+#[test]
+fn saved_peers_require_full_id_and_authenticated_connection() {
+    let current_id = DeviceId::from_bytes([0xab; 32]);
+    let mut lookalike = [0xab; 32];
+    lookalike[31] = 0xcd;
+    let lookalike_id = DeviceId::from_bytes(lookalike);
+    let presentation = DevicePresentation::from_fields(StatusFields {
+        owner_id: None,
+        local_device_id: None,
+        peer_device_id: Some(current_id),
+        trust_state: TrustState::Trusted,
+        connectivity: ConnectivityState::Connected,
+        session_state: SessionState::Active,
+        protocol_version: None,
+        network_class: NetworkClass::Local,
+        security_class: TransportSecurityClass::AuthenticatedConfidentialChannel,
+        metered: None,
+        capability_count: 0,
+    });
+    let mut state = DevicesFeatureState::empty();
+    state.current = Some(presentation);
+
+    let saved = state.saved_trusted_peers(&[lookalike_id, current_id]);
+    assert!(!saved[0].in_authenticated_session());
+    assert!(saved[1].in_authenticated_session());
+
+    state.current.as_mut().unwrap().session = SessionDisplay::Closed;
+    assert!(!state.saved_trusted_peers(&[current_id])[0].in_authenticated_session());
+}
+
+#[test]
+fn saved_trusted_device_presentation_is_bounded() {
+    let ids = (0..30)
+        .map(|value| {
+            let mut bytes = [0u8; 32];
+            bytes[31] = value;
+            DeviceId::from_bytes(bytes)
+        })
+        .collect::<Vec<_>>();
+    let saved = DevicesFeatureState::empty().saved_trusted_peers(&ids);
+    assert_eq!(saved.len(), 24);
 }
