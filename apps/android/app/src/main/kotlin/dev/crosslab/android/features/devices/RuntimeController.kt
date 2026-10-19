@@ -143,7 +143,7 @@ class RuntimeController(
             }
             next.fold(
                 onSuccess = { updated -> it.copy(networkAvailable = false, snapshot = updated) },
-                onFailure = { failClosed(it, networkAvailable = false) },
+                onFailure = { _ -> failClosed(it, networkAvailable = false) },
             )
         }
     }
@@ -162,7 +162,7 @@ class RuntimeController(
             }
             snapshot.fold(
                 onSuccess = { updated -> it.copy(networkAvailable = true, snapshot = updated) },
-                onFailure = { failClosed(it, networkAvailable = true) },
+                onFailure = { _ -> failClosed(it, networkAvailable = true) },
             )
         }
     }
@@ -175,7 +175,7 @@ class RuntimeController(
                 port.snapshot()
             }.fold(
                 onSuccess = { snapshot -> it.copy(snapshot = snapshot) },
-                onFailure = { failClosed(it) },
+                onFailure = { _ -> failClosed(it) },
             )
         }
     }
@@ -190,7 +190,7 @@ class RuntimeController(
                         port.snapshot()
                     }.fold(
                         onSuccess = { snapshot -> it.copy(snapshot = snapshot) },
-                        onFailure = { failClosed(it) },
+                        onFailure = { _ -> failClosed(it) },
                     )
                 }
                 RuntimeLifecycle.SHUTDOWN -> null
