@@ -47,6 +47,7 @@ pub struct OwnerFeatureState {
     audit_dropped: u64,
     audit_queue_dropped: u64,
     audit_notice: Option<String>,
+    audit_unavailable: bool,
 }
 
 impl OwnerFeatureState {
@@ -60,6 +61,7 @@ impl OwnerFeatureState {
             audit_dropped: 0,
             audit_queue_dropped: 0,
             audit_notice: None,
+            audit_unavailable: false,
         }
     }
 
@@ -110,10 +112,22 @@ impl OwnerFeatureState {
         self.audit_rows = rows;
         self.audit_dropped = dropped;
         self.audit_notice = None;
+        self.audit_unavailable = false;
     }
 
     pub fn set_audit_notice(&mut self, notice: impl Into<String>) {
         self.audit_notice = Some(notice.into());
+    }
+
+    pub fn set_audit_unavailable(&mut self, notice: impl Into<String>) {
+        self.audit_rows.clear();
+        self.audit_dropped = 0;
+        self.audit_unavailable = true;
+        self.audit_notice = Some(notice.into());
+    }
+
+    pub const fn audit_unavailable(&self) -> bool {
+        self.audit_unavailable
     }
 
     pub fn audit_rows(&self) -> &[String] {
@@ -186,6 +200,21 @@ mod tests {
         state.note_audit_queue_drop();
         state.clear();
         assert_eq!(state.audit_queue_dropped(), 1);
+    }
+
+    #[test]
+    fn protected_audit_failure_hides_stale_history_until_validated_reload() {
+        let mut state = OwnerFeatureState::empty();
+        state.set_audit_rows(vec!["previously validated".to_owned()], 3);
+        state.set_audit_unavailable("Protected audit store unavailable");
+        assert!(state.audit_unavailable());
+        assert!(state.audit_rows().is_empty());
+        assert_eq!(state.audit_dropped(), 0);
+        assert_eq!(state.audit_notice(), Some("Protected audit store unavailable"));
+        state.set_audit_rows(vec!["new validated history".to_owned()], 1);
+        assert!(!state.audit_unavailable());
+        assert_eq!(state.audit_rows(), &["new validated history".to_owned()]);
+        assert_eq!(state.audit_dropped(), 1);
     }
 
     #[test]

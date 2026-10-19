@@ -62,6 +62,7 @@ use gpui_kit::{
 enum AuditCommand {
     Record(AuditIntent),
     Clear,
+    Reload,
     Export(tokio::sync::oneshot::Sender<Result<String, ()>>),
 }
 
@@ -112,6 +113,8 @@ pub struct ControlCenterPage {
     peer_permission_busy: bool,
     #[cfg(target_os = "linux")]
     audit_clear_pending: bool,
+    #[cfg(target_os = "linux")]
+    audit_reload_pending: bool,
     notice: Option<String>,
 }
 
@@ -135,7 +138,7 @@ impl ControlCenterPage {
                             .set_audit_rows(audit_history_rows(&history), history.dropped_count()),
                         Err(_) => page
                             .owner
-                            .set_audit_notice("Protected audit history unavailable"),
+                            .set_audit_unavailable("Protected audit history unavailable"),
                     }
                     cx.notify();
                 })
@@ -161,6 +164,7 @@ impl ControlCenterPage {
                     }
                     command => command,
                 };
+                let is_reload = matches!(command, AuditCommand::Reload);
                 let result = async {
                     let store = LinuxAuditStore::from_environment()?;
                     let hour = current_hour()?;
@@ -171,21 +175,25 @@ impl ControlCenterPage {
                                 .await
                         }
                         AuditCommand::Clear => store.clear(hour).await,
+                        AuditCommand::Reload => store.load(hour).await,
                         AuditCommand::Export(_) => unreachable!(),
                     }
                 }
                 .await;
                 if this
                     .update(cx, |page, cx| {
+                        if is_reload {
+                            page.audit_reload_pending = false;
+                        }
                         match result {
-                        Ok(history) => page.owner.set_audit_rows(
-                            audit_history_rows(&history),
-                            history.dropped_count(),
-                        ),
-                        Err(_) => page.owner.set_audit_notice(
-                            "Protected audit write unavailable; recent history may be incomplete",
-                        ),
-                    }
+                            Ok(history) => page.owner.set_audit_rows(
+                                audit_history_rows(&history),
+                                history.dropped_count(),
+                            ),
+                            Err(_) => page.owner.set_audit_unavailable(
+                                "Protected audit storage unavailable; history hidden",
+                            ),
+                        }
                         cx.notify();
                     })
                     .is_err()
@@ -295,6 +303,8 @@ impl ControlCenterPage {
             peer_permission_busy: false,
             #[cfg(target_os = "linux")]
             audit_clear_pending: false,
+            #[cfg(target_os = "linux")]
+            audit_reload_pending: false,
             notice: None,
         };
         #[cfg(target_os = "linux")]
@@ -721,7 +731,25 @@ impl ControlCenterPage {
     }
 
     #[cfg(target_os = "linux")]
+    fn reload_owner_audit(&mut self, cx: &mut Context<Self>) {
+        if !self.owner.audit_unavailable() || self.audit_reload_pending {
+            return;
+        }
+        if self.audit_tx.try_send(AuditCommand::Reload).is_err() {
+            self.owner
+                .set_audit_notice("Protected history reload could not be queued");
+        } else {
+            self.audit_reload_pending = true;
+            self.owner.set_audit_notice("Reloading protected audit history…");
+        }
+        cx.notify();
+    }
+
+    #[cfg(target_os = "linux")]
     fn clear_owner_audit(&mut self, cx: &mut Context<Self>) {
+        if self.owner.audit_unavailable() {
+            return;
+        }
         if !self.audit_clear_pending {
             self.audit_clear_pending = true;
             self.owner.set_audit_notice(
@@ -742,6 +770,9 @@ impl ControlCenterPage {
 
     #[cfg(target_os = "linux")]
     fn export_owner_audit(&mut self, cx: &mut Context<Self>) {
+        if self.owner.audit_unavailable() {
+            return;
+        }
         let (reply, result) = tokio::sync::oneshot::channel();
         if self.audit_tx.try_send(AuditCommand::Export(reply)).is_err() {
             self.owner
@@ -2135,6 +2166,7 @@ impl Render for ControlCenterPage {
                 .child(
                     Button::new("owner-audit-export")
                         .accessibility_label("Copy redacted audit history CSV")
+                        .disabled(self.owner.audit_unavailable())
                         .on_click(cx.listener(|page, _, _, cx| {
                             page.export_owner_audit(cx);
                         }))
@@ -2147,6 +2179,7 @@ impl Render for ControlCenterPage {
                         } else {
                             "Clear private audit history"
                         })
+                        .disabled(self.owner.audit_unavailable())
                         .on_click(cx.listener(|page, _, _, cx| {
                             page.clear_owner_audit(cx);
                         }))
@@ -2156,6 +2189,21 @@ impl Render for ControlCenterPage {
                             "Clear audit history"
                         }),
                 );
+            if self.owner.audit_unavailable() {
+                controls = controls.child(
+                    Button::new("owner-audit-reload")
+                        .accessibility_label("Retry loading protected audit history")
+                        .disabled(self.audit_reload_pending)
+                        .on_click(cx.listener(|page, _, _, cx| {
+                            page.reload_owner_audit(cx);
+                        }))
+                        .child(if self.audit_reload_pending {
+                            "Retrying protected history…"
+                        } else {
+                            "Retry protected history"
+                        }),
+                );
+            }
             if self.audit_clear_pending {
                 controls = controls.child(
                     Button::new("owner-audit-cancel")
