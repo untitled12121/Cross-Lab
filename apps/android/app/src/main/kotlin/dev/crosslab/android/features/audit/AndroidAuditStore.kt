@@ -19,11 +19,26 @@ import uniffi.crosslab_mobile_ffi.auditHistoryExport
 import uniffi.crosslab_mobile_ffi.auditHistoryLoad
 import uniffi.crosslab_mobile_ffi.auditHistoryRecord
 
+/** Narrow owner-only audit persistence boundary; implementations must fail closed. */
+interface OwnerAuditStore {
+    fun read(): MobileAuditHistory
+
+    fun record(
+        action: MobileAuditAction,
+        outcome: MobileAuditOutcome,
+        revision: ULong,
+    ): MobileAuditHistory
+
+    fun clear(): MobileAuditHistory
+
+    fun export(): String
+}
+
 /**
- * Separate owner-only audit state; no private payload, file path or peer ID is persisted.
- * Android Keystore anchors each version to reject old copies after commit.
+ * Separate metadata-only audit state, anchored to Android Keystore revisions.
+ * Owner keys, file paths, device IDs and sensitive payloads are never stored in history.
  */
-class AndroidAuditStore(context: Context) {
+class AndroidAuditStore(context: Context) : OwnerAuditStore {
     private val stateFile =
         AtomicFile(
             context.noBackupFilesDir.resolve("crosslab/audit/history-v1.bin")
@@ -32,7 +47,7 @@ class AndroidAuditStore(context: Context) {
     private val keyStore = KeyStore.getInstance(KEY_STORE).apply { load(null) }
 
     @Synchronized
-    fun read(): MobileAuditHistory {
+    override fun read(): MobileAuditHistory {
         val previous = readBundle()
         val history = auditHistoryLoad(previous?.payload, currentHour())
         if (previous != null && !MessageDigest.isEqual(previous.payload, history.payload)) {
@@ -43,10 +58,10 @@ class AndroidAuditStore(context: Context) {
     }
 
     @Synchronized
-    fun record(
+    override fun record(
         action: MobileAuditAction,
         outcome: MobileAuditOutcome,
-        revision: ULong = 0uL,
+        revision: ULong,
     ): MobileAuditHistory {
         val previous = readBundle()
         val now = currentHour()
@@ -56,7 +71,7 @@ class AndroidAuditStore(context: Context) {
     }
 
     @Synchronized
-    fun clear(): MobileAuditHistory {
+    override fun clear(): MobileAuditHistory {
         val previous = readBundle()
         val next = auditHistoryClear(previous?.payload, currentHour())
         commit(previous, next.payload)
@@ -64,7 +79,7 @@ class AndroidAuditStore(context: Context) {
     }
 
     @Synchronized
-    fun export(): String =
+    override fun export(): String =
         auditHistoryExport(readBundle()?.payload, currentHour())
 
     private fun readBundle(): AuditBundle? {

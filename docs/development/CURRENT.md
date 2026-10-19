@@ -1,28 +1,25 @@
 # Current Development State
 
-**Active phase:** Phase 2 Linux + Android MVP. **Not released.** Git source and actual tests govern implementation truth; this document is the resume guide.
+**Phase:** Phase 2 Linux + Android MVP, active. **No release/physical acceptance claim.** Git source and verified tests remain authoritative.
 
-## Integrated baseline
+## Merged software checkpoints
 
-- `main` at `459f4818393343b5360bc6e168541b848f52a750` (PR #90 audit storage recovery). Exact source `5548092a` passed Rust, Android, source format and CI Gate in run `39242293529`. Crash-leftover Linux audit temp files and Android AtomicFile backup recovery improved without weakening protected anchor currentness.
-- PR #89 `b62d9c8`: Android and Linux retained file-transfer metadata commits before publishing changes/deleting resumable partials; run `39241224235` passed Rust, Android and format.
-- PR #88 `8564fc4`: Android owner/content notification consent atomic confirmed updates with in-process failure blocking; run `39240156393` passed Android.
-- PR #87 `be8afff`: Linux+Android peer capability permission controls, trusted discovery/session recovery and startup retry; run `39238620079` passed Rust/Android/format. Original #84/#85 closed as superseded.
-- Earlier work includes QR/LAN pairing, saved device inventory, transport/clipboard, single-file resume, notifications, metadata audit and signed terminal revocation. Software integration is substantial; **real-device acceptance is not yet verified**.
+- `main` merge `b359b5f15f911879a6f4e1075a82758e38415019` (PR #92): Android notification delivery enforces current owner/content consent at final Rust-agent handoff, negotiated authenticated online trusted session, content redaction and immediate native subscription-state clearing. Final PR #92 head `d9e5bfba` passed Android unit CI and gate `39273346371`.
+- PR #91 merge `5183b6054d53f63afc9bcb18bb5d94e9965f6fd1`: Linux and Android file-transfer integrity recovery, bounded provider read stalls and actionable transfer errors. Final head `f4de37af` passed format, Rust, Android and gate `39271444969`.
+- PR #90 merge `459f4818`: protected Linux/Android audit interrupted-write recovery, run `39242293529` passed Rust, Android, format and gate. Previous #87–89 integrated exact peer permission, notification consent and transfer retained-state durability.
+- Previously integrated Phase 2 foundation includes QR/LAN pairing, trusted sessions, clipboard, resumable single-file transfers, owner-signed revocation, saved inventory and metadata-only audit. Software CI **does not** validate hardware behavior.
 
-## Active vertical slice
+## Active milestone: owner audit storage recovery
 
-- **Branch:** `feat/phase2-transfer-integrity-recovery`, based on merged `main` `459f4818`.
-- **Implementation checkpoint:** `eedc16ee5693e650e778f94ac62be047323e5744` (this handoff follows that code).
-- Android transfer source hashing, resumed source reads, publication and digest verification now use bounded no-progress reads; repeated zero-byte document-provider replies fail as safe local storage errors instead of keeping a transfer worker spinning indefinitely.
-- Android final-digest rejection durably invalidates retained state **before** deleting the failed partial; a failed retention commit leaves the existing snapshot/data consistent. Linux integrity rejection likewise commits removal before destructive truncation/deletion.
-- Focused JVM tests cover temporary zero reads, exhausted read retries and actionable native file-transfer error hints. Linux tests inject a protected checkpoint cleanup failure then confirm safe retained state, subsequent digest failure and clean retransmission with verified content.
-- **Verification:** this new batch has **not yet passed exact-head CI** at the time of this handoff. No physical-device testing claimed, no accepted ADR or wire protocol changes.
+- **PR:** [#93](https://github.com/untitled12121/Cross-Lab/pull/93); branch `feat/phase2-audit-owner-retry`, originally based on main `5183b605`. Code batch checkpoint `6bcd8b193999d0da35e215fe2a1720e74488947a`; use the active PR head for the exact latest source.
+- **Android:** bounded serialized owner-requested audit reload with narrow persistence seam, failure-injection JVM regression, native retry/error state, stale protected-history masking and export/clear disabling when persistence is unavailable. Clear confirmation cancels when storage access fails.
+- **Linux:** owner-visible protected-audit retry via bounded existing command queue; failed initial/history/record/clear and export reads hide previously shown history and prevent destructive actions; revalidated read restores presentation. Added `OwnerFeatureState` regression for fail-closed masking/recovery.
+- **Verification:** Android-only commit `822438df` passed Android and CI Gate in run `39273530188`, **before** Linux and subsequent audit UX changes. The complete Rust + Android batch has NOT yet passed exact-source CI or hardware acceptance. No protocol, trust, privileged-service or approved architecture change.
 
-## Next task and release blockers
+## Exact next work
 
-1. Push and integrate this coherent file-integrity recovery batch after affected Rust format/check/Clippy/tests and Android unit tests. Fix confirmed failures together; avoid unrelated CI reruns.
-2. Continue Phase 2 product completeness: destination publication/cancel fault recovery, native owner error/accessibility polish and audit/notification lifecycle reliability.
-3. **Physical release gate remains open:** normal Linux and arm64 Android QR/LAN pairing, durable trust/reconnect, per-peer default deny and owner Allow/Deny, clipboard both directions, resumable file cancellation/checksum, OS notification withdrawal/redaction, protected audit storage failure and signed revocation **last** on disposable identities. Do not claim Cross-Lab 0.1 release readiness from CI alone.
+1. Push the consolidated audit owner-recovery head to PR #93, execute the affected Rust formatting/check/tests and Android unit checks once, correct confirmed failures as a batch, then merge when passing.
+2. Continue remaining Phase 2 platform UX, transfer/publication fault recovery and audit/notification lifecycle reliability, focusing on code rather than recurring CI.
+3. **Physical release gate remains open:** normal Linux + arm64 Android QR/LAN pairing, trusted restart/reconnect, per-peer default deny and owner Allow/Deny, clipboard, file resume/cancel/checksum, notification OS withdrawal/redaction, protected audit storage faults, owner-signed terminal revocation **last** using disposable identities. Record only redacted results, exact versions and real pass/fail evidence.
 
-Follow [AGENTS.md](../../AGENTS.md), [WORKFLOW.md](WORKFLOW.md), [CI.md](CI.md) and [Phase 2 gates](../plans/phase-2/MVP-completion-gates.md). Phase 3 deferred. Keep uploaded reference archives until completed features no longer need their source.
+See [AGENTS.md](../../AGENTS.md), [WORKFLOW.md](WORKFLOW.md), [CI.md](CI.md), and [Phase 2 completion gates](../plans/phase-2/MVP-completion-gates.md). Phase 3 remains deferred.
