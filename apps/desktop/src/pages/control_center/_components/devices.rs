@@ -175,11 +175,7 @@ fn empty_state(presence: VerifiedSessionDisplay, cx: &App) -> Div {
                 .flex()
                 .items_center()
                 .gap(px(appearance.spacing.md))
-                .child(status_badge(
-                    presence.label(),
-                    verified_tone(presence),
-                    cx,
-                ))
+                .child(status_badge(presence.label(), verified_tone(presence), cx))
                 .child(
                     div()
                         .text_size(px(appearance.typography.scales.body.size))
@@ -192,7 +188,7 @@ fn empty_state(presence: VerifiedSessionDisplay, cx: &App) -> Div {
                 .text_size(px(appearance.typography.scales.caption.size))
                 .text_color(theme.muted_foreground)
                 .child(
-                    "Cross-Lab has no mandatory cloud account. Start an authenticated local                      device session to manage the peer here.",
+                    "Cross-Lab has no mandatory cloud account. Start a verified local session to manage a peer here.",
                 ),
         )
 }
