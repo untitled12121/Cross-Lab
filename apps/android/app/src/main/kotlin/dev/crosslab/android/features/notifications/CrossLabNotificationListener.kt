@@ -6,78 +6,68 @@ import android.service.notification.StatusBarNotification
 import dev.crosslab.android.CrossLabApplication
 
 /**
- * No notification fields are inspected before the Rust agent confirms a live
- * authenticated and policy-authorized subscription.
+ * Do not inspect notification payloads before a fresh authenticated,
+ * owner-authorized subscription permits capture.
  */
 class CrossLabNotificationListener : NotificationListenerService() {
     override fun onListenerConnected() {
         AndroidNotificationConsent.listenerConnected.set(true)
-        (application as? CrossLabApplication)?.notificationPermissionChanged()
+        runCatching { (application as? CrossLabApplication)?.notificationPermissionChanged() }
     }
 
     override fun onListenerDisconnected() {
         AndroidNotificationConsent.listenerConnected.set(false)
-        (application as? CrossLabApplication)?.notificationPermissionChanged()
+        runCatching { (application as? CrossLabApplication)?.notificationPermissionChanged() }
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         val publisher =
             (application as? CrossLabApplication)?.notificationPublisher() ?: return
-        if (!publisher.canCapture() || sbn == null) return
+        if (sbn == null) return
 
-        val event = sbn.notification ?: return
-        if (excludedNotificationSource(sbn.packageName, event.category) ||
-            event.visibility == Notification.VISIBILITY_SECRET ||
-            sbn.isOngoing ||
-            event.flags and Notification.FLAG_FOREGROUND_SERVICE != 0
-        ) {
-            return
+        NotificationDispatch(publisher).posted { contentAllowed ->
+            val event = sbn.notification ?: return@posted null
+            if (excludedNotificationSource(sbn.packageName, event.category) ||
+                event.visibility == Notification.VISIBILITY_SECRET ||
+                sbn.isOngoing ||
+                event.flags and Notification.FLAG_FOREGROUND_SERVICE != 0
+            ) return@posted null
+
+            val key = sbn.key ?: return@posted null
+            if (key.length !in 1..256) return@posted null
+            val appLabel =
+                runCatching {
+                    val info = packageManager.getApplicationInfo(sbn.packageName, 0)
+                    packageManager.getApplicationLabel(info).toString()
+                }.getOrDefault("App")
+            val includeContent =
+                event.visibility == Notification.VISIBILITY_PUBLIC && contentAllowed
+            NotificationDelivery(
+                key = key,
+                appLabel = boundedDisplay(appLabel, 96).orEmpty(),
+                title = if (includeContent) {
+                    boundedDisplay(event.extras?.getCharSequence(Notification.EXTRA_TITLE), 256)
+                } else null,
+                preview = if (includeContent) {
+                    boundedDisplay(event.extras?.getCharSequence(Notification.EXTRA_TEXT), 512)
+                } else null,
+                isProtected = event.visibility != Notification.VISIBILITY_PUBLIC,
+            )
         }
-
-        val key = sbn.key ?: return
-        if (key.length !in 1..256) return
-        val appLabel =
-            runCatching {
-                val info = packageManager.getApplicationInfo(sbn.packageName, 0)
-                packageManager.getApplicationLabel(info).toString()
-            }.getOrDefault("App")
-        val label = boundedDisplay(appLabel, 96)
-
-        // A private/system-marked notification never exposes title/preview.
-        val includeContent =
-            event.visibility == Notification.VISIBILITY_PUBLIC && publisher.contentAllowed()
-        val title =
-            if (includeContent) {
-                boundedDisplay(event.extras?.getCharSequence(Notification.EXTRA_TITLE), 256)
-            } else {
-                null
-            }
-        val preview =
-            if (includeContent) {
-                boundedDisplay(event.extras?.getCharSequence(Notification.EXTRA_TEXT), 512)
-            } else {
-                null
-            }
-        publisher.posted(
-            key,
-            label.orEmpty(),
-            title,
-            preview,
-            event.visibility != Notification.VISIBILITY_PUBLIC,
-        )
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
         val publisher =
             (application as? CrossLabApplication)?.notificationPublisher() ?: return
-        if (!publisher.canCapture() || sbn == null) return
-        val key = sbn.key ?: return
-        if (key.length in 1..256) publisher.removed(key)
+        if (sbn == null) return
+        NotificationDispatch(publisher).removed {
+            sbn.key?.takeIf { it.length in 1..256 }
+        }
     }
 
     override fun onDestroy() {
         AndroidNotificationConsent.listenerConnected.set(false)
-        (application as? CrossLabApplication)?.notificationPermissionChanged()
+        runCatching { (application as? CrossLabApplication)?.notificationPermissionChanged() }
         super.onDestroy()
     }
 }
