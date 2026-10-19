@@ -423,9 +423,10 @@ impl DevicesFeatureState {
 
     pub fn has_authenticated_capability(&self, capability: &str) -> bool {
         self.has_authenticated_session()
-            && self.current.as_ref().is_some_and(|device| {
-                device.capability_ids().iter().any(|id| id == capability)
-            })
+            && self
+                .current
+                .as_ref()
+                .is_some_and(|device| device.capability_ids().iter().any(|id| id == capability))
     }
 
     pub fn saved_trusted_peers(
@@ -433,7 +434,9 @@ impl DevicesFeatureState {
         durable_trusted_ids: &[DeviceId],
     ) -> Vec<SavedTrustedPeerPresentation> {
         let authenticated_peer = if self.has_authenticated_session() {
-            self.current.as_ref().and_then(DevicePresentation::peer_device_id)
+            self.current
+                .as_ref()
+                .and_then(DevicePresentation::peer_device_id)
         } else {
             None
         };
