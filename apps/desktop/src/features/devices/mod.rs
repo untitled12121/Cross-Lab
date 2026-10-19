@@ -222,12 +222,20 @@ impl VerifiedSessionDisplay {
     pub const fn detail(self) -> &'static str {
         match self {
             Self::Authenticated => "Verified live session with an owner-approved peer.",
-            Self::Unverified => "Peer presence is not a verified session. All peer actions require fresh authentication.",
+            Self::Unverified => {
+                "Peer presence is not a verified session. All peer actions require fresh authentication."
+            }
             Self::Revoked => "Owner-revoked trust cannot be restored by reconnecting.",
-            Self::Unavailable => "No active authenticated peer session. Pair a device or begin LAN discovery.",
-            Self::Discovering => "Looking for trusted devices on this LAN. Discovery does not authenticate a peer.",
+            Self::Unavailable => {
+                "No active authenticated peer session. Pair a device or begin LAN discovery."
+            }
+            Self::Discovering => {
+                "Looking for trusted devices on this LAN. Discovery does not authenticate a peer."
+            }
             Self::Connecting => "Checking owner trust and a fresh authenticated session.",
-            Self::Reconnecting => "The previous session ended. Waiting for a new authenticated session.",
+            Self::Reconnecting => {
+                "The previous session ended. Waiting for a new authenticated session."
+            }
             Self::Paused => "Automatic connection is paused. Reconnect to resume.",
             Self::Failed => "LAN discovery failed. Reconnect after checking local connectivity.",
         }

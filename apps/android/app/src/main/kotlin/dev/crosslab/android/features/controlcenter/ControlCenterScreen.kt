@@ -30,6 +30,7 @@ import dev.crosslab.android.features.clipboard.ClipboardState
 import dev.crosslab.android.features.devices.DevicesScreen
 import dev.crosslab.android.features.devices.DevicesState
 import dev.crosslab.android.features.devices.RuntimeControllerState
+import dev.crosslab.android.features.devices.RuntimeRecoveryPresentation
 import dev.crosslab.android.features.devices.RuntimeLifecycle
 import dev.crosslab.android.features.devices.RuntimePermissionEffect
 import dev.crosslab.android.features.filetransfer.FileTransferState
@@ -89,6 +90,8 @@ fun ControlCenterScreen(
     onCancelPairing: () -> Unit,
 ) {
     val colors = theme.colors
+    val devices = DevicesState.from(runtime.snapshot, trustedPeerIds)
+    val recovery = RuntimeRecoveryPresentation.from(runtime, devices)
     var section by remember { mutableStateOf(ControlCenterSection.DEVICES) }
 
     Column(
@@ -124,21 +127,8 @@ fun ControlCenterScreen(
                         .copy(color = colors.foreground.toComposeColor()),
             )
             StatusBadge(
-                label =
-                    when (runtime.lifecycle) {
-                        RuntimeLifecycle.RUNNING ->
-                            if (runtime.networkAvailable) "Runtime active" else "Network unavailable"
-                        RuntimeLifecycle.STOPPED -> "Runtime stopped"
-                        RuntimeLifecycle.SHUTDOWN -> "Runtime shutdown"
-                    },
-                tone =
-                    if (runtime.lifecycle == RuntimeLifecycle.RUNNING &&
-                        runtime.networkAvailable
-                    ) {
-                        StatusTone.ACCENT
-                    } else {
-                        StatusTone.NEUTRAL
-                    },
+                label = recovery.label,
+                tone = recovery.tone,
                 textScale = theme.typography.scales.caption,
                 border = colors.border.toComposeColor(),
                 neutralBackground = colors.muted.toComposeColor(),
@@ -178,7 +168,7 @@ fun ControlCenterScreen(
             ControlCenterSection.DEVICES ->
                 DevicesScreen(
                     theme = theme,
-                    devices = DevicesState.from(runtime.snapshot, trustedPeerIds),
+                    devices = devices,
                     runtime = runtime,
                     clipboard = clipboard,
                     fileTransfer = fileTransfer,

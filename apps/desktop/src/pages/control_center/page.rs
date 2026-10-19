@@ -12,10 +12,10 @@ use crosslab_policy::{CapabilityId, OperationName, RuleEffect};
 #[cfg(target_os = "linux")]
 use crosslab_protocol::TransferId;
 
-#[cfg(feature = "development-provisioning")]
-use crate::features::devices::TrustDisplay;
 #[cfg(target_os = "linux")]
 use crate::features::devices::PresenceControlAction;
+#[cfg(feature = "development-provisioning")]
+use crate::features::devices::TrustDisplay;
 #[cfg(target_os = "linux")]
 use crate::features::{
     audit::{AuditIntent, AuditLifecycle, LinuxAuditStore, current_hour},

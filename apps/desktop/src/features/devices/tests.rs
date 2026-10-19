@@ -5,9 +5,9 @@ use crosslab_protocol::ProtocolVersion;
 use crosslab_runtime::ConnectivityState;
 
 use super::{
-    ConnectivityDisplay, DevicePresentation, DevicesFeatureState, NetworkDisplay, PresenceDisplay,
-    PresenceControlAction, SecurityDisplay, SessionDisplay, StatusFields, TrustDisplay,
-    VerifiedSessionDisplay,
+    ConnectivityDisplay, DevicePresentation, DevicesFeatureState, NetworkDisplay,
+    PresenceControlAction, PresenceDisplay, SecurityDisplay, SessionDisplay, StatusFields,
+    TrustDisplay, VerifiedSessionDisplay,
 };
 
 #[test]
@@ -241,8 +241,14 @@ fn reconnect_action_is_offered_after_pause_and_failure() {
 fn published_online_presence_is_not_an_authenticated_ui_status() {
     let mut state = DevicesFeatureState::empty();
     state.presence = PresenceDisplay::Online;
-    assert_eq!(state.verified_session_display(), VerifiedSessionDisplay::Unverified);
-    assert_eq!(state.presence_control_action(), PresenceControlAction::Reconnect);
+    assert_eq!(
+        state.verified_session_display(),
+        VerifiedSessionDisplay::Unverified
+    );
+    assert_eq!(
+        state.presence_control_action(),
+        PresenceControlAction::Reconnect
+    );
     assert!(!state.has_authenticated_session());
 
     let peer = DeviceId::from_bytes([0x43; 32]);
@@ -259,12 +265,24 @@ fn published_online_presence_is_not_an_authenticated_ui_status() {
         metered: None,
         capability_count: 0,
     }));
-    assert_eq!(state.verified_session_display(), VerifiedSessionDisplay::Unverified);
-    assert_eq!(state.presence_control_action(), PresenceControlAction::Reconnect);
+    assert_eq!(
+        state.verified_session_display(),
+        VerifiedSessionDisplay::Unverified
+    );
+    assert_eq!(
+        state.presence_control_action(),
+        PresenceControlAction::Reconnect
+    );
 
     state.current.as_mut().unwrap().session = SessionDisplay::Active;
-    assert_eq!(state.verified_session_display(), VerifiedSessionDisplay::Authenticated);
-    assert_eq!(state.presence_control_action(), PresenceControlAction::Disconnect);
+    assert_eq!(
+        state.verified_session_display(),
+        VerifiedSessionDisplay::Authenticated
+    );
+    assert_eq!(
+        state.presence_control_action(),
+        PresenceControlAction::Disconnect
+    );
 }
 
 #[test]
@@ -289,8 +307,14 @@ fn revoked_peer_never_offers_reconnect_or_authenticated_label() {
         PresenceDisplay::Paused,
     ] {
         state.presence = phase;
-        assert_eq!(state.verified_session_display(), VerifiedSessionDisplay::Revoked);
-        assert_eq!(state.presence_control_action(), PresenceControlAction::Unavailable);
+        assert_eq!(
+            state.verified_session_display(),
+            VerifiedSessionDisplay::Revoked
+        );
+        assert_eq!(
+            state.presence_control_action(),
+            PresenceControlAction::Unavailable
+        );
     }
 }
 
@@ -298,10 +322,22 @@ fn revoked_peer_never_offers_reconnect_or_authenticated_label() {
 fn native_phase_has_a_specific_recovery_message() {
     let mut state = DevicesFeatureState::empty();
     for (presence, expected) in [
-        (PresenceDisplay::Unavailable, VerifiedSessionDisplay::Unavailable),
-        (PresenceDisplay::Discovering, VerifiedSessionDisplay::Discovering),
-        (PresenceDisplay::Connecting, VerifiedSessionDisplay::Connecting),
-        (PresenceDisplay::Reconnecting, VerifiedSessionDisplay::Reconnecting),
+        (
+            PresenceDisplay::Unavailable,
+            VerifiedSessionDisplay::Unavailable,
+        ),
+        (
+            PresenceDisplay::Discovering,
+            VerifiedSessionDisplay::Discovering,
+        ),
+        (
+            PresenceDisplay::Connecting,
+            VerifiedSessionDisplay::Connecting,
+        ),
+        (
+            PresenceDisplay::Reconnecting,
+            VerifiedSessionDisplay::Reconnecting,
+        ),
         (PresenceDisplay::Paused, VerifiedSessionDisplay::Paused),
         (PresenceDisplay::Failed, VerifiedSessionDisplay::Failed),
     ] {
@@ -311,5 +347,8 @@ fn native_phase_has_a_specific_recovery_message() {
         assert!(!shown.label().is_empty());
         assert!(!shown.detail().is_empty());
     }
-    assert_eq!(state.presence_control_action(), PresenceControlAction::Reconnect);
+    assert_eq!(
+        state.presence_control_action(),
+        PresenceControlAction::Reconnect
+    );
 }
