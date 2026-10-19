@@ -1031,7 +1031,7 @@ impl ControlCenterPage {
                 .finish(ClipboardAction::Send, ClipboardResult::NotConnected);
             cx.notify();
             return;
-        }
+        };
         let Some(controller) = self.product_presence.as_ref().map(Arc::clone) else {
             self.clipboard
                 .finish(ClipboardAction::Send, ClipboardResult::Unavailable);
@@ -1077,7 +1077,7 @@ impl ControlCenterPage {
                 .finish(ClipboardAction::Fetch, ClipboardResult::NotConnected);
             cx.notify();
             return;
-        }
+        };
         let Some(controller) = self.product_presence.as_ref().map(Arc::clone) else {
             self.clipboard
                 .finish(ClipboardAction::Fetch, ClipboardResult::Unavailable);
