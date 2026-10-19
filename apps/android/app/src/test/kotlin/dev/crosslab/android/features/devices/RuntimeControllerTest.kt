@@ -99,6 +99,24 @@ class RuntimeControllerTest {
     }
 
     @Test
+    fun throwingObserverCannotAbortNativeRuntimeLifecycle() {
+        val port = FakeRuntimePort()
+        val controller = RuntimeController(port)
+        val bad = controller.observe { throw IllegalStateException("stale activity") }
+        val seen = mutableListOf<RuntimeLifecycle>()
+        val good = controller.observe { seen += it.lifecycle }
+
+        controller.onForeground()
+        controller.onBackground()
+
+        assertEquals(RuntimeLifecycle.STOPPED, controller.state().lifecycle)
+        assertEquals(listOf(RuntimeLifecycle.STOPPED, RuntimeLifecycle.RUNNING,
+            RuntimeLifecycle.STOPPED), seen)
+        bad.close()
+        good.close()
+    }
+
+    @Test
     fun foregroundAndBackgroundAreIdempotent() {
         val port = FakeRuntimePort()
         val controller = RuntimeController(port)

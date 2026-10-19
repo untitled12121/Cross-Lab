@@ -8,6 +8,24 @@ import org.junit.Test
 
 class ClipboardControllerTest {
     @Test
+    fun throwingObserverCannotAbortClipboardOperationOrOtherSubscribers() {
+        val port = FakeClipboardPort()
+        val controller = ClipboardController(port)
+        val seen = mutableListOf<ClipboardResult?>()
+        val bad = controller.observe { throw IllegalStateException("UI observer went away") }
+        val good = controller.observe { seen += it.result }
+
+        controller.send()
+        port.complete(ClipboardResult.SUCCESS)
+
+        assertEquals(1, port.sendCalls)
+        assertEquals(ClipboardResult.SUCCESS, controller.state().result)
+        assertEquals(ClipboardResult.SUCCESS, seen.last())
+        good.close()
+        bad.close()
+    }
+
+    @Test
     fun sendPublishesBusyThenSuccessWithoutPayloadState() {
         val port = FakeClipboardPort()
         val controller = ClipboardController(port)
