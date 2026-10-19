@@ -361,19 +361,20 @@ impl DesktopProductPresenceController {
 
     fn peer_permission_editable(&self, peer: DeviceId, capability: &CapabilityId) -> bool {
         let snapshot = self.status.borrow();
-        snapshot.phase() == PresencePhase::Online && snapshot.runtime().is_some_and(|runtime| {
-            runtime.peer_device_id() == Some(peer)
-                && runtime.session_id().is_some()
-                && runtime.session_state() == SessionState::Active
-                && runtime.trust_state() == TrustState::Trusted
-                && runtime.connectivity() == ConnectivityState::Connected
-                && runtime.transport().security_class()
-                    == TransportSecurityClass::AuthenticatedConfidentialChannel
-                && runtime
-                    .negotiated_capability_ids()
-                    .iter()
-                    .any(|id| id == capability)
-        })
+        snapshot.phase() == PresencePhase::Online
+            && snapshot.runtime().is_some_and(|runtime| {
+                runtime.peer_device_id() == Some(peer)
+                    && runtime.session_id().is_some()
+                    && runtime.session_state() == SessionState::Active
+                    && runtime.trust_state() == TrustState::Trusted
+                    && runtime.connectivity() == ConnectivityState::Connected
+                    && runtime.transport().security_class()
+                        == TransportSecurityClass::AuthenticatedConfidentialChannel
+                    && runtime
+                        .negotiated_capability_ids()
+                        .iter()
+                        .any(|id| id == capability)
+            })
     }
 
     fn send_control(&self, control: DiscoveryControl) -> Result<(), DesktopPresenceError> {
