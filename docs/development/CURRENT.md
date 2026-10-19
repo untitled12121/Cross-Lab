@@ -2,6 +2,14 @@
 
 This file is the durable resume guide for active Cross-Lab development. Git/code/tests are factual state; this file records the intended handoff.
 
+## Active checkpoint — 2026-10-19 (Phase 2 Android trusted-session discovery lifecycle)
+
+- **Feature branch:** `fix/phase2-android-trusted-nsd-lifecycle` from merged Android inventory `1bff7cbade903375a46794a08b563ad79760d24e`. Three focused commits form one unpushed implementation batch: a bounded sequential DNS-SD resolver, platform lifecycle integration, and this handoff.
+- **Completed code:** trusted-session NSD resolutions are serialized and bounded, duplicate service sightings are ignored, service disappearance invalidates in-flight/queued results, and callbacks after shutdown cannot publish stale candidates. Registration/discovery callbacks arriving after teardown explicitly stop their platform operations. The existing profile and Rust trust/session authentication remain authoritative.
+- **Focused regression coverage:** pure Kotlin tests cover serialization, candidate-capacity limit, lost/reappearing services, cancelled queued routes and closed sessions. This is **software implementation only**, not physical LAN evidence.
+- **Verification:** no branch CI has been run at the time of this source checkpoint; run one exact-head Android/Rust CI pass after this coherent batch, correct any failures together, then merge if green.
+- **Next task:** review the resulting CI and reconcile with the parallel Linux inventory PR #83; continue Phase 2 pairing/reconnect usability and owner-hardware acceptance before a Cross-Lab 0.1 release. Do not begin Phase 3.
+
 ## Historical agent workflow and first owner handoff (2026-10-02)
 
 **Read the root [AGENTS.md](../../AGENTS.md) at the start of every coding session.** The requested development mode is **batch-first**: spend roughly an hour of active effort on an integrated, reviewable feature set when the work warrants it. Make small local recovery commits, but do not push/retrigger broad CI for every tiny change. Use focused checks for sensitive boundaries while coding; after the batch run format/lint/build/tests as relevant, then make one consolidated push, examine CI once complete, and consolidate fixes. Preserve a Git checkpoint when context may be lost. Docs-only changes may use `[skip ci]` where CI has no useful work.
