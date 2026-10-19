@@ -432,10 +432,11 @@ impl DevicesFeatureState {
         &self,
         durable_trusted_ids: &[DeviceId],
     ) -> Vec<SavedTrustedPeerPresentation> {
-        let authenticated_peer = self
-            .has_authenticated_session()
-            .then(|| self.current.as_ref().and_then(DevicePresentation::peer_device_id))
-            .flatten();
+        let authenticated_peer = if self.has_authenticated_session() {
+            self.current.as_ref().and_then(DevicePresentation::peer_device_id)
+        } else {
+            None
+        };
 
         durable_trusted_ids
             .iter()
