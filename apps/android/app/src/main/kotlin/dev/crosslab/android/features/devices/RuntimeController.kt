@@ -74,7 +74,7 @@ class RuntimeController(
     private val portSubscription =
         port.observeSnapshots { snapshot ->
             update {
-                if (it.lifecycle == RuntimeLifecycle.SHUTDOWN) return@update null
+                if (it.lifecycle != RuntimeLifecycle.RUNNING) return@update null
                 it.copy(snapshot = snapshot)
             }
         }
@@ -113,11 +113,22 @@ class RuntimeController(
     fun onBackground() {
         update {
             if (it.lifecycle != RuntimeLifecycle.RUNNING) return@update null
-            port.stop()
-            it.copy(
-                lifecycle = RuntimeLifecycle.STOPPED,
-                snapshot = port.snapshot(),
-            )
+            if (runCatching { port.stop() }.isFailure) {
+                // A failed stop cannot be treated as a safely paused runtime.
+                runCatching { port.shutdown() }
+                it.copy(
+                    lifecycle = RuntimeLifecycle.SHUTDOWN,
+                    snapshot = RuntimeSnapshot.disconnected().copy(presence = RuntimePresence.FAILED),
+                )
+            } else {
+                it.copy(
+                    lifecycle = RuntimeLifecycle.STOPPED,
+                    snapshot = RuntimeSnapshot.disconnected(),
+                )
+            }
+        }
+        if (current.lifecycle == RuntimeLifecycle.SHUTDOWN) {
+            portSubscription.close()
         }
     }
 
@@ -126,10 +137,16 @@ class RuntimeController(
             if (it.lifecycle == RuntimeLifecycle.SHUTDOWN || !it.networkAvailable) {
                 return@update null
             }
-            if (it.lifecycle == RuntimeLifecycle.RUNNING) port.networkLost()
-            it.copy(
-                networkAvailable = false,
-                snapshot = if (it.lifecycle == RuntimeLifecycle.RUNNING) port.snapshot() else it.snapshot,
+            if (it.lifecycle != RuntimeLifecycle.RUNNING) {
+                return@update it.copy(networkAvailable = false)
+            }
+            val next = runCatching {
+                port.networkLost()
+                port.snapshot()
+            }
+            next.fold(
+                onSuccess = { updated -> it.copy(networkAvailable = false, snapshot = updated) },
+                onFailure = { _ -> failClosed(it, networkAvailable = false) },
             )
         }
     }
@@ -139,10 +156,16 @@ class RuntimeController(
             if (it.lifecycle == RuntimeLifecycle.SHUTDOWN || it.networkAvailable) {
                 return@update null
             }
-            if (it.lifecycle == RuntimeLifecycle.RUNNING) port.networkAvailable()
-            it.copy(
-                networkAvailable = true,
-                snapshot = if (it.lifecycle == RuntimeLifecycle.RUNNING) port.snapshot() else it.snapshot,
+            if (it.lifecycle != RuntimeLifecycle.RUNNING) {
+                return@update it.copy(networkAvailable = true)
+            }
+            val snapshot = runCatching {
+                port.networkAvailable()
+                port.snapshot()
+            }
+            snapshot.fold(
+                onSuccess = { updated -> it.copy(networkAvailable = true, snapshot = updated) },
+                onFailure = { _ -> failClosed(it, networkAvailable = true) },
             )
         }
     }
@@ -150,8 +173,13 @@ class RuntimeController(
     fun disconnectPeer() {
         update {
             if (it.lifecycle != RuntimeLifecycle.RUNNING) return@update null
-            port.disconnectPeer()
-            it.copy(snapshot = port.snapshot())
+            runCatching {
+                port.disconnectPeer()
+                port.snapshot()
+            }.fold(
+                onSuccess = { snapshot -> it.copy(snapshot = snapshot) },
+                onFailure = { _ -> failClosed(it) },
+            )
         }
     }
 
@@ -160,8 +188,13 @@ class RuntimeController(
             when (it.lifecycle) {
                 RuntimeLifecycle.STOPPED -> startPort(it)
                 RuntimeLifecycle.RUNNING -> {
-                    port.reconnectPeer()
-                    it.copy(snapshot = port.snapshot())
+                    runCatching {
+                        port.reconnectPeer()
+                        port.snapshot()
+                    }.fold(
+                        onSuccess = { snapshot -> it.copy(snapshot = snapshot) },
+                        onFailure = { _ -> failClosed(it) },
+                    )
                 }
                 RuntimeLifecycle.SHUTDOWN -> null
             }
@@ -218,20 +251,16 @@ class RuntimeController(
         var succeeded = true
         update {
             if (it.lifecycle == RuntimeLifecycle.SHUTDOWN) return@update null
-            port.stop()
-            if (it.lifecycle == RuntimeLifecycle.RUNNING) {
-                succeeded = runCatching {
-                    port.start()
-                    if (!it.networkAvailable) port.networkLost()
-                }.isSuccess
+            if (runCatching { port.stop() }.isFailure) {
+                succeeded = false
+                return@update failClosed(it)
             }
-            if (!succeeded) {
-                runCatching { port.stop() }
+            if (it.lifecycle != RuntimeLifecycle.RUNNING) {
+                return@update it.copy(snapshot = RuntimeSnapshot.disconnected())
             }
-            it.copy(
-                lifecycle = if (succeeded) it.lifecycle else RuntimeLifecycle.STOPPED,
-                snapshot = port.snapshot(),
-            )
+            val restarted = startPort(it)
+            succeeded = restarted.lifecycle == RuntimeLifecycle.RUNNING
+            restarted
         }
         return succeeded
     }
@@ -241,30 +270,46 @@ class RuntimeController(
         update {
             if (it.lifecycle == RuntimeLifecycle.SHUTDOWN) return@update null
             if (it.lifecycle == RuntimeLifecycle.RUNNING) {
-                port.stop()
+                runCatching { port.stop() }
             }
             didShutdown = true
             it.copy(
                 lifecycle = RuntimeLifecycle.SHUTDOWN,
-                snapshot = port.snapshot(),
+                snapshot = RuntimeSnapshot.disconnected(),
             )
         }
         if (didShutdown) {
             portSubscription.close()
-            port.shutdown()
+            runCatching { port.shutdown() }
         }
     }
 
     private fun startPort(state: RuntimeControllerState): RuntimeControllerState {
-        val started =
+        val result =
             runCatching {
                 port.start()
                 if (!state.networkAvailable) port.networkLost()
-            }.isSuccess
-        if (!started) runCatching { port.stop() }
+                port.snapshot()
+            }
+        return result.fold(
+            onSuccess = { state.copy(lifecycle = RuntimeLifecycle.RUNNING, snapshot = it) },
+            onFailure = { failClosed(state) },
+        )
+    }
+
+    private fun failClosed(
+        state: RuntimeControllerState,
+        networkAvailable: Boolean = state.networkAvailable,
+    ): RuntimeControllerState {
+        val stopped = runCatching { port.stop() }.isSuccess
+        if (!stopped) {
+            runCatching { port.shutdown() }
+            portSubscription.close()
+        }
         return state.copy(
-            lifecycle = if (started) RuntimeLifecycle.RUNNING else RuntimeLifecycle.STOPPED,
-            snapshot = if (started) port.snapshot() else RuntimeSnapshot.disconnected(),
+            lifecycle = if (stopped) RuntimeLifecycle.STOPPED else RuntimeLifecycle.SHUTDOWN,
+            networkAvailable = networkAvailable,
+            snapshot = RuntimeSnapshot.disconnected().copy(presence = RuntimePresence.FAILED),
         )
     }
 
