@@ -1,5 +1,7 @@
 package dev.crosslab.android.features.filetransfer
 
+import dev.crosslab.android.features.observers.notifyObservers
+
 import android.net.Uri
 import java.util.concurrent.CopyOnWriteArraySet
 
@@ -66,14 +68,14 @@ class FileTransferController(private val port: FileTransferPort) {
 
     private val subscription = port.observeFileTransfer { state ->
         current = state
-        listeners.forEach { it(state) }
+        notifyObservers(listeners, state)
     }
 
     fun state(): FileTransferState = current
 
     fun observe(listener: (FileTransferState) -> Unit): AutoCloseable {
         listeners += listener
-        listener(current)
+        runCatching { listener(current) }
         return AutoCloseable { listeners -= listener }
     }
 
