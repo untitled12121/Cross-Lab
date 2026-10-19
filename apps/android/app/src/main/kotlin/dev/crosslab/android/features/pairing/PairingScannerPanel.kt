@@ -242,17 +242,17 @@ private fun PairingCameraPreview(
 
 /** Reject scanner callbacks after dismissal and accept only one valid invitation. */
 internal class PairingScanGate {
-    private val open = AtomicBoolean(true)
+    private val active = AtomicBoolean(true)
     private val accepted = AtomicBoolean(false)
 
-    fun isOpen(): Boolean = open.get()
+    fun isOpen(): Boolean = active.get()
 
     fun canAnalyze(): Boolean = isOpen() && !accepted.get()
 
     fun tryAccept(): Boolean = canAnalyze() && accepted.compareAndSet(false, true)
 
     fun close() {
-        open.set(false)
+        active.set(false)
     }
 }
 
@@ -278,31 +278,39 @@ private class PairingQrAnalyzer(
         }
 
         val input =
-            InputImage.fromMediaImage(
-                image,
-                imageProxy.imageInfo.rotationDegrees,
-            )
-
-        scanner.process(input)
-            .addOnSuccessListener { barcodes ->
-                if (!scanGate.canAnalyze()) return@addOnSuccessListener
-
-                for (barcode in barcodes) {
-                    val rawValue = barcode.rawValue ?: continue
-                    val bootstrap =
-                        runCatching { scanPairingBootstrap(rawValue) }
-                            .getOrNull()
-                            ?: continue
-
-                    if (scanGate.tryAccept()) {
-                        onScanned(bootstrap)
-                    }
-                    break
-                }
-            }
-            .addOnCompleteListener {
+            try {
+                InputImage.fromMediaImage(image, imageProxy.imageInfo.rotationDegrees)
+            } catch (_: Exception) {
                 processing.set(false)
                 imageProxy.close()
+                return
             }
+
+        try {
+            scanner.process(input)
+                .addOnSuccessListener { barcodes ->
+                    if (!scanGate.canAnalyze()) return@addOnSuccessListener
+
+                    for (barcode in barcodes) {
+                        val rawValue = barcode.rawValue ?: continue
+                        val bootstrap =
+                            runCatching { scanPairingBootstrap(rawValue) }
+                                .getOrNull()
+                                ?: continue
+
+                        if (scanGate.tryAccept()) {
+                            onScanned(bootstrap)
+                        }
+                        break
+                    }
+                }
+                .addOnCompleteListener {
+                    processing.set(false)
+                    imageProxy.close()
+                }
+        } catch (_: Exception) {
+            processing.set(false)
+            imageProxy.close()
+        }
     }
 }
