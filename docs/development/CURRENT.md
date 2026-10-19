@@ -5,8 +5,8 @@
 ## Implementation baseline
 
 - Integrated `main` at `cfd024270e7e998f9426c08a586260d3830a3f9c` includes PR #79 Phase 2 core/notifications/audit/revocation, PR #80-81 Android connectivity/scanner stability, PR #82-83 durable trusted-device inventory on both platforms, and PR #86 change-aware CI with manual verification scopes.
-- **Active feature milestone (unmerged):** owner-facing peer capability permission editing and Phase 2 recovery integration. Implementation source is staged on top of the `cfd0242` baseline with Android exact peer policy controls, protected Android policy persistence through its existing adapter, Linux serialized persist-before-apply permission path and GPUI controls, plus Android DNS-SD stale callback handling and Linux reconnect/startup recovery from the previously verified PR #84/#85 branches.
-- This is a substantial cross-platform implementation batch. The exact active branch/head will be recorded once pushed; **new source changes have not yet passed CI or physical-device acceptance**.
+- **Active feature milestone:** [PR #87](https://github.com/untitled12121/Cross-Lab/pull/87), branch `feat/phase2-owner-permissions-recovery`, from `cfd0242`. Android exact peer capability controls, protected policy commits and tightened runtime guards; Linux serialized persist-before-apply policy edits and GPUI owner controls; Android DNS-SD stale-callback handling and Linux startup/reconnect recovery integrated from previous #84/#85 code.
+- **Verification:** previous PR #87 source `a80b01e` and `4df287d5` failed Rust formatting; exact rustfmt diffs were corrected in source. One Android test job was still in progress at this checkpoint. Combined final head still needs exact-source format/Rust/Android verification and physical-device acceptance.
 
 ## Verification and blockers
 
