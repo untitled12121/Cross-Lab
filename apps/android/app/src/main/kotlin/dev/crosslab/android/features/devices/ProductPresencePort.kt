@@ -240,11 +240,12 @@ class ProductPresencePort(
     override fun sendClipboard(onComplete: (ClipboardResult) -> Unit): Boolean {
         val (active, token) =
             synchronized(lock) {
+                if (!current.hasAuthenticatedCapability("clipboard.write")) return false
                 agent?.let { it to generation }
             } ?: return false
 
         handler.post {
-            if (!isCurrentAgent(active, token)) {
+            if (!isCurrentClipboardAgent(active, token, "clipboard.write")) {
                 onComplete(ClipboardResult.CANCELLED)
                 return@post
             }
@@ -253,8 +254,11 @@ class ProductPresencePort(
                 is LocalClipboardRead.Text ->
                     clipboardWorkers.execute {
                         val result =
-                            runCatching { active.sendClipboardText(local.value) }
-                                .getOrNull()
+                            if (isCurrentClipboardAgent(active, token, "clipboard.write")) {
+                                runCatching { active.sendClipboardText(local.value) }.getOrNull()
+                            } else {
+                                null
+                            }
                         val outcome =
                             result?.outcome()?.toClipboardResult()
                                 ?: ClipboardResult.FAILED
@@ -279,13 +283,17 @@ class ProductPresencePort(
     override fun fetchClipboard(onComplete: (ClipboardResult) -> Unit): Boolean {
         val (active, token) =
             synchronized(lock) {
+                if (!current.hasAuthenticatedCapability("clipboard.read")) return false
                 agent?.let { it to generation }
             } ?: return false
 
         clipboardWorkers.execute {
             val result =
-                runCatching { active.fetchClipboardText() }
-                    .getOrNull()
+                if (isCurrentClipboardAgent(active, token, "clipboard.read")) {
+                    runCatching { active.fetchClipboardText() }.getOrNull()
+                } else {
+                    null
+                }
             val outcome =
                 result?.outcome()?.toClipboardResult()
                     ?: ClipboardResult.FAILED
@@ -306,7 +314,7 @@ class ProductPresencePort(
                 runCatching { operation.takeText() }.getOrNull()
             }
             handler.post {
-                if (!isCurrentAgent(active, token)) {
+                if (!isCurrentClipboardAgent(active, token, "clipboard.read")) {
                     onComplete(ClipboardResult.CANCELLED)
                     return@post
                 }
@@ -730,6 +738,16 @@ class ProductPresencePort(
     ): Boolean =
         synchronized(lock) {
             !closed.get() && generation == token && agent === active
+        }
+
+    private fun isCurrentClipboardAgent(
+        active: MobileTrustedPresenceAgent,
+        token: Long,
+        capability: String,
+    ): Boolean =
+        synchronized(lock) {
+            !closed.get() && generation == token && agent === active &&
+                current.hasAuthenticatedCapability(capability)
         }
 
     private fun publishAgentSnapshotLocked() {
