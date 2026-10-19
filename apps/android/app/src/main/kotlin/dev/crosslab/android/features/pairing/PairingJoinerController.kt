@@ -229,8 +229,10 @@ class PairingJoinerController(
 
     private fun cancelActive(notify: Boolean) {
         generation.incrementAndGet()
-        discoveryHandle?.close()
+        val oldDiscovery = discoveryHandle
         discoveryHandle = null
+        // A discovery adapter failure must not prevent cancelling verified pairing.
+        runCatching { oldDiscovery?.close() }
 
         val activeSession = session
         session = null
