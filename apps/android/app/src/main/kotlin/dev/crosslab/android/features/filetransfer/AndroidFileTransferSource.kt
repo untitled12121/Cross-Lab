@@ -3,6 +3,7 @@ package dev.crosslab.android.features.filetransfer
 import android.net.Uri
 import java.io.InputStream
 import kotlin.math.min
+import uniffi.crosslab_mobile_ffi.MobileFileTransferOffer
 
 private const val MAX_ZERO_PROGRESS_READS = 3
 
@@ -20,8 +21,6 @@ internal fun readTransferBytes(
     }
     throw FileTransferStorageUnavailable("document provider made no read progress")
 }
-
-import uniffi.crosslab_mobile_ffi.MobileFileTransferOffer
 
 internal const val FILE_TRANSFER_IO_CHUNK_BYTES = 64 * 1024
 internal const val FILE_TRANSFER_CHECKPOINT_BYTES = 1_048_576L
