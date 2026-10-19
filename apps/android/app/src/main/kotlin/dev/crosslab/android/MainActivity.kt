@@ -68,6 +68,7 @@ class MainActivity : ComponentActivity() {
                     auditUnavailable.value = status.unavailable
                     if (status.unavailable) {
                         auditRows.value = emptyList()
+                        auditDropped.value = 0L
                     } else {
                         status.history?.let { updateAudit(it) }
                     }

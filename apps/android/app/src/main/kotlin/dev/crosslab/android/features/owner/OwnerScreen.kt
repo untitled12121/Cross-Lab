@@ -196,6 +196,7 @@ fun OwnerScreen(
                     theme = theme,
                     label = "Confirm clear history",
                     destructive = true,
+                    enabled = !auditUnavailable,
                     onClick = {
                         confirmClearAudit = false
                         onClearAudit()
@@ -210,6 +211,7 @@ fun OwnerScreen(
                 ControlButton(
                     theme = theme,
                     label = "Clear audit history",
+                    enabled = !auditUnavailable,
                     onClick = { confirmClearAudit = true },
                 )
             }
