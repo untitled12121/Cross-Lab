@@ -10,6 +10,8 @@ use crosslab_identity::DeviceId;
 #[cfg(target_os = "linux")]
 use crosslab_policy::{CapabilityId, OperationName, RuleEffect};
 #[cfg(target_os = "linux")]
+use crate::features::owner::OWNER_PEER_OPERATIONS;
+#[cfg(target_os = "linux")]
 use crosslab_protocol::TransferId;
 
 #[cfg(feature = "development-provisioning")]
@@ -32,7 +34,7 @@ use crate::{
             ConnectivityDisplay, DesktopRuntimeController, DevicesFeatureState, SessionDisplay,
         },
         file_transfer::{FileTransferFailure, FileTransferFeatureState, FileTransferStage},
-        owner::{OwnerFeatureState, OWNER_PEER_OPERATIONS},
+        owner::OwnerFeatureState,
         pairing::{
             DesktopPairingInvitation, DesktopPairingStage, load_existing_product_identity,
             revoke_product_peer,
