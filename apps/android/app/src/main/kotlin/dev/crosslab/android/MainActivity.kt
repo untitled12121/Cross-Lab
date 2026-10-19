@@ -21,8 +21,6 @@ import dev.crosslab.android.features.appearance.ThemeResolver
 import dev.crosslab.android.features.controlcenter.ControlCenterScreen
 import dev.crosslab.android.features.devices.RuntimeControllerState
 import dev.crosslab.android.features.devices.NativeSessionBinding
-import dev.crosslab.android.features.devices.hasAuthenticatedCapability
-import dev.crosslab.android.features.devices.RuntimeSession
 import dev.crosslab.android.features.filetransfer.FileTransferState
 import dev.crosslab.android.features.identity.revocationTarget
 import dev.crosslab.android.features.notifications.NotificationOwnerConsent
