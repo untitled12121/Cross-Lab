@@ -409,20 +409,33 @@ impl DevicesFeatureState {
             .collect()
     }
 
+    /// Native actions must never promote cached trust into live session authority.
+    pub fn has_authenticated_session(&self) -> bool {
+        self.presence == PresenceDisplay::Online
+            && self.current.as_ref().is_some_and(|device| {
+                device.peer_device_id().is_some()
+                    && device.trust() == TrustDisplay::Trusted
+                    && device.connectivity() == ConnectivityDisplay::Connected
+                    && device.session() == SessionDisplay::Active
+                    && device.security() == SecurityDisplay::Authenticated
+            })
+    }
+
+    pub fn has_authenticated_capability(&self, capability: &str) -> bool {
+        self.has_authenticated_session()
+            && self.current.as_ref().is_some_and(|device| {
+                device.capability_ids().iter().any(|id| id == capability)
+            })
+    }
+
     pub fn saved_trusted_peers(
         &self,
         durable_trusted_ids: &[DeviceId],
     ) -> Vec<SavedTrustedPeerPresentation> {
         let authenticated_peer = self
-            .current
-            .as_ref()
-            .filter(|peer| {
-                peer.trust() == TrustDisplay::Trusted
-                    && peer.connectivity() == ConnectivityDisplay::Connected
-                    && peer.session() == SessionDisplay::Active
-                    && peer.security() == SecurityDisplay::Authenticated
-            })
-            .and_then(DevicePresentation::peer_device_id);
+            .has_authenticated_session()
+            .then(|| self.current.as_ref().and_then(DevicePresentation::peer_device_id))
+            .flatten();
 
         durable_trusted_ids
             .iter()

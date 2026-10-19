@@ -5,8 +5,8 @@ use crosslab_protocol::ProtocolVersion;
 use crosslab_runtime::ConnectivityState;
 
 use super::{
-    ConnectivityDisplay, DevicePresentation, DevicesFeatureState, NetworkDisplay, SecurityDisplay,
-    SessionDisplay, StatusFields, TrustDisplay,
+    ConnectivityDisplay, DevicePresentation, DevicesFeatureState, NetworkDisplay, PresenceDisplay,
+    SecurityDisplay, SessionDisplay, StatusFields, TrustDisplay,
 };
 
 #[test]
@@ -106,6 +106,7 @@ fn saved_peers_require_full_id_and_authenticated_connection() {
     });
     let mut state = DevicesFeatureState::empty();
     state.current = Some(presentation);
+    state.presence = PresenceDisplay::Online;
 
     let saved = state.saved_trusted_peers(&[lookalike_id, current_id]);
     assert!(!saved[0].in_authenticated_session());
@@ -113,6 +114,46 @@ fn saved_peers_require_full_id_and_authenticated_connection() {
 
     state.current.as_mut().unwrap().session = SessionDisplay::Closed;
     assert!(!state.saved_trusted_peers(&[current_id])[0].in_authenticated_session());
+}
+
+#[test]
+fn native_capability_actions_require_current_authenticated_session() {
+    let peer = DeviceId::from_bytes([0x74; 32]);
+    let mut device = DevicePresentation::from_fields(StatusFields {
+        owner_id: None,
+        local_device_id: None,
+        peer_device_id: Some(peer),
+        trust_state: TrustState::Trusted,
+        connectivity: ConnectivityState::Connected,
+        session_state: SessionState::Active,
+        protocol_version: None,
+        network_class: NetworkClass::Local,
+        security_class: TransportSecurityClass::AuthenticatedConfidentialChannel,
+        metered: None,
+        capability_count: 1,
+    });
+    device.capability_ids.push("files.transfer".to_owned());
+    let mut state = DevicesFeatureState::empty();
+    state.current = Some(device);
+    state.presence = PresenceDisplay::Online;
+
+    assert!(state.has_authenticated_session());
+    assert!(state.has_authenticated_capability("files.transfer"));
+    assert!(!state.has_authenticated_capability("clipboard.read"));
+
+    state.presence = PresenceDisplay::Reconnecting;
+    assert!(!state.has_authenticated_capability("files.transfer"));
+    assert!(!state.saved_trusted_peers(&[peer])[0].in_authenticated_session());
+
+    state.presence = PresenceDisplay::Online;
+    state.current.as_mut().unwrap().security = SecurityDisplay::TestOnly;
+    assert!(!state.has_authenticated_capability("files.transfer"));
+    state.current.as_mut().unwrap().security = SecurityDisplay::Authenticated;
+    state.current.as_mut().unwrap().trust = TrustDisplay::Revoked;
+    assert!(!state.has_authenticated_capability("files.transfer"));
+    state.current.as_mut().unwrap().trust = TrustDisplay::Trusted;
+    state.current.as_mut().unwrap().session = SessionDisplay::Closed;
+    assert!(!state.has_authenticated_capability("files.transfer"));
 }
 
 #[test]
