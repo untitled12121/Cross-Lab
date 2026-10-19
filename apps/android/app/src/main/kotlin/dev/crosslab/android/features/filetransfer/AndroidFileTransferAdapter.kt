@@ -63,9 +63,8 @@ class AndroidFileTransferAdapter(
             val buffer = ByteArray(FILE_TRANSFER_IO_CHUNK_BYTES)
             while (true) {
                 if (isCancelled()) throw FileTransferPreparationCancelled()
-                val read = input.read(buffer)
+                val read = readTransferBytes(input, buffer)
                 if (read < 0) break
-                if (read == 0) continue
                 hasher.update(buffer.copyOf(read))
             }
         } ?: throw FileTransferStorageUnavailable("selected source cannot be opened")
@@ -227,9 +226,8 @@ class AndroidFileTransferAdapter(
             FileInputStream(partial).use { input ->
                 val buffer = ByteArray(FILE_TRANSFER_IO_CHUNK_BYTES)
                 while (true) {
-                    val read = input.read(buffer)
+                    val read = readTransferBytes(input, buffer)
                     if (read < 0) break
-                    if (read == 0) continue
                     destination.write(buffer, 0, read)
                 }
                 destination.flush()

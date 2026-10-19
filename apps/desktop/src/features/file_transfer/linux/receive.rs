@@ -264,13 +264,13 @@ impl LinuxFileTransferReceiver {
     }
 
     fn invalidate_failed_integrity(&mut self) -> Result<(), LinuxFileTransferError> {
-        self.file.set_len(0)?;
-        self.file.sync_all()?;
-
+        // First persist revocation of the failed transfer checkpoint.
         let mut snapshot = self.load_partial_snapshot()?;
         snapshot.remove(self.partial.identity().transfer_id());
         self.store.commit(&snapshot)?;
 
+        self.file.set_len(0)?;
+        self.file.sync_all()?;
         let partial_path = self.locator.partial_path().to_path_buf();
         let parent = partial_path.parent().map(Path::to_path_buf);
         let _ = fs::remove_file(&partial_path);
@@ -470,6 +470,70 @@ mod tests {
             .load()
             .unwrap();
         assert!(matches!(state.find(source, &offer), Ok(None)));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn failed_integrity_invalidation_preserves_state_until_durable_commit() {
+        let root = test_root("integrity-store-fault");
+        fs::create_dir_all(&root).unwrap();
+        let state_path = root.join("state.bin");
+        let final_path = root.join("received.bin");
+        let source = DeviceId::from_bytes([0xb1; 32]);
+        let offer = test_offer(0xb2, "received.bin", b"payload");
+        let store = LinuxFileTransferStateStore::for_test(state_path.clone());
+
+        let mut receiver = LinuxFileTransferReceiver::create(
+            store.clone(),
+            source,
+            offer.clone(),
+            final_path.clone(),
+            20,
+        )
+        .unwrap();
+        let partial_path = receiver.locator.partial_path().to_path_buf();
+        receiver.write_chunk(b"PAYLOAD", 21).unwrap();
+
+        // Inject a state-commit failure after the corrupted checkpoint exists.
+        let blocked = state_path.with_extension("bin.new");
+        fs::create_dir(&blocked).unwrap();
+        assert!(receiver.finish(22).is_err());
+        assert_eq!(fs::read(&partial_path).unwrap(), b"PAYLOAD");
+        assert!(!final_path.exists());
+        assert!(matches!(
+            store.load().unwrap().find(source, &offer),
+            Ok(Some(FileTransferStateMatch::Partial(_)))
+        ));
+
+        // A recovered attempt still verifies the digest before publication.
+        fs::remove_dir(&blocked).unwrap();
+        let LinuxFileTransferRecovery::Ready(receiver) =
+            LinuxFileTransferReceiver::recover(store.clone(), source, offer.clone(), 23).unwrap()
+        else {
+            panic!("expected recovery after failed cleanup");
+        };
+        assert!(matches!(
+            receiver.finish(24),
+            Err(LinuxFileTransferError::Integrity(
+                FileTransferIntegrityError::DigestMismatch
+            ))
+        ));
+        assert!(!partial_path.exists());
+        assert!(
+            store
+                .load()
+                .unwrap()
+                .find(source, &offer)
+                .unwrap()
+                .is_none()
+        );
+
+        let mut replacement =
+            LinuxFileTransferReceiver::create(store, source, offer, final_path.clone(), 25)
+                .unwrap();
+        replacement.write_chunk(b"payload", 26).unwrap();
+        replacement.finish(27).unwrap();
+        assert_eq!(fs::read(&final_path).unwrap(), b"payload");
         let _ = fs::remove_dir_all(root);
     }
 

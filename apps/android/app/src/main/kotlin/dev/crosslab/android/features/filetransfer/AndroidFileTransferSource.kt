@@ -5,6 +5,23 @@ import java.io.InputStream
 import kotlin.math.min
 import uniffi.crosslab_mobile_ffi.MobileFileTransferOffer
 
+private const val MAX_ZERO_PROGRESS_READS = 3
+
+/** A stalled Android document provider must not monopolize a transfer worker. */
+internal fun readTransferBytes(
+    input: InputStream,
+    buffer: ByteArray,
+    offset: Int = 0,
+    length: Int = buffer.size - offset,
+): Int {
+    require(length > 0) { "file read must request at least one byte" }
+    repeat(MAX_ZERO_PROGRESS_READS) {
+        val count = input.read(buffer, offset, length)
+        if (count != 0) return count
+    }
+    throw FileTransferStorageUnavailable("document provider made no read progress")
+}
+
 internal const val FILE_TRANSFER_IO_CHUNK_BYTES = 64 * 1024
 internal const val FILE_TRANSFER_CHECKPOINT_BYTES = 1_048_576L
 
@@ -26,7 +43,7 @@ class AndroidFileTransferSourceReader internal constructor(
         val buffer = ByteArray(requested)
         var offset = 0
         while (offset < requested) {
-            val read = input.read(buffer, offset, requested - offset)
+            val read = readTransferBytes(input, buffer, offset, requested - offset)
             if (read < 0) {
                 throw FileTransferStorageUnavailable("source ended before its prepared size")
             }

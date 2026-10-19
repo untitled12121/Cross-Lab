@@ -123,9 +123,8 @@ class AndroidFileTransferReceiver internal constructor(
         FileInputStream(partial).use { input ->
             val buffer = ByteArray(FILE_TRANSFER_IO_CHUNK_BYTES)
             while (true) {
-                val read = input.read(buffer)
+                val read = readTransferBytes(input, buffer)
                 if (read < 0) break
-                if (read == 0) continue
                 try {
                     verifier.update(buffer.copyOf(read))
                 } catch (error: Throwable) {
@@ -164,13 +163,13 @@ class AndroidFileTransferReceiver internal constructor(
     }
 
     private fun failIntegrity() {
-        runCatching { file?.setLength(0) }
-        runCatching { file?.fd?.sync() }
-        runCatching { file?.close() }
+        // A failed metadata commit must not orphan a still-referenced partial.
+        val active = file
         file = null
-        runCatching { partial.delete() }
-        runCatching { adapter.invalidate(offer) }
         terminal = true
+        runCatching { active?.close() }
+        adapter.invalidate(offer)
+        runCatching { partial.delete() }
     }
 }
 
