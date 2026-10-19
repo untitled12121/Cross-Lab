@@ -79,7 +79,7 @@ def changed_files(base: str, head: str) -> list[str]:
     if not sha.fullmatch(base) or not sha.fullmatch(head) or base == "0" * 40:
         raise ValueError("missing or invalid Git change boundary")
     result = subprocess.check_output(
-        ["git", "diff", "--name-only", "--diff-filter=ACMRT", "-z", base, head]
+        ["git", "diff", "--name-only", "-z", base, head]
     )
     return [os.fsdecode(path) for path in result.split(b"\0") if path]
 

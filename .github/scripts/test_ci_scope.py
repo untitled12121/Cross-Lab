@@ -1,8 +1,9 @@
 """Pure routing checks: CI must never silently drop sensitive or unknown changes."""
 
 import unittest
+from unittest.mock import patch
 
-from ci_scope import Checks, choose_checks, manual_checks
+from ci_scope import Checks, changed_files, choose_checks, manual_checks
 
 
 class ScopeTests(unittest.TestCase):
@@ -47,6 +48,12 @@ class ScopeTests(unittest.TestCase):
 
     def test_unknown_inputs_fail_open(self):
         self.assertEqual(choose_checks(["mystery/build-config.xyz"]), Checks(True, True, True, True, True))
+
+    @patch("ci_scope.subprocess.check_output", return_value=b"crates/identity/src/removed.rs\0")
+    def test_git_diff_includes_deleted_files(self, git_diff):
+        paths = changed_files("a" * 40, "b" * 40)
+        self.assertEqual(paths, ["crates/identity/src/removed.rs"])
+        self.assertFalse(any(arg.startswith("--diff-filter") for arg in git_diff.call_args.args[0]))
 
     def test_manual_profiles_and_outputs(self):
         self.assertEqual(manual_checks("rust"), Checks(True, True, False, True, True))
