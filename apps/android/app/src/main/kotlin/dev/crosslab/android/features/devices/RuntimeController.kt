@@ -75,8 +75,8 @@ class RuntimeController(
 
     private val portSubscription =
         port.observeSnapshots { snapshot ->
-            update { state ->
-            val it = state
+            update {
+            val state = it
                 if (it.lifecycle != RuntimeLifecycle.RUNNING) return@update null
                 it.copy(snapshot = snapshot)
             }
@@ -107,8 +107,8 @@ class RuntimeController(
     }
 
     fun onForeground() {
-        update { state ->
-            val it = state
+        update {
+            val state = it
             if (it.lifecycle != RuntimeLifecycle.STOPPED) return@update null
             startPort(it)
         }
