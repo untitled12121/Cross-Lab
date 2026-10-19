@@ -1,24 +1,26 @@
 # Current Development State
 
-**Active phase:** Phase 2 Linux + Android MVP. **Not released.** Git code and tests are implementation truth; see the [Phase 2 gates](../plans/phase-2/MVP-completion-gates.md).
+**Phase:** Phase 2 Linux + Android MVP, active and **not released**. Source and tests are authoritative. Owner hardware acceptance remains a release gate.
 
-## Integrated baseline
+## Integrated software
 
-- **`main` software milestone:** `be8afff2ff1452eff3a4a4a102aef5db4e86de59` (PR #87 merge). Unified Linux and Android owner-facing exact peer capability controls; protected per-device policy persistence; Android serialized DNS-SD resolution, callback identity and session startup retry; Linux GPUI discovery and initial-start recovery.
-- **Exact-head CI:** PR #87 head `a0b2fd0d2e72a9a6a05abf71434022a1b43235da` passed format, Rust and Android plus the CI Gate in run `39238620079`. Earlier recovery PRs #84/#85 closed as superseded by that integrated source.
-- Earlier PRs #79–83 integrated pairing/transport/capabilities, notifications, bounded audit, signed terminal revocation, Android QR/LAN recovery and saved trusted-device inventory. PR #86 introduced change-aware/manual CI.
-- These are **software verifications**, not a claim of normal-product physical Linux–arm64 Android acceptance.
+- `main` baseline `8564fc439f7353d18cfbc86fa03452654b1358ea`: PR #87 owner capability policies and Android/Linux discovery/startup recovery, merged as `be8afff`; PR #88 Android notification owner-consent atomicity and fail-closed in-process persistence, merged as `8564fc4`.
+- PR #87 final source `a0b2fd0` passed format/Rust/Android and CI Gate in run `39238620079`. PRs #84/#85 closed as superseded by #87.
+- PR #88 final source `add17b2c` passed focused Android and CI Gate in run `39240156393`.
+- Earlier Phase 2 components include normal QR/LAN pairing, trusted-session transport, clipboard, resumable single-file transfer, notification mirroring, protected audit, signed terminal revocation, platform runtime recovery and saved device inventory. **Software CI does not establish real-device behavior.**
 
-## Active next vertical slice
+## Active vertical slice: file-transfer retention recovery
 
-- **Branch:** `feat/phase2-notification-consent-durability`, based on `be8afff`. Implementation code head prior to this handoff document is `44646cc42e7817c5569f8175d959ce3ab10abec1`; use the PR head for the exact current source.
-- **Work completed in source:** atomic confirmed Android owner/content preference commits; owner disable and reapproval reset content sharing atomically; synchronized consent reads/writes and blocked capture until commit success; in-process fail-closed consent on storage read/write failures; native error notice; focused JVM tests for opt-out, reapproval, storage errors and commit races.
-- **Verification:** new branch has **not yet passed Android unit CI** or physical notification mirroring tests at this source checkpoint. This does not add a wire protocol, identity store, trust mechanism, privileged service, or approved architecture change. A failed durability operation may require owner reapproval; no cross-restart guarantee under underlying storage failure is claimed.
+- **Branch:** `feat/phase2-file-transfer-retention-recovery` from `8564fc4`. Implemented source commit `005c020ccf56d8756a378288f76775eb3de075ca` (this handoff follows the code commit).
+- **Android:** staged retained-state mutations (clone, mutate, persist, publish), so failed AtomicFile writes cannot expose an in-memory checkpoint or completion tombstone that was never stored; cleanup deletes expired partial files only after durable metadata commit.
+- **Linux:** durable retained-state cleanup commits the removal before deleting partial files, preventing a failed state commit from destroying resumable data. Exact-file tests include injected write failure and subsequent successful retry.
+- **Focused tests:** JVM model tests for staged commit success/rejection, and Rust regression for failed Linux retention commit preserving the partial.
+- **Verification:** combined source **not yet CI-verified** at this checkpoint. No cross-platform hardware or storage-fault acceptance evidence claimed. No wire/protocol/trust architecture change.
 
-## Release blockers and exact next task
+## Next concrete task
 
-1. Finish one consolidated Android check on the notification-consent branch; correct confirmed failures together and merge after required checks.
-2. Continue Phase 2 practical file-transfer publication/recovery reliability, OS permission/lifecycle UX, audit failure recovery and cross-device integrity/regression polish. Prioritize code before repeated CI runs.
-3. **Physical release gate:** normal Linux + arm64 Android QR/LAN pairing and reconnect, fresh trust, permission default-deny/revision, clipboard, file transfer/resume/cancel/integrity, notification OS withdrawal/redaction, audit corruption/write failure, and signed terminal revocation on disposable credentials (revocation last). No recorded successful post-fix physical acceptance. Record only redacted results and exact versions.
+1. Push this coherent branch and run the change-aware Rust + Android CI once; correct confirmed failures and merge after required checks.
+2. Continue Phase 2 file-transfer publish/cancel/integrity recovery, notifications/audit lifecycle fault UX and permission state handling while avoiding repeated CI polling.
+3. Before Cross-Lab 0.1, collect normal-product **physical Linux + arm64 Android** QR pairing, trusted restart/reconnect, per-peer default-deny, clipboard both directions, file transfer/resume/cancel/integrity, OS notification withdrawal/redaction, audit storage recovery, and irreversible revocation evidence using disposable identities (revocation last). Keep logs redacted; do not claim release until gates pass.
 
-Follow [AGENTS.md](../../AGENTS.md), [WORKFLOW.md](WORKFLOW.md), [CI.md](CI.md). Keep uploaded reference archives unless a completed feature no longer needs them. Phase 3 remains deferred.
+See [Phase 2 gates](../plans/phase-2/MVP-completion-gates.md), [AGENTS.md](../../AGENTS.md), [WORKFLOW.md](WORKFLOW.md), [CI.md](CI.md). Phase 3 remains deferred; uploaded reference archives are not removed merely for being future-phase material.
