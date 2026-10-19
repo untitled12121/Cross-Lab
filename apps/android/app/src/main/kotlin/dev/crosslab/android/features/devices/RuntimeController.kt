@@ -211,10 +211,10 @@ class RuntimeController(
         effect: RuntimePermissionEffect,
     ): Boolean {
         var changed = false
-        update {
-            val snapshot = it.snapshot
-            if (it.lifecycle != RuntimeLifecycle.RUNNING ||
-                !it.networkAvailable ||
+        update { state ->
+            val snapshot = state.snapshot
+            if (state.lifecycle != RuntimeLifecycle.RUNNING ||
+                !state.networkAvailable ||
                 snapshot.peerDeviceId == null ||
                 snapshot.session != RuntimeSession.ACTIVE ||
                 snapshot.trust != RuntimeTrust.TRUSTED ||
@@ -227,7 +227,7 @@ class RuntimeController(
             }.fold(
                 onSuccess = { (applied, updated) ->
                     changed = applied
-                    it.copy(snapshot = updated)
+                    state.copy(snapshot = updated)
                 },
                 onFailure = {
                     changed = false
@@ -245,22 +245,23 @@ class RuntimeController(
         effect: RuntimePermissionEffect,
     ): Boolean {
         var changed = false
-        update {
-            if (it.lifecycle != RuntimeLifecycle.RUNNING ||
-                !it.networkAvailable ||
-                it.snapshot.session != RuntimeSession.ACTIVE ||
-                it.snapshot.trust != RuntimeTrust.TRUSTED ||
-                it.snapshot.connectivity != RuntimeConnectivity.CONNECTED ||
-                it.snapshot.security != RuntimeSecurity.AUTHENTICATED ||
-                capabilityId !in it.snapshot.capabilityIds ||
-                it.snapshot.peerDeviceId != peerDeviceId
+        update { state ->
+            val snapshot = state.snapshot
+            if (state.lifecycle != RuntimeLifecycle.RUNNING ||
+                !state.networkAvailable ||
+                snapshot.session != RuntimeSession.ACTIVE ||
+                snapshot.trust != RuntimeTrust.TRUSTED ||
+                snapshot.connectivity != RuntimeConnectivity.CONNECTED ||
+                snapshot.security != RuntimeSecurity.AUTHENTICATED ||
+                capabilityId !in snapshot.capabilityIds ||
+                snapshot.peerDeviceId != peerDeviceId
             ) return@update null
             runCatching {
                 port.setPermissionForPeer(peerDeviceId, capabilityId, operation, effect) to port.snapshot()
             }.fold(
                 onSuccess = { (applied, updated) ->
                     changed = applied
-                    it.copy(snapshot = updated)
+                    state.copy(snapshot = updated)
                 },
                 onFailure = {
                     changed = false
