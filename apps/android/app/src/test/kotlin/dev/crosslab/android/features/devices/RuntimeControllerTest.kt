@@ -42,6 +42,63 @@ class RuntimeControllerTest {
     }
 
     @Test
+    fun networkCallbackExceptionFailsClosedBeforeAnyMoreNativeActions() {
+        val port = FakeRuntimePort()
+        val controller = RuntimeController(port)
+        controller.onForeground()
+        port.failNextNetworkLost = true
+
+        controller.onNetworkLost()
+
+        assertEquals(RuntimeLifecycle.STOPPED, controller.state().lifecycle)
+        assertEquals(false, controller.state().networkAvailable)
+        assertEquals(RuntimePresence.FAILED, controller.state().snapshot.presence)
+        assertEquals(1, port.stops)
+        assertNull(controller.sessionBinding("files.transfer"))
+
+        controller.onNetworkAvailable()
+        controller.reconnectPeer()
+        assertEquals(RuntimeLifecycle.RUNNING, controller.state().lifecycle)
+        assertEquals(2, port.starts)
+    }
+
+    @Test
+    fun failedReconnectDoesNotPreserveStaleAuthenticatedSnapshot() {
+        val port = FakeRuntimePort()
+        val controller = RuntimeController(port)
+        controller.onForeground()
+        port.emit(RuntimeSnapshot.disconnected().copy(
+            presence = RuntimePresence.ONLINE,
+            peerDeviceId = "trusted-peer",
+            trust = RuntimeTrust.TRUSTED,
+            connectivity = RuntimeConnectivity.CONNECTED,
+            session = RuntimeSession.ACTIVE,
+            security = RuntimeSecurity.AUTHENTICATED,
+            capabilityIds = listOf("files.transfer"),
+        ))
+        port.failNextReconnect = true
+        controller.reconnectPeer()
+
+        assertEquals(RuntimeLifecycle.STOPPED, controller.state().lifecycle)
+        assertEquals(RuntimePresence.FAILED, controller.state().snapshot.presence)
+        assertNull(controller.state().snapshot.peerDeviceId)
+    }
+
+    @Test
+    fun failedBackgroundStopTerminatesTheNativeRuntime() {
+        val port = FakeRuntimePort()
+        val controller = RuntimeController(port)
+        controller.onForeground()
+        port.failNextStop = true
+        controller.onBackground()
+
+        assertEquals(RuntimeLifecycle.SHUTDOWN, controller.state().lifecycle)
+        assertEquals(1, port.shutdowns)
+        controller.reconnectPeer()
+        assertEquals(1, port.starts)
+    }
+
+    @Test
     fun foregroundAndBackgroundAreIdempotent() {
         val port = FakeRuntimePort()
         val controller = RuntimeController(port)
@@ -387,7 +444,11 @@ class RuntimeControllerTest {
     private class FakeRuntimePort : RuntimePort {
         var starts = 0
         var failNextStart = false
+        var failNextStop = false
+        var failNextNetworkLost = false
+        var failNextReconnect = false
         var stops = 0
+        var shutdowns = 0
         var networkLost = 0
         var networkAvailable = 0
         var disconnects = 0
@@ -408,10 +469,18 @@ class RuntimeControllerTest {
 
         override fun stop() {
             stops += 1
+            if (failNextStop) {
+                failNextStop = false
+                throw IllegalStateException("simulated stop failure")
+            }
         }
 
         override fun networkLost() {
             networkLost += 1
+            if (failNextNetworkLost) {
+                failNextNetworkLost = false
+                throw IllegalStateException("simulated network-loss callback failure")
+            }
         }
 
         override fun networkAvailable() {
@@ -424,6 +493,10 @@ class RuntimeControllerTest {
 
         override fun reconnectPeer() {
             reconnects += 1
+            if (failNextReconnect) {
+                failNextReconnect = false
+                throw IllegalStateException("simulated reconnect failure")
+            }
         }
 
         override fun setPermission(
@@ -449,6 +522,10 @@ class RuntimeControllerTest {
         }
 
         override fun sessionBinding(capabilityId: String): NativeSessionBinding? = binding
+
+        override fun shutdown() {
+            shutdowns += 1
+        }
 
         override fun snapshot(): RuntimeSnapshot = current
 
