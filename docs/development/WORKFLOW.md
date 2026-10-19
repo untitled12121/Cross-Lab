@@ -19,7 +19,9 @@ Implement the related Rust core, native platform adapters, feature state, UI, li
 
 ## Consolidate verification and integration
 
-Run fast affected checks during implementation as appropriate; keep identity/trust, permission, protocol and privilege-boundary regression checks close to the change. At a coherent integration checkpoint, run the applicable consolidated checks (not every command after every line):
+Run fast affected checks during implementation as appropriate; keep identity/trust, permission, protocol and privilege-boundary regression checks close to the change. Automatic GitHub CI is [change-aware](CI.md): documentation-only changes do not start builds, platform-specific changes run affected jobs, and an explicit manual `full` run covers substantial integration/release checkpoints. Choose the necessary verification scope rather than relying on CI-skip commit markers.
+
+At a coherent integration checkpoint, run the applicable consolidated checks (not every command after every line):
 
 ```text
 cargo fmt --check
