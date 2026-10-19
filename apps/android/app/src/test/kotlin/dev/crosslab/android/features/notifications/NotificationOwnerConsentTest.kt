@@ -171,6 +171,44 @@ class NotificationOwnerConsentTest {
     }
 
     @Test
+    fun finalDeliveryRechecksContentConsentEvenAfterTitleWasPrepared() {
+        val storage = FakeOwnerConsentStorage()
+        val owner = OwnerConsentSettings(storage)
+        assertTrue(owner.setOwnerEnabled(true))
+        assertTrue(owner.setContentEnabled(true))
+        val preparedTitle = "private fixture title"
+        val preparedPreview = "private fixture preview"
+        val public = NotificationOwnerConsent(true, true, true, true, true)
+        assertTrue(public.permitsContent())
+        assertTrue(owner.setContentEnabled(false))
+
+        val final =
+            owner.withConsent { enabled, content ->
+                NotificationOwnerConsent(true, true, enabled, content, true)
+                    .outgoingText(preparedTitle, preparedPreview, protected = false)
+            }
+        assertTrue(final.title == null && final.preview == null)
+        assertTrue(owner.ownerEnabled)
+    }
+
+    @Test
+    fun protectedOrRevokedNotificationCannotPublishContent() {
+        val allowed = NotificationOwnerConsent(true, true, true, true, true)
+        assertTrue(
+            allowed.outgoingText("title", "preview", protected = true) ==
+                NotificationText(null, null),
+        )
+        assertTrue(
+            allowed.copy(osAccess = false).outgoingText("title", "preview", protected = false) ==
+                NotificationText(null, null),
+        )
+        assertTrue(
+            allowed.copy(foreground = false).outgoingText("title", "preview", protected = false) ==
+                NotificationText(null, null),
+        )
+    }
+
+    @Test
     fun contentCannotBeAuthorizedWithoutOwnerPermission() {
         val store = FakeOwnerConsentStorage()
         val consent = OwnerConsentSettings(store)

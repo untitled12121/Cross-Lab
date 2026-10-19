@@ -18,6 +18,7 @@ import dev.crosslab.android.features.identity.AndroidProductIdentityRepository
 import dev.crosslab.android.features.permissions.AndroidPolicyStore
 import dev.crosslab.android.features.notifications.AndroidNotificationConsent
 import dev.crosslab.android.features.notifications.NotificationPublisher
+import dev.crosslab.android.features.notifications.canMirrorNotifications
 import dev.crosslab.android.features.permissions.PolicyStoreUnavailable
 import uniffi.crosslab_mobile_ffi.MobileClipboardOutcome
 import uniffi.crosslab_mobile_ffi.MobileClipboardPlatformFailure
@@ -73,10 +74,10 @@ class ProductPresencePort(
             val active = agent ?: return@synchronized false
             val allowed = notificationConsent.current(foreground = true).locallyAvailable()
             if (!allowed) {
-                runCatching { active.disableNotifications() }
+                disableNotificationsLocked()
                 return@synchronized false
             }
-            current.session == RuntimeSession.ACTIVE &&
+            current.canMirrorNotifications() &&
                 runCatching { active.notificationSubscribed() }.getOrDefault(false)
         }
 
@@ -91,20 +92,45 @@ class ProductPresencePort(
         protected: Boolean,
     ): Boolean =
         synchronized(lock) {
-            if (!canCapture()) return@synchronized false
-            runCatching { agent?.notificationPosted(key, appLabel, title, preview, protected) == true }
-                .getOrDefault(false)
+            val active = agent ?: return@synchronized false
+            notificationConsent.withCurrent(foreground = true) { consent ->
+                if (!consent.locallyAvailable() || !current.canMirrorNotifications() ||
+                    !runCatching { active.notificationSubscribed() }.getOrDefault(false)
+                ) {
+                    disableNotificationsLocked()
+                    return@withCurrent false
+                }
+                // Re-evaluate under the same owner-consent lock as the durable opt-out.
+                val text = consent.outgoingText(title, preview, protected)
+                runCatching {
+                    active.notificationPosted(key, appLabel, text.title, text.preview, protected)
+                }.getOrDefault(false)
+            }
         }
 
     override fun removed(key: String): Boolean =
         synchronized(lock) {
-            if (!canCapture()) return@synchronized false
-            runCatching { agent?.notificationRemoved(key) == true }.getOrDefault(false)
+            val active = agent ?: return@synchronized false
+            notificationConsent.withCurrent(foreground = true) { consent ->
+                if (!consent.locallyAvailable() || !current.canMirrorNotifications() ||
+                    !runCatching { active.notificationSubscribed() }.getOrDefault(false)
+                ) {
+                    disableNotificationsLocked()
+                    return@withCurrent false
+                }
+                runCatching { active.notificationRemoved(key) }.getOrDefault(false)
+            }
         }
 
     override fun disableNotifications() {
-        synchronized(lock) {
-            agent?.let { runCatching { it.disableNotifications() } }
+        synchronized(lock) { disableNotificationsLocked() }
+    }
+
+    private fun disableNotificationsLocked() {
+        agent?.let { runCatching { it.disableNotifications() } }
+        if (subscribed) {
+            subscribed = false
+            subscriptionListeners.forEach { observer -> runCatching { observer(false) } }
         }
     }
 
@@ -728,9 +754,9 @@ class ProductPresencePort(
 
     private fun publishLocked(snapshot: RuntimeSnapshot) {
         val activeSubscription =
-            snapshot.session == RuntimeSession.ACTIVE &&
-                agent?.notificationSubscribed() == true &&
-                notificationConsent.current(foreground = true).locallyAvailable()
+            snapshot.canMirrorNotifications() &&
+                notificationConsent.current(foreground = true).locallyAvailable() &&
+                runCatching { agent?.notificationSubscribed() == true }.getOrDefault(false)
         if (activeSubscription != subscribed) {
             subscribed = activeSubscription
             subscriptionListeners.forEach { it(subscribed) }
