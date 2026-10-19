@@ -75,7 +75,8 @@ class RuntimeController(
 
     private val portSubscription =
         port.observeSnapshots { snapshot ->
-            update {
+            update { state ->
+            val it = state
                 if (it.lifecycle != RuntimeLifecycle.RUNNING) return@update null
                 it.copy(snapshot = snapshot)
             }
@@ -106,7 +107,8 @@ class RuntimeController(
     }
 
     fun onForeground() {
-        update {
+        update { state ->
+            val it = state
             if (it.lifecycle != RuntimeLifecycle.STOPPED) return@update null
             startPort(it)
         }
@@ -130,7 +132,7 @@ class RuntimeController(
             }
         }
         if (current.lifecycle == RuntimeLifecycle.SHUTDOWN) {
-            portSubscription.close()
+            runCatching { portSubscription.close() }
         }
     }
 
@@ -229,7 +231,7 @@ class RuntimeController(
                 },
                 onFailure = {
                     changed = false
-                    failClosed(it)
+                    failClosed(state)
                 },
             )
         }
@@ -262,7 +264,7 @@ class RuntimeController(
                 },
                 onFailure = {
                     changed = false
-                    failClosed(it)
+                    failClosed(state)
                 },
             )
         }
@@ -301,7 +303,7 @@ class RuntimeController(
             )
         }
         if (didShutdown) {
-            portSubscription.close()
+            runCatching { portSubscription.close() }
             runCatching { port.shutdown() }
         }
     }
@@ -326,7 +328,7 @@ class RuntimeController(
         val stopped = runCatching { port.stop() }.isSuccess
         if (!stopped) {
             runCatching { port.shutdown() }
-            portSubscription.close()
+            runCatching { portSubscription.close() }
         }
         return state.copy(
             lifecycle = if (stopped) RuntimeLifecycle.STOPPED else RuntimeLifecycle.SHUTDOWN,
