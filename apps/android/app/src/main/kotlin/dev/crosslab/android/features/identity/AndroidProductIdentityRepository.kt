@@ -28,7 +28,8 @@ class AndroidProductIdentityRepository(
         }
         // A failed owner-state write must never silently generate a different
         // OwnerId while its previously created signing authority still exists.
-        if (rootSigner.exists || deviceSigningSigner.exists) {
+        if (rootSigner.hasPersistedState || deviceSigningSigner.hasPersistedState ||
+            localDeviceSigner.hasPersistedState) {
             throw IdentityStoreUnavailable("owner signing authority exists without identity state")
         }
 
