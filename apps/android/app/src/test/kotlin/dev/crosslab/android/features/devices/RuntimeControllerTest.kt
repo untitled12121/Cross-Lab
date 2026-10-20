@@ -47,7 +47,7 @@ class RuntimeControllerTest {
         val controller = RuntimeController(port)
         port.binding = NativeSessionBinding("trusted-peer", "ab".repeat(32))
         controller.onForeground()
-        port.emit(authenticatedPeer("files.transfer"))
+        port.emit(authenticatedPeer("files.transfer").copy(presence = RuntimePresence.ONLINE))
         assertTrue(controller.sessionBinding("files.transfer") != null)
 
         // ProductPresencePort tears down the native agent and publishes this
