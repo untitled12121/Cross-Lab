@@ -12,6 +12,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.activity.compose.setContent
+import dev.crosslab.android.features.audit.OwnerAuditAction
+import dev.crosslab.android.features.audit.OwnerAuditActionGate
 import dev.crosslab.android.features.appearance.ThemeId
 import uniffi.crosslab_mobile_ffi.MobileAuditAction
 import uniffi.crosslab_mobile_ffi.MobileAuditOutcome
@@ -46,7 +48,9 @@ class MainActivity : ComponentActivity() {
     private val auditDropped = mutableStateOf(0L)
     private val auditNotice = mutableStateOf<String?>(null)
     private val auditUnavailable = mutableStateOf(false)
-    private val auditRetryBusy = mutableStateOf(false)
+    private val auditActionBusy = mutableStateOf(false)
+    private val auditActionGate = OwnerAuditActionGate()
+    private var pendingAuditExportTicket: Long? = null
     private val notificationConsent =
         mutableStateOf(NotificationOwnerConsent(false, false, false, false, false))
     private val notificationNotice = mutableStateOf<String?>(null)
@@ -152,23 +156,35 @@ class MainActivity : ComponentActivity() {
                 rememberLauncherForActivityResult(
                     ActivityResultContracts.CreateDocument("text/csv"),
                 ) { uri ->
-                    if (uri != null) {
-                        app.auditRecorder.export { csv ->
-                            if (!identityWorker.submit {
-                                val result = csv.mapCatching { text ->
-                                    val bytes = text.toByteArray(Charsets.UTF_8)
-                                    contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
-                                        ?: error("export output unavailable")
+                    val ticket = pendingAuditExportTicket
+                    pendingAuditExportTicket = null
+                    if (ticket != null) {
+                        if (uri == null) {
+                            finishAuditAction(ticket, "Audit export cancelled.")
+                        } else {
+                            val submitted = runCatching {
+                                app.auditRecorder.export { csv ->
+                                    if (csv.isFailure) {
+                                        finishAuditAction(ticket, "Protected audit export unavailable.")
+                                    } else if (!identityWorker.submit {
+                                        val result = runCatching {
+                                            val bytes = checkNotNull(csv.getOrNull())
+                                                .toByteArray(Charsets.UTF_8)
+                                            contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                                                ?: error("export output unavailable")
+                                        }
+                                        finishAuditAction(
+                                            ticket,
+                                            if (result.isSuccess) "Redacted history exported."
+                                            else "Could not write audit export to the selected document.",
+                                        )
+                                    }) {
+                                        finishAuditAction(ticket, "Owner operations are busy. Retry audit export.")
+                                    }
                                 }
-                                uiObservationGate.dispatch {
-                                    auditNotice.value =
-                                        if (result.isSuccess) "Redacted history exported."
-                                        else "Could not export history."
-                                }
-                            }) {
-                                uiObservationGate.dispatch {
-                                    auditNotice.value = "Owner operations are busy. Retry audit export."
-                                }
+                            }
+                            if (submitted.isFailure) {
+                                finishAuditAction(ticket, "Protected audit export could not start.")
                             }
                         }
                     }
@@ -213,41 +229,66 @@ class MainActivity : ComponentActivity() {
                 auditDropped = auditDropped.value,
                 auditNotice = auditNotice.value,
                 auditUnavailable = auditUnavailable.value,
-                auditRetryBusy = auditRetryBusy.value,
+                auditActionBusy = auditActionBusy.value,
                 onRetryAudit = {
-                    if (!auditRetryBusy.value) {
-                        auditRetryBusy.value = true
-                        app.auditRecorder.refresh { result ->
-                            if (!isDestroyed) runOnUiThread {
-                                if (!isDestroyed) {
-                                    auditRetryBusy.value = false
-                                    auditNotice.value =
-                                        if (result.isSuccess) {
-                                            "Protected audit history reloaded."
-                                        } else {
-                                            "Audit storage remains unavailable; history is hidden."
-                                        }
-                                    result.getOrNull()?.let { updateAudit(it) }
-                                }
+                    val ticket = auditActionGate.begin(OwnerAuditAction.REFRESH)
+                    if (ticket == null) {
+                        auditNotice.value = "An audit operation is already in progress."
+                    } else {
+                        auditActionBusy.value = true
+                        val result = runCatching {
+                            app.auditRecorder.refresh { history ->
+                                finishAuditAction(
+                                    ticket,
+                                    if (history.isSuccess) "Protected audit history reloaded."
+                                    else "Audit storage remains unavailable; history is hidden.",
+                                    history.getOrNull(),
+                                    protectedFailure = history.isFailure,
+                                )
                             }
+                        }
+                        if (result.isFailure) {
+                            finishAuditAction(ticket, "Protected audit history could not be reloaded.", protectedFailure = true)
                         }
                     }
                 },
                 onClearAudit = {
-                    app.auditRecorder.clear { result ->
-                        if (!isDestroyed) runOnUiThread {
-                            if (!isDestroyed) {
-                                auditNotice.value = if (result.isSuccess) {
-                                    "Local audit history cleared."
-                                } else {
-                                    "Audit history could not be cleared."
-                                }
-                                result.getOrNull()?.let { updateAudit(it) }
+                    val ticket = if (auditUnavailable.value) null
+                        else auditActionGate.begin(OwnerAuditAction.CLEAR)
+                    if (ticket == null) {
+                        auditNotice.value = "Audit clear is unavailable while storage is offline or busy."
+                    } else {
+                        auditActionBusy.value = true
+                        val submitted = runCatching {
+                            app.auditRecorder.clear { result ->
+                                finishAuditAction(
+                                    ticket,
+                                    if (result.isSuccess) "Local audit history cleared."
+                                    else "Audit history could not be cleared.",
+                                    result.getOrNull(),
+                                    protectedFailure = result.isFailure,
+                                )
                             }
+                        }
+                        if (submitted.isFailure) {
+                            finishAuditAction(ticket, "Audit history could not be cleared.", protectedFailure = true)
                         }
                     }
                 },
-                onExportAudit = { exportAudit.launch("crosslab-audit.csv") },
+                onExportAudit = {
+                    val ticket = if (auditUnavailable.value) null
+                        else auditActionGate.begin(OwnerAuditAction.EXPORT)
+                    if (ticket == null) {
+                        auditNotice.value = "Audit export is unavailable while storage is offline or busy."
+                    } else {
+                        auditActionBusy.value = true
+                        pendingAuditExportTicket = ticket
+                        if (runCatching { exportAudit.launch("crosslab-audit.csv") }.isFailure) {
+                            pendingAuditExportTicket = null
+                            finishAuditAction(ticket, "Could not open the audit export document picker.")
+                        }
+                    }
+                },
                 notificationConsent = notificationConsent.value,
                 onToggleNotificationOwner = {
                     val saved =
@@ -375,6 +416,28 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private fun finishAuditAction(
+        ticket: Long,
+        message: String,
+        history: uniffi.crosslab_mobile_ffi.MobileAuditHistory? = null,
+        protectedFailure: Boolean = false,
+    ) {
+        uiObservationGate.dispatch {
+            if (auditActionGate.finish(ticket)) {
+                auditActionBusy.value = false
+                auditNotice.value = message
+                if (protectedFailure) {
+                    auditUnavailable.value = true
+                    auditRows.value = emptyList()
+                    auditDropped.value = 0L
+                } else if (history != null) {
+                    auditUnavailable.value = false
+                    updateAudit(history)
+                }
+            }
+        }
+    }
+
     private fun updateAudit(history: uniffi.crosslab_mobile_ffi.MobileAuditHistory) {
         auditRows.value = history.rows
         auditDropped.value = history.droppedCount.toLong()
@@ -403,6 +466,8 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         // Block callbacks before tearing down subscriptions; one broken close cannot leak others.
         uiObservationGate.close()
+        auditActionGate.close()
+        pendingAuditExportTicket = null
         closeObservers(
             listOf(
                 auditSubscription,

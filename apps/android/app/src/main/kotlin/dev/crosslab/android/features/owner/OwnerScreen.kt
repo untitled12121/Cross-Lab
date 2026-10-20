@@ -42,7 +42,7 @@ fun OwnerScreen(
     auditDropped: Long,
     auditNotice: String?,
     auditUnavailable: Boolean,
-    auditRetryBusy: Boolean,
+    auditActionBusy: Boolean,
     onRetryAudit: () -> Unit,
     onClearAudit: () -> Unit,
     onExportAudit: () -> Unit,
@@ -175,19 +175,22 @@ fun OwnerScreen(
                 InfoRow(theme, "More audit events", "${auditRows.size - 24} not shown")
             }
             auditNotice?.let { InfoRow(theme, "History status", it) }
+            if (auditActionBusy) {
+                InfoRow(theme, "Audit operation", "In progress — other history actions are temporarily disabled")
+            }
             if (auditUnavailable) {
                 InfoRow(theme, "Protected store", "Unavailable — retained history not displayed")
                 ControlButton(
                     theme = theme,
-                    label = if (auditRetryBusy) "Retrying history…" else "Retry protected history",
-                    enabled = !auditRetryBusy,
+                    label = if (auditActionBusy) "Working with protected history…" else "Retry protected history",
+                    enabled = !auditActionBusy,
                     onClick = onRetryAudit,
                 )
             }
             ControlButton(
                 theme = theme,
                 label = "Export redacted history",
-                enabled = !auditUnavailable,
+                enabled = !auditUnavailable && !auditActionBusy,
                 onClick = onExportAudit,
             )
             if (confirmClearAudit) {
@@ -200,7 +203,7 @@ fun OwnerScreen(
                     theme = theme,
                     label = "Confirm clear history",
                     destructive = true,
-                    enabled = !auditUnavailable,
+                    enabled = !auditUnavailable && !auditActionBusy,
                     onClick = {
                         confirmClearAudit = false
                         onClearAudit()
@@ -215,7 +218,7 @@ fun OwnerScreen(
                 ControlButton(
                     theme = theme,
                     label = "Clear audit history",
-                    enabled = !auditUnavailable,
+                    enabled = !auditUnavailable && !auditActionBusy,
                     onClick = { confirmClearAudit = true },
                 )
             }
