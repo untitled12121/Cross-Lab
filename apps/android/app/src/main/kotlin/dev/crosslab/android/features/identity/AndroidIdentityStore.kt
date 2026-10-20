@@ -31,11 +31,12 @@ class AndroidIdentityStore(
 
     @Synchronized
     fun loadPayload(): ByteArray? {
-        if (!stateFile.baseFile.isFile) return null
+        if (!committedStatePresent()) return null
 
         val bundle = IdentityStoreBundle.decode(stateFile.readFully())
         val revision = bundle.anchorRevision()
         val alias = anchorAlias(revision)
+        verifyIdentityAnchorSet(alias, anchorAliases())
         val key =
             keyStore.getKey(alias, null) as? SecretKey
                 ?: throw IdentityStoreUnavailable("identity currentness key is missing")
@@ -108,19 +109,28 @@ class AndroidIdentityStore(
     }
 
     private fun loadBundleOrNull(): IdentityStoreBundle? {
-        if (!stateFile.baseFile.isFile) return null
+        if (!committedStatePresent()) return null
         val bundle = IdentityStoreBundle.decode(stateFile.readFully())
         val revision = bundle.anchorRevision()
         val alias = anchorAlias(revision)
+        verifyIdentityAnchorSet(alias, anchorAliases())
         val key =
             keyStore.getKey(alias, null) as? SecretKey
                 ?: throw IdentityStoreUnavailable("identity currentness key is missing")
         if (!MessageDigest.isEqual(mac(key, bundle.anchor), bundle.anchorMac)) {
             throw IdentityStoreUnavailable("identity currentness authentication failed")
         }
-        identityStoreValidate(bundle.envelope, bundle.anchor)
+        if (identityStoreValidate(bundle.envelope, bundle.anchor).toLong() != revision) {
+            throw IdentityStoreUnavailable("identity revision is inconsistent")
+        }
         return bundle
     }
+
+    private fun committedStatePresent(): Boolean =
+        identityStateFilePresent(stateFile.baseFile.isFile, anchorAliases())
+
+    private fun anchorAliases(): List<String> =
+        keyStore.aliases().toList().filter { it.startsWith(ANCHOR_ALIAS_PREFIX) }
 
     private fun createAnchorKey(alias: String): SecretKey {
         val generator =
@@ -231,5 +241,26 @@ internal data class IdentityStoreBundle(
             require(buffer.remaining() >= size) { "identity store field is truncated" }
             return ByteArray(size).also(buffer::get)
         }
+    }
+}
+
+/** Missing persisted state cannot silently replace signed trust and revocation history. */
+internal fun identityStateFilePresent(
+    stateExists: Boolean,
+    currentnessKeys: Collection<String>,
+): Boolean {
+    if (!stateExists && currentnessKeys.isNotEmpty()) {
+        throw IdentityStoreUnavailable("committed identity state is missing")
+    }
+    return stateExists
+}
+
+/** Extra currentness keys make revision rollback ambiguous, so fail closed. */
+internal fun verifyIdentityAnchorSet(
+    expectedAlias: String,
+    currentnessKeys: Collection<String>,
+) {
+    if (currentnessKeys.size != 1 || currentnessKeys.single() != expectedAlias) {
+        throw IdentityStoreUnavailable("identity currentness key set is inconsistent")
     }
 }
