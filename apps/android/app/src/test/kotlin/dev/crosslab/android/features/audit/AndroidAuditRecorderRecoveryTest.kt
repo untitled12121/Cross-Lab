@@ -54,4 +54,29 @@ class AndroidAuditRecorderRecoveryTest {
             recorder.close()
         }
     }
+    @Test
+    fun brokenInitialObserverDoesNotPreventProtectedAuditRecovery() {
+        val store = FailingAuditStore()
+        val recorder = AndroidAuditRecorder(store)
+        val failed = CountDownLatch(1)
+        try {
+            // Initial observer delivery must not throw back into the Android owner screen.
+            val broken = recorder.observe { throw IllegalStateException("disposed UI") }
+            val working = recorder.observe { status ->
+                if (status.unavailable) failed.countDown()
+            }
+            try {
+                assertTrue(failed.await(5, TimeUnit.SECONDS))
+                val complete = CountDownLatch(1)
+                recorder.refresh { complete.countDown() }
+                assertTrue(complete.await(5, TimeUnit.SECONDS))
+            } finally {
+                working.close()
+                broken.close()
+            }
+        } finally {
+            recorder.close()
+        }
+    }
+
 }
