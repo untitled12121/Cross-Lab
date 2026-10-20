@@ -73,9 +73,9 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
             lifecycle
         }
         val admitted =
-            events.submit { readOffers(active, token) } &&
-                events.submit { readCancellations(active, token) } &&
-                events.submit { readData(active, token) }
+            launchListener(active, token) { readOffers(active, token) } &&
+                launchListener(active, token) { readCancellations(active, token) } &&
+                launchListener(active, token) { readData(active, token) }
         if (!admitted) {
             synchronized(lock) {
                 if (isAgentLocked(active, token)) {
@@ -310,18 +310,24 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
                 input.request.sourceId, input.request.offer, input.uri, input.retainGrant,
             )
             prepared = preparation
-            synchronized(lock) {
+            val stillAuthorized = synchronized(lock) {
                 if (!currentSession(input.agent, input.token) || preparing !== input.request) {
-                    preparation.receiver?.cancel()
-                    return
+                    false
+                } else {
+                    preparing = null
+                    if (preparation.kind == AndroidReceivePreparationKind.READY) {
+                        receiving = ActiveFileReceive(input.request, checkNotNull(preparation.receiver),
+                            preparation.resumeOffset)
+                        publishLocked(state(input.request.offer, FileTransferDirection.RECEIVE,
+                            FileTransferStage.WAITING_PEER, preparation.resumeOffset, canCancel = true))
+                    }
+                    true
                 }
-                preparing = null
-                if (preparation.kind == AndroidReceivePreparationKind.READY) {
-                    receiving = ActiveFileReceive(input.request, checkNotNull(preparation.receiver),
-                        preparation.resumeOffset)
-                    publishLocked(state(input.request.offer, FileTransferDirection.RECEIVE,
-                        FileTransferStage.WAITING_PEER, preparation.resumeOffset, canCancel = true))
-                }
+            }
+            if (!stillAuthorized) {
+                // fsync/close can block; never do it under the UI-visible session lock.
+                runCatching { preparation.receiver?.cancel() }
+                return
             }
             if (preparation.kind == AndroidReceivePreparationKind.ALREADY_COMPLETE) {
                 input.agent.completeFileTransferAlreadyComplete(input.request.requestId)
@@ -593,6 +599,25 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
                 canRetry = oldSend != null && retry != null && cleanupQueued))
         }
     }
+
+    private fun launchListener(
+        active: MobileTrustedPresenceAgent,
+        token: Long,
+        listen: () -> Unit,
+    ): Boolean =
+        events.submit {
+            try {
+                listen()
+            } finally {
+                // A failed native wait cannot leave a seemingly usable file adapter.
+                synchronized(lock) {
+                    if (isAgentLocked(active, token)) {
+                        detachLocked()
+                        publishLocked(workerUnavailable())
+                    }
+                }
+            }
+        }
 
     private fun enqueueControl(task: () -> Unit): Boolean =
         control.submit(task) || cleanup.submit(task) || io.submit(task)
