@@ -643,7 +643,7 @@ class ProductPresencePort(
                     if (!isCurrentAgent(active, token)) return@synchronized
                     publishLocked(
                         event.toRuntimeSnapshot(
-                            permissions = runCatching { active.permissionSnapshot() }.getOrNull(),
+                            permissions = active.permissionSnapshot(),
                         ),
                         event.runtime?.sessionId,
                     )
@@ -849,9 +849,20 @@ class ProductPresencePort(
         val active = agent ?: return
         runCatching {
             active.snapshot() to active.permissionSnapshot()
-        }.onSuccess { (snapshot, permissions) ->
-            publishLocked(snapshot.toRuntimeSnapshot(permissions), snapshot.runtime?.sessionId)
-        }
+        }.fold(
+            onSuccess = { (snapshot, permissions) ->
+                publishLocked(snapshot.toRuntimeSnapshot(permissions), snapshot.runtime?.sessionId)
+            },
+            onFailure = {
+                // Missing runtime or policy state cannot preserve apparent authority.
+                if (agent === active) {
+                    stopAgentLocked()
+                    publishLocked(
+                        RuntimeSnapshot.disconnected().copy(presence = RuntimePresence.FAILED),
+                    )
+                }
+            },
+        )
     }
 
     private fun failClosedPolicyLocked(active: MobileTrustedPresenceAgent) {
