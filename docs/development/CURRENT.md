@@ -1,34 +1,41 @@
 # Current Development State
 
-**Phase 2 Linux + Android MVP is active; Cross-Lab 0.1 is not released.** Git and tests are authoritative. Real Linux + arm64 Android owner acceptance has not been supplied. Phase 3 remains deferred until the Phase 2 release gate closes.
+**Phase 2 Linux + Android MVP: software implementation, hardening, and full integrated CI verification are complete at the reviewed checkpoint below.** This is a **software-ready** status, not a Cross-Lab 0.1 release tag or a claim about observed behavior on actual devices. The owner will conduct separate device testing **after** software completion. Phase 3 is deferred under the approved architecture.
 
-## Branch, source and integrated scope
+## Exact Git checkpoint
 
-- **Latest reviewed and merged product source:** `main` at **`e732f2649b96557a46c478d2a5ed7d7af9920476`** (PR #117) before this documentation-only handoff. Inspect the live `main` SHA when resuming; documentation merges advance HEAD without changing product code.
-- **Active product feature branches/PRs:** no open PRs or GitHub issues were found at this checkpoint. Do not treat this as proof that software has no remaining bugs.
-- The normal (non-development-provisioned) Linux + Android product software contains QR/LAN pairing and durable trust, QUIC authenticated sessions/reconnect, offline trusted-device inventory, owner per-peer default-deny permissions, bidirectional clipboard, resumable single-file transfer v2, Android→Linux foreground notification mirroring v3 with independent OS/owner/content gates, protected metadata-only owner audit and signed terminal device revocation. **Merged software is not physical acceptance.**
-- No accepted transport, owner-trust, pairing, permission, privilege or ADR-0020–0023 compatibility contract was intentionally changed in the hardening batches.
+- **Verified product source:** `main` commit **`e10fa6253e6087cd073077944e5b19f80f962ff2`** (merged [PR #119](https://github.com/untitled12121/Cross-Lab/pull/119)). Later documentation-only merges can move `main` without changing this product source; inspect the live branch before new code work.
+- **Full integrated verification:** GitHub Actions **push** [CI run 39452949225](https://github.com/untitled12121/Cross-Lab/actions/runs/39452949225), `head_sha=e10fa6253e6087cd073077944e5b19f80f962ff2`, **completed / success**. The workflow and `ci_scope` selected `full=true`; all four verification jobs and the strict CI Gate succeeded.
+- At this checkpoint, repository search found no open product PRs or issues. This is not proof that software is defect-free; new confirmed failures should become focused Phase 2 fixes, not automatic Phase 3 scope.
 
-## Recent verified software milestones
+## Implemented Phase 2 product software
 
-| PR | Integrated change | Exact-head GitHub verification |
-| --- | --- | --- |
-| [#108–#114](https://github.com/untitled12121/Cross-Lab/pull/114) | Bounded Android transfer, presence, clipboard and pairing execution; late-callback, cancellation, snapshot, owner audit and cleanup-admission recovery; development handoff | Source/Android CI and path-aware gate passed on the individual code PRs; see their PR history and preceding checkpoints |
-| [#115](https://github.com/untitled12121/Cross-Lab/pull/115) | Receiver cleanup is not considered finished merely because a close task was admitted; new transfers wait for actual release | Android tests + CI Gate succeeded in [run 39437949498](https://github.com/untitled12121/Cross-Lab/actions/runs/39437949498). Merge `93ec665f20f078ed9365c47f4ed5673f203306e0` |
-| [#116](https://github.com/untitled12121/Cross-Lab/pull/116) | Fail-closed Android presence and clipboard native listener faults, UI-safe native callback recovery, startup snapshot and file-listener admission checks | Android tests + CI Gate succeeded in [run 39439917518](https://github.com/untitled12121/Cross-Lab/actions/runs/39439917518). Merge `ba266c392123be9fee03b502100457b17e6666b7` |
-| [#117](https://github.com/untitled12121/Cross-Lab/pull/117) | Linux ignores stale file-stream events without failing active transfer; Android ignores duplicate stream Open, rejects missing/invalid durable offset; regression tests both platforms | Exact head `c026deb82af3b55c5d34b5da0608c9f57ee4a3a2` passed Source format, Rust, Android and CI Gate in [run 39446329014](https://github.com/untitled12121/Cross-Lab/actions/runs/39446329014). Merge `e732f2649b96557a46c478d2a5ed7d7af9920476` |
+The normal (non-development-provisioned) Linux + Android path integrates:
 
-**PR #117 verification scope actually performed:** Rust workspace check, FFI unsafe-boundary check, Clippy, focused desktop tests, Android SDK bootstrap and Android JVM tests. **Not performed in that run:** dependency audit (skipped by path selection), full Rust workspace tests, Linux normal/development desktop build steps, Android normal/development APK assembly. The source formatting and selected CI Gate passed. Do not call this a full release matrix.
+- Owner-controlled QR/LAN pairing, durable reciprocal trust, trusted/offline device inventory, authenticated Quinn/QUIC sessions and reconnect.
+- Explicit default-deny per-peer capability permissions and exact session/operation checks; Android and Linux owner controls.
+- Bidirectional text clipboard, resumable single-file transfer v2 with checksums, owner destination selection, cancellation, recovery and bounded worker/stream handling.
+- Android-to-Linux foreground notification mirroring v3 with independent OS, owner, content and peer-policy gates; metadata-only protected owner audit/history, explicit owner export/clear, and terminal signed device revocation.
+- Fail-closed native listener/session lifecycle recovery, bounded Android pairing/presence/clipboard/transfer work, and Linux/Android stale transfer-stream rejection with regression tests.
 
-## Exact next task — final software release gate
+See merged PRs [#108–#114](https://github.com/untitled12121/Cross-Lab/pull/114), [#115](https://github.com/untitled12121/Cross-Lab/pull/115), [#116](https://github.com/untitled12121/Cross-Lab/pull/116), [#117](https://github.com/untitled12121/Cross-Lab/pull/117), and [#119](https://github.com/untitled12121/Cross-Lab/pull/119). Accepted Master Architecture v2.11 and ADR-0020–0023 remain unchanged.
 
-1. On the latest integrated `main` source, run the repository's **manual GitHub Actions → CI → Run workflow → `full`** profile, per [CI.md](CI.md). Record the **exact tested commit** and outcomes of formatting, dependency/security audit, Rust workspace tests, Linux GPUI desktop builds and normal Android arm64 APK build. The present GitHub connector can review runs but does **not** expose workflow dispatch; **the manual `full` run has not been performed by this session.**
-2. If any consolidated gate fails, fix confirmed problems in one coherent regression-tested batch, rerun the necessary gates and update this handoff. Keep security/policy/privilege errors fail closed; do not suppress checks to obtain a green status.
-3. After software release checks pass, use the normal non-development product builds on real Linux + arm64 Android devices and record owner observations under [product acceptance](../research/Phase2-product-acceptance.md) and [file-transfer physical evidence](../research/Phase2-file-transfer-device-evidence.md). Physical QR, LAN, permission prompts, lifecycle, SAF provider behavior, notification access and terminal revocation are **not validated by host CI**.
-4. Address any real-device failures before closing the release gate. Only then claim Phase 2 complete or publish Cross-Lab 0.1. **Do not start Phase 3 until the approved Phase 2 criteria close.**
+## Software checks actually verified
 
-## Owner-managed physical acceptance — still open
+**Exact integrated `main`, run 39452949225 — all success:**
 
-Test real QR pairing/expiration/forgery/replay, reciprocal persisted trust, restart and authenticated reconnect, exact peer default-deny permissions, clipboard both directions, empty and larger-than-3-MiB binary files with digest verification, transfer cancel/resume/retry under network loss and SAF document-provider behavior, foreground notification opt-in/redaction/withdrawal, protected audit read/clear/export/fault recovery and accessible UI/idle resources. Perform owner-signed **terminal revocation last**, only with disposable test identities. Record redacted pass/fail evidence with tested commit/coarse platform versions; never store QR payloads, private identifiers, network addresses, keys, clipboard contents, notification contents or real file paths in the issue/CI history.
+- Scope-classifier and strict CI Gate regressions; Rust formatting; `cargo audit` dependency/security check.
+- Rust lockfile/check and workspace type checks, FFI unsafe-boundary enforcement, generated Kotlin UniFFI bindings, development tool help and theme/SDK script validation.
+- Linux GPUI **normal and development builds**, workspace Clippy with warnings denied, **full Rust workspace tests**.
+- Android SDK bootstrap tests and Gradle **debug unit tests**, **normal arm64 APK assembly** and **development-wiring assembly**.
+- Final `CI Gate`: verified every selected job **succeeded**, rather than accepting missing/skipped required jobs.
 
-See [AGENTS.md](../../AGENTS.md), [WORKFLOW.md](WORKFLOW.md), [CI.md](CI.md), [Phase 2 gates](../plans/phase-2/MVP-completion-gates.md), Master Architecture and accepted ADR-0020–0023.
+[PR #119](https://github.com/untitled12121/Cross-Lab/pull/119) also passed the same full matrix on its reviewed head in [run 39451594239](https://github.com/untitled12121/Cross-Lab/actions/runs/39451594239); the `main` push run above is the canonical evidence. The independent protocol fuzz workflow was **not** rerun as part of this CI profile; there were no new protocol-parser changes in the final release-CI fix. CI does not imply physical device behavior was exercised.
+
+## Next owner and developer actions
+
+- **Software work is complete at this reviewed checkpoint.** Do not reopen already integrated worker, transfer, pairing, permission, audit or UI milestones without a confirmed regression.
+- The owner separately tests the normal builds when ready, using [product acceptance](../research/Phase2-product-acceptance.md) and [file-transfer evidence](../research/Phase2-file-transfer-device-evidence.md). This follows software completion and is **not a remaining software development task**.
+- If owner testing uncovers defects, reproduce and fix those in coherent Phase 2 regression-tested batches. Cross-Lab 0.1 is **not released/tagged** until the owner approves that distinct acceptance/release decision. Phase 3 stays deferred until the approved phase exit.
+
+For future development use [AGENTS.md](../../AGENTS.md), [WORKFLOW.md](WORKFLOW.md), [CI.md](CI.md), the [Phase 2 milestone](../plans/phase-2/MVP-completion-gates.md), and accepted architecture/ADRs.
