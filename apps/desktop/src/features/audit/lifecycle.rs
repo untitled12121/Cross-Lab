@@ -186,7 +186,10 @@ mod tests {
                 .expect("unexpected session loss must be recorded");
             assert_eq!(event.action, AuditAction::TransferEnded);
             assert_eq!(event.outcome, AuditOutcome::Failed);
-            assert_eq!(audit.transfer(sending, operation.stage(), operation.failure()), None);
+            assert_eq!(
+                audit.transfer(sending, operation.stage(), operation.failure()),
+                None
+            );
         }
     }
 

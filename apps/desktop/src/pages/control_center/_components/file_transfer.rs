@@ -239,6 +239,7 @@ mod tests {
         assert_eq!(format_bytes(1024), "1.0 KiB");
         assert_eq!(format_bytes(1024 * 1024), "1.0 MiB");
     }
+
     #[test]
     fn large_transfers_calculate_percent_without_u64_overflow() {
         assert_eq!(
@@ -251,9 +252,9 @@ mod tests {
     fn unknown_zero_size_progress_is_not_invented() {
         assert_eq!(progress_label(40, 0), "0 B / 0 B · 0%");
     }
+
     #[test]
     fn connection_loss_provides_actionable_reconnect_guidance() {
         assert!(failure_label(FileTransferFailure::Connection).contains("Reconnect"));
     }
-
 }
