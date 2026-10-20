@@ -5,6 +5,7 @@ import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.AtomicFile
+import dev.crosslab.android.features.storage.readBounded
 import java.nio.ByteBuffer
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
@@ -16,6 +17,8 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import uniffi.crosslab_mobile_ffi.MobileSigningProvider
+
+private const val MAX_SIGNER_BUNDLE_BYTES = 5 + 3 * (Int.SIZE_BYTES + 16 * 1024)
 
 enum class AndroidSigningSlot(
     val fileName: String,
@@ -56,13 +59,19 @@ class AndroidEd25519Signer(
     val exists: Boolean
         get() = keyFile.baseFile.isFile
 
+    val hasPersistedState: Boolean
+        get() = exists || keyStore.containsAlias(slot.wrappingAlias)
+
     @Synchronized
     fun ensureCreated(): ByteArray {
         requireSupported()
 
         if (keyFile.baseFile.isFile) {
             requireExistingWrappingKey()
-            return SignerBundle.decode(keyFile.readFully()).publicKeyRaw
+            return SignerBundle.decode(keyFile.readBounded(MAX_SIGNER_BUNDLE_BYTES)).publicKeyRaw
+        }
+        if (keyStore.containsAlias(slot.wrappingAlias)) {
+            throw IdentityStoreUnavailable("committed signing key file is missing")
         }
 
         val pair = KeyPairGenerator.getInstance(ED25519).generateKeyPair()
@@ -92,7 +101,7 @@ class AndroidEd25519Signer(
     @Synchronized
     override fun sign(message: ByteArray): ByteArray {
         requireSupported()
-        val bundle = SignerBundle.decode(keyFile.readFully())
+        val bundle = SignerBundle.decode(keyFile.readBounded(MAX_SIGNER_BUNDLE_BYTES))
         val privateBytes = decrypt(bundle.iv, bundle.ciphertext)
         try {
             val privateKey =
