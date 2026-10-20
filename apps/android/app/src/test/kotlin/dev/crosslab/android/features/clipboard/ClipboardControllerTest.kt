@@ -61,6 +61,58 @@ class ClipboardControllerTest {
     }
 
     @Test
+    fun lateCallbackFromPriorSendCannotCompleteNewSend() {
+        val port = FakeClipboardPort()
+        val controller = ClipboardController(port)
+
+        controller.send()
+        val stale = port.capturedCompletion()
+        port.complete(ClipboardResult.SUCCESS)
+        controller.send()
+
+        stale(ClipboardResult.FAILED)
+        assertTrue(controller.state().busy)
+        assertNull(controller.state().result)
+
+        port.complete(ClipboardResult.SUCCESS)
+        assertFalse(controller.state().busy)
+        assertEquals(ClipboardResult.SUCCESS, controller.state().result)
+        assertEquals(2, port.sendCalls)
+    }
+
+    @Test
+    fun throwingPortReportsFailureAndReleasesBusyState() {
+        val controller = ClipboardController(object : ClipboardPort {
+            override val clipboardAvailable = true
+            override fun sendClipboard(onComplete: (ClipboardResult) -> Unit): Boolean {
+                throw IllegalStateException("simulated native port failure")
+            }
+        })
+        controller.send()
+        assertFalse(controller.state().busy)
+        assertEquals(ClipboardResult.FAILED, controller.state().result)
+    }
+
+    @Test
+    fun shutdownInvalidatesPendingCallbacksAndForbidsNewWork() {
+        val port = FakeClipboardPort()
+        val controller = ClipboardController(port)
+        controller.fetch()
+        val stale = port.capturedCompletion()
+        controller.shutdown()
+
+        stale(ClipboardResult.SUCCESS)
+        controller.fetch()
+        controller.send()
+
+        assertFalse(controller.state().busy)
+        assertFalse(controller.state().available)
+        assertNull(controller.state().result)
+        assertEquals(1, port.fetchCalls)
+        assertEquals(0, port.sendCalls)
+    }
+
+    @Test
     fun unavailablePortDoesNotStartClipboardWork() {
         val controller = ClipboardController(UnavailableClipboardPort)
 
@@ -89,6 +141,8 @@ class ClipboardControllerTest {
             completion = onComplete
             return true
         }
+
+        fun capturedCompletion(): (ClipboardResult) -> Unit = checkNotNull(completion)
 
         fun complete(result: ClipboardResult) {
             val callback = checkNotNull(completion)
