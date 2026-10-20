@@ -55,6 +55,8 @@ class ClipboardController(
 ) {
     private val lock = Any()
     private val listeners = CopyOnWriteArraySet<(ClipboardState) -> Unit>()
+    private var operationGeneration = 0L
+    private var closed = false
 
     @Volatile
     private var current = ClipboardState.initial(port.clipboardAvailable)
@@ -83,6 +85,12 @@ class ClipboardController(
     }
 
     fun shutdown() {
+        synchronized(lock) {
+            if (closed) return
+            closed = true
+            operationGeneration++
+            current = ClipboardState.initial(false)
+        }
         listeners.clear()
     }
 
@@ -90,24 +98,34 @@ class ClipboardController(
         action: ClipboardAction,
         operation: ((ClipboardResult) -> Unit) -> Boolean,
     ) {
-        val started =
-            update { state ->
-                if (!state.available || state.busy) return@update null
-                state.copy(busy = true, action = action, result = null)
+        val attempt =
+            synchronized(lock) {
+                if (closed || !current.available || current.busy) return
+                operationGeneration++
+                current = current.copy(busy = true, action = action, result = null)
+                operationGeneration to current
             }
-        if (!started) return
+        notifyObservers(listeners, attempt.second)
+        if (synchronized(lock) { closed || operationGeneration != attempt.first }) return
 
-        if (!operation { result -> finish(action, result) }) {
-            finish(action, ClipboardResult.UNAVAILABLE)
-        }
+        val accepted =
+            try {
+                operation { result -> finish(action, attempt.first, result) }
+            } catch (_: Exception) {
+                finish(action, attempt.first, ClipboardResult.FAILED)
+                return
+            }
+        if (!accepted) finish(action, attempt.first, ClipboardResult.UNAVAILABLE)
     }
 
     private fun finish(
         action: ClipboardAction,
+        generation: Long,
         result: ClipboardResult,
     ) {
         update { state ->
-            if (!state.busy || state.action != action) return@update null
+            if (operationGeneration != generation || !state.busy ||
+                state.action != action) return@update null
             state.copy(busy = false, result = result)
         }
     }
@@ -115,6 +133,7 @@ class ClipboardController(
     private fun update(transform: (ClipboardState) -> ClipboardState?): Boolean {
         val next =
             synchronized(lock) {
+                if (closed) return false
                 val updated = transform(current) ?: return false
                 current = updated
                 updated
