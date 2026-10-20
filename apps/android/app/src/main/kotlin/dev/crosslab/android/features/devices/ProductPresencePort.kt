@@ -11,6 +11,7 @@ import dev.crosslab.android.features.workers.BoundedWorkerPool
 import java.util.concurrent.atomic.AtomicBoolean
 import dev.crosslab.android.features.clipboard.AndroidClipboardAdapter
 import dev.crosslab.android.features.clipboard.ClipboardPort
+import dev.crosslab.android.features.clipboard.invokeClipboardCallback
 import dev.crosslab.android.features.clipboard.ClipboardResult
 import dev.crosslab.android.features.clipboard.LocalClipboardRead
 import dev.crosslab.android.features.clipboard.LocalClipboardWrite
@@ -664,12 +665,21 @@ class ProductPresencePort(
             waitNext = { active.waitClipboardRequest(60_000uL) },
             deliver = clipboardRequest@{ request ->
                 if (!isCurrentAgent(active, token)) return@clipboardRequest
+                // Validate untrusted native metadata on the listener worker. A fault
+                // here tears down the current agent instead of crashing the UI.
+                val requestId = request.requestId()
+                val kind = request.kind()
                 val expected = synchronized(lock) { currentSessionBinding }
                 if (!clipboardUiAdmission.dispatch(
                     post = { job -> handler.post { job() } },
-                    action = { handleClipboardRequest(active, token, expected, request) },
+                    action = {
+                        invokeClipboardCallback(
+                            action = { handleClipboardRequest(active, token, expected, request) },
+                            onFailure = { rejectClipboardRequest(active, token, requestId, kind) },
+                        )
+                    },
                 )) {
-                    rejectClipboardRequest(active, token, request.requestId(), request.kind())
+                    rejectClipboardRequest(active, token, requestId, kind)
                 }
             },
             unexpectedExit = { nativeListenerLost(active, token) },
