@@ -98,8 +98,11 @@ class FileTransferController(private val port: FileTransferPort) {
     fun state(): FileTransferState = current
 
     fun observe(listener: (FileTransferState) -> Unit): AutoCloseable {
-        if (!closed.get()) listeners += listener
-        runCatching { listener(current) }
+        val initial = synchronized(lock) {
+            if (!closed.get()) listeners += listener
+            current
+        }
+        runCatching { listener(initial) }
         return AutoCloseable { listeners -= listener }
     }
 
