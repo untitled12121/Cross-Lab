@@ -9,7 +9,7 @@ internal enum class ReceiveStreamOpenDecision {
 
 internal fun receiveStreamOpenDecision(
     streamAlreadyBound: Boolean,
-    resumeOffset: ULong,
+    resumeOffset: ULong?,
     expectedOffset: ULong,
 ): ReceiveStreamOpenDecision =
     when {
