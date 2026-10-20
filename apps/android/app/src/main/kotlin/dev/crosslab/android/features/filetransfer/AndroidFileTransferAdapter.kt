@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.AtomicFile
+import dev.crosslab.android.features.storage.readBounded
 import java.io.File
 import java.io.FileInputStream
 import java.io.RandomAccessFile
@@ -30,7 +31,7 @@ class AndroidFileTransferAdapter(
         MobileFileTransferState(
             encoded =
                 if (stateFile.baseFile.isFile) {
-                    stateFile.readFully()
+                    stateFile.readBounded(1024 * 1024)
                 } else {
                     null
                 },

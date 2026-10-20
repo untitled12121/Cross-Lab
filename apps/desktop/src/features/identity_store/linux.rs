@@ -18,6 +18,8 @@ const ANCHOR_KIND: (&str, &str) = ("kind", "identity-currentness-anchor");
 const SIGNER_KIND: (&str, &str) = ("kind", "identity-signing-key");
 const SIGNER_VERSION: (&str, &str) = ("version", "1");
 const BUNDLE_MAGIC: &[u8; 5] = b"CLIS\x01";
+const MAX_BUNDLE_FIELD_SIZE: usize = 16 * 1024 * 1024;
+const MAX_BUNDLE_BYTES: usize = BUNDLE_MAGIC.len() + 8 + 2 * MAX_BUNDLE_FIELD_SIZE;
 
 #[derive(Debug)]
 pub struct LinuxIdentityStore {
@@ -40,6 +42,7 @@ impl LinuxIdentityStore {
 
     pub async fn load_payload(&self) -> Result<Option<Vec<u8>>, LinuxIdentityStoreError> {
         let Some(bundle) = self.read_bundle()? else {
+            identity_store_state_consistent(false, self.has_any_anchor().await?)?;
             return Ok(None);
         };
 
@@ -84,6 +87,9 @@ impl LinuxIdentityStore {
         lock.lock()?;
 
         let current = self.read_bundle()?;
+        if current.is_none() {
+            identity_store_state_consistent(false, self.has_any_anchor().await?)?;
+        }
         let current_envelope = current
             .as_ref()
             .map(|bundle| IdentityStoreEnvelope::decode(&bundle.envelope))
@@ -137,14 +143,13 @@ impl LinuxIdentityStore {
     }
 
     fn read_bundle(&self) -> Result<Option<StoreBundle>, LinuxIdentityStoreError> {
-        let mut file = match File::open(&self.path) {
+        let file = match File::open(&self.path) {
             Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(error.into()),
         };
 
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes)?;
+        let bytes = read_bounded_identity_file(file, MAX_BUNDLE_BYTES)?;
         Ok(Some(StoreBundle::decode(&bytes)?))
     }
 
@@ -172,6 +177,14 @@ impl LinuxIdentityStore {
         Ok(())
     }
 
+    async fn has_any_anchor(&self) -> Result<bool, LinuxIdentityStoreError> {
+        let keyring = Keyring::new().await?;
+        Ok(!keyring
+            .search_items(&[APP_ATTRIBUTE, ANCHOR_KIND])
+            .await?
+            .is_empty())
+    }
+
     async fn create_anchor(
         &self,
         anchor: IdentityStoreAnchor,
@@ -197,11 +210,15 @@ impl LinuxIdentityStore {
     ) -> Result<(), LinuxIdentityStoreError> {
         let keyring = Keyring::new().await?;
         let revision = anchor.revision().to_string();
-        let attributes = [APP_ATTRIBUTE, ANCHOR_KIND, ("revision", revision.as_str())];
-        let items = keyring.search_items(&attributes).await?;
-        let item = items
-            .first()
-            .ok_or(LinuxIdentityStoreError::CurrentnessMissing)?;
+        let items = keyring.search_items(&[APP_ATTRIBUTE, ANCHOR_KIND]).await?;
+        if items.len() != 1 {
+            return Err(LinuxIdentityStoreError::CurrentnessMismatch);
+        }
+        let item = &items[0];
+        let attributes = item.attributes().await?;
+        if attributes.get("revision").map(String::as_str) != Some(revision.as_str()) {
+            return Err(LinuxIdentityStoreError::CurrentnessMismatch);
+        }
         let secret = item.secret().await?;
         if secret.as_bytes() != anchor.protected_digest() {
             return Err(LinuxIdentityStoreError::CurrentnessMismatch);
@@ -349,6 +366,7 @@ pub enum LinuxIdentityStoreError {
     InvalidPath,
     CurrentnessMissing,
     CurrentnessMismatch,
+    StateMissing,
     SignerMissing,
     SignerMalformed,
     Random,
@@ -368,6 +386,7 @@ impl core::fmt::Display for LinuxIdentityStoreError {
             Self::CurrentnessMismatch => {
                 formatter.write_str("Linux identity currentness anchor does not match")
             }
+            Self::StateMissing => formatter.write_str("Linux committed identity state is missing"),
             Self::SignerMissing => formatter.write_str("Linux protected signing key is missing"),
             Self::SignerMalformed => formatter.write_str("Linux device signing key is malformed"),
             Self::Random => formatter.write_str("Linux identity random generation failed"),
@@ -442,7 +461,7 @@ fn read_field(bytes: &[u8], offset: &mut usize) -> Result<Vec<u8>, LinuxIdentity
         .get(*offset..header_end)
         .ok_or(LinuxIdentityStoreError::InvalidPath)?;
     let len = u32::from_be_bytes(len_bytes.try_into().expect("four-byte length")) as usize;
-    if len > 16 * 1024 * 1024 {
+    if len > MAX_BUNDLE_FIELD_SIZE {
         return Err(LinuxIdentityStoreError::InvalidPath);
     }
     let end = header_end
@@ -503,9 +522,50 @@ fn set_private_file(_: &Path) -> Result<(), std::io::Error> {
     Ok(())
 }
 
+fn read_bounded_identity_file(
+    reader: impl std::io::Read,
+    max_bytes: usize,
+) -> Result<Vec<u8>, LinuxIdentityStoreError> {
+    let mut bytes = Vec::new();
+    reader.take(max_bytes as u64 + 1).read_to_end(&mut bytes)?;
+    if bytes.len() > max_bytes {
+        return Err(LinuxIdentityStoreError::InvalidPath);
+    }
+    Ok(bytes)
+}
+
+fn identity_store_state_consistent(
+    state_present: bool,
+    has_currentness_anchor: bool,
+) -> Result<(), LinuxIdentityStoreError> {
+    if !state_present && has_currentness_anchor {
+        return Err(LinuxIdentityStoreError::StateMissing);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deleted_identity_state_with_existing_anchor_denies_rebootstrap() {
+        assert!(matches!(
+            identity_store_state_consistent(false, true),
+            Err(LinuxIdentityStoreError::StateMissing)
+        ));
+        assert!(identity_store_state_consistent(false, false).is_ok());
+        assert!(identity_store_state_consistent(true, true).is_ok());
+    }
+
+    #[test]
+    fn oversized_identity_file_is_bounded_before_decoding() {
+        let input = std::io::Cursor::new(vec![0x5a; 65]);
+        assert!(matches!(
+            read_bounded_identity_file(input, 64),
+            Err(LinuxIdentityStoreError::InvalidPath)
+        ));
+    }
 
     #[test]
     fn bundle_round_trips_and_rejects_trailing_data() {

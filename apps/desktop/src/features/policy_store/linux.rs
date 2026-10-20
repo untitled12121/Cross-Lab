@@ -16,6 +16,7 @@ const APP_ATTRIBUTE: (&str, &str) = ("application", "crosslab");
 const ANCHOR_KIND: (&str, &str) = ("kind", "policy-currentness-anchor");
 const BUNDLE_MAGIC: &[u8; 5] = b"CLPS\x01";
 const MAX_BUNDLE_FIELD_SIZE: usize = MAX_POLICY_SNAPSHOT_BYTES + 512;
+const MAX_BUNDLE_BYTES: usize = BUNDLE_MAGIC.len() + 8 + 2 * MAX_BUNDLE_FIELD_SIZE;
 
 #[derive(Debug)]
 pub struct LinuxPolicyStore {
@@ -94,13 +95,12 @@ impl LinuxPolicyStore {
     }
 
     fn read_bundle(&self) -> Result<Option<StoreBundle>, LinuxPolicyStoreError> {
-        let mut file = match File::open(&self.path) {
+        let file = match File::open(&self.path) {
             Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(error.into()),
         };
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes)?;
+        let bytes = read_bounded_policy_file(file, MAX_BUNDLE_BYTES)?;
         Ok(Some(StoreBundle::decode(&bytes)?))
     }
 
@@ -367,9 +367,30 @@ fn set_private_file(_: &Path) -> Result<(), std::io::Error> {
     Ok(())
 }
 
+fn read_bounded_policy_file(
+    reader: impl std::io::Read,
+    max_bytes: usize,
+) -> Result<Vec<u8>, LinuxPolicyStoreError> {
+    let mut bytes = Vec::new();
+    reader.take(max_bytes as u64 + 1).read_to_end(&mut bytes)?;
+    if bytes.len() > max_bytes {
+        return Err(LinuxPolicyStoreError::InvalidPath);
+    }
+    Ok(bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn oversized_policy_file_is_bounded_before_decoding() {
+        let input = std::io::Cursor::new(vec![0x5a; 65]);
+        assert!(matches!(
+            read_bounded_policy_file(input, 64),
+            Err(LinuxPolicyStoreError::InvalidPath)
+        ));
+    }
 
     #[test]
     fn bundle_round_trips_and_rejects_trailing_data() {
