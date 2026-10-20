@@ -18,6 +18,8 @@ const ANCHOR_KIND: (&str, &str) = ("kind", "identity-currentness-anchor");
 const SIGNER_KIND: (&str, &str) = ("kind", "identity-signing-key");
 const SIGNER_VERSION: (&str, &str) = ("version", "1");
 const BUNDLE_MAGIC: &[u8; 5] = b"CLIS\x01";
+const MAX_BUNDLE_FIELD_SIZE: usize = 16 * 1024 * 1024;
+const MAX_BUNDLE_BYTES: usize = BUNDLE_MAGIC.len() + 8 + 2 * MAX_BUNDLE_FIELD_SIZE;
 
 #[derive(Debug)]
 pub struct LinuxIdentityStore {
@@ -141,14 +143,13 @@ impl LinuxIdentityStore {
     }
 
     fn read_bundle(&self) -> Result<Option<StoreBundle>, LinuxIdentityStoreError> {
-        let mut file = match File::open(&self.path) {
+        let file = match File::open(&self.path) {
             Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(error.into()),
         };
 
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes)?;
+        let bytes = read_bounded_identity_file(file, MAX_BUNDLE_BYTES)?;
         Ok(Some(StoreBundle::decode(&bytes)?))
     }
 
@@ -460,7 +461,7 @@ fn read_field(bytes: &[u8], offset: &mut usize) -> Result<Vec<u8>, LinuxIdentity
         .get(*offset..header_end)
         .ok_or(LinuxIdentityStoreError::InvalidPath)?;
     let len = u32::from_be_bytes(len_bytes.try_into().expect("four-byte length")) as usize;
-    if len > 16 * 1024 * 1024 {
+    if len > MAX_BUNDLE_FIELD_SIZE {
         return Err(LinuxIdentityStoreError::InvalidPath);
     }
     let end = header_end
@@ -521,6 +522,20 @@ fn set_private_file(_: &Path) -> Result<(), std::io::Error> {
     Ok(())
 }
 
+fn read_bounded_identity_file(
+    reader: impl Read,
+    max_bytes: usize,
+) -> Result<Vec<u8>, LinuxIdentityStoreError> {
+    let mut bytes = Vec::new();
+    reader
+        .take(max_bytes as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > max_bytes {
+        return Err(LinuxIdentityStoreError::InvalidPath);
+    }
+    Ok(bytes)
+}
+
 fn identity_store_state_consistent(
     state_present: bool,
     has_currentness_anchor: bool,
@@ -543,6 +558,15 @@ mod tests {
         ));
         assert!(identity_store_state_consistent(false, false).is_ok());
         assert!(identity_store_state_consistent(true, true).is_ok());
+    }
+
+    #[test]
+    fn oversized_identity_file_is_bounded_before_decoding() {
+        let input = std::io::Cursor::new(vec![0x5a; 65]);
+        assert!(matches!(
+            read_bounded_identity_file(input, 64),
+            Err(LinuxIdentityStoreError::InvalidPath)
+        ));
     }
 
     #[test]
