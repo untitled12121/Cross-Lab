@@ -6,7 +6,7 @@ This is an evidence worksheet, **not a certification**. All scenarios are pendin
 
 ## Prepare
 
-On the Linux host, use reviewed `main` at or after the PR #79 software merge (`b6458c5`), record the actual short commit hash, and follow [the build guide](../development/BUILD.md). From the repository root:
+On the Linux host, use the latest reviewed `main` after the PR #117 software merge (`e732f264` or later), **after the final `full` CI profile passes**. Record the actual tested commit rather than assuming this documentation checkpoint is the tested build. Follow [the build guide](../development/BUILD.md). From the repository root:
 
 ```bash
 git status --short
