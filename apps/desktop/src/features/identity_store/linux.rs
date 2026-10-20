@@ -40,6 +40,7 @@ impl LinuxIdentityStore {
 
     pub async fn load_payload(&self) -> Result<Option<Vec<u8>>, LinuxIdentityStoreError> {
         let Some(bundle) = self.read_bundle()? else {
+            identity_store_state_consistent(false, self.has_any_anchor().await?)?;
             return Ok(None);
         };
 
@@ -84,6 +85,9 @@ impl LinuxIdentityStore {
         lock.lock()?;
 
         let current = self.read_bundle()?;
+        if current.is_none() {
+            identity_store_state_consistent(false, self.has_any_anchor().await?)?;
+        }
         let current_envelope = current
             .as_ref()
             .map(|bundle| IdentityStoreEnvelope::decode(&bundle.envelope))
@@ -172,6 +176,14 @@ impl LinuxIdentityStore {
         Ok(())
     }
 
+    async fn has_any_anchor(&self) -> Result<bool, LinuxIdentityStoreError> {
+        let keyring = Keyring::new().await?;
+        Ok(!keyring
+            .search_items(&[APP_ATTRIBUTE, ANCHOR_KIND])
+            .await?
+            .is_empty())
+    }
+
     async fn create_anchor(
         &self,
         anchor: IdentityStoreAnchor,
@@ -197,11 +209,15 @@ impl LinuxIdentityStore {
     ) -> Result<(), LinuxIdentityStoreError> {
         let keyring = Keyring::new().await?;
         let revision = anchor.revision().to_string();
-        let attributes = [APP_ATTRIBUTE, ANCHOR_KIND, ("revision", revision.as_str())];
-        let items = keyring.search_items(&attributes).await?;
-        let item = items
-            .first()
-            .ok_or(LinuxIdentityStoreError::CurrentnessMissing)?;
+        let items = keyring.search_items(&[APP_ATTRIBUTE, ANCHOR_KIND]).await?;
+        if items.len() != 1 {
+            return Err(LinuxIdentityStoreError::CurrentnessMismatch);
+        }
+        let item = &items[0];
+        let attributes = item.attributes().await?;
+        if attributes.get("revision").map(String::as_str) != Some(revision.as_str()) {
+            return Err(LinuxIdentityStoreError::CurrentnessMismatch);
+        }
         let secret = item.secret().await?;
         if secret.as_bytes() != anchor.protected_digest() {
             return Err(LinuxIdentityStoreError::CurrentnessMismatch);
@@ -349,6 +365,7 @@ pub enum LinuxIdentityStoreError {
     InvalidPath,
     CurrentnessMissing,
     CurrentnessMismatch,
+    StateMissing,
     SignerMissing,
     SignerMalformed,
     Random,
@@ -368,6 +385,7 @@ impl core::fmt::Display for LinuxIdentityStoreError {
             Self::CurrentnessMismatch => {
                 formatter.write_str("Linux identity currentness anchor does not match")
             }
+            Self::StateMissing => formatter.write_str("Linux committed identity state is missing"),
             Self::SignerMissing => formatter.write_str("Linux protected signing key is missing"),
             Self::SignerMalformed => formatter.write_str("Linux device signing key is malformed"),
             Self::Random => formatter.write_str("Linux identity random generation failed"),
@@ -503,9 +521,29 @@ fn set_private_file(_: &Path) -> Result<(), std::io::Error> {
     Ok(())
 }
 
+fn identity_store_state_consistent(
+    state_present: bool,
+    has_currentness_anchor: bool,
+) -> Result<(), LinuxIdentityStoreError> {
+    if !state_present && has_currentness_anchor {
+        return Err(LinuxIdentityStoreError::StateMissing);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deleted_identity_state_with_existing_anchor_denies_rebootstrap() {
+        assert!(matches!(
+            identity_store_state_consistent(false, true),
+            Err(LinuxIdentityStoreError::StateMissing)
+        ));
+        assert!(identity_store_state_consistent(false, false).is_ok());
+        assert!(identity_store_state_consistent(true, true).is_ok());
+    }
 
     #[test]
     fn bundle_round_trips_and_rejects_trailing_data() {
