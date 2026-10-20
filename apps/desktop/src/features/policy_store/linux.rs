@@ -424,7 +424,9 @@ mod tests {
         let first = store.try_lock_commit().unwrap();
         assert!(matches!(
             store.try_lock_commit(),
-            Err(LinuxPolicyStoreError::Store(PolicyStoreError::RevisionConflict))
+            Err(LinuxPolicyStoreError::Store(
+                PolicyStoreError::RevisionConflict
+            ))
         ));
         drop(first);
 
