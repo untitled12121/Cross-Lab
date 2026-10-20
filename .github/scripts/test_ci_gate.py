@@ -1,7 +1,9 @@
 """The CI Gate must never pass because a selected job was accidentally skipped."""
 
+import io
 import os
 import unittest
+from contextlib import redirect_stdout
 from unittest.mock import patch
 
 from ci_gate import JOB_NAMES, main, verify_gate
@@ -88,7 +90,7 @@ class GateTests(unittest.TestCase):
             **{f"SELECT_{name.upper()}": scope(android=True)[name] for name in JOB_NAMES},
             **{f"RESULT_{name.upper()}": results()[name] for name in JOB_NAMES},
         }
-        with patch.dict(os.environ, environ, clear=True):
+        with patch.dict(os.environ, environ, clear=True), redirect_stdout(io.StringIO()):
             self.assertEqual(main(), 1)
             os.environ["RESULT_ANDROID"] = "success"
             self.assertEqual(main(), 0)
