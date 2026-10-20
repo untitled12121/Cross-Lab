@@ -184,8 +184,10 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
 
     override fun cancelFile(): Boolean {
         val cancellation: () -> Unit
+        val cancelledAgent: MobileTrustedPresenceAgent
         synchronized(lock) {
             val active = agent ?: return false
+            cancelledAgent = active
             val sender = sending
             val request = pending ?: preparing
             val receive = receiving
@@ -217,7 +219,7 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
         }
         if (enqueueControl { cancellation() }) return true
         synchronized(lock) {
-            if (agent === active) {
+            if (agent === cancelledAgent) {
                 interruptLocked()
                 publishLocked(workerUnavailable())
             }
@@ -227,7 +229,10 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
-        synchronized(lock) { detachLocked() }
+        synchronized(lock) {
+            detachLocked()
+            publishLocked(FileTransferState.initial(false))
+        }
         events.shutdownNow()
         io.shutdown()
         control.shutdown()
@@ -590,7 +595,7 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
     }
 
     private fun enqueueControl(task: () -> Unit): Boolean =
-        control.submit(task) || cleanup.submit(task)
+        control.submit(task) || cleanup.submit(task) || io.submit(task)
 
     private fun enqueueCleanup(task: () -> Unit): Boolean =
         io.submit(task) || cleanup.submit(task)
