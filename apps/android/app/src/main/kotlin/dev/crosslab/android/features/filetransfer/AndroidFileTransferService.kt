@@ -47,6 +47,7 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
     private val closed = AtomicBoolean(false)
     private val lock = Any()
     private val deferredCleanup = DeferredTransferCleanup<AndroidFileTransferReceiver>()
+    private var cleanupUnavailableState: FileTransferState? = null
 
     @Volatile private var current = FileTransferState.initial(true)
     private var agent: MobileTrustedPresenceAgent? = null
@@ -62,8 +63,11 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
     override fun fileTransferState() = current
 
     override fun observeFileTransfer(listener: (FileTransferState) -> Unit): AutoCloseable {
-        listeners += listener
-        runCatching { listener(current) }
+        val snapshot = synchronized(lock) {
+            if (!closed.get()) listeners += listener
+            current
+        }
+        runCatching { listener(snapshot) }
         return AutoCloseable { listeners -= listener }
     }
 
@@ -102,14 +106,7 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
             if (!online) {
                 interruptLocked()
             } else {
-                val hadDeferredCleanup = deferredCleanup.hasPending()
-                if (!retryDeferredCleanupLocked()) {
-                    publishLocked(workerUnavailable())
-                } else if (hadDeferredCleanup && !current.available &&
-                    current.failure == FileTransferFailure.RESOURCE_LIMIT
-                ) {
-                    publishLocked(FileTransferState.initial(true))
-                }
+                cleanupDrainedLocked()
             }
         }
     }
@@ -140,7 +137,7 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
         synchronized(lock) {
             val active = agent ?: return false
             if (!connected || preparing != null || receiving != null ||
-                !retryDeferredCleanupLocked()) return false
+                !cleanupDrainedLocked()) return false
             val request = pending ?: return false
             if (request.requestId.toHex() != requestId ||
                 (uri == null && !request.canResume)) return false
@@ -233,8 +230,7 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
                 receive != null && receive.receiver.requestCancellation() -> {
                     receiving = null
                     // Closing local file handles must not depend on the control queue.
-                    cleanupAdmitted = enqueueCleanup { receive.receiver.cancel() }
-                    if (!cleanupAdmitted) deferredCleanup.retain(receive.receiver)
+                    cleanupAdmitted = requestReceiverCleanupLocked(receive.receiver)
                     publishLocked(state(receive.request.offer, FileTransferDirection.RECEIVE,
                         if (cleanupAdmitted) FileTransferStage.CANCELLED else FileTransferStage.FAILED,
                         receive.transferred,
@@ -265,10 +261,20 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
             publishLocked(FileTransferState.initial(false))
         }
         events.shutdownNow()
-        synchronized(lock) { retryDeferredCleanupLocked() }
+        // Already-admitted work drains on its worker. Only rejected cleanup needs
+        // a terminal one-off worker so Android's UI never closes document I/O.
+        val rejected = synchronized(lock) {
+            retryDeferredCleanupLocked()
+            deferredCleanup.takeUnsubmitted()
+        }
         io.shutdown()
         control.shutdown()
         cleanup.shutdown()
+        rejected?.let { receiver ->
+            Thread({
+                runCatching { receiver.cancel() }
+            }, "crosslab-file-final-cleanup").apply { isDaemon = true }.start()
+        }
         listeners.clear()
     }
 
@@ -280,7 +286,7 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
             active = agent ?: return false
             if (!connected || sending != null || pending != null ||
                 preparing != null || receiving != null ||
-                !retryDeferredCleanupLocked()) return false
+                !cleanupDrainedLocked()) return false
             token = session
             if (selection.originalOffer == null) retry = null
             worker = AndroidFileTransferSender(adapter, active, selection) { progress, prepared ->
@@ -416,7 +422,7 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
             val accept = synchronized(lock) {
                 if (!isAgentLocked(active, token)) return
                 if (!connected || pending != null || preparing != null ||
-                    receiving != null || sending != null) false
+                    receiving != null || sending != null || !cleanupDrainedLocked()) false
                 else {
                     pending = request
                     publishLocked(state(request.offer, FileTransferDirection.RECEIVE,
@@ -458,8 +464,7 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
                     received.receiver.requestCancellation()) {
                     // Verified publication cannot be cancelled after its commit boundary.
                     receiving = null
-                    val cleanupQueued = enqueueCleanup { received.receiver.cancel() }
-                    if (!cleanupQueued) deferredCleanup.retain(received.receiver)
+                    val cleanupQueued = requestReceiverCleanupLocked(received.receiver)
                     publishLocked(state(received.request.offer, FileTransferDirection.RECEIVE,
                         if (cleanupQueued) FileTransferStage.CANCELLED else FileTransferStage.FAILED,
                         received.transferred,
@@ -568,21 +573,11 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
                 synchronized(lock) {
                     if (receiving !== received || !received.receiver.requestCancellation()) return
                     receiving = null
+                    val admitted = requestReceiverCleanupLocked(received.receiver)
                     publishLocked(state(received.request.offer, FileTransferDirection.RECEIVE,
-                        FileTransferStage.CANCELLED, received.transferred))
-                }
-                if (!enqueueCleanup { received.receiver.cancel() }) {
-                    synchronized(lock) {
-                        deferredCleanup.retain(received.receiver)
-                        if (currentSession(active, received.sessionToken) && receiving == null &&
-                            current.direction == FileTransferDirection.RECEIVE &&
-                            current.stage == FileTransferStage.CANCELLED
-                        ) {
-                            publishLocked(state(received.request.offer, FileTransferDirection.RECEIVE,
-                                FileTransferStage.FAILED, received.transferred,
-                                failure = FileTransferFailure.RESOURCE_LIMIT))
-                        }
-                    }
+                        if (admitted) FileTransferStage.CANCELLED else FileTransferStage.FAILED,
+                        received.transferred,
+                        failure = if (admitted) null else FileTransferFailure.RESOURCE_LIMIT))
                 }
             }
         }
@@ -605,21 +600,10 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
         synchronized(lock) {
             if (receiving !== received) return
             receiving = null
+            val admitted = requestReceiverCleanupLocked(received.receiver)
             publishLocked(state(received.request.offer, FileTransferDirection.RECEIVE,
-                FileTransferStage.FAILED, received.transferred, failure = reason))
-        }
-        if (!enqueueCleanup { received.receiver.cancel() }) {
-            synchronized(lock) {
-                deferredCleanup.retain(received.receiver)
-                if (currentSession(active, received.sessionToken) && receiving == null &&
-                    current.direction == FileTransferDirection.RECEIVE &&
-                    current.stage == FileTransferStage.FAILED
-                ) {
-                    publishLocked(state(received.request.offer, FileTransferDirection.RECEIVE,
-                        FileTransferStage.FAILED, received.transferred,
-                        failure = FileTransferFailure.RESOURCE_LIMIT))
-                }
-            }
+                FileTransferStage.FAILED, received.transferred,
+                failure = if (admitted) reason else FileTransferFailure.RESOURCE_LIMIT))
         }
     }
 
@@ -653,8 +637,7 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
         preparing = null
         receiving = null
         val cleanupQueued =
-            oldReceive == null || enqueueCleanup { oldReceive.receiver.cancel() }
-        if (!cleanupQueued && oldReceive != null) deferredCleanup.retain(oldReceive.receiver)
+            oldReceive == null || requestReceiverCleanupLocked(oldReceive.receiver)
         if (oldSend != null || oldReceive != null) {
             val offer = oldSend?.offer ?: oldReceive?.request?.offer
             publishLocked(state(offer,
@@ -691,10 +674,39 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
     private fun enqueueCleanup(task: () -> Unit): Boolean =
         cleanup.submit(task) || io.submit(task)
 
+    private fun requestReceiverCleanupLocked(receiver: AndroidFileTransferReceiver): Boolean {
+        // New receives are blocked while a previous file handle is closing.
+        if (!deferredCleanup.retain(receiver)) return false
+        return retryDeferredCleanupLocked()
+    }
+
     private fun retryDeferredCleanupLocked(): Boolean =
         deferredCleanup.trySubmit { receiver ->
-            enqueueCleanup { receiver.cancel() }
+            enqueueCleanup {
+                try {
+                    receiver.cancel()
+                } finally {
+                    synchronized(lock) {
+                        if (deferredCleanup.complete(receiver)) {
+                            val unavailable = cleanupUnavailableState
+                            cleanupUnavailableState = null
+                            if (!closed.get() && connected && current === unavailable) {
+                                publishLocked(FileTransferState.initial(true))
+                            }
+                        }
+                    }
+                }
+            }
         }
+
+    private fun cleanupDrainedLocked(): Boolean {
+        retryDeferredCleanupLocked()
+        if (!deferredCleanup.hasPending()) return true
+        val unavailable = workerUnavailable()
+        cleanupUnavailableState = unavailable
+        publishLocked(unavailable)
+        return false
+    }
 
     private fun workerUnavailable() = FileTransferState(
         available = false,
