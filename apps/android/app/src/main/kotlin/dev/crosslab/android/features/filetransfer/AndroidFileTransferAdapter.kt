@@ -57,6 +57,7 @@ class AndroidFileTransferAdapter(
         retryOffer: MobileFileTransferOffer? = null,
         isCancelled: () -> Boolean = { false },
     ): AndroidFileTransferSource {
+        if (isCancelled()) throw FileTransferPreparationCancelled()
         val displayName = displayName(uri)
         val hasher = MobileFileTransferHasher()
         resolver.openInputStream(uri)?.use { input ->
