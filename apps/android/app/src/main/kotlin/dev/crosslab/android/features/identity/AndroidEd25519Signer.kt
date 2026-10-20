@@ -78,8 +78,12 @@ class AndroidEd25519Signer(
         val privateBytes =
             pair.private.encoded ?: throw IdentityStoreUnavailable("Ed25519 private key is not encodable")
         val publicRaw = extractRawPublicKey(pair.public.encoded)
-        val encrypted = encrypt(privateBytes)
-        privateBytes.fill(0)
+        val encrypted =
+            try {
+                encrypt(privateBytes)
+            } finally {
+                privateBytes.fill(0)
+            }
 
         val bundle = SignerBundle(publicRaw, encrypted.iv, encrypted.ciphertext)
         val output = keyFile.startWrite()
