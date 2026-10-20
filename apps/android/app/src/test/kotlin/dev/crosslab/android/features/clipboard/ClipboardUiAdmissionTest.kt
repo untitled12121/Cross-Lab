@@ -7,6 +7,37 @@ import org.junit.Test
 
 class ClipboardUiAdmissionTest {
     @Test
+    fun nativeCallbackFailureSchedulesBoundedErrorWithoutEscapingUi() {
+        var fallbackCalls = 0
+        val queued = ClipboardUiAdmission(1)
+        assertTrue(queued.dispatch(post = { task -> task(); true }) {
+            invokeClipboardCallback(
+                action = { throw IllegalStateException("simulated native clipboard error") },
+                onFailure = { fallbackCalls++ },
+            )
+        })
+        assertEquals(1, fallbackCalls)
+        assertTrue(queued.dispatch(post = { task -> task(); true }) { })
+    }
+
+    @Test
+    fun brokenNativeErrorReplyCannotCrashUiOrConsumePermit() {
+        var attempted = 0
+        val queued = ClipboardUiAdmission(1)
+        assertTrue(queued.dispatch(post = { task -> task(); true }) {
+            invokeClipboardCallback(
+                action = { throw IllegalStateException("fault") },
+                onFailure = {
+                    attempted++
+                    throw IllegalStateException("native error lane unavailable")
+                },
+            )
+        })
+        assertEquals(1, attempted)
+        assertTrue(queued.dispatch(post = { task -> task(); true }) { })
+    }
+
+    @Test
     fun pendingUiCapacityRejectsNewWorkAndRecoversAfterCompletion() {
         val limiter = ClipboardUiAdmission(1)
         var scheduled: (() -> Unit)? = null
