@@ -2,7 +2,7 @@
 
 **Assessment date:** 2026-10-20  
 **Reviewed baseline:** `main` at `fb92d0d82bc304c8ebc67fd6d175168f52de40c8` (product sources last full-tested at `e10fa6253e6087cd073077944e5b19f80f962ff2`)  
-**Hardening:** [PR #121](https://github.com/untitled12121/Cross-Lab/pull/121) — record its final merged commit and CI outcome before treating fixes as verified.  
+**Hardening evidence:** [PR #121](https://github.com/untitled12121/Cross-Lab/pull/121) merged at `b4aea96924ccc22f89a1d74f3e7c60d7cf2672f8`; exact-head [CI 39476668443](https://github.com/untitled12121/Cross-Lab/actions/runs/39476668443) passed Rust, Android, formatting and gate. [PR #122](https://github.com/untitled12121/Cross-Lab/pull/122) addresses a further Linux policy CAS race; verify its exact-head checks before considering that additional change integrated.  
 **Assessment type:** risk-based source review, automated CI/RustSec evidence review, focused static search, and targeted security regression tests. **Not an independent line-by-line security certification, active exploit/pentest or real-device test.**
 
 ## Scope and threat model
@@ -60,6 +60,18 @@ The reviewed Cargo.lock has `quinn-proto 0.11.18` and `memmap2 0.9.11`, satisfyi
 
 **Threat mapping:** TM-017 (bounded allocations and low-cost malformed-input rejection). This is local-file availability hardening, not a demonstrated network exploit.
 
+### SEC-P2-003 — Linux policy commit race bypassed expected-revision CAS (High, concurrent local writer precondition)
+
+**Affected:** `apps/desktop/src/features/policy_store/linux.rs`, `LinuxPolicyStore::commit`.
+
+**Before patch:** Separate callers could both load and verify the same current revision, then independently issue new Secret Service currentness records and atomically write different next-revision envelopes. The caller's `expected_revision` check was not under a cross-process mutex; a last-writer-wins update or inconsistent anchor state could violate the owner policy compare-and-swap guarantee. This requires concurrent local writers or a compromised local process with write authority; it does not establish a remote privilege escalation.
+
+**Patch:** Create a private `store-v1.lock` in the same protected policy-state directory and acquire an exclusive `File::try_lock` for the entire load/compare-and-swap, Secret Service anchor update, on-disk snapshot replacement, and anchor cleanup. A contending writer fails explicitly with `RevisionConflict`; no blocking executor call is used. Another caller can retry only after loading the new revision.
+
+**Focused case:** `concurrent_policy_writers_cannot_share_the_same_revision` holds an OS lock in one writer, verifies a second writer's lock request is refused with a typed conflict, then verifies the lock is reacquirable after release. The test does not emulate a running Secret Service or system-crash interleavings.
+
+**Threat mapping:** TM-009 and ADR-0019 (persisted exact owner policy with CAS and fail-closed currentness).
+
 ## Other boundaries reviewed — evidence and limits
 
 - **Identity, pairing and revocation:** Ed25519 signing/delegation, durable signed trust/revocation, Android wrapping under Keystore AES-GCM, Linux Secret Service storage, default-deny on ambiguous state. Positive patterns; platform store race/crash cases deserve integration validation.
@@ -77,4 +89,4 @@ The reviewed Cargo.lock has `quinn-proto 0.11.18` and `memmap2 0.9.11`, satisfyi
 4. **Exercise adversarial protocol fuzzing** and QUIC packet/resource and authenticated-peer flood scenarios beyond existing smoke tests; separately analyze session/tls custom verifier's proof sequencing and early-data disabled invariant.
 5. Conduct external/manual app security review before broad deployment, including Android SAF provider interruptions, protected notifications and UI approval origin.
 
-**Conclusion:** The prior product baseline passed automated software CI/RustSec *vulnerability* screening, but the audit identified real local integrity/availability weaknesses and nonzero maintenance/supply-chain warnings. The targeted security changes are in PR #121, **not considered merged or verified until its exact-head Rust/Android checks pass**. No all-code or independent penetration-test certification is implied. Owner device acceptance remains a later, separately managed activity.
+**Conclusion:** The prior product baseline passed automated software CI/RustSec *vulnerability* screening but carried nonzero maintenance/supply-chain warnings. Identity currentness and bounded-read protections in PR #121 are merged and passed their exact-head Rust/Android/CI Gate checks. The additional Linux policy CAS guard in PR #122 requires its own exact-head verification and merge. No all-code or independent penetration-test certification is implied. Owner device acceptance remains a later, separately managed activity.
