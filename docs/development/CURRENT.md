@@ -14,12 +14,18 @@
 - PRs #99/#100 integrate Android observer/owner-permission fault isolation and OS notification consent/redaction; Android and gate passed runs `39315312331`/`39314114314`.
 - Earlier Phase 2 #87–98 integrated product QR/LAN pairing/trust, per-peer capability/permission control, terminal owner revocation, exact-session clipboard/file-picker authority on Linux/Android, resumable single-file transfer v2, notification mirroring v3, protected owner audit, and Android runtime lifecycle fault recovery. Their software CI results are not physical release acceptance.
 
-## Next approved Phase 2 implementation milestone
+## Active milestone — bounded Android transfer workers and overload recovery
 
-- **Branch:** `main` at source merge `e29c08b1db0c0b4a102be5493e9229c0538f8e87` before this handoff update; inspect the actual latest branch SHA and working status before starting a new feature branch.
-- **Next coherent code batch:** tighten **Android file-transfer event/I/O/control worker backpressure and cancellation recovery**. Inspect `AndroidFileTransferService` (currently uses unbounded `Executors.newFixedThreadPool` / `newSingleThreadExecutor` queues), `AndroidFileTransferAdapter`, `FileTransferController`, relevant v2 source/receive state, and ADR-0020. Introduce bounded, event-driven admission without running I/O on the UI thread; rejected/closed queue tasks must not leave transfers stuck in PREPARING or retain apparent session authority. Preserve native owner approval, current-session binding, resumable checkpoints and final digest verification. Cover reconnect storms, storage/cancel errors and queue exhaustion with regression tests before merging.
-- Continue Linux/Android UX and protected audit/notification lifecycle hardening where tied to this milestone; do not expand scope into Phase 3 or change approved wire/crypto/privilege contracts without an ADR.
-- **Verification completed this handoff:** exact PR #107 Source format/Rust/CI Gate passed run `39356181216`; PR #106 Android/CI Gate passed run `39355015967`; PR #105 Android/CI Gate passed run `39354380816`. No local shell build or physical Linux/Android acceptance was performed in this environment.
+- **Branch:** `feat/phase2-android-bounded-transfer-workers`, based on main documentation checkpoint `c728680f3d8340613e623503cadbdda15884eccf` (source PR #107 merge `e29c08b1`). Source checkpoint before handoff: `fedd9adb6f6b364a725d5b312749baeb7c6192f5`; use the live PR head for exact SHA after this document update.
+- **Bounded execution:** `AndroidFileTransferService` event listener tasks (3 workers + queue 3), file I/O (2 workers + queue 8), control (1 worker + queue 16), and cancellation/cleanup fallback (1 worker + queue 8) replace unbounded Executors queues. No blocking CallerRuns on Android UI. Session tokens/agent generation invalidate stale accepted work after reconnect.
+- **Overload and cancellation:** failed new listener admission detaches its native adapter and reports a redacted `FAILED/RESOURCE_LIMIT`; rejected send work clears active worker/retry state, while rejected receive preparation restores the pending local-destination request without issuing any native stream authority. Cancellation/decline have bounded fallback scheduling and do not silently report queue admission success on rejection. Cleanup admission failure is shown as a bounded resource failure; no credential or file content is logged. Adapter close invalidates available state and drains accepted I/O/control cleanup.
+- **Tests:** `BoundedTransferWorkerPoolTest` covers bounded saturation without caller-thread execution, draining after close, broken task isolation, and concurrent upper bounds. **Exact-head Android JVM/CI and real-device transfer/reconnect/cancellation verification are pending.** No ADR-0020 wire, identity, resume checkpoint, storage currentness, or owner approval semantics are changed.
+
+## Exact next code/verification tasks
+
+1. Run Android compile/JVM and CI Gate for this substantial transfer-worker batch; fix any confirmed failures together, review the final diff and merge only after successful exact-head verification.
+2. Continue approved Phase 2 error recovery and performance, especially transfer disconnect/stale event/backpressure edge cases and audit/notification platform lifecycle; use targeted tests and avoid new unnecessary queues/dependencies.
+3. Obtain the owner's physical acceptance evidence before any Phase 2 / Cross-Lab 0.1 release claim; Phase 3 remains deferred.
 
 ## Owner-managed manual release gate (still open)
 
