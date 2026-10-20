@@ -44,6 +44,8 @@ internal class AndroidFileTransferSender(
     }
 
     fun run(): SendTerminal {
+        // A queued send invalidated by disconnect must never touch the source URI.
+        if (cancelled.get()) return SendTerminal(FileTransferStage.CANCELLED, 0uL)
         var transferred = 0uL
         return try {
             if (selection.retainGrant) {

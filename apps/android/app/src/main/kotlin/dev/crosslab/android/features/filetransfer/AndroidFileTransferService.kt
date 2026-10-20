@@ -26,6 +26,7 @@ internal class ActiveFileReceive(
     val request: IncomingOffer,
     val receiver: AndroidFileTransferReceiver,
     val offset: ULong,
+    val sessionToken: Long,
 ) {
     var streamId: ByteArray? = null
     var transferred = offset
@@ -163,7 +164,9 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
             publishLocked(state(request.offer, FileTransferDirection.RECEIVE, FileTransferStage.CANCELLED))
         }
         if (enqueueControl {
-            runCatching { target.first.declineFileTransferRequest(target.second.requestId) }
+            if (synchronized(lock) { currentSession(target.first, token) }) {
+                runCatching { target.first.declineFileTransferRequest(target.second.requestId) }
+            }
         }) return true
 
         synchronized(lock) {
@@ -185,9 +188,11 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
     override fun cancelFile(): Boolean {
         val cancellation: () -> Unit
         val cancelledAgent: MobileTrustedPresenceAgent
+        val cancelledToken: Long
         synchronized(lock) {
             val active = agent ?: return false
             cancelledAgent = active
+            cancelledToken = session
             val sender = sending
             val request = pending ?: preparing
             val receive = receiving
@@ -196,21 +201,29 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
                     sender.cancelled.set(true)
                     publishLocked(state(sender.offer, FileTransferDirection.SEND,
                         FileTransferStage.CANCELLED, canRetry = retry != null))
-                    cancellation = { sender.cancel() }
+                    cancellation = {
+                        if (synchronized(lock) { currentSession(active, cancelledToken) }) sender.cancel()
+                    }
                 }
                 request != null -> {
                     pending = null
                     preparing = null
                     publishLocked(state(request.offer, FileTransferDirection.RECEIVE,
                         FileTransferStage.CANCELLED))
-                    cancellation = { runCatching { active.declineFileTransferRequest(request.requestId) } }
+                    cancellation = {
+                        if (synchronized(lock) { currentSession(active, cancelledToken) }) {
+                            runCatching { active.declineFileTransferRequest(request.requestId) }
+                        }
+                    }
                 }
                 receive != null && receive.receiver.requestCancellation() -> {
                     receiving = null
                     publishLocked(state(receive.request.offer, FileTransferDirection.RECEIVE,
                         FileTransferStage.CANCELLED, receive.transferred))
                     cancellation = {
-                        runCatching { active.cancelFileTransferReceive(receive.request.offer.transferId()) }
+                        if (synchronized(lock) { currentSession(active, cancelledToken) }) {
+                            runCatching { active.cancelFileTransferReceive(receive.request.offer.transferId()) }
+                        }
                         receive.receiver.cancel()
                     }
                 }
@@ -317,7 +330,7 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
                     preparing = null
                     if (preparation.kind == AndroidReceivePreparationKind.READY) {
                         receiving = ActiveFileReceive(input.request, checkNotNull(preparation.receiver),
-                            preparation.resumeOffset)
+                            preparation.resumeOffset, input.token)
                         publishLocked(state(input.request.offer, FileTransferDirection.RECEIVE,
                             FileTransferStage.WAITING_PEER, preparation.resumeOffset, canCancel = true))
                     }
@@ -326,6 +339,11 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
             }
             if (!stillAuthorized) {
                 // fsync/close can block; never do it under the UI-visible session lock.
+                runCatching { preparation.receiver?.cancel() }
+                return
+            }
+            // Do not deliver Ready/Complete after a session was invalidated during I/O.
+            if (!synchronized(lock) { currentSession(input.agent, input.token) }) {
                 runCatching { preparation.receiver?.cancel() }
                 return
             }
@@ -359,7 +377,9 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
                     ))
                 }
             }
-            runCatching { input.agent.declineFileTransferRequest(input.request.requestId) }
+            if (synchronized(lock) { currentSession(input.agent, input.token) }) {
+                runCatching { input.agent.declineFileTransferRequest(input.request.requestId) }
+            }
         }
     }
 
@@ -390,7 +410,9 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
                 // Rejected offers have no stream or session authority; the peer times out
                 // safely if the bounded response queue is saturated.
                 enqueueControl {
-                    runCatching { active.declineFileTransferRequest(request.requestId) }
+                    if (synchronized(lock) { isAgentLocked(active, token) && connected }) {
+                        runCatching { active.declineFileTransferRequest(request.requestId) }
+                    }
                 }
             }
         }
@@ -443,13 +465,14 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
     ) {
         val received = synchronized(lock) {
             if (!isAgentLocked(active, token)) return
-            receiving?.takeIf { it.matches(event) }
+            receiving?.takeIf { it.matches(event) && currentSession(active, it.sessionToken) }
         } ?: return
         when (event.kind()) {
             MobileFileTransferDataKind.OPENED -> {
                 val offset = event.resumeOffset()
                 if (received.streamId != null || offset != received.offset) {
                     runCatching {
+                        if (!synchronized(lock) { currentSession(active, received.sessionToken) }) return@runCatching
                         active.failFileTransferReceive(event.streamId(),
                             received.request.offer.transferId(),
                             MobileFileTransferTerminalOutcome.STORAGE_FAILED)
@@ -502,6 +525,7 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
                     }
                     // Publication is durable even if the peer loses the terminal acknowledgement.
                     runCatching {
+                        if (!synchronized(lock) { currentSession(active, received.sessionToken) }) return@runCatching
                         active.completeFileTransferResult(received.request.offer.transferId(),
                             MobileFileTransferTerminalOutcome.COMPLETED)
                     }
@@ -528,7 +552,14 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
                 }
                 if (!enqueueCleanup { received.receiver.cancel() }) {
                     synchronized(lock) {
-                        publishLocked(workerUnavailable())
+                        if (currentSession(active, received.sessionToken) && receiving == null &&
+                            current.direction == FileTransferDirection.RECEIVE &&
+                            current.stage == FileTransferStage.CANCELLED
+                        ) {
+                            publishLocked(state(received.request.offer, FileTransferDirection.RECEIVE,
+                                FileTransferStage.FAILED, received.transferred,
+                                failure = FileTransferFailure.RESOURCE_LIMIT))
+                        }
                     }
                 }
             }
@@ -542,7 +573,7 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
     ) {
         val stream = received.streamId
         if (stream != null) enqueueControl {
-            runCatching {
+            if (synchronized(lock) { currentSession(active, received.sessionToken) }) runCatching {
                 active.failFileTransferReceive(stream, received.request.offer.transferId(),
                     if (reason == FileTransferFailure.INTEGRITY)
                         MobileFileTransferTerminalOutcome.INTEGRITY_FAILED
@@ -556,7 +587,16 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
                 FileTransferStage.FAILED, received.transferred, failure = reason))
         }
         if (!enqueueCleanup { received.receiver.cancel() }) {
-            synchronized(lock) { publishLocked(workerUnavailable()) }
+            synchronized(lock) {
+                if (currentSession(active, received.sessionToken) && receiving == null &&
+                    current.direction == FileTransferDirection.RECEIVE &&
+                    current.stage == FileTransferStage.FAILED
+                ) {
+                    publishLocked(state(received.request.offer, FileTransferDirection.RECEIVE,
+                        FileTransferStage.FAILED, received.transferred,
+                        failure = FileTransferFailure.RESOURCE_LIMIT))
+                }
+            }
         }
     }
 
@@ -583,6 +623,8 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
         val oldSend = sending
         val oldReceive = receiving
         oldSend?.cancelled?.set(true)
+        // Revoke publication before asynchronous receiver cleanup can be delayed by load.
+        oldReceive?.receiver?.requestCancellation()
         sending = null
         pending = null
         preparing = null
