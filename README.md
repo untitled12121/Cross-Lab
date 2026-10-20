@@ -30,6 +30,12 @@ Cross-Lab is designed around a few non-negotiable principles:
 - **Native where required.** Desktop uses Rust with GPUI/GPUI Kit; Android uses Kotlin with a shared Rust core; iOS/iPadOS uses Swift with the same shared core boundary.
 - **Small, testable components.** Cross-Lab avoids a god daemon and grows crates, services, transports, and platform helpers only when a concrete responsibility requires them.
 
+## Implementation Status
+
+**The current product milestone is Phase 2: Linux + Android.** The repository integrates local QR/LAN pairing, persistent owner-controlled trust, authenticated QUIC reconnection, per-peer permissions, bidirectional text clipboard, resumable single-file transfers, permission-gated Android-to-Linux notifications, private owner audit/history, and terminal device revocation. Linux uses Rust + GPUI/GPUI Kit; Android uses Kotlin with the shared Rust core.
+
+The architecture also targets Windows, macOS, and iOS/iPadOS, but they are **not part of this Linux + Android product milestone**. Cross-Lab 0.1 has not been published. See [Current Development State](./docs/development/CURRENT.md) for the precise reviewed source commit and software verification status.
+
 ## Architecture
 
 Cross-Lab uses a Rust workspace and monorepo with clean dependency boundaries between domain logic, platform integration, networking, UI, privileged services, and recovery.
@@ -53,7 +59,7 @@ Transport Adapters
   in-memory simulator · QUIC · future links
 ```
 
-The initial implementation proves the architecture with a deterministic Core Simulator before introducing real networking or platform-specific feature complexity. Quinn is the first planned real IP transport after the simulator foundation.
+The deterministic Core Simulator remains a regression-test foundation. The Phase 2 Linux + Android path also implements real QUIC transport using Quinn, with identity, trust, authorization, and owner policy enforced independently of transport.
 
 For the complete dependency model, security boundaries, platform strategy, protocol rules, and phased roadmap, see the [Master Architecture](./docs/architecture/MASTER-ARCHITECTURE.md).
 
