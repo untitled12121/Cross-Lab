@@ -188,9 +188,11 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
     override fun cancelFile(): Boolean {
         val cancellation: () -> Unit
         val cancelledAgent: MobileTrustedPresenceAgent
+        val cancelledToken: Long
         synchronized(lock) {
             val active = agent ?: return false
             cancelledAgent = active
+            cancelledToken = session
             val sender = sending
             val request = pending ?: preparing
             val receive = receiving
@@ -199,21 +201,29 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
                     sender.cancelled.set(true)
                     publishLocked(state(sender.offer, FileTransferDirection.SEND,
                         FileTransferStage.CANCELLED, canRetry = retry != null))
-                    cancellation = { sender.cancel() }
+                    cancellation = {
+                        if (synchronized(lock) { currentSession(active, cancelledToken) }) sender.cancel()
+                    }
                 }
                 request != null -> {
                     pending = null
                     preparing = null
                     publishLocked(state(request.offer, FileTransferDirection.RECEIVE,
                         FileTransferStage.CANCELLED))
-                    cancellation = { runCatching { active.declineFileTransferRequest(request.requestId) } }
+                    cancellation = {
+                        if (synchronized(lock) { currentSession(active, cancelledToken) }) {
+                            runCatching { active.declineFileTransferRequest(request.requestId) }
+                        }
+                    }
                 }
                 receive != null && receive.receiver.requestCancellation() -> {
                     receiving = null
                     publishLocked(state(receive.request.offer, FileTransferDirection.RECEIVE,
                         FileTransferStage.CANCELLED, receive.transferred))
                     cancellation = {
-                        runCatching { active.cancelFileTransferReceive(receive.request.offer.transferId()) }
+                        if (synchronized(lock) { currentSession(active, cancelledToken) }) {
+                            runCatching { active.cancelFileTransferReceive(receive.request.offer.transferId()) }
+                        }
                         receive.receiver.cancel()
                     }
                 }
