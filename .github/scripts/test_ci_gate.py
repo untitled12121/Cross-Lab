@@ -42,7 +42,9 @@ class GateTests(unittest.TestCase):
     def test_selected_skipped_never_passes(self):
         for job in JOB_NAMES:
             with self.subTest(job=job):
-                selected = scope(**{job: True, "format": job == "rust"})
+                selected = scope(**{job: True})
+                if job == "rust":
+                    selected["format"] = "true"
                 actual = results(**({"format": "success"} if job == "rust" else {}))
                 self.assertTrue(verify_gate(selected, actual, "success"))
 
