@@ -99,8 +99,18 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
         synchronized(lock) {
             if (agent !== active || connected == online) return
             connected = online
-            if (!online) interruptLocked()
-            else if (!retryDeferredCleanupLocked()) publishLocked(workerUnavailable())
+            if (!online) {
+                interruptLocked()
+            } else {
+                val hadDeferredCleanup = deferredCleanup.hasPending()
+                if (!retryDeferredCleanupLocked()) {
+                    publishLocked(workerUnavailable())
+                } else if (hadDeferredCleanup && !current.available &&
+                    current.failure == FileTransferFailure.RESOURCE_LIMIT
+                ) {
+                    publishLocked(FileTransferState.initial(true))
+                }
+            }
         }
     }
 
