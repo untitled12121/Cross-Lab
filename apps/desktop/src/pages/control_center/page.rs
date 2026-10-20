@@ -331,6 +331,13 @@ impl ControlCenterPage {
     }
 
     #[cfg(target_os = "linux")]
+    fn mark_file_transfer_unavailable(&mut self) {
+        self.file_transfer.set_available(false);
+        self.record_transfer_audit(true);
+        self.record_transfer_audit(false);
+    }
+
+    #[cfg(target_os = "linux")]
     fn record_transfer_audit(&mut self, sending: bool) {
         let operation = if sending {
             self.file_transfer.send()
@@ -365,7 +372,7 @@ impl ControlCenterPage {
                     let _ = this.update(cx, |page, cx| {
                         page.presence_starting = false;
                         page.clipboard.set_available(false);
-                        page.file_transfer.set_available(false);
+                        page.mark_file_transfer_unavailable();
                         cx.notify();
                     });
                     return;
@@ -374,7 +381,7 @@ impl ControlCenterPage {
                     let _ = this.update(cx, |page, cx| {
                         page.presence_starting = false;
                         page.clipboard.set_available(false);
-                        page.file_transfer.set_available(false);
+                        page.mark_file_transfer_unavailable();
                         page.notice = Some(error.to_string());
                         cx.notify();
                     });
@@ -404,7 +411,7 @@ impl ControlCenterPage {
                     let _ = this.update(cx, |page, cx| {
                         page.presence_starting = false;
                         page.clipboard.set_available(false);
-                        page.file_transfer.set_available(false);
+                        page.mark_file_transfer_unavailable();
                         page.notice = Some(error.to_string());
                         cx.notify();
                     });
@@ -417,7 +424,7 @@ impl ControlCenterPage {
                     let _ = this.update(cx, |page, cx| {
                         page.presence_starting = false;
                         page.clipboard.set_available(false);
-                        page.file_transfer.set_available(false);
+                        page.mark_file_transfer_unavailable();
                         page.notice = Some(error.to_string());
                         cx.notify();
                     });
@@ -572,7 +579,7 @@ impl ControlCenterPage {
                     incoming = file_transfer_offers.recv() => {
                         let Some(incoming) = incoming else {
                             let _ = this.update(cx, |page, cx| {
-                                page.file_transfer.set_available(false);
+                                page.mark_file_transfer_unavailable();
                                 cx.notify();
                             });
                             return;
@@ -590,7 +597,7 @@ impl ControlCenterPage {
                     transfer_status = file_transfer_statuses.recv() => {
                         let Some(transfer_status) = transfer_status else {
                             let _ = this.update(cx, |page, cx| {
-                                page.file_transfer.set_available(false);
+                                page.mark_file_transfer_unavailable();
                                 cx.notify();
                             });
                             return;
@@ -664,7 +671,7 @@ impl ControlCenterPage {
                         );
                         page.product_presence = None;
                         page.clipboard.set_available(false);
-                        page.file_transfer.set_available(false);
+                        page.mark_file_transfer_unavailable();
                         if invalidation_error.is_none() {
                             page.start_product_presence(cx);
                             page.notice = Some("Device trust revoked and saved.".to_owned());

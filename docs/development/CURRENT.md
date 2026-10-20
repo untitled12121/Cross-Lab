@@ -17,7 +17,7 @@
 - **Branch:** `feat/phase2-linux-transfer-disconnect-status` based on merged PR #106. Source checkpoint before this merge/docs commit `40580f05ef99df8de4de92cb8f9c605e22fb415b`; live PR head supersedes it afterward.
 - **Native loss:** `FileTransferFeatureState` turns interrupted active sends/receives into `Failed(Connection)`, not owner `Cancelled`. Existing bounded progress remains visible, completed transfers are not rewritten, and no new offer/progress/completion/cancellation can revive an unavailable native transfer service.
 - **Owner recovery:** desktop panel now explains disconnect/reconnect/retry steps; percentages use bounded u128 arithmetic so a counter exceeding file size or a large `u64` transfer cannot report impossible progress or overflow.
-- **Audit contract:** added focused Rust coverage proving unexpected native service loss generates `TransferEnded/Failed` metadata, never `Cancelled` owner audit. No file names, private paths, stream IDs or content are logged.
+- **Audit contract:** the GPUI native transfer-service loss path now emits typed send/receive failure audit transitions after marking status unavailable; focused Rust coverage verifies `TransferEnded/Failed`, never an invented owner `Cancelled`. No file names, private paths, stream IDs or content are logged.
 - **Verification:** initial Linux PR #107 source `cd65abc2` failed Source format only (Rust skipped). Exact rustfmt corrections at `40580f05` passed Source format and Rust in run `39355478849`; merged-base checkpoint and additional audit regression are **not yet verified**. Physical Linux+Android acceptance remains pending. No ADR-0020 transfer wire/owner-policy authority revision.
 
 ## Next work
