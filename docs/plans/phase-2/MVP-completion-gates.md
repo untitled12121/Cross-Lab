@@ -1,7 +1,7 @@
 # Phase 2 Linux + Android MVP — Completion Gates
 
 **Status:** Active, incomplete.  
-**Software checkpoint:** PR [#79](https://github.com/untitled12121/Cross-Lab/pull/79) merged into `main` as `b6458c5` on 2026-10-19. Reviewed source `8fd25ef7` passed the required Rust/Android/fuzz steps; see [CURRENT.md](../../development/CURRENT.md) for the exact run's final-status qualification. **Phase 2 release gate remains open for real-device evidence and final UX/reliability work.**
+**Software checkpoint:** QR/LAN pairing, durable trust, permissions, clipboard, file transfer v2, notifications v3, protected audit and terminal revocation are integrated. Android hardening PRs [#108–#112](https://github.com/untitled12121/Cross-Lab/pull/112) were merged after successful exact-head Android and CI Gate jobs; transfer receiver cleanup overload PR [#113](https://github.com/untitled12121/Cross-Lab/pull/113) is under verification. See [CURRENT.md](../../development/CURRENT.md) for exact heads/CI and final integrated source. **Neither the final manual full CI profile nor normal Linux + arm64 Android physical acceptance is established; Cross-Lab 0.1 remains unreleased.**
 
 ## Delivery order
 
@@ -14,7 +14,7 @@
 
 ## Release evidence
 
-- One consolidated static/security/integration/build CI run per coherent batch, with smaller targeted local tests during implementation. Fix failures together rather than repeatedly triggering full CI.
+- After the final Phase 2 software batch merges, run manual `full` CI on the exact reviewed `main` commit: Rust formatting, dependency/security checks, Linux desktop build/workspace tests, Android JVM tests and normal arm64 APK assembly. Android-only PR gates are necessary but not a substitute. Fix failures together, then record the final commit and exact run results.
 - Two actual devices on a reachable LAN. Test pairing, trust persist/restart, session reconnect, policy default-deny, clipboard in both directions subject to Android platform limits, file transfer/resume/integrity/cancel, notification consent/revocation, audit read/delete, and lost-device revocation reconnect denial.
 - Record exact commit, coarse OS/build, pass/fail evidence without IPs, raw device IDs, private keys, QR bootstrap payloads or personal file/notification contents.
 - No Phase 2 complete / Cross-Lab 0.1 release claim until implementation, approvals, CI and physical evidence gates pass. Phase 3 remains out of scope.
