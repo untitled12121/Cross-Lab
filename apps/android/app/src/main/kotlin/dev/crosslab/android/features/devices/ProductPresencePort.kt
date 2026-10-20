@@ -514,7 +514,9 @@ class ProductPresencePort(
         val token = generation
         agent = active
         val initial = runCatching {
-            fileTransfer?.attach(active)
+            if (fileTransfer?.attach(active) == false) {
+                error("file transfer listeners unavailable")
+            }
             discoveryInfo = info
             ensureDiscoveryLocked(active)
             active.snapshot() to active.permissionSnapshot()
