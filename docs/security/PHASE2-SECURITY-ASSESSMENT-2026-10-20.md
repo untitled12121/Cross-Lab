@@ -32,6 +32,20 @@ Reviewed representative code: `transports/quic/src/{config,session,trusted_sessi
 | zvariant_derive 5.15.0 | [RUSTSEC-2026-0372](https://rustsec.org/advisories/RUSTSEC-2026-0372) | Unmaintained |
 | yoke-derive 0.8.3 | Cargo audit yanked warning | Yanked; no RustSec ID in log |
 
+**Transitive provenance triage (from the same `Cargo.lock`, not a runtime-reachability or exploitability claim):**
+
+| Warning | Short dependency path toward a workspace root | Implication |
+| --- | --- | --- |
+| `basic-toml` | `crosslab-mobile-ffi → uniffi → uniffi_bindgen → askama → askama_macros → askama_derive → basic-toml` | Mobile FFI binding generator chain; upstream UniFFI ecosystem migration, not a direct production-code crate upgrade |
+| `instant`, `paste` | `gpui-kit → gpui-base/gpui-component → instant/paste` | GPUI UI dependency family; must coordinate upstream graphics-kit versions |
+| `rustls-pemfile` | `gpui-kit → gpui-kit-assets → gpui-pre-reqwest → rustls-pemfile` | GPUI asset/network transitive; RustSec recommends the maintained `rustls-pki-types` PEM API |
+| `rustybuzz`, `ttf-parser` | `gpui-kit → gpui-pre → usvg/rustybuzz/ttf-parser` | GPUI text/SVG family; changing versions without coordinated renderer tests is risky |
+| `zbus_names` | `crosslab-desktop → zbus → zbus_names` | Direct desktop D-Bus ecosystem dependency; coordinate compatible zbus upstream maintenance |
+| `zvariant`, `zvariant_derive` | `crosslab-desktop → oo7 → zvariant → zvariant_derive` | Linux Secret Service currentness/signing-store ecosystem; security-sensitive API compatibility |
+| `yoke-derive` | `gpui-kit → gpui-pre → url → idna → idna_adapter → icu_normalizer → icu_collections → yoke → yoke-derive` | Transitive yanked version from ICU/URL chain; select a validated non-yanked compatible release through Cargo resolution |
+
+These are **dependency graph paths only**. Some paths may be build-only or feature-dependent; the lockfile alone cannot prove that each crate is loaded in the final Linux or Android binary. Changing pinned, upstream-owned transitive packages requires tested dependency resolution rather than hand-editing checksums. No advisory is being dismissed as harmless solely because it is transitive.
+
 The reviewed Cargo.lock has `quinn-proto 0.11.18` and `memmap2 0.9.11`, satisfying published patched ranges for [RUSTSEC-2026-0338](https://rustsec.org/advisories/RUSTSEC-2026-0338) and [RUSTSEC-2026-0186](https://rustsec.org/advisories/RUSTSEC-2026-0186), respectively. The audit does not cover Android/Gradle/JNA dependencies, OS dependencies, private patches outside Cargo.lock, or future advisories. **Green cargo-audit is not a clean dependency inventory.**
 
 ## Confirmed findings and remediation
