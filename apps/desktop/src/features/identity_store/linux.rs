@@ -523,7 +523,7 @@ fn set_private_file(_: &Path) -> Result<(), std::io::Error> {
 }
 
 fn read_bounded_identity_file(
-    reader: impl Read,
+    reader: impl std::io::Read,
     max_bytes: usize,
 ) -> Result<Vec<u8>, LinuxIdentityStoreError> {
     let mut bytes = Vec::new();
