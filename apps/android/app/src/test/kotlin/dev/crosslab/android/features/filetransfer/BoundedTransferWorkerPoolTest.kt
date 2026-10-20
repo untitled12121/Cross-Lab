@@ -60,6 +60,30 @@ class BoundedTransferWorkerPoolTest {
     }
 
     @Test
+    fun saturatedControlWorkCannotConsumeReservedReceiverCleanupCapacity() {
+        val control = BoundedTransferWorkerPool("crosslab-test-control", 1, 1)
+        val cleanup = BoundedTransferWorkerPool("crosslab-test-cleanup", 1, 1)
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val cleanupDone = CountDownLatch(1)
+        try {
+            assertTrue(control.submit {
+                started.countDown()
+                release.await(5, TimeUnit.SECONDS)
+            })
+            assertTrue(started.await(5, TimeUnit.SECONDS))
+            assertTrue(control.submit { })
+            assertFalse(control.submit { error("saturated control queue") })
+            assertTrue(cleanup.submit { cleanupDone.countDown() })
+            assertTrue(cleanupDone.await(5, TimeUnit.SECONDS))
+        } finally {
+            release.countDown()
+            control.shutdown()
+            cleanup.shutdown()
+        }
+    }
+
+    @Test
     fun concurrentOverloadStillCapsWorkerCountAndAcceptedBacklog() {
         val pool = BoundedTransferWorkerPool("crosslab-test-transfer", 1, 2)
         val started = CountDownLatch(1)
