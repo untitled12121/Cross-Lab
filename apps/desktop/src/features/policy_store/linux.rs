@@ -50,6 +50,9 @@ impl LinuxPolicyStore {
         expected_revision: u64,
         policy: &PolicyState,
     ) -> Result<u64, LinuxPolicyStoreError> {
+        // Hold the exclusive writer lock through both the Secret Service
+        // currentness transition and the durable policy replacement.
+        let _lock = self.try_lock_commit()?;
         let current = self.load_current().await?;
         let current_revision = current
             .as_ref()
@@ -77,6 +80,31 @@ impl LinuxPolicyStore {
         }
         self.delete_orphan_anchors(next_anchor.revision()).await?;
         Ok(commit.envelope().revision())
+    }
+
+    fn try_lock_commit(&self) -> Result<File, LinuxPolicyStoreError> {
+        let parent = self
+            .path
+            .parent()
+            .ok_or(LinuxPolicyStoreError::InvalidPath)?;
+        fs::create_dir_all(parent)?;
+        set_private_dir(parent)?;
+        let lock = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .mode_private()
+            .open(self.path.with_extension("lock"))?;
+        // Blocking here can deadlock the async executor against another writer
+        // awaiting Secret Service. A contending writer must retry from a fresh
+        // revision rather than proceed with a stale snapshot.
+        match lock.try_lock() {
+            Ok(()) => Ok(lock),
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                Err(PolicyStoreError::RevisionConflict.into())
+            }
+            Err(error) => Err(error.into()),
+        }
     }
 
     async fn load_current(&self) -> Result<Option<CurrentPolicy>, LinuxPolicyStoreError> {
@@ -382,6 +410,28 @@ fn read_bounded_policy_file(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn concurrent_policy_writers_cannot_share_the_same_revision() {
+        let parent = std::env::temp_dir().join(format!(
+            "crosslab-policy-cas-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let store = LinuxPolicyStore {
+            path: parent.join("store-v1.bin"),
+        };
+        let first = store.try_lock_commit().unwrap();
+        assert!(matches!(
+            store.try_lock_commit(),
+            Err(LinuxPolicyStoreError::Store(PolicyStoreError::RevisionConflict))
+        ));
+        drop(first);
+
+        let second = store.try_lock_commit().unwrap();
+        drop(second);
+        fs::remove_dir_all(parent).unwrap();
+    }
 
     #[test]
     fn oversized_policy_file_is_bounded_before_decoding() {
