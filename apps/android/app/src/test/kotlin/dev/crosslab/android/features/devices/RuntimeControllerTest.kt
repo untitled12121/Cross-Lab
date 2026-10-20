@@ -42,6 +42,25 @@ class RuntimeControllerTest {
     }
 
     @Test
+    fun nativeListenerFailureRemovesOwnerCapabilityAuthorityImmediately() {
+        val port = FakeRuntimePort()
+        val controller = RuntimeController(port)
+        port.binding = NativeSessionBinding("trusted-peer", "ab".repeat(32))
+        controller.onForeground()
+        port.emit(authenticatedPeer("files.transfer").copy(presence = RuntimePresence.ONLINE))
+        assertTrue(controller.sessionBinding("files.transfer") != null)
+
+        // ProductPresencePort tears down the native agent and publishes this
+        // fail-closed snapshot if its event or clipboard listener dies.
+        port.emit(RuntimeSnapshot.disconnected().copy(presence = RuntimePresence.FAILED))
+
+        assertEquals(RuntimePresence.FAILED, controller.state().snapshot.presence)
+        assertNull(controller.state().snapshot.peerDeviceId)
+        assertNull(controller.sessionBinding("files.transfer"))
+        assertEquals(RuntimeLifecycle.RUNNING, controller.state().lifecycle)
+    }
+
+    @Test
     fun networkCallbackExceptionFailsClosedBeforeAnyMoreNativeActions() {
         val port = FakeRuntimePort()
         val controller = RuntimeController(port)

@@ -30,3 +30,14 @@ internal class ClipboardUiAdmission(capacity: Int) {
         return queued
     }
 }
+
+/** A native callback fault must not escape to the Android main thread. */
+internal fun invokeClipboardCallback(
+    action: () -> Unit,
+    onFailure: () -> Unit,
+) {
+    runCatching(action).onFailure {
+        // The fallback only schedules a bounded native error response.
+        runCatching(onFailure)
+    }
+}
