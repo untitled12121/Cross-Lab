@@ -666,7 +666,7 @@ class ProductPresencePort(
                 currentSessionBinding
             }
             if (!clipboardUiAdmission.dispatch(
-                post = { job -> handler.post(job) },
+                post = { job -> handler.post { job() } },
                 action = { handleClipboardRequest(active, token, expected, request) },
             )) {
                 rejectClipboardRequest(active, token, request.requestId(), request.kind())
