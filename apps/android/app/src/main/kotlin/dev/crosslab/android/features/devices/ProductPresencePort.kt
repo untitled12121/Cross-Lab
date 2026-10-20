@@ -6,7 +6,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import java.util.concurrent.CopyOnWriteArraySet
-import java.util.concurrent.Semaphore
+import dev.crosslab.android.features.clipboard.ClipboardUiAdmission
 import dev.crosslab.android.features.workers.BoundedWorkerPool
 import java.util.concurrent.atomic.AtomicBoolean
 import dev.crosslab.android.features.clipboard.AndroidClipboardAdapter
@@ -163,7 +163,7 @@ class ProductPresencePort(
     private val clipboardEvents = BoundedWorkerPool("crosslab-clipboard-events", 2, 2)
     private val clipboardWorkers = BoundedWorkerPool("crosslab-clipboard-worker", 2, 8)
     private val clipboardFailures = BoundedWorkerPool("crosslab-clipboard-errors", 1, 4)
-    private val clipboardUiSlots = Semaphore(8)
+    private val clipboardUiAdmission = ClipboardUiAdmission(8)
     private val closed = AtomicBoolean(false)
     private val lock = Any()
     private val handler = Handler(Looper.getMainLooper())
@@ -665,18 +665,10 @@ class ProductPresencePort(
                 if (!isCurrentAgent(active, token)) return
                 currentSessionBinding
             }
-            if (!clipboardUiSlots.tryAcquire()) {
-                rejectClipboardRequest(active, token, request.requestId(), request.kind())
-                continue
-            }
-            if (!handler.post {
-                try {
-                    handleClipboardRequest(active, token, expected, request)
-                } finally {
-                    clipboardUiSlots.release()
-                }
-            }) {
-                clipboardUiSlots.release()
+            if (!clipboardUiAdmission.dispatch(
+                post = { job -> handler.post(job) },
+                action = { handleClipboardRequest(active, token, expected, request) },
+            )) {
                 rejectClipboardRequest(active, token, request.requestId(), request.kind())
             }
         }
