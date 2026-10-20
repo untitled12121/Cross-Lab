@@ -49,6 +49,7 @@ pub enum LinuxFileTransferRequestAction {
 #[derive(Debug)]
 pub enum LinuxFileTransferDataAction {
     Continue,
+    Ignored(StreamId),
     Terminal {
         transfer_id: TransferId,
         outcome: FileTransferTerminalOutcome,
@@ -238,13 +239,14 @@ impl LinuxFileTransferService {
         resume_offset: u64,
     ) -> LinuxFileTransferDataAction {
         let Some(active) = self.active.get_mut(&transfer_id) else {
-            return abort(
-                transfer_id,
-                stream_id,
-                LinuxFileTransferError::InvalidStream,
-            );
+            // No current owner/session is waiting for this stream.
+            return LinuxFileTransferDataAction::Ignored(stream_id);
         };
-        if active.stream_id.is_some() || active.receiver.offset() != resume_offset {
+        if active.stream_id.is_some() {
+            // A late or duplicate open must not tear down the current stream.
+            return LinuxFileTransferDataAction::Ignored(stream_id);
+        }
+        if active.receiver.offset() != resume_offset {
             self.active.remove(&transfer_id);
             return abort(
                 transfer_id,
@@ -263,13 +265,14 @@ impl LinuxFileTransferService {
         bytes: &[u8],
         now_unix_secs: u64,
     ) -> LinuxFileTransferDataAction {
-        let result = match self.active.get_mut(&transfer_id) {
-            Some(active) if active.stream_id == Some(stream_id) => {
-                active.receiver.write_chunk(bytes, now_unix_secs)
-            }
-            _ => Err(LinuxFileTransferError::InvalidStream),
+        let Some(active) = self.active.get_mut(&transfer_id) else {
+            return LinuxFileTransferDataAction::Ignored(stream_id);
         };
-        match result {
+        if active.stream_id != Some(stream_id) {
+            // Only the stream that opened this receiver may mutate its bytes.
+            return LinuxFileTransferDataAction::Ignored(stream_id);
+        }
+        match active.receiver.write_chunk(bytes, now_unix_secs) {
             Ok(()) => LinuxFileTransferDataAction::Continue,
             Err(error) => {
                 self.active.remove(&transfer_id);
@@ -284,20 +287,15 @@ impl LinuxFileTransferService {
         stream_id: StreamId,
         now_unix_secs: u64,
     ) -> LinuxFileTransferDataAction {
-        let Some(active) = self.active.remove(&transfer_id) else {
-            return abort(
-                transfer_id,
-                stream_id,
-                LinuxFileTransferError::InvalidStream,
-            );
-        };
-        if active.stream_id != Some(stream_id) {
-            return abort(
-                transfer_id,
-                stream_id,
-                LinuxFileTransferError::InvalidStream,
-            );
+        if !matches!(
+            self.active.get(&transfer_id),
+            Some(active) if active.stream_id == Some(stream_id)
+        ) {
+            return LinuxFileTransferDataAction::Ignored(stream_id);
         }
+        let Some(active) = self.active.remove(&transfer_id) else {
+            return LinuxFileTransferDataAction::Ignored(stream_id);
+        };
         match active.receiver.finish(now_unix_secs) {
             Ok(()) => LinuxFileTransferDataAction::Terminal {
                 transfer_id,
@@ -312,20 +310,15 @@ impl LinuxFileTransferService {
         transfer_id: TransferId,
         stream_id: StreamId,
     ) -> LinuxFileTransferDataAction {
-        let Some(active) = self.active.remove(&transfer_id) else {
-            return abort(
-                transfer_id,
-                stream_id,
-                LinuxFileTransferError::InvalidStream,
-            );
-        };
-        if active.stream_id != Some(stream_id) {
-            return abort(
-                transfer_id,
-                stream_id,
-                LinuxFileTransferError::InvalidStream,
-            );
+        if !matches!(
+            self.active.get(&transfer_id),
+            Some(active) if active.stream_id == Some(stream_id)
+        ) {
+            return LinuxFileTransferDataAction::Ignored(stream_id);
         }
+        let Some(_active) = self.active.remove(&transfer_id) else {
+            return LinuxFileTransferDataAction::Ignored(stream_id);
+        };
         LinuxFileTransferDataAction::Terminal {
             transfer_id,
             outcome: FileTransferTerminalOutcome::Cancelled,
