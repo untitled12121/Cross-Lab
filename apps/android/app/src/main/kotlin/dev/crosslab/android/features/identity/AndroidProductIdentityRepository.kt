@@ -26,6 +26,11 @@ class AndroidProductIdentityRepository(
         store.loadPayload()?.let { payload ->
             return productIdentityLoad(payload, localDeviceSigner)
         }
+        // A failed owner-state write must never silently generate a different
+        // OwnerId while its previously created signing authority still exists.
+        if (rootSigner.exists || deviceSigningSigner.exists) {
+            throw IdentityStoreUnavailable("owner signing authority exists without identity state")
+        }
 
         val identity =
             productIdentityLoadOrCreate(
