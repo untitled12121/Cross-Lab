@@ -2,7 +2,7 @@
 
 **Assessment date:** 2026-10-20  
 **Reviewed baseline:** `main` at `fb92d0d82bc304c8ebc67fd6d175168f52de40c8` (product sources last full-tested at `e10fa6253e6087cd073077944e5b19f80f962ff2`)  
-**Hardening:** [PR #121](https://github.com/untitled12121/Cross-Lab/pull/121) — record its final merged commit and CI outcome before treating fixes as verified.  
+**Hardening evidence:** [PR #121](https://github.com/untitled12121/Cross-Lab/pull/121) merged at `b4aea96924ccc22f89a1d74f3e7c60d7cf2672f8`; exact-head [CI 39476668443](https://github.com/untitled12121/Cross-Lab/actions/runs/39476668443) passed Rust, Android, formatting and gate. [PR #122](https://github.com/untitled12121/Cross-Lab/pull/122) addresses a further Linux policy CAS race; verify its exact-head checks before considering that additional change integrated.  
 **Assessment type:** risk-based source review, automated CI/RustSec evidence review, focused static search, and targeted security regression tests. **Not an independent line-by-line security certification, active exploit/pentest or real-device test.**
 
 ## Scope and threat model
@@ -32,6 +32,20 @@ Reviewed representative code: `transports/quic/src/{config,session,trusted_sessi
 | zvariant_derive 5.15.0 | [RUSTSEC-2026-0372](https://rustsec.org/advisories/RUSTSEC-2026-0372) | Unmaintained |
 | yoke-derive 0.8.3 | Cargo audit yanked warning | Yanked; no RustSec ID in log |
 
+**Transitive provenance triage (from the same `Cargo.lock`, not a runtime-reachability or exploitability claim):**
+
+| Warning | Short dependency path toward a workspace root | Implication |
+| --- | --- | --- |
+| `basic-toml` | `crosslab-mobile-ffi → uniffi → uniffi_bindgen → askama → askama_macros → askama_derive → basic-toml` | Mobile FFI binding generator chain; upstream UniFFI ecosystem migration, not a direct production-code crate upgrade |
+| `instant`, `paste` | `gpui-kit → gpui-base/gpui-component → instant/paste` | GPUI UI dependency family; must coordinate upstream graphics-kit versions |
+| `rustls-pemfile` | `gpui-kit → gpui-kit-assets → gpui-pre-reqwest → rustls-pemfile` | GPUI asset/network transitive; RustSec recommends the maintained `rustls-pki-types` PEM API |
+| `rustybuzz`, `ttf-parser` | `gpui-kit → gpui-pre → usvg/rustybuzz/ttf-parser` | GPUI text/SVG family; changing versions without coordinated renderer tests is risky |
+| `zbus_names` | `crosslab-desktop → zbus → zbus_names` | Direct desktop D-Bus ecosystem dependency; coordinate compatible zbus upstream maintenance |
+| `zvariant`, `zvariant_derive` | `crosslab-desktop → oo7 → zvariant → zvariant_derive` | Linux Secret Service currentness/signing-store ecosystem; security-sensitive API compatibility |
+| `yoke-derive` | `gpui-kit → gpui-pre → url → idna → idna_adapter → icu_normalizer → icu_collections → yoke → yoke-derive` | Transitive yanked version from ICU/URL chain; select a validated non-yanked compatible release through Cargo resolution |
+
+These are **dependency graph paths only**. Some paths may be build-only or feature-dependent; the lockfile alone cannot prove that each crate is loaded in the final Linux or Android binary. Changing pinned, upstream-owned transitive packages requires tested dependency resolution rather than hand-editing checksums. No advisory is being dismissed as harmless solely because it is transitive.
+
 The reviewed Cargo.lock has `quinn-proto 0.11.18` and `memmap2 0.9.11`, satisfying published patched ranges for [RUSTSEC-2026-0338](https://rustsec.org/advisories/RUSTSEC-2026-0338) and [RUSTSEC-2026-0186](https://rustsec.org/advisories/RUSTSEC-2026-0186), respectively. The audit does not cover Android/Gradle/JNA dependencies, OS dependencies, private patches outside Cargo.lock, or future advisories. **Green cargo-audit is not a clean dependency inventory.**
 
 ## Confirmed findings and remediation
@@ -60,6 +74,18 @@ The reviewed Cargo.lock has `quinn-proto 0.11.18` and `memmap2 0.9.11`, satisfyi
 
 **Threat mapping:** TM-017 (bounded allocations and low-cost malformed-input rejection). This is local-file availability hardening, not a demonstrated network exploit.
 
+### SEC-P2-003 — Linux policy commit race bypassed expected-revision CAS (High, concurrent local writer precondition)
+
+**Affected:** `apps/desktop/src/features/policy_store/linux.rs`, `LinuxPolicyStore::commit`.
+
+**Before patch:** Separate callers could both load and verify the same current revision, then independently issue new Secret Service currentness records and atomically write different next-revision envelopes. The caller's `expected_revision` check was not under a cross-process mutex; a last-writer-wins update or inconsistent anchor state could violate the owner policy compare-and-swap guarantee. This requires concurrent local writers or a compromised local process with write authority; it does not establish a remote privilege escalation.
+
+**Patch:** Create a private `store-v1.lock` in the same protected policy-state directory and acquire an exclusive `File::try_lock` for the entire load/compare-and-swap, Secret Service anchor update, on-disk snapshot replacement, and anchor cleanup. A contending writer fails explicitly with `RevisionConflict`; no blocking executor call is used. Another caller can retry only after loading the new revision.
+
+**Focused case:** `concurrent_policy_writers_cannot_share_the_same_revision` holds an OS lock in one writer, verifies a second writer's lock request is refused with a typed conflict, then verifies the lock is reacquirable after release. The test does not emulate a running Secret Service or system-crash interleavings.
+
+**Threat mapping:** TM-009 and ADR-0019 (persisted exact owner policy with CAS and fail-closed currentness).
+
 ## Other boundaries reviewed — evidence and limits
 
 - **Identity, pairing and revocation:** Ed25519 signing/delegation, durable signed trust/revocation, Android wrapping under Keystore AES-GCM, Linux Secret Service storage, default-deny on ambiguous state. Positive patterns; platform store race/crash cases deserve integration validation.
@@ -77,4 +103,4 @@ The reviewed Cargo.lock has `quinn-proto 0.11.18` and `memmap2 0.9.11`, satisfyi
 4. **Exercise adversarial protocol fuzzing** and QUIC packet/resource and authenticated-peer flood scenarios beyond existing smoke tests; separately analyze session/tls custom verifier's proof sequencing and early-data disabled invariant.
 5. Conduct external/manual app security review before broad deployment, including Android SAF provider interruptions, protected notifications and UI approval origin.
 
-**Conclusion:** The prior product baseline passed automated software CI/RustSec *vulnerability* screening, but the audit identified real local integrity/availability weaknesses and nonzero maintenance/supply-chain warnings. The targeted security changes are in PR #121, **not considered merged or verified until its exact-head Rust/Android checks pass**. No all-code or independent penetration-test certification is implied. Owner device acceptance remains a later, separately managed activity.
+**Conclusion:** The prior product baseline passed automated software CI/RustSec *vulnerability* screening but carried nonzero maintenance/supply-chain warnings. Identity currentness and bounded-read protections in PR #121 are merged and passed their exact-head Rust/Android/CI Gate checks. The additional Linux policy CAS guard in PR #122 requires its own exact-head verification and merge. No all-code or independent penetration-test certification is implied. Owner device acceptance remains a later, separately managed activity.
