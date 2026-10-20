@@ -49,7 +49,7 @@ pub enum LinuxFileTransferRequestAction {
 #[derive(Debug)]
 pub enum LinuxFileTransferDataAction {
     Continue,
-    Ignored(StreamId),
+    Ignored,
     Terminal {
         transfer_id: TransferId,
         outcome: FileTransferTerminalOutcome,
@@ -240,11 +240,11 @@ impl LinuxFileTransferService {
     ) -> LinuxFileTransferDataAction {
         let Some(active) = self.active.get_mut(&transfer_id) else {
             // No current owner/session is waiting for this stream.
-            return LinuxFileTransferDataAction::Ignored(stream_id);
+            return LinuxFileTransferDataAction::Ignored;
         };
         if active.stream_id.is_some() {
             // A late or duplicate open must not tear down the current stream.
-            return LinuxFileTransferDataAction::Ignored(stream_id);
+            return LinuxFileTransferDataAction::Ignored;
         }
         if active.receiver.offset() != resume_offset {
             self.active.remove(&transfer_id);
@@ -266,11 +266,11 @@ impl LinuxFileTransferService {
         now_unix_secs: u64,
     ) -> LinuxFileTransferDataAction {
         let Some(active) = self.active.get_mut(&transfer_id) else {
-            return LinuxFileTransferDataAction::Ignored(stream_id);
+            return LinuxFileTransferDataAction::Ignored;
         };
         if active.stream_id != Some(stream_id) {
             // Only the stream that opened this receiver may mutate its bytes.
-            return LinuxFileTransferDataAction::Ignored(stream_id);
+            return LinuxFileTransferDataAction::Ignored;
         }
         match active.receiver.write_chunk(bytes, now_unix_secs) {
             Ok(()) => LinuxFileTransferDataAction::Continue,
@@ -291,10 +291,10 @@ impl LinuxFileTransferService {
             self.active.get(&transfer_id),
             Some(active) if active.stream_id == Some(stream_id)
         ) {
-            return LinuxFileTransferDataAction::Ignored(stream_id);
+            return LinuxFileTransferDataAction::Ignored;
         }
         let Some(active) = self.active.remove(&transfer_id) else {
-            return LinuxFileTransferDataAction::Ignored(stream_id);
+            return LinuxFileTransferDataAction::Ignored;
         };
         match active.receiver.finish(now_unix_secs) {
             Ok(()) => LinuxFileTransferDataAction::Terminal {
@@ -314,10 +314,10 @@ impl LinuxFileTransferService {
             self.active.get(&transfer_id),
             Some(active) if active.stream_id == Some(stream_id)
         ) {
-            return LinuxFileTransferDataAction::Ignored(stream_id);
+            return LinuxFileTransferDataAction::Ignored;
         }
         let Some(_active) = self.active.remove(&transfer_id) else {
-            return LinuxFileTransferDataAction::Ignored(stream_id);
+            return LinuxFileTransferDataAction::Ignored;
         };
         LinuxFileTransferDataAction::Terminal {
             transfer_id,
@@ -392,23 +392,23 @@ mod tests {
         // displace a previously admitted stream.
         assert!(matches!(
             service.handle_opened(transfer_id, stale, 0),
-            LinuxFileTransferDataAction::Ignored(id) if id == stale
+            LinuxFileTransferDataAction::Ignored
         ));
         assert!(matches!(
             service.handle_opened(transfer_id, live, 0),
-            LinuxFileTransferDataAction::Ignored(id) if id == live
+            LinuxFileTransferDataAction::Ignored
         ));
         assert!(matches!(
             service.handle_chunk(transfer_id, stale, b"not-authorized", 12),
-            LinuxFileTransferDataAction::Ignored(id) if id == stale
+            LinuxFileTransferDataAction::Ignored
         ));
         assert!(matches!(
             service.handle_finished(transfer_id, stale, 13),
-            LinuxFileTransferDataAction::Ignored(id) if id == stale
+            LinuxFileTransferDataAction::Ignored
         ));
         assert!(matches!(
             service.handle_cancelled(transfer_id, stale),
-            LinuxFileTransferDataAction::Ignored(id) if id == stale
+            LinuxFileTransferDataAction::Ignored
         ));
         assert_eq!(service.transfer_progress(transfer_id), Some((0, payload.len() as u64)));
 
@@ -426,7 +426,7 @@ mod tests {
         assert_eq!(fs::read(final_path).unwrap(), payload);
         assert!(matches!(
             service.handle_cancelled(transfer_id, stale),
-            LinuxFileTransferDataAction::Ignored(id) if id == stale
+            LinuxFileTransferDataAction::Ignored
         ));
         let _ = fs::remove_dir_all(root);
     }
@@ -452,7 +452,7 @@ mod tests {
         service.accept_destination(incoming, root.join("received.bin"), 21).unwrap();
         assert!(matches!(
             service.handle_chunk(TransferId::from_bytes([0xaf; 32]), old, b"x", 22),
-            LinuxFileTransferDataAction::Ignored(id) if id == old
+            LinuxFileTransferDataAction::Ignored
         ));
         assert_eq!(service.transfer_progress(transfer_id), Some((0, 8)));
         // A matching transfer's first Open must still use the persisted offset.
