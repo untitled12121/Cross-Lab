@@ -100,10 +100,10 @@ impl LinuxPolicyStore {
         // revision rather than proceed with a stale snapshot.
         match lock.try_lock() {
             Ok(()) => Ok(lock),
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+            Err(std::fs::TryLockError::WouldBlock) => {
                 Err(PolicyStoreError::RevisionConflict.into())
             }
-            Err(error) => Err(error.into()),
+            Err(std::fs::TryLockError::Error(error)) => Err(error.into()),
         }
     }
 
