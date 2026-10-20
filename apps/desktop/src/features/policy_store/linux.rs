@@ -372,9 +372,7 @@ fn read_bounded_policy_file(
     max_bytes: usize,
 ) -> Result<Vec<u8>, LinuxPolicyStoreError> {
     let mut bytes = Vec::new();
-    reader
-        .take(max_bytes as u64 + 1)
-        .read_to_end(&mut bytes)?;
+    reader.take(max_bytes as u64 + 1).read_to_end(&mut bytes)?;
     if bytes.len() > max_bytes {
         return Err(LinuxPolicyStoreError::InvalidPath);
     }
