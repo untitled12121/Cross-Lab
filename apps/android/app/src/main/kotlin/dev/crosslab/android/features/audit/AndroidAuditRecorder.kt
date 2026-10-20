@@ -43,7 +43,7 @@ class AndroidAuditRecorder(
 
     fun observe(listener: (AuditRecordingStatus) -> Unit): AutoCloseable {
         observers += listener
-        listener(status)
+        runCatching { listener(status) }
         return AutoCloseable { observers -= listener }
     }
 
