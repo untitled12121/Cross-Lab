@@ -349,6 +349,18 @@ async fn load_or_create_product_identity() -> Result<ProductIdentityState, Deskt
         return Ok(identity);
     }
 
+    // Existing owner authority without its durable identity snapshot may
+    // indicate interrupted persistence or state loss: never mint a new OwnerId.
+    if LinuxEd25519Signer::load(LinuxSigningSlot::OwnerRoot)
+        .await?
+        .is_some()
+        || LinuxEd25519Signer::load(LinuxSigningSlot::DeviceSigning)
+            .await?
+            .is_some()
+    {
+        return Err(LinuxIdentityStoreError::StateMissing.into());
+    }
+
     let root = LinuxEd25519Signer::load_or_create(LinuxSigningSlot::OwnerRoot).await?;
     let issuer = LinuxEd25519Signer::load_or_create(LinuxSigningSlot::DeviceSigning).await?;
     let local = LinuxEd25519Signer::load_or_create(LinuxSigningSlot::LocalDevice).await?;
