@@ -14,6 +14,10 @@ class ReceiveStreamOpenDecisionTest {
             ReceiveStreamOpenDecision.REJECT,
             receiveStreamOpenDecision(false, 1uL, 1_048_576uL),
         )
+        assertEquals(
+            ReceiveStreamOpenDecision.REJECT,
+            receiveStreamOpenDecision(false, null, 1_048_576uL),
+        )
     }
 
     @Test
