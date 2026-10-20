@@ -1,7 +1,7 @@
 # Phase 2 Linux + Android MVP — Completion Gates
 
 **Status:** Active, incomplete.  
-**Software checkpoint:** QR/LAN pairing, durable trust, permissions, clipboard, file transfer v2, notifications v3, protected audit and terminal revocation are integrated. Android hardening PRs [#108–#112](https://github.com/untitled12121/Cross-Lab/pull/112) were merged after successful exact-head Android and CI Gate jobs; transfer receiver cleanup overload PR [#113](https://github.com/untitled12121/Cross-Lab/pull/113) is under verification. See [CURRENT.md](../../development/CURRENT.md) for exact heads/CI and final integrated source. **Neither the final manual full CI profile nor normal Linux + arm64 Android physical acceptance is established; Cross-Lab 0.1 remains unreleased.**
+**Software checkpoint:** QR/LAN pairing, durable trust, permissions, clipboard, file transfer v2, notifications v3, protected audit and terminal revocation are integrated. Android hardening PRs [#108–#113](https://github.com/untitled12121/Cross-Lab/pull/113) were merged after successful exact-head Android and CI Gate jobs, including receiver cleanup overload recovery (#113, run `39392674322`). The last merged source checkpoint before documentation updates was `ce2b6da6bcccf0d14cdcd1369c9cabc5aa46af2f`. See [CURRENT.md](../../development/CURRENT.md) for exact heads/CI and final integrated source. **Neither the final manual full CI profile nor normal Linux + arm64 Android physical acceptance is established; Cross-Lab 0.1 remains unreleased.**
 
 ## Delivery order
 
