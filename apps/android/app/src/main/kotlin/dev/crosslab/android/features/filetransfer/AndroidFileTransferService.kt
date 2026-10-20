@@ -5,7 +5,6 @@ import dev.crosslab.android.features.observers.notifyObservers
 import android.content.Context
 import android.net.Uri
 import java.util.concurrent.CopyOnWriteArraySet
-import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import uniffi.crosslab_mobile_ffi.MobileFileTransferException
 import uniffi.crosslab_mobile_ffi.MobileFileTransferDataEvent
@@ -40,15 +39,10 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
     override val fileTransferAvailable = true
     private val adapter = AndroidFileTransferAdapter(context)
     private val listeners = CopyOnWriteArraySet<(FileTransferState) -> Unit>()
-    private val events = Executors.newFixedThreadPool(3) { task ->
-        Thread(task, "crosslab-file-events").apply { isDaemon = true }
-    }
-    private val io = Executors.newFixedThreadPool(2) { task ->
-        Thread(task, "crosslab-file-io").apply { isDaemon = true }
-    }
-    private val control = Executors.newSingleThreadExecutor { task ->
-        Thread(task, "crosslab-file-control").apply { isDaemon = true }
-    }
+    private val events = BoundedTransferWorkerPool("crosslab-file-events", 3, 3)
+    private val io = BoundedTransferWorkerPool("crosslab-file-io", 2, 8)
+    private val control = BoundedTransferWorkerPool("crosslab-file-control", 1, 16)
+    private val cleanup = BoundedTransferWorkerPool("crosslab-file-cleanup", 1, 8)
     private val closed = AtomicBoolean(false)
     private val lock = Any()
 
@@ -78,9 +72,18 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
             agent = active
             lifecycle
         }
-        events.execute { readOffers(active, token) }
-        events.execute { readCancellations(active, token) }
-        events.execute { readData(active, token) }
+        val admitted =
+            events.submit { readOffers(active, token) } &&
+                events.submit { readCancellations(active, token) } &&
+                events.submit { readData(active, token) }
+        if (!admitted) {
+            synchronized(lock) {
+                if (isAgentLocked(active, token)) {
+                    detachLocked()
+                    publishLocked(workerUnavailable())
+                }
+            }
+        }
     }
 
     fun detach(active: MobileTrustedPresenceAgent) {
@@ -132,21 +135,51 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
             input = ReceiveSelection(active, session, request, uri, retainWriteGrant)
             publishLocked(state(request.offer, FileTransferDirection.RECEIVE, FileTransferStage.PREPARING))
         }
-        io.execute { prepareReceive(input) }
-        return true
+        if (io.submit { prepareReceive(input) }) return true
+        synchronized(lock) {
+            if (currentSession(input.agent, input.token) && preparing === input.request) {
+                preparing = null
+                pending = input.request
+                publishLocked(state(
+                    input.request.offer, FileTransferDirection.RECEIVE,
+                    FileTransferStage.WAITING_DESTINATION, canCancel = true,
+                    pendingRequestId = input.request.requestId.toHex(),
+                    resumeAvailable = input.request.canResume,
+                ))
+            }
+        }
+        return false
     }
 
     override fun declineFile(): Boolean {
-        val target: Pair<MobileTrustedPresenceAgent, ByteArray>
+        val target: Pair<MobileTrustedPresenceAgent, IncomingOffer>
+        val token: Long
         synchronized(lock) {
             val active = agent ?: return false
             val request = pending ?: return false
+            token = session
             pending = null
-            target = active to request.requestId
+            target = active to request
             publishLocked(state(request.offer, FileTransferDirection.RECEIVE, FileTransferStage.CANCELLED))
         }
-        control.execute { runCatching { target.first.declineFileTransferRequest(target.second) } }
-        return true
+        if (enqueueControl {
+            runCatching { target.first.declineFileTransferRequest(target.second.requestId) }
+        }) return true
+
+        synchronized(lock) {
+            if (currentSession(target.first, token) && pending == null &&
+                preparing == null && receiving == null
+            ) {
+                pending = target.second
+                publishLocked(state(
+                    target.second.offer, FileTransferDirection.RECEIVE,
+                    FileTransferStage.WAITING_DESTINATION, canCancel = true,
+                    pendingRequestId = target.second.requestId.toHex(),
+                    resumeAvailable = target.second.canResume,
+                ))
+            }
+        }
+        return false
     }
 
     override fun cancelFile(): Boolean {
@@ -182,16 +215,23 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
                 else -> return false
             }
         }
-        control.execute { cancellation() }
-        return true
+        if (enqueueControl { cancellation() }) return true
+        synchronized(lock) {
+            if (agent === active) {
+                interruptLocked()
+                publishLocked(workerUnavailable())
+            }
+        }
+        return false
     }
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         synchronized(lock) { detachLocked() }
         events.shutdownNow()
-        io.shutdownNow()
-        control.shutdownNow()
+        io.shutdown()
+        control.shutdown()
+        cleanup.shutdown()
         listeners.clear()
     }
 
@@ -221,7 +261,12 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
             publishLocked(state(selection.originalOffer, FileTransferDirection.SEND,
                 FileTransferStage.PREPARING, canCancel = true))
         }
-        io.execute {
+        if (!io.submit {
+            // A queued worker from an old session cannot re-open a source URI.
+            val authorized = synchronized(lock) {
+                sending === worker && currentSession(active, token)
+            }
+            if (!authorized) return@submit
             val result = worker.run()
             synchronized(lock) {
                 if (sending !== worker || !currentSession(active, token)) return@synchronized
@@ -233,11 +278,27 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
                     result.transferred, canRetry = retry != null &&
                         result.stage != FileTransferStage.COMPLETED, failure = result.failure))
             }
+        }) {
+            synchronized(lock) {
+                if (sending === worker && currentSession(active, token)) {
+                    worker.cancelled.set(true)
+                    sending = null
+                    retry = null
+                    publishLocked(state(
+                        worker.offer, FileTransferDirection.SEND, FileTransferStage.FAILED,
+                        failure = FileTransferFailure.RESOURCE_LIMIT,
+                    ))
+                }
+            }
+            return false
         }
         return true
     }
 
     private fun prepareReceive(input: ReceiveSelection) {
+        if (synchronized(lock) {
+            !currentSession(input.agent, input.token) || preparing !== input.request
+        }) return
         var prepared: AndroidReceivePreparation? = null
         try {
             val preparation = adapter.prepareReceive(
@@ -314,8 +375,12 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
                     true
                 }
             }
-            if (!accept) control.execute {
-                runCatching { active.declineFileTransferRequest(request.requestId) }
+            if (!accept) {
+                // Rejected offers have no stream or session authority; the peer times out
+                // safely if the bounded response queue is saturated.
+                enqueueControl {
+                    runCatching { active.declineFileTransferRequest(request.requestId) }
+                }
             }
         }
     }
@@ -340,9 +405,12 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
                     received.receiver.requestCancellation()) {
                     // Verified publication cannot be cancelled after its commit boundary.
                     receiving = null
-                    io.execute { received.receiver.cancel() }
+                    val cleanupQueued = enqueueCleanup { received.receiver.cancel() }
                     publishLocked(state(received.request.offer, FileTransferDirection.RECEIVE,
-                        FileTransferStage.CANCELLED, received.transferred))
+                        if (cleanupQueued) FileTransferStage.CANCELLED else FileTransferStage.FAILED,
+                        received.transferred,
+                        failure = if (cleanupQueued) null else FileTransferFailure.RESOURCE_LIMIT,
+                    ))
                 }
             }
         }
@@ -447,7 +515,11 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
                     publishLocked(state(received.request.offer, FileTransferDirection.RECEIVE,
                         FileTransferStage.CANCELLED, received.transferred))
                 }
-                io.execute { received.receiver.cancel() }
+                if (!enqueueCleanup { received.receiver.cancel() }) {
+                    synchronized(lock) {
+                        publishLocked(workerUnavailable())
+                    }
+                }
             }
         }
     }
@@ -458,7 +530,7 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
         reason: FileTransferFailure,
     ) {
         val stream = received.streamId
-        if (stream != null) control.execute {
+        if (stream != null) enqueueControl {
             runCatching {
                 active.failFileTransferReceive(stream, received.request.offer.transferId(),
                     if (reason == FileTransferFailure.INTEGRITY)
@@ -472,7 +544,9 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
             publishLocked(state(received.request.offer, FileTransferDirection.RECEIVE,
                 FileTransferStage.FAILED, received.transferred, failure = reason))
         }
-        io.execute { received.receiver.cancel() }
+        if (!enqueueCleanup { received.receiver.cancel() }) {
+            synchronized(lock) { publishLocked(workerUnavailable()) }
+        }
     }
 
     private fun isAgent(active: MobileTrustedPresenceAgent, token: Long) =
@@ -502,15 +576,30 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
         pending = null
         preparing = null
         receiving = null
-        if (oldReceive != null) io.execute { oldReceive.receiver.cancel() }
+        val cleanupQueued =
+            oldReceive == null || enqueueCleanup { oldReceive.receiver.cancel() }
         if (oldSend != null || oldReceive != null) {
             val offer = oldSend?.offer ?: oldReceive?.request?.offer
             publishLocked(state(offer,
                 if (oldSend != null) FileTransferDirection.SEND else FileTransferDirection.RECEIVE,
-                FileTransferStage.FAILED, failure = FileTransferFailure.NOT_CONNECTED,
-                canRetry = oldSend != null && retry != null))
+                FileTransferStage.FAILED,
+                failure = if (cleanupQueued) FileTransferFailure.NOT_CONNECTED
+                    else FileTransferFailure.RESOURCE_LIMIT,
+                canRetry = oldSend != null && retry != null && cleanupQueued))
         }
     }
+
+    private fun enqueueControl(task: () -> Unit): Boolean =
+        control.submit(task) || cleanup.submit(task)
+
+    private fun enqueueCleanup(task: () -> Unit): Boolean =
+        io.submit(task) || cleanup.submit(task)
+
+    private fun workerUnavailable() = FileTransferState(
+        available = false,
+        stage = FileTransferStage.FAILED,
+        failure = FileTransferFailure.RESOURCE_LIMIT,
+    )
 
     private fun publishLocked(state: FileTransferState) {
         current = state
