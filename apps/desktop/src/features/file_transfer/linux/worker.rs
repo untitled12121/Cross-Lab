@@ -420,6 +420,10 @@ async fn run_worker(
                     FileTransferDataEvent::Opened { .. } | FileTransferDataEvent::Chunk(_)
                 );
                 match service.handle_data(event, unix_now_secs()) {
+                    LinuxFileTransferDataAction::Ignored => {
+                        // A duplicate Open may refer to the active stream itself.
+                        // Do not add it to the ignored set or publish a terminal failure.
+                    }
                     LinuxFileTransferDataAction::Continue => {
                         if reports_progress
                             && let Some((received_bytes, total_bytes)) =

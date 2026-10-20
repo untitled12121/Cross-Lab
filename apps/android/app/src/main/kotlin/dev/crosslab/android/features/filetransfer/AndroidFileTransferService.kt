@@ -497,15 +497,23 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
         when (event.kind()) {
             MobileFileTransferDataKind.OPENED -> {
                 val offset = event.resumeOffset()
-                if (received.streamId != null || offset != received.offset) {
-                    runCatching {
-                        if (!synchronized(lock) { currentSession(active, received.sessionToken) }) return@runCatching
-                        active.failFileTransferReceive(event.streamId(),
-                            received.request.offer.transferId(),
-                            MobileFileTransferTerminalOutcome.STORAGE_FAILED)
+                when (receiveStreamOpenDecision(
+                    streamAlreadyBound = received.streamId != null,
+                    resumeOffset = offset,
+                    expectedOffset = received.offset,
+                )) {
+                    ReceiveStreamOpenDecision.IGNORE -> return
+                    ReceiveStreamOpenDecision.REJECT -> {
+                        runCatching {
+                            if (!synchronized(lock) { currentSession(active, received.sessionToken) }) return@runCatching
+                            active.failFileTransferReceive(event.streamId(),
+                                received.request.offer.transferId(),
+                                MobileFileTransferTerminalOutcome.STORAGE_FAILED)
+                        }
+                        failReceive(active, received, FileTransferFailure.STORAGE)
+                        return
                     }
-                    failReceive(active, received, FileTransferFailure.STORAGE)
-                    return
+                    ReceiveStreamOpenDecision.BIND -> Unit
                 }
                 synchronized(lock) {
                     if (receiving !== received) return
