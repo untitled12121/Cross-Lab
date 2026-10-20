@@ -67,9 +67,9 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
         return AutoCloseable { listeners -= listener }
     }
 
-    fun attach(active: MobileTrustedPresenceAgent) {
+    fun attach(active: MobileTrustedPresenceAgent): Boolean {
         val token = synchronized(lock) {
-            if (closed.get()) return
+            if (closed.get()) return false
             detachLocked()
             agent = active
             lifecycle
@@ -86,6 +86,7 @@ class AndroidFileTransferService(context: Context) : FileTransferPort, AutoClose
                 }
             }
         }
+        return admitted && !closed.get()
     }
 
     fun detach(active: MobileTrustedPresenceAgent) {
