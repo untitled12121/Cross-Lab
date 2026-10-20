@@ -513,13 +513,19 @@ class ProductPresencePort(
         generation += 1
         val token = generation
         agent = active
-        fileTransfer?.attach(active)
-        discoveryInfo = info
-        ensureDiscoveryLocked(active)
-        val initial = active.snapshot()
+        val initial = runCatching {
+            fileTransfer?.attach(active)
+            discoveryInfo = info
+            ensureDiscoveryLocked(active)
+            active.snapshot() to active.permissionSnapshot()
+        }.getOrElse {
+            stopAgentLocked()
+            publishLocked(RuntimeSnapshot.disconnected().copy(presence = RuntimePresence.FAILED))
+            return
+        }
         publishLocked(
-            initial.toRuntimeSnapshot(permissions = active.permissionSnapshot()),
-            initial.runtime?.sessionId,
+            initial.first.toRuntimeSnapshot(permissions = initial.second),
+            initial.first.runtime?.sessionId,
         )
         // Replaced agents may still be leaving a native wait. Reject new listeners
         // rather than retaining an unbounded queue of stale generations.
@@ -629,48 +635,55 @@ class ProductPresencePort(
         active: MobileTrustedPresenceAgent,
         token: Long,
     ) {
-        while (!closed.get()) {
-            val event =
-                try {
-                    active.waitEvent(60_000uL)
-                } catch (_: Exception) {
-                    return
-                } ?: continue
-
-            synchronized(lock) {
-                if (generation != token || agent !== active) return
-                publishLocked(
-                    event.toRuntimeSnapshot(
-                        permissions = runCatching { active.permissionSnapshot() }.getOrNull(),
-                    ),
-                    event.runtime?.sessionId,
-                )
-            }
-        }
+        runNativeListenerLoop(
+            isCurrent = { isCurrentAgent(active, token) },
+            waitNext = { active.waitEvent(60_000uL) },
+            deliver = { event ->
+                synchronized(lock) {
+                    if (!isCurrentAgent(active, token)) return@synchronized
+                    publishLocked(
+                        event.toRuntimeSnapshot(
+                            permissions = runCatching { active.permissionSnapshot() }.getOrNull(),
+                        ),
+                        event.runtime?.sessionId,
+                    )
+                }
+            },
+            unexpectedExit = { nativeListenerLost(active, token) },
+        )
     }
 
     private fun clipboardEventLoop(
         active: MobileTrustedPresenceAgent,
         token: Long,
     ) {
-        while (!closed.get()) {
-            val request =
-                try {
-                    active.waitClipboardRequest(60_000uL)
-                } catch (_: Exception) {
-                    return
-                } ?: continue
+        runNativeListenerLoop(
+            isCurrent = { isCurrentAgent(active, token) },
+            waitNext = { active.waitClipboardRequest(60_000uL) },
+            deliver = clipboardRequest@{ request ->
+                if (!isCurrentAgent(active, token)) return@clipboardRequest
+                val expected = synchronized(lock) { currentSessionBinding }
+                if (!clipboardUiAdmission.dispatch(
+                    post = { job -> handler.post { job() } },
+                    action = { handleClipboardRequest(active, token, expected, request) },
+                )) {
+                    rejectClipboardRequest(active, token, request.requestId(), request.kind())
+                }
+            },
+            unexpectedExit = { nativeListenerLost(active, token) },
+        )
+    }
 
-            val expected = synchronized(lock) {
-                if (!isCurrentAgent(active, token)) return
-                currentSessionBinding
-            }
-            if (!clipboardUiAdmission.dispatch(
-                post = { job -> handler.post { job() } },
-                action = { handleClipboardRequest(active, token, expected, request) },
-            )) {
-                rejectClipboardRequest(active, token, request.requestId(), request.kind())
-            }
+    private fun nativeListenerLost(
+        active: MobileTrustedPresenceAgent,
+        token: Long,
+    ) {
+        synchronized(lock) {
+            if (!isCurrentAgent(active, token)) return
+            // A dead native listener makes the apparent authenticated session
+            // unobservable. Revoke platform access instead of leaving it online.
+            stopAgentLocked()
+            publishLocked(RuntimeSnapshot.disconnected().copy(presence = RuntimePresence.FAILED))
         }
     }
 
