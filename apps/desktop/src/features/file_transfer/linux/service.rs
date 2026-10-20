@@ -363,6 +363,112 @@ mod tests {
     use super::*;
 
     #[test]
+    fn stale_stream_events_do_not_cancel_or_corrupt_current_receive() {
+        let root = test_root("stale-stream");
+        fs::create_dir_all(&root).unwrap();
+        let final_path = root.join("received.bin");
+        let source = DeviceId::from_bytes([0x91; 32]);
+        let payload = b"current-session-data";
+        let offer = test_offer(0x92, payload);
+        let transfer_id = offer.transfer_id();
+        let live = StreamId::from_bytes([0x93; 16]);
+        let stale = StreamId::from_bytes([0x94; 16]);
+        let mut service = LinuxFileTransferService::for_test(
+            LinuxFileTransferStateStore::for_test(root.join("state.bin")),
+        );
+        let LinuxFileTransferRequestAction::ChooseDestination(incoming) = service
+            .handle_request(RequestId::from_bytes([0x95; 16]), source, offer, 10)
+            .unwrap()
+        else {
+            panic!("fresh offer requires destination");
+        };
+        service.accept_destination(incoming, final_path.clone(), 11).unwrap();
+
+        assert!(matches!(
+            service.handle_opened(transfer_id, live, 0),
+            LinuxFileTransferDataAction::Continue
+        ));
+        // Duplicate opens and an old stream with the correct TransferId cannot
+        // displace a previously admitted stream.
+        assert!(matches!(
+            service.handle_opened(transfer_id, stale, 0),
+            LinuxFileTransferDataAction::Ignored(id) if id == stale
+        ));
+        assert!(matches!(
+            service.handle_opened(transfer_id, live, 0),
+            LinuxFileTransferDataAction::Ignored(id) if id == live
+        ));
+        assert!(matches!(
+            service.handle_chunk(transfer_id, stale, b"not-authorized", 12),
+            LinuxFileTransferDataAction::Ignored(id) if id == stale
+        ));
+        assert!(matches!(
+            service.handle_finished(transfer_id, stale, 13),
+            LinuxFileTransferDataAction::Ignored(id) if id == stale
+        ));
+        assert!(matches!(
+            service.handle_cancelled(transfer_id, stale),
+            LinuxFileTransferDataAction::Ignored(id) if id == stale
+        ));
+        assert_eq!(service.transfer_progress(transfer_id), Some((0, payload.len() as u64)));
+
+        assert!(matches!(
+            service.handle_chunk(transfer_id, live, payload, 14),
+            LinuxFileTransferDataAction::Continue
+        ));
+        assert!(matches!(
+            service.handle_finished(transfer_id, live, 15),
+            LinuxFileTransferDataAction::Terminal {
+                outcome: FileTransferTerminalOutcome::Completed,
+                ..
+            }
+        ));
+        assert_eq!(fs::read(final_path).unwrap(), payload);
+        assert!(matches!(
+            service.handle_cancelled(transfer_id, stale),
+            LinuxFileTransferDataAction::Ignored(id) if id == stale
+        ));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn initial_offset_mismatch_fails_closed_but_unrelated_old_stream_is_ignored() {
+        let root = test_root("invalid-open");
+        fs::create_dir_all(&root).unwrap();
+        let source = DeviceId::from_bytes([0xa1; 32]);
+        let offer = test_offer(0xa2, b"contents");
+        let transfer_id = offer.transfer_id();
+        let stream = StreamId::from_bytes([0xa3; 16]);
+        let old = StreamId::from_bytes([0xa4; 16]);
+        let mut service = LinuxFileTransferService::for_test(
+            LinuxFileTransferStateStore::for_test(root.join("state.bin")),
+        );
+        let LinuxFileTransferRequestAction::ChooseDestination(incoming) = service
+            .handle_request(RequestId::from_bytes([0xa5; 16]), source, offer, 20)
+            .unwrap()
+        else {
+            panic!("fresh offer requires destination");
+        };
+        service.accept_destination(incoming, root.join("received.bin"), 21).unwrap();
+        assert!(matches!(
+            service.handle_chunk(TransferId::from_bytes([0xaf; 32]), old, b"x", 22),
+            LinuxFileTransferDataAction::Ignored(id) if id == old
+        ));
+        assert_eq!(service.transfer_progress(transfer_id), Some((0, 8)));
+        // A matching transfer's first Open must still use the persisted offset.
+        assert!(matches!(
+            service.handle_opened(transfer_id, stream, 1),
+            LinuxFileTransferDataAction::Abort {
+                error: LinuxFileTransferError::InvalidStream,
+                ..
+            }
+        ));
+        assert!(service.transfer_progress(transfer_id).is_none());
+        assert!(!root.join("received.bin").exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn fresh_offer_requires_owner_destination_before_receiver_exists() {
         let root = test_root("fresh");
         fs::create_dir_all(&root).unwrap();
