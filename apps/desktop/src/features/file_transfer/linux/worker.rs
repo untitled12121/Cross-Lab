@@ -420,6 +420,10 @@ async fn run_worker(
                     FileTransferDataEvent::Opened { .. } | FileTransferDataEvent::Chunk(_)
                 );
                 match service.handle_data(event, unix_now_secs()) {
+                    LinuxFileTransferDataAction::Ignored(stream_id) => {
+                        // Stale streams have no remaining authority or owner-visible state.
+                        ignored_data_streams.remember(stream_id);
+                    }
                     LinuxFileTransferDataAction::Continue => {
                         if reports_progress
                             && let Some((received_bytes, total_bytes)) =
