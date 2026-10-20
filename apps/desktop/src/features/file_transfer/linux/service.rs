@@ -382,7 +382,9 @@ mod tests {
         else {
             panic!("fresh offer requires destination");
         };
-        service.accept_destination(incoming, final_path.clone(), 11).unwrap();
+        service
+            .accept_destination(incoming, final_path.clone(), 11)
+            .unwrap();
 
         assert!(matches!(
             service.handle_opened(transfer_id, live, 0),
@@ -410,7 +412,10 @@ mod tests {
             service.handle_cancelled(transfer_id, stale),
             LinuxFileTransferDataAction::Ignored
         ));
-        assert_eq!(service.transfer_progress(transfer_id), Some((0, u64::try_from(payload.len()).unwrap())));
+        assert_eq!(
+            service.transfer_progress(transfer_id),
+            Some((0, u64::try_from(payload.len()).unwrap()))
+        );
 
         assert!(matches!(
             service.handle_chunk(transfer_id, live, payload, 14),
@@ -449,7 +454,9 @@ mod tests {
         else {
             panic!("fresh offer requires destination");
         };
-        service.accept_destination(incoming, root.join("received.bin"), 21).unwrap();
+        service
+            .accept_destination(incoming, root.join("received.bin"), 21)
+            .unwrap();
         assert!(matches!(
             service.handle_chunk(TransferId::from_bytes([0xaf; 32]), old, b"x", 22),
             LinuxFileTransferDataAction::Ignored
