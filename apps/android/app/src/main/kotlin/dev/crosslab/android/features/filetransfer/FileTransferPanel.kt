@@ -221,8 +221,10 @@ internal fun failureRecoveryHint(state: FileTransferState): String? {
             "The receiving device must explicitly allow this transfer."
         FileTransferFailure.RESOURCE_LIMIT ->
             "Finish or cancel another transfer before trying again."
-        FileTransferFailure.NOT_NEGOTIATED, FileTransferFailure.UNAVAILABLE ->
-            "Check the peer's file-transfer capability and connection state."
+        FileTransferFailure.NOT_NEGOTIATED ->
+            "Check the peer's negotiated file-transfer capability before retrying."
+        FileTransferFailure.UNAVAILABLE ->
+            "The local transfer adapter failed. Reconnect or restart Cross-Lab before retrying."
         FileTransferFailure.NETWORK ->
             "Check the local connection, then retry with a new authenticated session."
         null -> null

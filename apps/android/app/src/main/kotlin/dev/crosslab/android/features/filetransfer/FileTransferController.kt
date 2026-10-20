@@ -63,37 +63,96 @@ object UnavailableFileTransferPort : FileTransferPort
 
 class FileTransferController(private val port: FileTransferPort) {
     private val listeners = CopyOnWriteArraySet<(FileTransferState) -> Unit>()
+    private val lock = Any()
+    private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
+    private var nativeRevision = 0L
 
-    @Volatile private var current = port.fileTransferState()
-
-    private val subscription = port.observeFileTransfer { state ->
-        current = state
-        notifyObservers(listeners, state)
+    @Volatile
+    private var current = runCatching { port.fileTransferState() }.getOrElse {
+        unavailableState()
     }
+
+    private val subscription: AutoCloseable =
+        runCatching {
+            port.observeFileTransfer { state ->
+                val update = synchronized(lock) {
+                    if (closed.get()) null
+                    else {
+                        nativeRevision++
+                        current = state
+                        state
+                    }
+                }
+                update?.let { notifyObservers(listeners, it) }
+            }
+        }.getOrElse {
+            val failed = synchronized(lock) {
+                nativeRevision++
+                current = unavailableState()
+                current
+            }
+            notifyObservers(listeners, failed)
+            AutoCloseable {}
+        }
 
     fun state(): FileTransferState = current
 
     fun observe(listener: (FileTransferState) -> Unit): AutoCloseable {
-        listeners += listener
+        if (!closed.get()) listeners += listener
         runCatching { listener(current) }
         return AutoCloseable { listeners -= listener }
     }
 
-    fun send(uri: Uri, retainReadGrant: Boolean) = port.sendFile(uri, retainReadGrant)
+    fun send(uri: Uri, retainReadGrant: Boolean): Boolean =
+        execute { port.sendFile(uri, retainReadGrant) }
 
-    fun retry() = port.retryFile()
+    fun retry(): Boolean = execute { port.retryFile() }
 
-    fun accept(uri: Uri, requestId: String, retainWriteGrant: Boolean) =
-        port.acceptFile(uri, requestId, retainWriteGrant)
+    fun accept(uri: Uri, requestId: String, retainWriteGrant: Boolean): Boolean =
+        execute { port.acceptFile(uri, requestId, retainWriteGrant) }
 
-    fun resume(requestId: String) = port.resumeFile(requestId)
+    fun resume(requestId: String): Boolean = execute { port.resumeFile(requestId) }
 
-    fun decline() = port.declineFile()
+    fun decline(): Boolean = execute { port.declineFile() }
 
-    fun cancel() = port.cancelFile()
+    fun cancel(): Boolean = execute { port.cancelFile() }
+
+    private fun execute(action: () -> Boolean): Boolean {
+        // Never hold controller state locks while crossing native/adapter boundaries.
+        val before = synchronized(lock) {
+            if (closed.get()) return false
+            nativeRevision
+        }
+        return runCatching { action() }.getOrElse {
+            // An intervening native publication is newer evidence; never overwrite it.
+            val failed = synchronized(lock) {
+                if (closed.get() || nativeRevision != before) null
+                else {
+                    nativeRevision++
+                    current = unavailableState()
+                    current
+                }
+            }
+            failed?.let { notifyObservers(listeners, it) }
+            false
+        }
+    }
 
     fun shutdown() {
-        subscription.close()
+        if (!closed.compareAndSet(false, true)) return
+        runCatching { subscription.close() }
+        val stopped = synchronized(lock) {
+            nativeRevision++
+            current = FileTransferState.initial(false)
+            current
+        }
+        notifyObservers(listeners, stopped)
         listeners.clear()
     }
+
+    private fun unavailableState() = FileTransferState(
+        available = false,
+        stage = FileTransferStage.FAILED,
+        failure = FileTransferFailure.UNAVAILABLE,
+    )
 }
