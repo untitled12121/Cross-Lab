@@ -43,8 +43,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-      - name: Verify change classifier
-        run: python3 -m unittest discover -s .github/scripts -p 'test_ci_scope.py'
+      - name: Verify CI scope and gate rules
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
       - name: Select jobs
         id: scope
         env:
@@ -220,18 +220,16 @@ jobs:
     needs: [changes, format, audit, rust, android]
     runs-on: ubuntu-24.04
     steps:
-      - name: Require success from selected checks
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Require exactly the checks selected by scope
         env:
-          CHANGES: ${{ needs.changes.result }}
-          FORMAT: ${{ needs.format.result }}
-          AUDIT: ${{ needs.audit.result }}
-          RUST: ${{ needs.rust.result }}
-          ANDROID: ${{ needs.android.result }}
-        run: |
-          for status in "$CHANGES" "$FORMAT" "$AUDIT" "$RUST" "$ANDROID"; do
-            if [[ "$status" == "failure" || "$status" == "cancelled" ]]; then
-              echo "A selected check did not complete successfully: $status" >&2
-              exit 1
-            fi
-          done
-          echo "Selected checks passed; unrelated jobs were skipped."
+          RESULT_CHANGES: ${{ needs.changes.result }}
+          SELECT_FORMAT: ${{ needs.changes.outputs.format }}
+          SELECT_AUDIT: ${{ needs.changes.outputs.audit }}
+          SELECT_RUST: ${{ needs.changes.outputs.rust }}
+          SELECT_ANDROID: ${{ needs.changes.outputs.android }}
+          RESULT_FORMAT: ${{ needs.format.result }}
+          RESULT_AUDIT: ${{ needs.audit.result }}
+          RESULT_RUST: ${{ needs.rust.result }}
+          RESULT_ANDROID: ${{ needs.android.result }}
+        run: python3 .github/scripts/ci_gate.py
