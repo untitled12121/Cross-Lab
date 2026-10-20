@@ -4,7 +4,8 @@ import dev.crosslab.android.features.observers.notifyObservers
 
 import android.content.Context
 import java.util.concurrent.CopyOnWriteArraySet
-import java.util.concurrent.Executors
+import dev.crosslab.android.features.workers.BoundedWorkerPool
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import dev.crosslab.android.features.identity.AndroidProductIdentityRepository
 import uniffi.crosslab_mobile_ffi.MobilePairingBootstrap
@@ -46,10 +47,9 @@ class PairingJoinerController(
     private val onPaired: () -> Unit = {},
 ) : AutoCloseable {
     private val discovery = AndroidPairingDiscovery(context)
-    private val executor =
-        Executors.newSingleThreadExecutor { task ->
-            Thread(task, "crosslab-product-pairing").apply { isDaemon = true }
-        }
+    private val executor = BoundedWorkerPool("crosslab-product-pairing", 1, 2)
+    private val cancellations = BoundedWorkerPool("crosslab-pairing-cancel", 1, 4)
+    private val closed = AtomicBoolean(false)
     private val listeners = CopyOnWriteArraySet<(PairingJoinerState) -> Unit>()
     private val generation = AtomicLong(0)
 
@@ -71,6 +71,7 @@ class PairingJoinerController(
     }
 
     fun begin(bootstrap: MobilePairingBootstrap) {
+        if (closed.get()) return
         cancelActive(notify = false)
 
         val summary =
@@ -134,6 +135,7 @@ class PairingJoinerController(
     }
 
     fun cancel() {
+        if (closed.get()) return
         if (current.active) {
             cancelActive(notify = true)
         } else {
@@ -155,7 +157,8 @@ class PairingJoinerController(
             ),
         )
 
-        executor.execute {
+        if (!executor.submit {
+            if (!isCurrent(token)) return@submit
             val pairingSession =
                 runCatching {
                     startProductPairingJoiner(
@@ -167,14 +170,19 @@ class PairingJoinerController(
                     )
                 }.getOrElse {
                     fail(token, "Secure pairing with the inviting device failed.")
-                    return@execute
+                    return@submit
                 }
 
             if (!isCurrent(token)) {
                 runCatching { pairingSession.cancel() }
-                return@execute
+                return@submit
             }
             session = pairingSession
+            if (!isCurrent(token)) {
+                session = null
+                runCatching { pairingSession.cancel() }
+                return@submit
+            }
 
             publishIfCurrent(
                 token,
@@ -183,6 +191,12 @@ class PairingJoinerController(
                     message = "Pairing verified. Saving device trust securely…",
                 ),
             )
+
+            if (!isCurrent(token)) {
+                session = null
+                runCatching { pairingSession.cancel() }
+                return@submit
+            }
 
             val persisted =
                 runCatching {
@@ -193,9 +207,14 @@ class PairingJoinerController(
                 runCatching { pairingSession.persistenceFailed() }
                 session = null
                 fail(token, "Pairing was verified, but secure trust storage failed.")
-                return@execute
+                return@submit
             }
 
+            if (!isCurrent(token)) {
+                session = null
+                runCatching { pairingSession.cancel() }
+                return@submit
+            }
             publishIfCurrent(
                 token,
                 current.copy(
@@ -206,7 +225,7 @@ class PairingJoinerController(
 
             val finished = runCatching { pairingSession.finishPersisted() }.isSuccess
             session = null
-            if (!isCurrent(token)) return@execute
+            if (!isCurrent(token)) return@submit
 
             if (!finished) {
                 fail(
@@ -214,16 +233,19 @@ class PairingJoinerController(
                     "Trust was saved, but final peer confirmation was interrupted. " +
                         "Keep both devices on the same network and reconnect.",
                 )
-                return@execute
+                return@submit
             }
 
-            publish(
+            publishIfCurrent(
+                token,
                 current.copy(
                     stage = PairingJoinerStage.PAIRED,
                     message = "Device paired successfully.",
                 ),
             )
-            runCatching { onPaired() }
+            if (isCurrent(token)) runCatching { onPaired() }
+        }) {
+            fail(token, "Pairing is busy. Wait for the previous attempt to stop and retry.")
         }
     }
 
@@ -236,15 +258,23 @@ class PairingJoinerController(
 
         val activeSession = session
         session = null
-        if (activeSession != null) {
-            executor.execute { runCatching { activeSession.cancel() } }
-        }
+        val scheduled =
+            activeSession == null ||
+                cancellations.submit { runCatching { activeSession.cancel() } }
 
         if (notify) {
+            val savingTrust =
+                current.stage == PairingJoinerStage.SAVING_TRUST ||
+                    current.stage == PairingJoinerStage.FINALIZING
             publish(
                 current.copy(
-                    stage = PairingJoinerStage.CANCELLED,
-                    message = "Pairing cancelled.",
+                    stage = if (scheduled && !savingTrust) PairingJoinerStage.CANCELLED
+                        else PairingJoinerStage.FAILED,
+                    message = when {
+                        savingTrust -> "Pairing stopped while saving trust. Check trusted devices and revoke any unexpected membership."
+                        !scheduled -> "Pairing cancellation could not be queued. Discard the invitation and try again."
+                        else -> "Pairing cancelled."
+                    },
                 ),
             )
         }
@@ -270,7 +300,7 @@ class PairingJoinerController(
         if (isCurrent(token)) publish(state)
     }
 
-    private fun isCurrent(token: Long): Boolean = generation.get() == token
+    private fun isCurrent(token: Long): Boolean = !closed.get() && generation.get() == token
 
     private fun publish(state: PairingJoinerState) {
         current = state
@@ -278,8 +308,11 @@ class PairingJoinerController(
     }
 
     override fun close() {
+        if (!closed.compareAndSet(false, true)) return
         cancelActive(notify = false)
         listeners.clear()
         executor.shutdownNow()
+        // Drain already-accepted cancellation requests rather than discarding them.
+        cancellations.shutdown()
     }
 }
