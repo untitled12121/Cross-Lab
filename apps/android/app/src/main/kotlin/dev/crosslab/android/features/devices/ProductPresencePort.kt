@@ -6,6 +6,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import java.util.concurrent.CopyOnWriteArraySet
+import java.util.concurrent.Semaphore
 import dev.crosslab.android.features.workers.BoundedWorkerPool
 import java.util.concurrent.atomic.AtomicBoolean
 import dev.crosslab.android.features.clipboard.AndroidClipboardAdapter
@@ -162,6 +163,7 @@ class ProductPresencePort(
     private val clipboardEvents = BoundedWorkerPool("crosslab-clipboard-events", 2, 2)
     private val clipboardWorkers = BoundedWorkerPool("crosslab-clipboard-worker", 2, 8)
     private val clipboardFailures = BoundedWorkerPool("crosslab-clipboard-errors", 1, 4)
+    private val clipboardUiSlots = Semaphore(8)
     private val closed = AtomicBoolean(false)
     private val lock = Any()
     private val handler = Handler(Looper.getMainLooper())
@@ -663,8 +665,19 @@ class ProductPresencePort(
                 if (!isCurrentAgent(active, token)) return
                 currentSessionBinding
             }
-            handler.post {
-                handleClipboardRequest(active, token, expected, request)
+            if (!clipboardUiSlots.tryAcquire()) {
+                rejectClipboardRequest(active, token, request.requestId(), request.kind())
+                continue
+            }
+            if (!handler.post {
+                try {
+                    handleClipboardRequest(active, token, expected, request)
+                } finally {
+                    clipboardUiSlots.release()
+                }
+            }) {
+                clipboardUiSlots.release()
+                rejectClipboardRequest(active, token, request.requestId(), request.kind())
             }
         }
     }
@@ -782,7 +795,16 @@ class ProductPresencePort(
         task: () -> Unit,
     ) {
         if (clipboardWorkers.submit(task)) return
-        // A saturated reply pool must not execute native calls on the Android UI.
+        rejectClipboardRequest(active, token, requestId, kind)
+    }
+
+    private fun rejectClipboardRequest(
+        active: MobileTrustedPresenceAgent,
+        token: Long,
+        requestId: ByteArray,
+        kind: MobileClipboardRequestKind,
+    ) {
+        // A saturated callback pool must not call native code from the Android UI.
         // If even the bounded failure lane is full, Rust rejects by timeout.
         clipboardFailures.submit {
             if (!isCurrentAgent(active, token)) return@submit
