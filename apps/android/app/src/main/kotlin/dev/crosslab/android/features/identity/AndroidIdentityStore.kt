@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.AtomicFile
+import dev.crosslab.android.features.storage.readBounded
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.security.KeyStore
@@ -14,6 +15,8 @@ import javax.crypto.SecretKey
 import uniffi.crosslab_mobile_ffi.identityStorePayload
 import uniffi.crosslab_mobile_ffi.identityStorePrepareCommit
 import uniffi.crosslab_mobile_ffi.identityStoreValidate
+
+private const val MAX_IDENTITY_BUNDLE_BYTES = 5 + 3 * (Int.SIZE_BYTES + 16 * 1024 * 1024)
 
 class AndroidIdentityStore(
     context: Context,
@@ -33,7 +36,7 @@ class AndroidIdentityStore(
     fun loadPayload(): ByteArray? {
         if (!committedStatePresent()) return null
 
-        val bundle = IdentityStoreBundle.decode(stateFile.readFully())
+        val bundle = IdentityStoreBundle.decode(stateFile.readBounded(MAX_IDENTITY_BUNDLE_BYTES))
         val revision = bundle.anchorRevision()
         val alias = anchorAlias(revision)
         verifyIdentityAnchorSet(alias, anchorAliases())
@@ -110,7 +113,7 @@ class AndroidIdentityStore(
 
     private fun loadBundleOrNull(): IdentityStoreBundle? {
         if (!committedStatePresent()) return null
-        val bundle = IdentityStoreBundle.decode(stateFile.readFully())
+        val bundle = IdentityStoreBundle.decode(stateFile.readBounded(MAX_IDENTITY_BUNDLE_BYTES))
         val revision = bundle.anchorRevision()
         val alias = anchorAlias(revision)
         verifyIdentityAnchorSet(alias, anchorAliases())
