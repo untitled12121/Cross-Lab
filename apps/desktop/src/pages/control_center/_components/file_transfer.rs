@@ -239,12 +239,14 @@ mod tests {
     }
     #[test]
     fn large_transfers_calculate_percent_without_u64_overflow() {
-        assert_eq!(progress_label(u64::MAX / 2, u64::MAX), "8589934592.0 GiB / 17179869184.0 GiB · 49%");
+        assert_eq!(
+            progress_label(u64::MAX / 2, u64::MAX),
+            "8589934592.0 GiB / 17179869184.0 GiB · 49%"
+        );
     }
 
     #[test]
     fn unknown_zero_size_progress_is_not_invented() {
         assert_eq!(progress_label(40, 0), "0 B / 0 B · 0%");
     }
-
 }

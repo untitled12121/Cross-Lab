@@ -400,9 +400,15 @@ mod tests {
         state.set_available(false);
 
         assert_eq!(state.send().stage(), FileTransferStage::Failed);
-        assert_eq!(state.send().failure(), Some(FileTransferFailure::Connection));
+        assert_eq!(
+            state.send().failure(),
+            Some(FileTransferFailure::Connection)
+        );
         assert_eq!(state.receive().stage(), FileTransferStage::Failed);
-        assert_eq!(state.receive().failure(), Some(FileTransferFailure::Connection));
+        assert_eq!(
+            state.receive().failure(),
+            Some(FileTransferFailure::Connection)
+        );
     }
     #[test]
     fn connection_loss_preserves_bounded_progress_and_does_not_claim_owner_cancel() {
@@ -414,8 +420,14 @@ mod tests {
         state.receive_progress(90, 200);
         state.set_available(false);
 
-        assert_eq!(state.send().failure(), Some(FileTransferFailure::Connection));
-        assert_eq!(state.receive().failure(), Some(FileTransferFailure::Connection));
+        assert_eq!(
+            state.send().failure(),
+            Some(FileTransferFailure::Connection)
+        );
+        assert_eq!(
+            state.receive().failure(),
+            Some(FileTransferFailure::Connection)
+        );
         assert_eq!(state.send().transferred_bytes(), 64);
         assert_eq!(state.receive().transferred_bytes(), 90);
 
@@ -442,7 +454,10 @@ mod tests {
         state.send_finalizing(50);
         state.send_cancelled(0, 50);
         state.send_failed(0, 50, FileTransferFailure::Storage);
-        assert_eq!(state.send().failure(), Some(FileTransferFailure::Connection));
+        assert_eq!(
+            state.send().failure(),
+            Some(FileTransferFailure::Connection)
+        );
 
         state.set_available(true);
         state.begin_send("fresh.bin".into());
@@ -461,5 +476,4 @@ mod tests {
         assert_eq!(state.send().transferred_bytes(), 1024);
         assert_eq!(state.send().failure(), None);
     }
-
 }
