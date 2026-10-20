@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.AtomicFile
+import dev.crosslab.android.features.storage.readBounded
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.security.KeyStore
@@ -12,6 +13,8 @@ import javax.crypto.KeyGenerator
 import javax.crypto.Mac
 import javax.crypto.SecretKey
 import uniffi.crosslab_mobile_ffi.policyStoreValidate
+
+private const val MAX_POLICY_BUNDLE_BYTES = 5 + 3 * (Int.SIZE_BYTES + 2 * 1024 * 1024)
 
 class AndroidPolicyStore(
     context: Context,
@@ -95,7 +98,7 @@ class AndroidPolicyStore(
     }
 
     private fun loadRequired(): PolicyStoreBundle {
-        val bundle = PolicyStoreBundle.decode(stateFile.readFully())
+        val bundle = PolicyStoreBundle.decode(stateFile.readBounded(MAX_POLICY_BUNDLE_BYTES))
         val revision = bundle.anchorRevision()
         val alias = anchorAlias(revision)
         val aliases = anchorAliases()
