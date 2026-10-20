@@ -19,14 +19,14 @@ The normal (non-development-provisioned) Linux/Android path contains QR/LAN pair
 
 Earlier Phase 2 PRs #87–106 implemented and hardened product pairing, inventory, permissions, clipboard, file transfer, notifications, audit, native UI, and lifecycle recovery; their CI is documented in prior Git history.
 
-## In-flight software milestone
+## Final integrated software reliability batch
 
-- [PR #113](https://github.com/untitled12121/Cross-Lab/pull/113): Android receiver cleanup admission during overload: reserve a bounded cleanup lane, retain failed cleanup requests, refuse new transfers until cleanup can be safely enqueued and recover availability. Branch `fix/phase2-android-transfer-cleanup-admission`, last edited head `05ec5ffe73c5e11f08d0cce4ab2c87ad8c88bcc9`; exact-head Android CI **pending** at this checkpoint. Do not treat this as merged until exact-head verification and merge succeed.
-- No security/wire/identity/policy/privilege contract was changed in this hardening batch. Do not expand into adaptive Phase 3 networking.
+- [PR #113](https://github.com/untitled12121/Cross-Lab/pull/113): Android receiver cleanup admission during overload: reserve a bounded cleanup lane, retain rejected receiver cleanup, refuse new transfers until cleanup can be admitted and recover availability. Exact head `05ec5ffe73c5e11f08d0cce4ab2c87ad8c88bcc9` passed **Android and CI Gate** run `39392674322`; merged into `main` at **`ce2b6da6bcccf0d14cdcd1369c9cabc5aa46af2f`**.
+- **Integrated `main` source checkpoint before this documentation-only update:** `ce2b6da6bcccf0d14cdcd1369c9cabc5aa46af2f`. All PRs #108–113 were verified and merged. No security/wire/identity/policy/privilege contract changed; Phase 3 remains deferred.
 
 ## Exact next work / software release gate
 
-1. Verify and integrate PR #113 after its Android JVM/build and CI Gate pass; address any confirmed failures with regression coverage.
+1. PR #113 is integrated. Inspect actual `main` head and finish any remaining **confirmed** Phase 2 software/reliability blockers; do not reopen the completed worker-pool task.
 2. Review and resolve remaining Phase 2-only blocker reports and error/lifecycle/resource regressions across pairing, authenticated reconnect, permissions, clipboard, resumable transfer, notifications, audit and revocation. Do not imply that software verification proves Android foreground/background or Linux desktop behavior on actual hardware.
 3. Run an explicit **full** GitHub Actions CI profile on the final integrated `main` source (as specified in [CI.md](CI.md)): Rust formatting, workspace tests, static security/dependency checks, Linux desktop build and normal Android arm64 APK build. Prior PR path-aware Android checks do **not** replace the final full release gate. Record exact final commit and job conclusions.
 4. After the software gates are complete, hand the reviewed **normal product builds** to the owner for the physical acceptance matrix in [Phase 2 product acceptance](../research/Phase2-product-acceptance.md) and the [file-transfer matrix](../research/Phase2-file-transfer-device-evidence.md). Fix any hardware-discovered failures before claiming Phase 2 complete.
