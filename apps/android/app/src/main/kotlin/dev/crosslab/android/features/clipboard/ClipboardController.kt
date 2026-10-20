@@ -64,8 +64,11 @@ class ClipboardController(
     fun state(): ClipboardState = current
 
     fun observe(listener: (ClipboardState) -> Unit): AutoCloseable {
-        listeners += listener
-        runCatching { listener(current) }
+        val snapshot = synchronized(lock) {
+            if (!closed) listeners += listener
+            current
+        }
+        runCatching { listener(snapshot) }
         return AutoCloseable { listeners -= listener }
     }
 
