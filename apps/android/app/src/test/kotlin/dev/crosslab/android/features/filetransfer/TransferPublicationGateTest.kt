@@ -47,6 +47,30 @@ class TransferPublicationGateTest {
     }
 
     @Test
+    fun teardownBlocksPublicationEvenWhenCleanupQueueIsSaturated() {
+        val gate = TransferPublicationGate()
+        val pool = BoundedTransferWorkerPool("crosslab-test-receive-cleanup", 1, 1)
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        try {
+            assertTrue(pool.submit {
+                started.countDown()
+                release.await(5, TimeUnit.SECONDS)
+            })
+            assertTrue(started.await(5, TimeUnit.SECONDS))
+            assertTrue(pool.submit { })
+            // The service must revoke publication synchronously before
+            // trying a potentially saturated asynchronous cleanup pool.
+            assertTrue(gate.cancel())
+            assertFalse(pool.submit { error("cleanup queue is full") })
+            assertFalse(gate.beginPublication())
+        } finally {
+            release.countDown()
+            pool.shutdown()
+        }
+    }
+
+    @Test
     fun publication_commit_rejects_late_cancellation() {
         val gate = TransferPublicationGate()
         assertTrue(gate.beginPublication())
