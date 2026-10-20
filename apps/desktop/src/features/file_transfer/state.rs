@@ -157,34 +157,43 @@ impl FileTransferFeatureState {
         if !available {
             if self.send.active() {
                 self.send.set(
-                    FileTransferStage::Cancelled,
+                    FileTransferStage::Failed,
                     self.send.transferred_bytes,
                     self.send.total_bytes,
-                    None,
+                    Some(FileTransferFailure::Connection),
                 );
             }
             if self.receive.active() {
                 self.receive.set(
-                    FileTransferStage::Cancelled,
+                    FileTransferStage::Failed,
                     self.receive.transferred_bytes,
                     self.receive.total_bytes,
-                    None,
+                    Some(FileTransferFailure::Connection),
                 );
             }
         }
     }
 
     pub fn begin_send(&mut self, display_name: String) {
+        if !self.available {
+            return;
+        }
         self.send.display_name = Some(display_name);
         self.send.set(FileTransferStage::Preparing, 0, 0, None);
     }
 
     pub fn send_waiting(&mut self, total_bytes: u64) {
+        if !self.available {
+            return;
+        }
         self.send
             .set(FileTransferStage::WaitingForPeer, 0, total_bytes, None);
     }
 
     pub fn send_progress(&mut self, transferred_bytes: u64, total_bytes: u64) {
+        if !self.available {
+            return;
+        }
         self.send.set(
             FileTransferStage::Transferring,
             transferred_bytes,
@@ -194,6 +203,9 @@ impl FileTransferFeatureState {
     }
 
     pub fn send_finalizing(&mut self, total_bytes: u64) {
+        if !self.available {
+            return;
+        }
         self.send.set(
             FileTransferStage::Finalizing,
             total_bytes,
@@ -203,6 +215,9 @@ impl FileTransferFeatureState {
     }
 
     pub fn send_completed(&mut self, total_bytes: u64, already_complete: bool) {
+        if !self.available {
+            return;
+        }
         self.send.set(
             if already_complete {
                 FileTransferStage::AlreadyComplete
@@ -216,6 +231,9 @@ impl FileTransferFeatureState {
     }
 
     pub fn send_cancelled(&mut self, transferred_bytes: u64, total_bytes: u64) {
+        if !self.available {
+            return;
+        }
         self.send.set(
             FileTransferStage::Cancelled,
             transferred_bytes,
@@ -230,6 +248,9 @@ impl FileTransferFeatureState {
         total_bytes: u64,
         failure: FileTransferFailure,
     ) {
+        if !self.available {
+            return;
+        }
         self.send.set(
             FileTransferStage::Failed,
             transferred_bytes,
@@ -239,17 +260,26 @@ impl FileTransferFeatureState {
     }
 
     pub fn incoming_offer(&mut self, display_name: String, total_bytes: u64) {
+        if !self.available {
+            return;
+        }
         self.receive.display_name = Some(display_name);
         self.receive
             .set(FileTransferStage::AwaitingDestination, 0, total_bytes, None);
     }
 
     pub fn receive_ready(&mut self, resume_offset: u64, total_bytes: u64) {
+        if !self.available {
+            return;
+        }
         self.receive
             .set(FileTransferStage::Ready, resume_offset, total_bytes, None);
     }
 
     pub fn receive_progress(&mut self, received_bytes: u64, total_bytes: u64) {
+        if !self.available {
+            return;
+        }
         self.receive.set(
             FileTransferStage::Transferring,
             received_bytes,
@@ -259,6 +289,9 @@ impl FileTransferFeatureState {
     }
 
     pub fn receive_completed(&mut self, total_bytes: u64, already_complete: bool) {
+        if !self.available {
+            return;
+        }
         self.receive.set(
             if already_complete {
                 FileTransferStage::AlreadyComplete
@@ -272,6 +305,9 @@ impl FileTransferFeatureState {
     }
 
     pub fn receive_cancelled(&mut self, received_bytes: u64, total_bytes: u64) {
+        if !self.available {
+            return;
+        }
         self.receive.set(
             FileTransferStage::Cancelled,
             received_bytes,
@@ -286,6 +322,9 @@ impl FileTransferFeatureState {
         total_bytes: u64,
         failure: FileTransferFailure,
     ) {
+        if !self.available {
+            return;
+        }
         self.receive.set(
             FileTransferStage::Failed,
             received_bytes,
@@ -344,6 +383,7 @@ mod tests {
     #[test]
     fn debug_redacts_file_names() {
         let mut state = FileTransferFeatureState::new();
+        state.set_available(true);
         state.begin_send("private-name.txt".into());
 
         let debug = format!("{state:?}");
@@ -359,7 +399,81 @@ mod tests {
         state.incoming_offer("receive.bin".into(), 100);
         state.set_available(false);
 
-        assert_eq!(state.send().stage(), FileTransferStage::Cancelled);
-        assert_eq!(state.receive().stage(), FileTransferStage::Cancelled);
+        assert_eq!(state.send().stage(), FileTransferStage::Failed);
+        assert_eq!(
+            state.send().failure(),
+            Some(FileTransferFailure::Connection)
+        );
+        assert_eq!(state.receive().stage(), FileTransferStage::Failed);
+        assert_eq!(
+            state.receive().failure(),
+            Some(FileTransferFailure::Connection)
+        );
+    }
+    #[test]
+    fn connection_loss_preserves_bounded_progress_and_does_not_claim_owner_cancel() {
+        let mut state = FileTransferFeatureState::new();
+        state.set_available(true);
+        state.begin_send("first.bin".into());
+        state.send_progress(64, 128);
+        state.incoming_offer("second.bin".into(), 200);
+        state.receive_progress(90, 200);
+        state.set_available(false);
+
+        assert_eq!(
+            state.send().failure(),
+            Some(FileTransferFailure::Connection)
+        );
+        assert_eq!(
+            state.receive().failure(),
+            Some(FileTransferFailure::Connection)
+        );
+        assert_eq!(state.send().transferred_bytes(), 64);
+        assert_eq!(state.receive().transferred_bytes(), 90);
+
+        state.send_completed(128, false);
+        state.receive_completed(200, false);
+        state.send_progress(128, 128);
+        state.receive_progress(200, 200);
+        assert_eq!(state.send().stage(), FileTransferStage::Failed);
+        assert_eq!(state.receive().stage(), FileTransferStage::Failed);
+    }
+
+    #[test]
+    fn stopped_service_refuses_late_offers_or_new_transfer_authority() {
+        let mut state = FileTransferFeatureState::new();
+        state.begin_send("unavailable.bin".into());
+        state.incoming_offer("ignored.bin".into(), 22);
+        assert_eq!(state.send().stage(), FileTransferStage::Idle);
+        assert_eq!(state.receive().stage(), FileTransferStage::Idle);
+
+        state.set_available(true);
+        state.begin_send("active.bin".into());
+        state.set_available(false);
+        state.send_waiting(50);
+        state.send_finalizing(50);
+        state.send_cancelled(0, 50);
+        state.send_failed(0, 50, FileTransferFailure::Storage);
+        assert_eq!(
+            state.send().failure(),
+            Some(FileTransferFailure::Connection)
+        );
+
+        state.set_available(true);
+        state.begin_send("fresh.bin".into());
+        assert_eq!(state.send().stage(), FileTransferStage::Preparing);
+        assert_eq!(state.send().failure(), None);
+    }
+
+    #[test]
+    fn completed_transfer_remains_completed_when_service_goes_offline() {
+        let mut state = FileTransferFeatureState::new();
+        state.set_available(true);
+        state.begin_send("complete.bin".into());
+        state.send_completed(1024, false);
+        state.set_available(false);
+        assert_eq!(state.send().stage(), FileTransferStage::Completed);
+        assert_eq!(state.send().transferred_bytes(), 1024);
+        assert_eq!(state.send().failure(), None);
     }
 }

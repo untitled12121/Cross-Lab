@@ -168,6 +168,32 @@ mod tests {
     use super::*;
 
     #[test]
+    fn unexpected_transfer_disconnect_is_a_failure_not_an_owner_cancellation() {
+        use crate::features::file_transfer::FileTransferFeatureState;
+
+        let mut transfer = FileTransferFeatureState::new();
+        transfer.set_available(true);
+        transfer.begin_send("source.bin".into());
+        transfer.send_progress(32, 64);
+        transfer.incoming_offer("destination.bin".into(), 128);
+        transfer.receive_progress(64, 128);
+        transfer.set_available(false);
+
+        let mut audit = AuditLifecycle::default();
+        for (sending, operation) in [(true, transfer.send()), (false, transfer.receive())] {
+            let event = audit
+                .transfer(sending, operation.stage(), operation.failure())
+                .expect("unexpected session loss must be recorded");
+            assert_eq!(event.action, AuditAction::TransferEnded);
+            assert_eq!(event.outcome, AuditOutcome::Failed);
+            assert_eq!(
+                audit.transfer(sending, operation.stage(), operation.failure()),
+                None
+            );
+        }
+    }
+
+    #[test]
     fn only_meaningful_session_permission_and_notification_transitions_emit() {
         let mut tracker = AuditLifecycle::default();
         assert_eq!(tracker.session(false), None);
