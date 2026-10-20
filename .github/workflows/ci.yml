@@ -44,7 +44,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Verify CI scope and gate rules
-        run: python3 -m unittest discover -s .github/scripts -p 'test_ci_scope.py'
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
       - name: Select jobs
         id: scope
         env:
