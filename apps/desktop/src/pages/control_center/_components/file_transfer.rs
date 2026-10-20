@@ -160,17 +160,15 @@ fn permission_label<'a>(
 }
 
 fn progress_label(done: u64, total: u64) -> String {
+    let bounded = done.min(total);
     let percent = if total == 0 {
         0
     } else {
-        done.saturating_mul(100)
-            .checked_div(total)
-            .unwrap_or(0)
-            .min(100)
+        (u128::from(bounded) * 100 / u128::from(total)) as u64
     };
     format!(
         "{} / {} · {percent}%",
-        format_bytes(done),
+        format_bytes(bounded),
         format_bytes(total)
     )
 }
@@ -231,7 +229,7 @@ mod tests {
 
     #[test]
     fn progress_is_bounded_at_one_hundred_percent() {
-        assert_eq!(progress_label(150, 100), "150 B / 100 B · 100%");
+        assert_eq!(progress_label(150, 100), "100 B / 100 B · 100%");
     }
 
     #[test]
@@ -239,4 +237,14 @@ mod tests {
         assert_eq!(format_bytes(1024), "1.0 KiB");
         assert_eq!(format_bytes(1024 * 1024), "1.0 MiB");
     }
+    #[test]
+    fn large_transfers_calculate_percent_without_u64_overflow() {
+        assert_eq!(progress_label(u64::MAX / 2, u64::MAX), "8589934592.0 GiB / 17179869184.0 GiB · 49%");
+    }
+
+    #[test]
+    fn unknown_zero_size_progress_is_not_invented() {
+        assert_eq!(progress_label(40, 0), "0 B / 0 B · 0%");
+    }
+
 }
